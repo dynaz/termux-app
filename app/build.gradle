@@ -96,6 +96,15 @@ android {
     }
 
     signingConfigs {
+        // The upload key for Google Play, only set if its keystore is given in the environment
+        if (System.getenv("TERMINOW_UPLOAD_KEYSTORE_FILE")) {
+            release {
+                storeFile file(System.getenv("TERMINOW_UPLOAD_KEYSTORE_FILE"))
+                storePassword System.getenv("TERMINOW_UPLOAD_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("TERMINOW_UPLOAD_KEY_ALIAS") ?: "upload"
+                keyPassword System.getenv("TERMINOW_UPLOAD_KEYSTORE_PASSWORD")
+            }
+        }
         debug {
             storeFile file('testkey_untrusted.jks')
             keyAlias 'alias'
@@ -109,6 +118,7 @@ android {
             minifyEnabled true
             shrinkResources false // Reproducible builds
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.findByName("release")
         }
 
         debug {
