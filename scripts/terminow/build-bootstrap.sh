@@ -8,8 +8,8 @@
 # Usage: build-bootstrap.sh <work directory>
 #
 # Results:
-#   <work directory>/termux-packages/bootstrap-<arch>.zip   The bootstrap archives for the app.
-#   <work directory>/termux-packages/output/*.deb           The packages for make-apt-repo.sh.
+#   <work directory>/termux-packages/output/bootstrap-<arch>.zip   The bootstrap archives for the app.
+#   <work directory>/termux-packages/output/*.deb                  The packages for make-apt-repo.sh.
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -35,4 +35,4 @@ cd termux-packages
 ./scripts/run-docker.sh ./scripts/build-bootstraps.sh \
 	--architectures "$TERMINOW_ARCHITECTURES" --add "libbz2,$TERMINOW_EXTRA_PACKAGES"
 
-ls -l bootstrap-*.zip
+ls -l output/bootstrap-*.zip

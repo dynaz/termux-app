@@ -97,7 +97,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="terminow-bootstrap-$(date -u +%Y.%m.%d)-r${{ github.run_number }}"
-          cd "$RUNNER_TEMP/work/termux-packages"
+          cd "$RUNNER_TEMP/work/termux-packages/output"
           sha256sum bootstrap-*.zip > bootstrap-sha256sums
           gh release create "$tag" bootstrap-*.zip bootstrap-sha256sums \
             --repo "${{ github.repository }}" --target "${{ github.sha }}" \
@@ -106,7 +106,7 @@ jobs:
 
           # Pin the app build to the released bootstrap
           cd "$GITHUB_WORKSPACE"
-          for archive in "$RUNNER_TEMP"/work/termux-packages/bootstrap-*.zip; do
+          for archive in "$RUNNER_TEMP"/work/termux-packages/output/bootstrap-*.zip; do
             arch="$(basename "$archive" .zip)"; arch="${arch#bootstrap-}"
             checksum="$(sha256sum "$archive" | cut -d ' ' -f 1)"
             url="https://github.com/${{ github.repository }}/releases/download/$tag/bootstrap-$arch.zip"

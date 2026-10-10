@@ -80,6 +80,11 @@ replace_line scripts/build-bootstraps.sh '\[\[ "\$build_output" == \*"No build\.
 # uses command-not-found if it is installed.
 replace_line scripts/build-bootstraps.sh '^([[:space:]]*)PACKAGES\+=\("command-not-found"\)$' '\1: # command-not-found is not built'
 
+# The apparmor profile of the build container only allows writing to the output directory of
+# the termux-packages directory, so the bootstrap archives can not be moved to its root.
+replace_line scripts/build-bootstraps.sh '^([[:space:]]*)mv -f "\$\{BOOTSTRAP_TMPDIR\}/bootstrap-\$\{1\}\.zip" "\$TERMUX_PACKAGES_DIRECTORY/"$' \
+	'\1mv -f "${BOOTSTRAP_TMPDIR}/bootstrap-${1}.zip" "$TERMUX_BUILT_DEBS_DIRECTORY/"'
+
 echo "[*] Adding the repository key to termux-keyring..."
 cp "$TERMINOW_REPO_PUBLIC_KEY_FILE" packages/termux-keyring/terminow.gpg
 replace_line packages/termux-keyring/build.sh '^([[:space:]]*)install -Dm600 "\$TERMUX_PKG_BUILDER_DIR/termux-autobuilds\.gpg" "\$GPG_SHARE_DIR"$' \
