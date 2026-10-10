@@ -16,6 +16,7 @@ import com.termux.shared.errors.Errno;
 import com.termux.shared.logger.Logger;
 import com.termux.shared.shell.command.environment.IShellEnvironment;
 import com.termux.shared.shell.ShellUtils;
+import com.termux.shared.termux.shell.TermuxShellUtils;
 import com.termux.terminal.TerminalSession;
 import com.termux.terminal.TerminalSessionClient;
 
@@ -119,10 +120,13 @@ public class TermuxSession {
         }
 
         // Setup command args
+        TermuxShellUtils.setupSystemLinkerExecLdPreloadLib();
         String[] commandArgs = shellEnvironmentClient.setupShellCommandArguments(executionCommand.executable, executionCommand.arguments);
 
         executionCommand.executable = commandArgs[0];
-        String processName = (isLoginShell ? "-" : "") + ShellUtils.getExecutableBasename(executionCommand.executable);
+        // If the file is executed with the system linker, then name the process after the file
+        String processExecutable = TermuxShellUtils.isSystemLinkerPath(commandArgs[0]) && commandArgs.length > 1 ? commandArgs[1] : commandArgs[0];
+        String processName = (isLoginShell ? "-" : "") + ShellUtils.getExecutableBasename(processExecutable);
 
         String[] arguments = new String[commandArgs.length];
         arguments[0] = processName;

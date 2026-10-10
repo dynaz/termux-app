@@ -1,6 +1,9 @@
 package com.termux.app;
 
 import android.annotation.SuppressLint;
+import android.os.Build;
+import android.content.pm.PackageManager;
+import android.Manifest;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
@@ -63,6 +66,7 @@ import com.termux.view.TerminalViewClient;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.viewpager.widget.ViewPager;
 
@@ -204,6 +208,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     private static final String ARG_ACTIVITY_RECREATED = "activity_recreated";
     private static final String ARG_HOME_VISIBLE = "home_visible";
 
+    private static final int REQUEST_POST_NOTIFICATIONS_PERMISSION = 2000;
+
     private static final String LOG_TAG = "TermuxActivity";
 
     @Override
@@ -266,6 +272,11 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         setToggleKeyboardView();
 
         mTerminowHome = new TerminowHome(this);
+
+        // The notification of the service that keeps sessions running is not shown without it
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && savedInstanceState == null &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQUEST_POST_NOTIFICATIONS_PERMISSION);
 
         registerForContextMenu(mTerminalView);
 
@@ -959,7 +970,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         intentFilter.addAction(TERMUX_ACTIVITY.ACTION_RELOAD_STYLE);
         intentFilter.addAction(TERMUX_ACTIVITY.ACTION_REQUEST_PERMISSIONS);
 
-        registerReceiver(mTermuxActivityBroadcastReceiver, intentFilter);
+        // The broadcasts are only sent by the app itself
+        ContextCompat.registerReceiver(this, mTermuxActivityBroadcastReceiver, intentFilter, ContextCompat.RECEIVER_NOT_EXPORTED);
     }
 
     private void unregisterTermuxActivityBroadcastReceiver() {
