@@ -1,6 +1,7 @@
 package com.termux.app.terminow;
 
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.Intent;
 import android.graphics.PorterDuff;
 import android.os.Handler;
@@ -12,13 +13,15 @@ import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.BaseAdapter;
-import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.GridView;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.Switch;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -407,16 +410,39 @@ public class TerminowHome {
 
 
 
+    /** Show the full screen form to add or edit a host. */
     private void showHostDialog(@Nullable TerminowStore.Host existingHost) {
-        LinearLayout form = createForm();
-        EditText labelView = addField(form, R.string.terminow_host_label, InputType.TYPE_CLASS_TEXT);
-        EditText addressView = addField(form, R.string.terminow_host_address, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
-        EditText portView = addField(form, R.string.terminow_host_port, InputType.TYPE_CLASS_NUMBER);
-        EditText usernameView = addField(form, R.string.terminow_host_username, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
-        CheckBox moshView = new CheckBox(mActivity);
-        moshView.setText(R.string.terminow_host_mosh);
-        form.addView(moshView);
+        Dialog dialog = new Dialog(mActivity, android.R.style.Theme_Material_NoActionBar);
+        dialog.setContentView(R.layout.dialog_terminow_host);
+        Window window = dialog.getWindow();
+        if (window != null) {
+            int backgroundColor = ContextCompat.getColor(mActivity, R.color.terminow_bg);
+            window.setStatusBarColor(backgroundColor);
+            window.setNavigationBarColor(backgroundColor);
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        }
 
+        // Keep the form readable on wide screens instead of stretching the fields across them
+        View rootView = dialog.findViewById(R.id.terminow_host_root);
+        View columnView = dialog.findViewById(R.id.terminow_host_column);
+        rootView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            int width = Math.min(right - left, dp(560));
+            ViewGroup.LayoutParams params = columnView.getLayoutParams();
+            if (params.width != width) {
+                params.width = width;
+                columnView.post(() -> columnView.setLayoutParams(params));
+            }
+        });
+
+        TextView titleView = dialog.findViewById(R.id.terminow_host_title);
+        ImageView iconView = dialog.findViewById(R.id.terminow_host_icon);
+        EditText labelView = dialog.findViewById(R.id.terminow_host_label);
+        EditText addressView = dialog.findViewById(R.id.terminow_host_address);
+        EditText portView = dialog.findViewById(R.id.terminow_host_port);
+        EditText usernameView = dialog.findViewById(R.id.terminow_host_username);
+        Switch moshView = dialog.findViewById(R.id.terminow_host_mosh);
+
+        titleView.setText(existingHost == null ? R.string.terminow_new_host : R.string.terminow_edit_host);
         if (existingHost != null) {
             labelView.setText(existingHost.label);
             addressView.setText(existingHost.address);
@@ -425,7 +451,13 @@ public class TerminowHome {
         }
         portView.setText(String.valueOf(existingHost != null ? existingHost.port : 22));
 
-        showFormDialog(existingHost == null ? R.string.terminow_new_host : R.string.terminow_edit_host, form, () -> {
+        Runnable updateIcon = () -> iconView.getBackground().mutate().setColorFilter(ContextCompat.getColor(mActivity,
+            moshView.isChecked() ? R.color.terminow_host_mosh : R.color.terminow_host_ssh), PorterDuff.Mode.SRC_IN);
+        updateIcon.run();
+        moshView.setOnCheckedChangeListener((buttonView, isChecked) -> updateIcon.run());
+
+        dialog.findViewById(R.id.terminow_host_close).setOnClickListener(v -> dialog.dismiss());
+        dialog.findViewById(R.id.terminow_host_save).setOnClickListener(v -> {
             String address = addressView.getText().toString().trim();
             String username = usernameView.getText().toString().trim();
             int port;
@@ -437,15 +469,18 @@ public class TerminowHome {
 
             if (!TerminowStore.isValidAddress(address)) {
                 mActivity.showToast(mActivity.getString(R.string.terminow_host_invalid_address), true);
-                return false;
+                addressView.requestFocus();
+                return;
             }
             if (!TerminowStore.isValidPort(port)) {
                 mActivity.showToast(mActivity.getString(R.string.terminow_host_invalid_port), true);
-                return false;
+                portView.requestFocus();
+                return;
             }
             if (!TerminowStore.isValidUsername(username)) {
                 mActivity.showToast(mActivity.getString(R.string.terminow_host_invalid_username), true);
-                return false;
+                usernameView.requestFocus();
+                return;
             }
 
             TerminowStore.Host host = existingHost != null ? existingHost : new TerminowStore.Host();
@@ -458,8 +493,12 @@ public class TerminowHome {
                 mHosts.add(host);
             mStore.setHosts(mHosts);
             updateItems();
-            return true;
+            dialog.dismiss();
         });
+
+        dialog.show();
+        if (existingHost == null)
+            addressView.requestFocus();
     }
 
     private void showSnippetDialog(@Nullable TerminowStore.Snippet existingSnippet) {
