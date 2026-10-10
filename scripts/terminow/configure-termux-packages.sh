@@ -75,6 +75,11 @@ MIRRORS
 replace_line scripts/build-bootstraps.sh '\[\[ "\$build_output" == \*"No build\.sh script at package dir"\* \]\]; then$' \
 	'{ [[ "$build_output" == *"No build.sh script at package dir"* ]] \|\| [[ "$build_output" == *"found in any of the enabled repositories"* ]]; }; then'
 
+# command-not-found builds its database from the Contents index of the package repository,
+# which does not exist before the first build and is not created by make-apt-repo.sh. bash only
+# uses command-not-found if it is installed.
+replace_line scripts/build-bootstraps.sh '^([[:space:]]*)PACKAGES\+=\("command-not-found"\)$' '\1: # command-not-found is not built'
+
 echo "[*] Adding the repository key to termux-keyring..."
 cp "$TERMINOW_REPO_PUBLIC_KEY_FILE" packages/termux-keyring/terminow.gpg
 replace_line packages/termux-keyring/build.sh '^([[:space:]]*)install -Dm600 "\$TERMUX_PKG_BUILDER_DIR/termux-autobuilds\.gpg" "\$GPG_SHARE_DIR"$' \
