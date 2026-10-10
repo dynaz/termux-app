@@ -772,7 +772,13 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
         for (int i = 0; i < mShellManager.mTermuxSessions.size(); i++)
             mShellManager.mTermuxSessions.get(i).getTerminalSession().updateTerminalSessionClient(mTermuxTerminalSessionServiceClient);
 
+        boolean wasSet = mTermuxTerminalSessionActivityClient != null;
         mTermuxTerminalSessionActivityClient = null;
+
+        // The service is kept running for the activity while there are no sessions, so stop it
+        // now if nothing else needs it
+        if (wasSet && !mWantsToStop)
+            updateNotification();
     }
 
 
@@ -850,8 +856,10 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
 
     /** Update the shown foreground service notification after making any changes that affect it. */
     private synchronized void updateNotification() {
-        if (mWakeLock == null && mShellManager.mTermuxSessions.isEmpty() && mShellManager.mTermuxTasks.isEmpty()) {
-            // Exit if we are updating after the user disabled all locks with no sessions or tasks running.
+        if (mWakeLock == null && mShellManager.mTermuxSessions.isEmpty() && mShellManager.mTermuxTasks.isEmpty() &&
+            mTermuxTerminalSessionActivityClient == null) {
+            // Exit if we are updating after the user disabled all locks with no sessions or tasks running
+            // and the activity is not showing its home screen to start new ones.
             requestStopService();
         } else {
             ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).notify(TermuxConstants.TERMUX_APP_NOTIFICATION_ID, buildNotification());

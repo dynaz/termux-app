@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 
 <!DOCTYPE resources [
-    <!ENTITY TERMUX_PACKAGE_NAME "com.termux">
-    <!ENTITY TERMUX_APP_NAME "Termux">
+    <!ENTITY TERMUX_PACKAGE_NAME "com.terminow">
+    <!ENTITY TERMUX_APP_NAME "TermiNow">
     <!ENTITY TERMUX_API_APP_NAME "Termux:API">
     <!ENTITY TERMUX_BOOT_APP_NAME "Termux:Boot">
     <!ENTITY TERMUX_FLOAT_APP_NAME "Termux:Float">
@@ -235,4 +235,34 @@
     <!-- Donate Preference -->
     <string name="donate_preference_title">Donate</string>
 
+    <!-- Terminow home -->
+    <string name="terminow_hosts">Hosts</string>
+    <string name="terminow_snippets">Snippets</string>
+    <string name="terminow_add">Add</string>
+    <string name="terminow_search_hint">Search</string>
+    <string name="terminow_local_terminal">Local terminal</string>
+    <string name="terminow_local_terminal_subtitle">This device</string>
+    <string name="terminow_active">Active</string>
+    <string name="terminow_new_host">New host</string>
+    <string name="terminow_edit_host">Edit host</string>
+    <string name="terminow_host_label">Label</string>
+    <string name="terminow_host_address">Address (IP or hostname)</string>
+    <string name="terminow_host_port">Port</string>
+    <string name="terminow_host_username">Username</string>
+    <string name="terminow_host_mosh">Connect with Mosh</string>
+    <string name="terminow_host_invalid_address">Enter a valid address, without spaces or special characters</string>
+    <string name="terminow_host_invalid_username">Enter a valid username, without spaces or special characters</string>
+    <string name="terminow_host_invalid_port">Port must be between 1 and 65535</string>
+    <string name="terminow_new_snippet">New snippet</string>
+    <string name="terminow_edit_snippet">Edit snippet</string>
+    <string name="terminow_snippet_name">Name</string>
+    <string name="terminow_snippet_command">Command</string>
+    <string name="terminow_snippet_invalid">Enter a command</string>
+    <string name="terminow_no_snippets">No snippets yet. Tap + to add one.</string>
+    <string name="terminow_no_results">Nothing matches your search.</string>
+    <string name="terminow_edit">Edit</string>
+    <string name="terminow_delete">Delete</string>
+    <string name="terminow_save">Save</string>
+    <string name="terminow_autofill_unavailable">No autofill service is enabled to fill in a password</string>
+    <string name="terminow_close_session">Close this session?</string>
 </resources>

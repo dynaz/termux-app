@@ -29,6 +29,7 @@ import android.widget.Toast;
 import com.termux.R;
 import com.termux.app.api.file.FileReceiverActivity;
 import com.termux.app.terminal.TermuxActivityRootView;
+import com.termux.app.terminow.TerminowHome;
 import com.termux.app.terminal.TermuxTerminalSessionActivityClient;
 import com.termux.app.terminal.io.TermuxTerminalExtraKeys;
 import com.termux.shared.activities.ReportActivity;
@@ -139,6 +140,11 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     TermuxSessionsListViewController mTermuxSessionListViewController;
 
     /**
+     * The home screen shown over the terminal and the tab bar above it.
+     */
+    TerminowHome mTerminowHome;
+
+    /**
      * The {@link TermuxActivity} broadcast receiver for various things like terminal style configuration changes.
      */
     private final BroadcastReceiver mTermuxActivityBroadcastReceiver = new TermuxActivityBroadcastReceiver();
@@ -167,6 +173,11 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     private boolean mIsActivityRecreated = false;
 
     /**
+     * If the home screen was being shown when the activity was restarted.
+     */
+    private boolean mIsHomeVisibleOnRecreate = false;
+
+    /**
      * The {@link TermuxActivity} is in an invalid state and must not be run.
      */
     private boolean mIsInvalidState;
@@ -191,6 +202,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
     private static final String ARG_TERMINAL_TOOLBAR_TEXT_INPUT = "terminal_toolbar_text_input";
     private static final String ARG_ACTIVITY_RECREATED = "activity_recreated";
+    private static final String ARG_HOME_VISIBLE = "home_visible";
 
     private static final String LOG_TAG = "TermuxActivity";
 
@@ -199,8 +211,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         Logger.logDebug(LOG_TAG, "onCreate");
         mIsOnResumeAfterOnCreate = true;
 
-        if (savedInstanceState != null)
+        if (savedInstanceState != null) {
             mIsActivityRecreated = savedInstanceState.getBoolean(ARG_ACTIVITY_RECREATED, false);
+            mIsHomeVisibleOnRecreate = savedInstanceState.getBoolean(ARG_HOME_VISIBLE, false);
+        }
 
         // Delete ReportInfo serialized object files from cache older than 14 days
         ReportActivity.deleteReportInfoFilesOlderThanXDays(this, 14, false);
@@ -250,6 +264,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         setNewSessionButtonView();
 
         setToggleKeyboardView();
+
+        mTerminowHome = new TerminowHome(this);
 
         registerForContextMenu(mTerminalView);
 
@@ -372,6 +388,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         super.onSaveInstanceState(savedInstanceState);
         saveTerminalToolbarTextInput(savedInstanceState);
         savedInstanceState.putBoolean(ARG_ACTIVITY_RECREATED, true);
+        savedInstanceState.putBoolean(ARG_HOME_VISIBLE, isHomeVisible());
     }
 
 
@@ -403,7 +420,12 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                         if (intent != null && intent.getExtras() != null) {
                             launchFailsafe = intent.getExtras().getBoolean(TERMUX_ACTIVITY.EXTRA_FAILSAFE_SESSION, false);
                         }
-                        mTermuxTerminalSessionActivityClient.addNewSession(launchFailsafe, null);
+                        // Start at the home screen instead of opening a session, unless a
+                        // failsafe session was requested.
+                        if (launchFailsafe)
+                            mTermuxTerminalSessionActivityClient.addNewSession(true, null);
+                        else
+                            mTerminowHome.show();
                     } catch (WindowManager.BadTokenException e) {
                         // Activity finished - ignore.
                     }
@@ -422,8 +444,12 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                 mTermuxTerminalSessionActivityClient.addNewSession(isFailSafe, null);
             } else {
                 mTermuxTerminalSessionActivityClient.setCurrentSession(mTermuxTerminalSessionActivityClient.getCurrentStoredSessionOrLast());
+                if (mIsHomeVisibleOnRecreate)
+                    mTerminowHome.show();
             }
         }
+
+        mTerminowHome.refresh();
 
         // Update the {@link TerminalSession} and {@link TerminalEmulator} clients.
         mTermuxService.setTermuxTerminalSessionClient(mTermuxTerminalSessionActivityClient);
@@ -512,7 +538,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
             mTermuxTerminalViewClient, mTermuxTerminalSessionActivityClient);
 
         final ViewPager terminalToolbarViewPager = getTerminalToolbarViewPager();
-        if (mPreferences.shouldShowTerminalToolbar()) terminalToolbarViewPager.setVisibility(View.VISIBLE);
+        if (mPreferences.shouldShowTerminalToolbar() && !mIsHomeVisibleOnRecreate) terminalToolbarViewPager.setVisibility(View.VISIBLE);
 
         ViewGroup.LayoutParams layoutParams = terminalToolbarViewPager.getLayoutParams();
         mTerminalToolbarDefaultHeight = layoutParams.height;
@@ -544,7 +570,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         final boolean showNow = mPreferences.toogleShowTerminalToolbar();
         Logger.showToast(this, (showNow ? getString(R.string.msg_enabling_terminal_toolbar) : getString(R.string.msg_disabling_terminal_toolbar)), true);
-        terminalToolbarViewPager.setVisibility(showNow ? View.VISIBLE : View.GONE);
+        terminalToolbarViewPager.setVisibility(showNow && !isHomeVisible() ? View.VISIBLE : View.GONE);
         if (showNow && isTerminalToolbarTextInputViewSelected()) {
             // Focus the text input view if just revealed.
             findViewById(R.id.terminal_toolbar_text_input).requestFocus();
@@ -603,6 +629,9 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     public void onBackPressed() {
         if (getDrawer().isDrawerOpen(Gravity.LEFT)) {
             getDrawer().closeDrawers();
+        } else if (isHomeVisible() && mTermuxService != null && !mTermuxService.isTermuxSessionsEmpty()) {
+            // Go back to the terminal if there is a session to show
+            mTerminowHome.hide();
         } else {
             finishActivityIfNotFinishing();
         }
@@ -857,6 +886,15 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
     public void termuxSessionListNotifyUpdated() {
         mTermuxSessionListViewController.notifyDataSetChanged();
+        if (mTerminowHome != null) mTerminowHome.refresh();
+    }
+
+    public TerminowHome getTerminowHome() {
+        return mTerminowHome;
+    }
+
+    public boolean isHomeVisible() {
+        return mTerminowHome != null && mTerminowHome.isVisible();
     }
 
     public boolean isVisible() {

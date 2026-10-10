@@ -43,12 +43,22 @@ public class TerminalToolbarViewPager {
             View layout;
             if (position == 0) {
                 layout = inflater.inflate(R.layout.view_terminal_toolbar_extra_keys, collection, false);
-                ExtraKeysView extraKeysView = (ExtraKeysView) layout;
+                ExtraKeysView extraKeysView = layout.findViewById(R.id.terminal_toolbar_extra_keys);
                 extraKeysView.setExtraKeysViewClient(mActivity.getTermuxTerminalExtraKeys());
                 extraKeysView.setButtonTextAllCaps(mActivity.getProperties().shouldExtraKeysTextBeAllCaps());
                 mActivity.setExtraKeysView(extraKeysView);
                 extraKeysView.reload(mActivity.getTermuxTerminalExtraKeys().getExtraKeysInfo(),
                     mActivity.getTerminalToolbarDefaultHeight());
+
+                // Fill the toolbar if the keys fit in it, otherwise make them scrollable
+                layout.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+                    int width = Math.max(right - left, extraKeysView.getMinimumKeysWidth());
+                    ViewGroup.LayoutParams params = extraKeysView.getLayoutParams();
+                    if (params.width != width) {
+                        params.width = width;
+                        extraKeysView.post(() -> extraKeysView.setLayoutParams(params));
+                    }
+                });
 
                 // apply extra keys fix if enabled in prefs
                 if (mActivity.getProperties().isUsingFullScreen() && mActivity.getProperties().isUsingFullScreenWorkAround()) {

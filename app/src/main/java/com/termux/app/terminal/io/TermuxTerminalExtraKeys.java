@@ -9,6 +9,7 @@ import androidx.drawerlayout.widget.DrawerLayout;
 
 import com.termux.app.TermuxActivity;
 import com.termux.app.terminal.TermuxTerminalSessionActivityClient;
+import com.termux.R;
 import com.termux.app.terminal.TermuxTerminalViewClient;
 import com.termux.shared.logger.Logger;
 import com.termux.shared.termux.extrakeys.ExtraKeysConstants;
@@ -96,6 +97,15 @@ public class TermuxTerminalExtraKeys extends TerminalExtraKeys {
         } else if ("PASTE".equals(key)) {
             if(mTermuxTerminalSessionActivityClient != null)
                 mTermuxTerminalSessionActivityClient.onPasteTextFromClipboard(null);
+        } else if ("SNIPPETS".equals(key)) {
+            if (mActivity.getTerminowHome() != null)
+                mActivity.getTerminowHome().showSnippetsPicker();
+        } else if ("PASSWORD".equals(key)) {
+            TerminalView terminalView = mActivity.getTerminalView();
+            if (terminalView != null && terminalView.isAutoFillEnabled())
+                terminalView.requestAutoFillPassword();
+            else
+                mActivity.showToast(mActivity.getString(R.string.terminow_autofill_unavailable), true);
         }  else if ("SCROLL".equals(key)) {
             TerminalView terminalView = mTermuxTerminalViewClient.getActivity().getTerminalView();
             if (terminalView != null && terminalView.mEmulator != null)

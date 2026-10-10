@@ -7,11 +7,73 @@
     android:orientation="vertical"
     android:fitsSystemWindows="true">
 
+    <LinearLayout
+        android:id="@+id/terminow_tab_bar"
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:background="@color/terminow_bar_terminal"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="8dp">
+
+        <LinearLayout
+            android:id="@+id/terminow_home_button"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:background="@drawable/terminow_tab_idle"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="10dp">
+
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:src="@drawable/ic_terminow_hosts"
+                tools:ignore="ContentDescription" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="@string/terminow_hosts"
+                android:textColor="@color/terminow_text"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <HorizontalScrollView
+            android:id="@+id/terminow_tabs_scroll"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:overScrollMode="never"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/terminow_tabs"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal" />
+        </HorizontalScrollView>
+
+        <ImageButton
+            android:id="@+id/terminow_new_tab"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@null"
+            android:contentDescription="@string/action_new_session"
+            android:src="@drawable/ic_terminow_add" />
+    </LinearLayout>
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
     <RelativeLayout
         android:id="@+id/activity_termux_root_relative_layout"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
+        android:layout_height="match_parent"
         android:layout_marginHorizontal="3dp"
         android:layout_marginVertical="0dp"
         android:orientation="vertical">
@@ -98,11 +160,15 @@
             android:id="@+id/terminal_toolbar_view_pager"
             android:visibility="gone"
             android:layout_width="match_parent"
-            android:layout_height="37.5dp"
-            android:background="@color/black"
+            android:layout_height="44dp"
+            android:background="@drawable/terminow_extra_keys_bar"
             android:layout_alignParentBottom="true" />
 
     </RelativeLayout>
+
+        <include layout="@layout/view_terminow_home" />
+
+    </FrameLayout>
 
     <View
         android:id="@+id/activity_termux_bottom_space_view"

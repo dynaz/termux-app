@@ -97,6 +97,8 @@ public class TermuxSessionsListViewController extends ArrayAdapter<TermuxSession
         TermuxSession clickedSession = getItem(position);
         mActivity.getTermuxTerminalSessionClient().setCurrentSession(clickedSession.getTerminalSession());
         mActivity.getDrawer().closeDrawers();
+        if (mActivity.getTerminowHome() != null)
+            mActivity.getTerminowHome().hide();
     }
 
     @Override

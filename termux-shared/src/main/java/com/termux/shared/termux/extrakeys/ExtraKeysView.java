@@ -2,6 +2,7 @@ package com.termux.shared.termux.extrakeys;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.content.res.ColorStateList;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -165,6 +166,12 @@ public final class ExtraKeysView extends GridLayout {
      */
     protected List<String> mRepetitiveKeys;
 
+
+    /** The minimum width in dp of a key with weight 1 if the keys are in a single row. */
+    public static final int SINGLE_ROW_KEY_WIDTH_DP = 40;
+
+    /** The sum of the weights of the keys if they are in a single row, otherwise 0. */
+    protected float mKeysWeightSum;
 
     /** The text color for the extra keys button. Defaults to {@link #DEFAULT_BUTTON_TEXT_COLOR}. */
     protected int mButtonTextColor;
@@ -391,6 +398,7 @@ public final class ExtraKeysView extends GridLayout {
             state.buttons = new ArrayList<>();
 
         removeAllViews();
+        mKeysWeightSum = 0;
 
         ExtraKeyButton[][] buttons = extraKeysInfo.getMatrix();
 
@@ -413,6 +421,20 @@ public final class ExtraKeysView extends GridLayout {
                 button.setTextColor(mButtonTextColor);
                 button.setAllCaps(mButtonTextAllCaps);
                 button.setPadding(0, 0, 0, 0);
+                button.setMinWidth(0);
+                button.setMinimumWidth(0);
+
+                // Show an icon instead of text for keys that have one, unless a custom display
+                // name was set for the key.
+                Integer iconRes = ExtraKeysConstants.KEY_ICONS.get(buttonInfo.getKey());
+                if (iconRes != null && !buttonInfo.hasCustomDisplay()) {
+                    button.setText(null);
+                    button.setContentDescription(buttonInfo.getKey());
+                    button.setIconResource(iconRes);
+                    button.setIconTint(ColorStateList.valueOf(mButtonTextColor));
+                    button.setIconPadding(0);
+                    button.setIconGravity(MaterialButton.ICON_GRAVITY_TEXT_START);
+                }
 
                 button.setOnClickListener(view -> {
                     performExtraKeyButtonHapticFeedback(view, buttonInfo, button);
@@ -477,7 +499,10 @@ public final class ExtraKeysView extends GridLayout {
                     param.height = 0;
                 }
                 param.setMargins(0, 0, 0, 0);
-                param.columnSpec = GridLayout.spec(col, GridLayout.FILL, 1.f);
+                // In a single row, give keys with longer text more space than the others
+                float weight = buttons.length == 1 ? getButtonWeight(button) : 1.f;
+                mKeysWeightSum += buttons.length == 1 ? weight : 0;
+                param.columnSpec = GridLayout.spec(col, GridLayout.FILL, weight);
                 param.rowSpec = GridLayout.spec(row, GridLayout.FILL, 1.f);
                 button.setLayoutParams(param);
 
@@ -487,6 +512,23 @@ public final class ExtraKeysView extends GridLayout {
     }
 
 
+
+    /** The weight for the width of a button in a single row, 1 is the width of a button showing an icon or single character. */
+    private float getButtonWeight(MaterialButton button) {
+        CharSequence text = button.getText();
+        if (text == null || text.length() <= 1) return 1.f;
+        float textWidthDp = button.getPaint().measureText(text.toString()) / getResources().getDisplayMetrics().density;
+        return Math.max(1.f, (textWidthDp + 12) / SINGLE_ROW_KEY_WIDTH_DP);
+    }
+
+    /**
+     * Get the minimum width in pixels needed to show the keys if they are in a single row, so that
+     * the parent can make the view scrollable instead of squeezing the keys. Returns 0 if there
+     * are multiple rows.
+     */
+    public int getMinimumKeysWidth() {
+        return Math.round(mKeysWeightSum * SINGLE_ROW_KEY_WIDTH_DP * getResources().getDisplayMetrics().density);
+    }
 
     public void onExtraKeyButtonClick(View view, ExtraKeyButton buttonInfo, MaterialButton button) {
         if (mExtraKeysViewClient != null)

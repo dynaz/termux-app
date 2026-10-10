@@ -302,6 +302,10 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         // be stale, like current session not selected or scrolled to.
         checkAndScrollToSession(session);
         updateBackgroundColor();
+
+        // Update the selected tab
+        if (mActivity.getTerminowHome() != null)
+            mActivity.getTerminowHome().refresh();
     }
 
     void notifyOfSessionChange() {
@@ -385,6 +389,8 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
             setCurrentSession(newTerminalSession);
 
             mActivity.getDrawer().closeDrawers();
+            if (mActivity.getTerminowHome() != null)
+                mActivity.getTerminowHome().hide();
         }
     }
 
@@ -439,8 +445,11 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
 
         int size = service.getTermuxSessionsSize();
         if (size == 0) {
-            // There are no sessions to show, so finish the activity.
-            mActivity.finishActivityIfNotFinishing();
+            // There are no sessions to show, so go back to the home screen.
+            if (mActivity.getTerminowHome() != null)
+                mActivity.getTerminowHome().show();
+            else
+                mActivity.finishActivityIfNotFinishing();
         } else {
             if (index >= size) {
                 index = size - 1;

@@ -566,6 +566,9 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
     }
 
     public void setSoftKeyboardState(boolean isStartup, boolean isReloadTermuxProperties) {
+        // The soft keyboard is for the terminal, which is covered while the home screen is shown
+        if (mActivity.isHomeVisible()) return;
+
         boolean noShowKeyboard = false;
 
         // Requesting terminal view focus is necessary regardless of if soft keyboard is to be
@@ -612,6 +615,9 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
         mActivity.getTerminalView().setOnFocusChangeListener(new View.OnFocusChangeListener() {
             @Override
             public void onFocusChange(View view, boolean hasFocus) {
+                // Leave the soft keyboard to the home screen while it is shown, like for its search
+                if (mActivity.isHomeVisible()) return;
+
                 // Force show soft keyboard if TerminalView or toolbar text input view has
                 // focus and close it if they don't
                 boolean textInputViewHasFocus = false;
@@ -648,6 +654,8 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
     private Runnable getShowSoftKeyboardRunnable() {
         if (mShowSoftKeyboardRunnable == null) {
             mShowSoftKeyboardRunnable = () -> {
+                // The home screen may have been shown since the runnable was posted
+                if (mActivity.isHomeVisible()) return;
                 KeyboardUtils.showSoftKeyboard(mActivity, mActivity.getTerminalView());
             };
         }
