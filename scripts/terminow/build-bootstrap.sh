@@ -31,7 +31,8 @@ rm -f termux-packages/packages/termux-keyring/terminow.gpg
 "$script_dir/configure-termux-packages.sh" termux-packages
 
 cd termux-packages
+# libbz2 is the parent package of the bzip2 bootstrap package, which can not be built by its own name.
 ./scripts/run-docker.sh ./scripts/build-bootstraps.sh \
-	--architectures "$TERMINOW_ARCHITECTURES" --add "$TERMINOW_EXTRA_PACKAGES"
+	--architectures "$TERMINOW_ARCHITECTURES" --add "libbz2,$TERMINOW_EXTRA_PACKAGES"
 
 ls -l bootstrap-*.zip

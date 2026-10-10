@@ -69,6 +69,12 @@ termux_step_post_get_source() {
 }
 MIRRORS
 
+# Bootstrap packages that are subpackages, like bzip2 of libbz2, have no package directory and
+# are built with their parent package. build-bootstraps.sh ignores the error for them, but only
+# checks for an error message that build-package.sh no longer prints for them.
+replace_line scripts/build-bootstraps.sh '\[\[ "\$build_output" == \*"No build\.sh script at package dir"\* \]\]; then$' \
+	'{ [[ "$build_output" == *"No build.sh script at package dir"* ]] \|\| [[ "$build_output" == *"found in any of the enabled repositories"* ]]; }; then'
+
 echo "[*] Adding the repository key to termux-keyring..."
 cp "$TERMINOW_REPO_PUBLIC_KEY_FILE" packages/termux-keyring/terminow.gpg
 replace_line packages/termux-keyring/build.sh '^([[:space:]]*)install -Dm600 "\$TERMUX_PKG_BUILDER_DIR/termux-autobuilds\.gpg" "\$GPG_SHARE_DIR"$' \
