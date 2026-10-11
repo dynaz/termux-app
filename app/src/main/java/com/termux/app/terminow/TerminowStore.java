@@ -136,6 +136,13 @@ public class TerminowStore {
         }
     }
 
+    /** A notification of the notifications panel. */
+    public static class Notification {
+        public long time;
+        public String title = "";
+        public String text = "";
+    }
+
     /** A connection that was started from the home screen. */
     public static class Log {
         public long time;
@@ -169,6 +176,12 @@ public class TerminowStore {
     private static final String KEY_GROUPS = "groups";
     private static final String KEY_FORWARDS = "forwards";
     private static final String KEY_LOGS = "logs";
+    private static final String KEY_NOTIFICATIONS = "notifications";
+    private static final String KEY_NOTIFICATIONS_READ_TIME = "notifications_read_time";
+    private static final String KEY_LAST_VERSION_CODE = "last_version_code";
+
+    /** The number of notifications that are kept. */
+    private static final int NOTIFICATIONS_MAX = 50;
 
     /** The number of connections that are kept in the logs. */
     private static final int LOGS_MAX = 200;
@@ -459,6 +472,64 @@ public class TerminowStore {
         } catch (JSONException e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Failed to save log", e);
         }
+    }
+
+    /** Get the notifications, the newest first. */
+    @NonNull
+    public List<Notification> getNotifications() {
+        List<Notification> notifications = new ArrayList<>();
+        try {
+            JSONArray array = new JSONArray(mPreferences.getString(KEY_NOTIFICATIONS, "[]"));
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject object = array.getJSONObject(i);
+                Notification notification = new Notification();
+                notification.time = object.optLong("time");
+                notification.title = object.optString("title");
+                notification.text = object.optString("text");
+                notifications.add(notification);
+            }
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to load notifications", e);
+        }
+        return notifications;
+    }
+
+    public void addNotification(@NonNull String title, @NonNull String text) {
+        try {
+            JSONArray oldArray = new JSONArray(mPreferences.getString(KEY_NOTIFICATIONS, "[]"));
+            JSONArray array = new JSONArray();
+            JSONObject object = new JSONObject();
+            object.put("time", System.currentTimeMillis());
+            object.put("title", title);
+            object.put("text", text);
+            array.put(object);
+            for (int i = 0; i < oldArray.length() && array.length() < NOTIFICATIONS_MAX; i++)
+                array.put(oldArray.get(i));
+            mPreferences.edit().putString(KEY_NOTIFICATIONS, array.toString()).apply();
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to save notification", e);
+        }
+    }
+
+    /** Whether there are notifications newer than when the notifications panel was last opened. */
+    public boolean hasUnreadNotifications() {
+        List<Notification> notifications = getNotifications();
+        return !notifications.isEmpty() && notifications.get(0).time > mPreferences.getLong(KEY_NOTIFICATIONS_READ_TIME, 0);
+    }
+
+    public void markNotificationsRead() {
+        mPreferences.edit().putLong(KEY_NOTIFICATIONS_READ_TIME, System.currentTimeMillis()).apply();
+    }
+
+    /**
+     * Save the version code of the app and return the one that was saved before, 0 if none was,
+     * like on the first start after the app was installed.
+     */
+    public int updateLastVersionCode(int versionCode) {
+        int lastVersionCode = mPreferences.getInt(KEY_LAST_VERSION_CODE, 0);
+        if (lastVersionCode != versionCode)
+            mPreferences.edit().putInt(KEY_LAST_VERSION_CODE, versionCode).apply();
+        return lastVersionCode;
     }
 
     public void clearLogs() {

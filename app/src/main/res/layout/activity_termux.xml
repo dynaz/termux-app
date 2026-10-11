@@ -56,14 +56,31 @@
                 android:orientation="horizontal" />
         </HorizontalScrollView>
 
-        <ImageButton
-            android:id="@+id/terminow_new_tab"
-            android:visibility="gone"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="@null"
-            android:contentDescription="@string/action_new_session"
-            android:src="@drawable/ic_terminow_add" />
+        <FrameLayout
+            android:id="@+id/terminow_notifications_button"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginStart="6dp"
+            android:contentDescription="@string/terminow_notifications">
+
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:padding="10dp"
+                android:src="@drawable/ic_terminow_bell"
+                tools:ignore="ContentDescription" />
+
+            <!-- Shown while there are notifications that were not seen yet -->
+            <View
+                android:id="@+id/terminow_notifications_badge"
+                android:layout_width="9dp"
+                android:layout_height="9dp"
+                android:layout_gravity="top|end"
+                android:layout_marginTop="9dp"
+                android:layout_marginEnd="10dp"
+                android:background="@drawable/terminow_badge"
+                android:visibility="gone" />
+        </FrameLayout>
     </LinearLayout>
 
     <FrameLayout

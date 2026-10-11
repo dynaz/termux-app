@@ -426,5 +426,10 @@
     <string name="terminow_settings_font_and_colours">Font &amp; colours</string>
     <string name="terminow_settings_start_in_tmux">Start local terminals in tmux</string>
     <string name="terminow_settings_start_in_tmux_summary">Each local terminal opens a tmux session, which keeps running when its tab is closed</string>
+    <string name="terminow_notifications">Notifications</string>
+    <string name="terminow_notifications_empty_title">You\'re up-to-date! 🎉</string>
+    <string name="terminow_notifications_empty">Check back later for updates and notifications</string>
+    <string name="terminow_notification_updated">Updated to version %s</string>
+    <string name="terminow_notification_updated_text">TermiNow was updated. See the Settings page for the new options.</string>
     <string name="terminow_close_session">Close this session?</string>
 </resources>

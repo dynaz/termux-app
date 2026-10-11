@@ -49,6 +49,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 
+import com.termux.BuildConfig;
 import com.termux.R;
 import com.termux.app.TermuxActivity;
 import com.termux.app.TermuxService;
@@ -124,6 +125,7 @@ public class TerminowHome {
     private final View mTabBar;
     private final View mHomeButton;
     private final HorizontalScrollView mTabsScrollView;
+    private final View mNotificationsBadge;
     private final LinearLayout mTabsView;
     private final View mRailHosts;
     private final View mRailSnippets;
@@ -162,6 +164,9 @@ public class TerminowHome {
         mTabBar = activity.findViewById(R.id.terminow_tab_bar);
         mHomeButton = activity.findViewById(R.id.terminow_home_button);
         mTabsScrollView = activity.findViewById(R.id.terminow_tabs_scroll);
+        mNotificationsBadge = activity.findViewById(R.id.terminow_notifications_badge);
+        activity.findViewById(R.id.terminow_notifications_button).setOnClickListener(v ->
+            new TerminowNotifications(mActivity, mStore, this::updateNotificationsBadge).show());
         mTabsView = activity.findViewById(R.id.terminow_tabs);
         mRailHosts = activity.findViewById(R.id.terminow_rail_hosts);
         mRailSnippets = activity.findViewById(R.id.terminow_rail_snippets);
@@ -189,6 +194,7 @@ public class TerminowHome {
         mSettingsScrollView = activity.findViewById(R.id.terminow_settings_scroll);
         mSettings = new TerminowSettings(activity, mStore, activity.findViewById(R.id.terminow_settings));
         TerminowSettings.applyScreenshotsBlocked(activity, mStore);
+        addUpdateNotification();
 
         GridView gridView = activity.findViewById(R.id.terminow_grid);
         gridView.setAdapter(mAdapter);
@@ -228,6 +234,20 @@ public class TerminowHome {
         return mHomeView.getVisibility() == View.VISIBLE;
     }
 
+    private void updateNotificationsBadge() {
+        mNotificationsBadge.setVisibility(mStore.hasUnreadNotifications() ? View.VISIBLE : View.GONE);
+    }
+
+    /** Add a notification about an update of the app, on the first start after it. */
+    private void addUpdateNotification() {
+        int lastVersionCode = mStore.updateLastVersionCode(BuildConfig.VERSION_CODE);
+        // Not when the app was just installed, or the version was not changed
+        if (lastVersionCode == 0 || lastVersionCode == BuildConfig.VERSION_CODE) return;
+        mStore.addNotification(mActivity.getString(R.string.terminow_notification_updated,
+            BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")"),
+            mActivity.getString(R.string.terminow_notification_updated_text));
+    }
+
     /** Show the home screen over the terminal. */
     public void show() {
         mHomeView.setVisibility(View.VISIBLE);
@@ -262,6 +282,7 @@ public class TerminowHome {
         mTabBar.setBackgroundColor(ContextCompat.getColor(mActivity,
             homeVisible ? R.color.terminow_bar_home : R.color.terminow_bar_terminal));
         mHomeButton.setBackgroundResource(homeVisible ? R.drawable.terminow_tab : R.drawable.terminow_tab_idle);
+        updateNotificationsBadge();
         updateTabs();
         if (homeVisible)
             updateItems();

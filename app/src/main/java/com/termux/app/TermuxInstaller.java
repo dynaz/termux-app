@@ -112,7 +112,14 @@ final class TermuxInstaller {
                 // otherwise sessions would only ever start the system shell without any packages.
                 Logger.logInfo(LOG_TAG, "The termux prefix directory \"" + TERMUX_PREFIX_DIR_PATH + "\" exists but has no login script, installing the bootstrap again.");
             } else {
-                whenDone.run();
+                // Repair the files that an older bootstrap installed with the data directory of
+                // another app package, before sessions use them
+                new Thread(() -> {
+                    int count = TerminowPrefixRepair.repairIfNeeded(activity);
+                    if (count > 0)
+                        Logger.logInfo(LOG_TAG, "Repaired " + count + " files of the prefix");
+                    activity.runOnUiThread(whenDone);
+                }).start();
                 return;
             }
         } else if (FileUtils.fileExists(TERMUX_PREFIX_DIR_PATH, false)) {
