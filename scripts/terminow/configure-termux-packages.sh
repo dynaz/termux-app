@@ -97,6 +97,12 @@ replace_line packages/proot/build.sh '^([[:space:]]*)chmod 700 \$TERMUX_PREFIX/b
 	'\1chmod 700 $TERMUX_PREFIX/bin/termux-chroot\n\1mv "$TERMUX_PREFIX/libexec/proot/loader" "$TERMUX_PREFIX/libexec/proot/loader.elf"'
 grep -q 'loader\.elf' packages/proot/build.sh || fail "The loader was not renamed in packages/proot/build.sh"
 
+# The configure script of termux-tools takes its paths from environment variables and falls
+# back to the ones of com.termux, but termux-packages does not export them, so pkg, login and
+# the other scripts of termux-tools would use the data directory of com.termux.
+replace_line packages/termux-tools/build.sh '^([[:space:]]*)autoreconf -vfi$' \
+	'\1export TERMUX_APP_PACKAGE TERMUX_PREFIX TERMUX_ANDROID_HOME TERMUX_BASE_DIR="$TERMUX__ROOTFS" TERMUX_CACHE_DIR="$TERMUX_APP__DATA_DIR/cache"\n\1autoreconf -vfi'
+
 echo "[*] Adding the repository key to termux-keyring..."
 cp "$TERMINOW_REPO_PUBLIC_KEY_FILE" packages/termux-keyring/terminow.gpg
 replace_line packages/termux-keyring/build.sh '^([[:space:]]*)install -Dm600 "\$TERMUX_PKG_BUILDER_DIR/termux-autobuilds\.gpg" "\$GPG_SHARE_DIR"$' \

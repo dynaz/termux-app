@@ -57,3 +57,7 @@ if [[ ",$TERMINOW_REPO_PACKAGES," == *",proot,"* ]]; then
 fi
 
 ls -l output/bootstrap-*.zip
+
+for archive in output/bootstrap-*.zip; do
+	python3 -I "$script_dir/check-bootstrap.py" "$archive" "$TERMINOW_PACKAGE_NAME"
+done
