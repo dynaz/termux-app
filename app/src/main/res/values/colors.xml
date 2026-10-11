@@ -18,6 +18,7 @@
     <color name="terminow_host_ssh">#F2585B</color>
     <color name="terminow_host_mosh">#0D5C91</color>
     <color name="terminow_host_local">#2E7D5B</color>
+    <color name="terminow_host_group">#4A5073</color>
 
     <!-- Host form panel. -->
     <color name="terminow_panel">#1E2233</color>

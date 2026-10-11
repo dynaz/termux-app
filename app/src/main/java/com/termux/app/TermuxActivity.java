@@ -640,6 +640,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     public void onBackPressed() {
         if (getDrawer().isDrawerOpen(Gravity.LEFT)) {
             getDrawer().closeDrawers();
+        } else if (mTerminowHome != null && mTerminowHome.onBackPressed()) {
+            // Went back to all hosts from a group of the home screen
         } else if (isHomeVisible() && mTermuxService != null && !mTermuxService.isTermuxSessionsEmpty()) {
             // Go back to the terminal if there is a session to show
             mTerminowHome.hide();

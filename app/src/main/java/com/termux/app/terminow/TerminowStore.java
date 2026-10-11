@@ -14,12 +14,17 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Pattern;
 
 import javax.crypto.Cipher;
@@ -42,6 +47,8 @@ public class TerminowStore {
         public String password = "";
         /** The path of the private key file to log in with, empty to use the default keys. */
         public String keyPath = "";
+        /** The name of the group that the host is in, empty if it is not in a group. */
+        public String group = "";
 
         /** The name shown for the host and used as the name of its sessions. */
         @NonNull
@@ -49,11 +56,17 @@ public class TerminowStore {
             return label.isEmpty() ? address : label;
         }
 
-        /** The command run in a new session to connect to the host. */
+        /**
+         * The command run in a new session to connect to the host.
+         *
+         * @param keepAliveInterval The seconds for `ServerAliveInterval` of ssh, 0 to not set it.
+         * @param keepAliveCountMax The count for `ServerAliveCountMax` of ssh.
+         */
         @NonNull
-        public String getCommand() {
+        public String getCommand(int keepAliveInterval, int keepAliveCountMax) {
             String target = (username.isEmpty() ? "" : username + "@") + address;
-            String sshOptions = (keyPath.isEmpty() ? "" : " -i " + keyPath) + (port == 22 ? "" : " -p " + port);
+            String sshOptions = (keyPath.isEmpty() ? "" : " -i " + keyPath) + (port == 22 ? "" : " -p " + port) +
+                (keepAliveInterval <= 0 ? "" : " -o ServerAliveInterval=" + keepAliveInterval + " -o ServerAliveCountMax=" + keepAliveCountMax);
             if (mosh)
                 return "mosh" + (sshOptions.isEmpty() ? "" : " --ssh='ssh" + sshOptions + "'") + " " + target;
             else
@@ -84,6 +97,10 @@ public class TerminowStore {
     private static final String PREFERENCES_NAME = "terminow_home";
     private static final String KEY_HOSTS = "hosts";
     private static final String KEY_SNIPPETS = "snippets";
+    private static final String KEY_GROUPS = "groups";
+    private static final String KEY_KEEP_ALIVE_INTERVAL = "keep_alive_interval";
+    private static final String KEY_KEEP_ALIVE_COUNT_MAX = "keep_alive_count_max";
+    private static final String KEY_SCREENSHOTS_BLOCKED = "screenshots_blocked";
 
     private static final String LOG_TAG = "TerminowStore";
 
@@ -123,6 +140,7 @@ public class TerminowStore {
                 host.username = object.optString("username");
                 host.mosh = object.optBoolean("mosh");
                 host.keyPath = object.optString("keyPath");
+                host.group = object.optString("group");
                 host.password = decryptPassword(object.optString("password"));
                 // Never run anything from storage that would not have passed validation when saved
                 if (isValidAddress(host.address) && isValidUsername(host.username) && isValidPort(host.port) &&
@@ -146,6 +164,7 @@ public class TerminowStore {
                 object.put("username", host.username);
                 object.put("mosh", host.mosh);
                 object.put("keyPath", host.keyPath);
+                object.put("group", host.group);
                 object.put("password", encryptPassword(host.password));
                 array.put(object);
             }
@@ -206,6 +225,121 @@ public class TerminowStore {
             Logger.logStackTraceWithMessage(LOG_TAG, "Failed to decrypt password", e);
             return "";
         }
+    }
+
+    /** The seconds after which ssh checks that a host that sent nothing is still connected, 0 to not check. */
+    public int getKeepAliveInterval() {
+        return Math.max(0, mPreferences.getInt(KEY_KEEP_ALIVE_INTERVAL, 60));
+    }
+
+    public void setKeepAliveInterval(int seconds) {
+        mPreferences.edit().putInt(KEY_KEEP_ALIVE_INTERVAL, seconds).apply();
+    }
+
+    /** The number of unanswered checks after which ssh disconnects from a host. */
+    public int getKeepAliveCountMax() {
+        return Math.max(1, mPreferences.getInt(KEY_KEEP_ALIVE_COUNT_MAX, 10));
+    }
+
+    public void setKeepAliveCountMax(int count) {
+        mPreferences.edit().putInt(KEY_KEEP_ALIVE_COUNT_MAX, count).apply();
+    }
+
+    public boolean areScreenshotsBlocked() {
+        return mPreferences.getBoolean(KEY_SCREENSHOTS_BLOCKED, false);
+    }
+
+    public void setScreenshotsBlocked(boolean blocked) {
+        mPreferences.edit().putBoolean(KEY_SCREENSHOTS_BLOCKED, blocked).apply();
+    }
+
+    /** Get the names of the groups that hosts can be put in. */
+    @NonNull
+    public List<String> getGroups() {
+        List<String> groups = new ArrayList<>();
+        try {
+            JSONArray array = new JSONArray(mPreferences.getString(KEY_GROUPS, "[]"));
+            for (int i = 0; i < array.length(); i++) {
+                String group = array.optString(i).trim();
+                if (!group.isEmpty() && !groups.contains(group))
+                    groups.add(group);
+            }
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to load groups", e);
+        }
+        return groups;
+    }
+
+    public void setGroups(@NonNull List<String> groups) {
+        mPreferences.edit().putString(KEY_GROUPS, new JSONArray(groups).toString()).apply();
+    }
+
+    /**
+     * Read the hosts of an ssh config file, like `~/.ssh/config`. The `Host` entries with a
+     * pattern and the options of hosts other than `HostName`, `User`, `Port` and `IdentityFile`
+     * are skipped.
+     */
+    @NonNull
+    public static List<Host> readSshConfigHosts(@NonNull File configFile) throws IOException {
+        List<Host> hosts = new ArrayList<>();
+        List<Host> currentHosts = new ArrayList<>();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(configFile), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (line.isEmpty() || line.startsWith("#")) continue;
+
+                // The keyword and its arguments are separated by whitespace or an equals sign
+                String[] parts = line.split("\\s*=\\s*|\\s+", 2);
+                if (parts.length < 2) continue;
+                String keyword = parts[0].toLowerCase(Locale.ROOT);
+                String value = parts[1].trim();
+                if (value.length() >= 2 && value.startsWith("\"") && value.endsWith("\""))
+                    value = value.substring(1, value.length() - 1);
+
+                if (keyword.equals("host")) {
+                    currentHosts = new ArrayList<>();
+                    for (String alias : value.split("\\s+")) {
+                        // A pattern does not name a host to connect to
+                        if (alias.isEmpty() || alias.contains("*") || alias.contains("?") || alias.startsWith("!")) continue;
+                        Host host = new Host();
+                        host.label = alias;
+                        host.address = alias;
+                        currentHosts.add(host);
+                        hosts.add(host);
+                    }
+                } else if (keyword.equals("match")) {
+                    currentHosts = new ArrayList<>();
+                } else {
+                    for (Host host : currentHosts) {
+                        // The first value of an option is the one that ssh uses
+                        if (keyword.equals("hostname") && host.address.equals(host.label)) {
+                            host.address = value;
+                        } else if (keyword.equals("user") && host.username.isEmpty()) {
+                            host.username = value;
+                        } else if (keyword.equals("port") && host.port == 22) {
+                            try {
+                                host.port = Integer.parseInt(value);
+                            } catch (NumberFormatException e) {
+                                host.port = -1;
+                            }
+                        } else if (keyword.equals("identityfile") && host.keyPath.isEmpty()) {
+                            host.keyPath = value;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Only return the hosts that could also have been saved from the host form
+        List<Host> validHosts = new ArrayList<>();
+        for (Host host : hosts) {
+            if (!isValidKeyPath(host.keyPath))
+                host.keyPath = "";
+            if (isValidAddress(host.address) && isValidUsername(host.username) && isValidPort(host.port))
+                validHosts.add(host);
+        }
+        return validHosts;
     }
 
     @NonNull

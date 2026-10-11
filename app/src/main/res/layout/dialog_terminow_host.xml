@@ -99,6 +99,20 @@
                         android:id="@+id/terminow_host_label"
                         style="@style/TerminowPanelField"
                         android:inputType="text" />
+
+                    <TextView
+                        style="@style/TerminowPanelLabel"
+                        android:labelFor="@+id/terminow_host_group"
+                        android:text="@string/terminow_host_group" />
+
+                    <!-- Not editable, tapping it shows the groups to pick from -->
+                    <EditText
+                        android:id="@+id/terminow_host_group"
+                        style="@style/TerminowPanelField"
+                        android:cursorVisible="false"
+                        android:focusable="false"
+                        android:hint="@string/terminow_host_group_none"
+                        android:inputType="none" />
                 </LinearLayout>
 
                 <TextView

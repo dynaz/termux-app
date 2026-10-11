@@ -41,6 +41,7 @@ import com.termux.shared.view.ViewUtils;
 import com.termux.terminal.TerminalSession;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -55,6 +56,7 @@ public class TerminowHome {
 
     private static final int PAGE_HOSTS = 0;
     private static final int PAGE_SNIPPETS = 1;
+    private static final int PAGE_SETTINGS = 2;
 
     /** How long to wait for the shell of a new session to start before giving up on sending it a command. */
     private static final int WRITE_RETRY_COUNT = 50;
@@ -83,12 +85,23 @@ public class TerminowHome {
     private final LinearLayout mTabsView;
     private final View mRailHosts;
     private final View mRailSnippets;
+    private final View mRailSettings;
+    private final View mHeaderView;
+    private final View mGridView;
+    private final View mFabView;
+    private final View mSettingsScrollView;
+    private final TerminowSettings mSettings;
     private final EditText mSearchView;
     private final TextView mSectionTitleView;
+    private final View mActionsView;
     private final TextView mEmptyView;
     private final ItemsAdapter mAdapter = new ItemsAdapter();
 
     private int mPage = PAGE_HOSTS;
+    /** The group whose hosts are shown on the hosts page, {@code null} for the hosts that are not in a group. */
+    @Nullable
+    private String mCurrentGroup;
+    private List<String> mGroups = new ArrayList<>();
     private List<TerminowStore.Host> mHosts = new ArrayList<>();
     private List<TerminowStore.Snippet> mSnippets = new ArrayList<>();
     /** The items of the current page that match the search, a null item is the local terminal. */
@@ -114,14 +127,26 @@ public class TerminowHome {
 
         mRailHosts.setOnClickListener(v -> setPage(PAGE_HOSTS));
         mRailSnippets.setOnClickListener(v -> setPage(PAGE_SNIPPETS));
-        View railSettings = activity.findViewById(R.id.terminow_rail_settings);
-        railSettings.setOnClickListener(v -> ActivityUtils.startActivity(mActivity, new Intent(mActivity, SettingsActivity.class)));
-        setRailItemSelected(railSettings, false);
+        mRailSettings = activity.findViewById(R.id.terminow_rail_settings);
+        mRailSettings.setOnClickListener(v -> setPage(PAGE_SETTINGS));
+        mHeaderView = activity.findViewById(R.id.terminow_header);
+        mGridView = activity.findViewById(R.id.terminow_grid);
+        mFabView = activity.findViewById(R.id.terminow_fab);
+        mSettingsScrollView = activity.findViewById(R.id.terminow_settings_scroll);
+        mSettings = new TerminowSettings(activity, mStore, activity.findViewById(R.id.terminow_settings));
+        TerminowSettings.applyScreenshotsBlocked(activity, mStore);
 
         GridView gridView = activity.findViewById(R.id.terminow_grid);
         gridView.setAdapter(mAdapter);
         gridView.setOnItemClickListener((parent, view, position, id) -> onItemClick(mItems.get(position)));
         gridView.setOnItemLongClickListener((parent, view, position, id) -> onItemLongClick(mItems.get(position)));
+
+        mActionsView = activity.findViewById(R.id.terminow_actions);
+        activity.findViewById(R.id.terminow_action_new_host).setOnClickListener(v -> showHostDialog(null));
+        activity.findViewById(R.id.terminow_action_new_group).setOnClickListener(v -> showGroupDialog(null));
+        activity.findViewById(R.id.terminow_action_import).setOnClickListener(v -> showImportDialog());
+        // The title of a group goes back to all hosts
+        mSectionTitleView.setOnClickListener(v -> onBackPressed());
 
         activity.findViewById(R.id.terminow_fab).setOnClickListener(v -> {
             if (mPage == PAGE_HOSTS)
@@ -152,6 +177,11 @@ public class TerminowHome {
         KeyboardUtils.hideSoftKeyboard(mActivity, mActivity.getTerminalView());
         mHosts = mStore.getHosts();
         mSnippets = mStore.getSnippets();
+        mGroups = mStore.getGroups();
+        if (mCurrentGroup != null && !mGroups.contains(mCurrentGroup))
+            mCurrentGroup = null;
+        if (mPage == PAGE_SETTINGS)
+            mSettings.update();
         refresh();
     }
 
@@ -273,8 +303,50 @@ public class TerminowHome {
         mPage = page;
         setRailItemSelected(mRailHosts, page == PAGE_HOSTS);
         setRailItemSelected(mRailSnippets, page == PAGE_SNIPPETS);
-        mSectionTitleView.setText(page == PAGE_HOSTS ? R.string.terminow_hosts : R.string.terminow_snippets);
+        setRailItemSelected(mRailSettings, page == PAGE_SETTINGS);
+        mActionsView.setVisibility(page == PAGE_HOSTS ? View.VISIBLE : View.GONE);
+
+        // The settings are shown instead of the list of hosts or snippets and what belongs to it
+        boolean settings = page == PAGE_SETTINGS;
+        mHeaderView.setVisibility(settings ? View.GONE : View.VISIBLE);
+        mSectionTitleView.setVisibility(settings ? View.GONE : View.VISIBLE);
+        mGridView.setVisibility(settings ? View.GONE : View.VISIBLE);
+        mFabView.setVisibility(settings ? View.GONE : View.VISIBLE);
+        mSettingsScrollView.setVisibility(settings ? View.VISIBLE : View.GONE);
+        if (settings)
+            mSettings.update();
+
         updateItems();
+    }
+
+    /** Go back to all hosts from a group. Returns {@code false} if there was nothing to go back from. */
+    public boolean onBackPressed() {
+        if (!isVisible() || mPage != PAGE_HOSTS || mCurrentGroup == null) return false;
+        mCurrentGroup = null;
+        updateItems();
+        return true;
+    }
+
+    private void updateSectionTitle() {
+        if (mPage != PAGE_HOSTS)
+            mSectionTitleView.setText(R.string.terminow_snippets);
+        else if (mCurrentGroup == null)
+            mSectionTitleView.setText(R.string.terminow_hosts);
+        else
+            mSectionTitleView.setText("‹ " + mActivity.getString(R.string.terminow_hosts) + " / " + mCurrentGroup);
+    }
+
+    private boolean isInGroup(@NonNull TerminowStore.Host host, @Nullable String group) {
+        // The hosts of a group that does not exist anymore are shown with the hosts without a group
+        if (group == null) return host.group.isEmpty() || !mGroups.contains(host.group);
+        return group.equals(host.group);
+    }
+
+    private int getHostCount(@NonNull String group) {
+        int count = 0;
+        for (TerminowStore.Host host : mHosts)
+            if (group.equals(host.group)) count++;
+        return count;
     }
 
     private void setRailItemSelected(@NonNull View railItem, boolean selected) {
@@ -292,12 +364,29 @@ public class TerminowHome {
     private void updateItems() {
         String query = mSearchView.getText().toString().trim().toLowerCase(Locale.ROOT);
 
+        if (mPage == PAGE_SETTINGS) {
+            mEmptyView.setVisibility(View.GONE);
+            return;
+        }
+
+        updateSectionTitle();
         mItems.clear();
-        if (mPage == PAGE_HOSTS) {
-            if (query.isEmpty() || mActivity.getString(R.string.terminow_local_terminal).toLowerCase(Locale.ROOT).contains(query))
+        if (mPage == PAGE_HOSTS && query.isEmpty()) {
+            if (mCurrentGroup == null) {
+                mItems.add(null);
+                for (String group : mGroups)
+                    mItems.add(new Group(group));
+            }
+            for (TerminowStore.Host host : mHosts) {
+                if (isInGroup(host, mCurrentGroup))
+                    mItems.add(host);
+            }
+        } else if (mPage == PAGE_HOSTS) {
+            // A search is done in the hosts of all groups
+            if (mActivity.getString(R.string.terminow_local_terminal).toLowerCase(Locale.ROOT).contains(query))
                 mItems.add(null);
             for (TerminowStore.Host host : mHosts) {
-                if (query.isEmpty() || host.getTitle().toLowerCase(Locale.ROOT).contains(query) ||
+                if (host.getTitle().toLowerCase(Locale.ROOT).contains(query) ||
                     host.address.toLowerCase(Locale.ROOT).contains(query))
                     mItems.add(host);
             }
@@ -313,15 +402,19 @@ public class TerminowHome {
         if (!mItems.isEmpty()) {
             mEmptyView.setVisibility(View.GONE);
         } else {
-            mEmptyView.setText(query.isEmpty() ? R.string.terminow_no_snippets : R.string.terminow_no_results);
+            mEmptyView.setText(!query.isEmpty() ? R.string.terminow_no_results :
+                mPage == PAGE_HOSTS ? R.string.terminow_group_empty : R.string.terminow_no_snippets);
             mEmptyView.setVisibility(View.VISIBLE);
         }
     }
 
     private void onItemClick(@Nullable Object item) {
-        if (item == null)
+        if (item == null) {
             openLocalTerminal();
-        else if (item instanceof TerminowStore.Host)
+        } else if (item instanceof Group) {
+            mCurrentGroup = ((Group) item).name;
+            updateItems();
+        } else if (item instanceof TerminowStore.Host)
             connect((TerminowStore.Host) item);
         else
             runSnippet((TerminowStore.Snippet) item);
@@ -332,7 +425,20 @@ public class TerminowHome {
 
         CharSequence[] actions = {mActivity.getString(R.string.terminow_edit), mActivity.getString(R.string.terminow_delete)};
         new AlertDialog.Builder(mActivity).setItems(actions, (dialog, which) -> {
-            if (item instanceof TerminowStore.Host) {
+            if (item instanceof Group) {
+                String group = ((Group) item).name;
+                if (which == 0) {
+                    showGroupDialog(group);
+                } else {
+                    // The hosts of the group are kept and shown without a group
+                    for (TerminowStore.Host host : mHosts)
+                        if (group.equals(host.group)) host.group = "";
+                    mGroups.remove(group);
+                    mStore.setGroups(mGroups);
+                    mStore.setHosts(mHosts);
+                    updateItems();
+                }
+            } else if (item instanceof TerminowStore.Host) {
                 TerminowStore.Host host = (TerminowStore.Host) item;
                 if (which == 0) {
                     showHostDialog(host);
@@ -365,7 +471,7 @@ public class TerminowHome {
         TerminalSession session = addSession(host.getTitle());
         if (session == null) return;
 
-        writeWhenStarted(session, host.getCommand() + "\r", 0);
+        writeWhenStarted(session, host.getCommand(mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax()) + "\r", 0);
         if (!host.password.isEmpty())
             writePasswordWhenAsked(session, host.password, 0);
     }
@@ -489,9 +595,15 @@ public class TerminowHome {
         EditText usernameView = dialog.findViewById(R.id.terminow_host_username);
         EditText passwordView = dialog.findViewById(R.id.terminow_host_password);
         EditText keyView = dialog.findViewById(R.id.terminow_host_key);
+        EditText groupView = dialog.findViewById(R.id.terminow_host_group);
         Switch moshView = dialog.findViewById(R.id.terminow_host_mosh);
 
         titleView.setText(existingHost == null ? R.string.terminow_new_host : R.string.terminow_edit_host);
+        // A new host is added to the group that is being shown
+        String group = existingHost != null ? existingHost.group : mCurrentGroup;
+        if (group != null && mGroups.contains(group))
+            groupView.setText(group);
+        groupView.setOnClickListener(v -> showGroupPicker(groupView));
         if (existingHost != null) {
             labelView.setText(existingHost.label);
             addressView.setText(existingHost.address);
@@ -548,6 +660,7 @@ public class TerminowHome {
             host.username = username;
             host.password = passwordView.getText().toString();
             host.keyPath = keyPath;
+            host.group = groupView.getText().toString();
             host.mosh = moshView.isChecked();
             if (existingHost == null)
                 mHosts.add(host);
@@ -590,6 +703,112 @@ public class TerminowHome {
             .setTitle(R.string.terminow_host_keys_title)
             .setItems(keys.toArray(new CharSequence[0]), (dialog, which) -> keyView.setText(keys.get(which)))
             .show();
+    }
+
+    /** An item of the hosts page for a group of hosts. */
+    private static class Group {
+        final String name;
+
+        Group(@NonNull String name) {
+            this.name = name;
+        }
+    }
+
+    /** Show a dialog to add a group, or to rename an existing one. */
+    private void showGroupDialog(@Nullable String existingGroup) {
+        LinearLayout form = createForm();
+        EditText nameView = addField(form, R.string.terminow_group_name, InputType.TYPE_CLASS_TEXT);
+        if (existingGroup != null)
+            nameView.setText(existingGroup);
+
+        showFormDialog(existingGroup == null ? R.string.terminow_new_group : R.string.terminow_rename_group, form, () -> {
+            String name = nameView.getText().toString().trim();
+            if (name.equals(existingGroup)) return true;
+            if (name.isEmpty() || mGroups.contains(name)) {
+                mActivity.showToast(mActivity.getString(R.string.terminow_group_invalid), true);
+                return false;
+            }
+
+            if (existingGroup == null) {
+                mGroups.add(name);
+            } else {
+                mGroups.set(mGroups.indexOf(existingGroup), name);
+                for (TerminowStore.Host host : mHosts)
+                    if (existingGroup.equals(host.group)) host.group = name;
+                mStore.setHosts(mHosts);
+            }
+            mStore.setGroups(mGroups);
+            updateItems();
+            return true;
+        });
+    }
+
+    /** Show the groups to pick the group of a host from in the host form. */
+    private void showGroupPicker(@NonNull EditText groupView) {
+        List<String> names = new ArrayList<>();
+        names.add(mActivity.getString(R.string.terminow_host_group_none));
+        names.addAll(mGroups);
+        new AlertDialog.Builder(mActivity)
+            .setTitle(R.string.terminow_host_group)
+            .setItems(names.toArray(new CharSequence[0]), (dialog, which) ->
+                groupView.setText(which == 0 ? "" : mGroups.get(which - 1)))
+            .show();
+    }
+
+    /** Ask to import the hosts of the ssh config file of the home directory. */
+    private void showImportDialog() {
+        final File configFile = new File(TermuxConstants.TERMUX_HOME_DIR_PATH, ".ssh/config");
+        if (!configFile.isFile()) {
+            new AlertDialog.Builder(mActivity)
+                .setTitle(R.string.terminow_import_title)
+                .setMessage(R.string.terminow_import_no_file)
+                .setPositiveButton(android.R.string.ok, null)
+                .show();
+            return;
+        }
+
+        new AlertDialog.Builder(mActivity)
+            .setTitle(R.string.terminow_import_title)
+            .setMessage(R.string.terminow_import_message)
+            .setPositiveButton(R.string.terminow_import_confirm, (dialog, which) -> importHosts(configFile))
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    private void importHosts(@NonNull File configFile) {
+        List<TerminowStore.Host> importedHosts;
+        try {
+            importedHosts = TerminowStore.readSshConfigHosts(configFile);
+        } catch (IOException e) {
+            mActivity.showToast(e.getMessage() != null ? e.getMessage() : e.toString(), true);
+            return;
+        }
+
+        int count = 0;
+        for (TerminowStore.Host importedHost : importedHosts) {
+            boolean exists = false;
+            for (TerminowStore.Host host : mHosts) {
+                if (host.address.equals(importedHost.address) && host.port == importedHost.port &&
+                    host.username.equals(importedHost.username)) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (exists) continue;
+
+            // Import into the group that is being shown
+            importedHost.group = mCurrentGroup != null ? mCurrentGroup : "";
+            mHosts.add(importedHost);
+            count++;
+        }
+
+        if (count > 0) {
+            mStore.setHosts(mHosts);
+            updateItems();
+            mActivity.showToast(mActivity.getResources().getQuantityString(R.plurals.terminow_import_done, count, count), true);
+        } else {
+            mActivity.showToast(mActivity.getString(R.string.terminow_import_none), true);
+        }
     }
 
     private void showSnippetDialog(@Nullable TerminowStore.Snippet existingSnippet) {
@@ -710,7 +929,14 @@ public class TerminowHome {
             int iconRes;
             int iconColorRes;
             int sessionCount = 0;
-            if (item == null) {
+            if (item instanceof Group) {
+                String group = ((Group) item).name;
+                int hostCount = getHostCount(group);
+                iconRes = R.drawable.ic_terminow_group;
+                iconColorRes = R.color.terminow_host_group;
+                titleView.setText(group);
+                subtitleView.setText(mActivity.getResources().getQuantityString(R.plurals.terminow_group_hosts, hostCount, hostCount));
+            } else if (item == null) {
                 iconRes = R.drawable.ic_terminow_terminal;
                 iconColorRes = R.color.terminow_host_local;
                 titleView.setText(R.string.terminow_local_terminal);
