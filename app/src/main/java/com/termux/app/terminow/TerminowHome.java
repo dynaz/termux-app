@@ -2,6 +2,9 @@ package com.termux.app.terminow;
 
 import android.app.AlertDialog;
 import android.app.Dialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.PorterDuff;
 import android.os.Handler;
@@ -33,6 +36,7 @@ import com.termux.app.TermuxActivity;
 import com.termux.app.TermuxService;
 import com.termux.app.activities.SettingsActivity;
 import com.termux.shared.activity.ActivityUtils;
+import com.termux.shared.logger.Logger;
 import com.termux.shared.shell.ShellUtils;
 import com.termux.shared.termux.TermuxConstants;
 import com.termux.shared.termux.shell.command.runner.terminal.TermuxSession;
@@ -40,10 +44,17 @@ import com.termux.shared.view.KeyboardUtils;
 import com.termux.shared.view.ViewUtils;
 import com.termux.terminal.TerminalSession;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
@@ -57,6 +68,12 @@ public class TerminowHome {
     private static final int PAGE_HOSTS = 0;
     private static final int PAGE_SNIPPETS = 1;
     private static final int PAGE_SETTINGS = 2;
+    private static final int PAGE_KEYCHAIN = 3;
+    private static final int PAGE_FORWARDING = 4;
+    private static final int PAGE_KNOWN_HOSTS = 5;
+    private static final int PAGE_LOGS = 6;
+
+    private static final Pattern KEY_NAME_PATTERN = Pattern.compile("[A-Za-z0-9_][A-Za-z0-9._-]*");
 
     /** How long to wait for the shell of a new session to start before giving up on sending it a command. */
     private static final int WRITE_RETRY_COUNT = 50;
@@ -74,6 +91,8 @@ public class TerminowHome {
     /** The host form takes the whole width of screens narrower than this. */
     private static final int HOST_PANEL_MIN_SCREEN_WIDTH_DP = 600;
 
+    private static final String LOG_TAG = "TerminowHome";
+
     private final TermuxActivity mActivity;
     private final TerminowStore mStore;
     private final Handler mHandler = new Handler(Looper.getMainLooper());
@@ -86,6 +105,10 @@ public class TerminowHome {
     private final View mRailHosts;
     private final View mRailSnippets;
     private final View mRailSettings;
+    private final View mRailKeychain;
+    private final View mRailForwarding;
+    private final View mRailKnownHosts;
+    private final View mRailLogs;
     private final View mHeaderView;
     private final View mGridView;
     private final View mFabView;
@@ -102,6 +125,7 @@ public class TerminowHome {
     @Nullable
     private String mCurrentGroup;
     private List<String> mGroups = new ArrayList<>();
+    private List<TerminowStore.Forward> mForwards = new ArrayList<>();
     private List<TerminowStore.Host> mHosts = new ArrayList<>();
     private List<TerminowStore.Snippet> mSnippets = new ArrayList<>();
     /** The items of the current page that match the search, a null item is the local terminal. */
@@ -127,6 +151,14 @@ public class TerminowHome {
 
         mRailHosts.setOnClickListener(v -> setPage(PAGE_HOSTS));
         mRailSnippets.setOnClickListener(v -> setPage(PAGE_SNIPPETS));
+        mRailKeychain = activity.findViewById(R.id.terminow_rail_keychain);
+        mRailKeychain.setOnClickListener(v -> setPage(PAGE_KEYCHAIN));
+        mRailForwarding = activity.findViewById(R.id.terminow_rail_forwarding);
+        mRailForwarding.setOnClickListener(v -> setPage(PAGE_FORWARDING));
+        mRailKnownHosts = activity.findViewById(R.id.terminow_rail_known_hosts);
+        mRailKnownHosts.setOnClickListener(v -> setPage(PAGE_KNOWN_HOSTS));
+        mRailLogs = activity.findViewById(R.id.terminow_rail_logs);
+        mRailLogs.setOnClickListener(v -> setPage(PAGE_LOGS));
         mRailSettings = activity.findViewById(R.id.terminow_rail_settings);
         mRailSettings.setOnClickListener(v -> setPage(PAGE_SETTINGS));
         mHeaderView = activity.findViewById(R.id.terminow_header);
@@ -151,6 +183,10 @@ public class TerminowHome {
         activity.findViewById(R.id.terminow_fab).setOnClickListener(v -> {
             if (mPage == PAGE_HOSTS)
                 showHostDialog(null);
+            else if (mPage == PAGE_KEYCHAIN)
+                showNewKeyDialog();
+            else if (mPage == PAGE_FORWARDING)
+                showNewForwardDialog();
             else
                 showSnippetDialog(null);
         });
@@ -178,6 +214,7 @@ public class TerminowHome {
         mHosts = mStore.getHosts();
         mSnippets = mStore.getSnippets();
         mGroups = mStore.getGroups();
+        mForwards = mStore.getForwards();
         if (mCurrentGroup != null && !mGroups.contains(mCurrentGroup))
             mCurrentGroup = null;
         if (mPage == PAGE_SETTINGS)
@@ -304,6 +341,10 @@ public class TerminowHome {
         setRailItemSelected(mRailHosts, page == PAGE_HOSTS);
         setRailItemSelected(mRailSnippets, page == PAGE_SNIPPETS);
         setRailItemSelected(mRailSettings, page == PAGE_SETTINGS);
+        setRailItemSelected(mRailKeychain, page == PAGE_KEYCHAIN);
+        setRailItemSelected(mRailForwarding, page == PAGE_FORWARDING);
+        setRailItemSelected(mRailKnownHosts, page == PAGE_KNOWN_HOSTS);
+        setRailItemSelected(mRailLogs, page == PAGE_LOGS);
         mActionsView.setVisibility(page == PAGE_HOSTS ? View.VISIBLE : View.GONE);
 
         // The settings are shown instead of the list of hosts or snippets and what belongs to it
@@ -311,7 +352,8 @@ public class TerminowHome {
         mHeaderView.setVisibility(settings ? View.GONE : View.VISIBLE);
         mSectionTitleView.setVisibility(settings ? View.GONE : View.VISIBLE);
         mGridView.setVisibility(settings ? View.GONE : View.VISIBLE);
-        mFabView.setVisibility(settings ? View.GONE : View.VISIBLE);
+        // Known hosts and logs are only added by connecting to hosts
+        mFabView.setVisibility(settings || page == PAGE_KNOWN_HOSTS || page == PAGE_LOGS ? View.GONE : View.VISIBLE);
         mSettingsScrollView.setVisibility(settings ? View.VISIBLE : View.GONE);
         if (settings)
             mSettings.update();
@@ -328,7 +370,15 @@ public class TerminowHome {
     }
 
     private void updateSectionTitle() {
-        if (mPage != PAGE_HOSTS)
+        if (mPage == PAGE_KEYCHAIN)
+            mSectionTitleView.setText(R.string.terminow_keychain);
+        else if (mPage == PAGE_FORWARDING)
+            mSectionTitleView.setText(R.string.terminow_forwarding);
+        else if (mPage == PAGE_KNOWN_HOSTS)
+            mSectionTitleView.setText(R.string.terminow_known_hosts);
+        else if (mPage == PAGE_LOGS)
+            mSectionTitleView.setText(R.string.terminow_logs);
+        else if (mPage != PAGE_HOSTS)
             mSectionTitleView.setText(R.string.terminow_snippets);
         else if (mCurrentGroup == null)
             mSectionTitleView.setText(R.string.terminow_hosts);
@@ -390,6 +440,28 @@ public class TerminowHome {
                     host.address.toLowerCase(Locale.ROOT).contains(query))
                     mItems.add(host);
             }
+        } else if (mPage == PAGE_KEYCHAIN) {
+            for (KeyItem key : getKeys()) {
+                if (query.isEmpty() || key.name.toLowerCase(Locale.ROOT).contains(query))
+                    mItems.add(key);
+            }
+        } else if (mPage == PAGE_FORWARDING) {
+            for (TerminowStore.Forward forward : mForwards) {
+                if (query.isEmpty() || forward.getTitle().toLowerCase(Locale.ROOT).contains(query) ||
+                    forward.host.toLowerCase(Locale.ROOT).contains(query))
+                    mItems.add(forward);
+            }
+        } else if (mPage == PAGE_KNOWN_HOSTS) {
+            for (KnownHost knownHost : getKnownHosts()) {
+                if (query.isEmpty() || knownHost.hosts.toLowerCase(Locale.ROOT).contains(query))
+                    mItems.add(knownHost);
+            }
+        } else if (mPage == PAGE_LOGS) {
+            for (TerminowStore.Log log : mStore.getLogs()) {
+                if (query.isEmpty() || log.title.toLowerCase(Locale.ROOT).contains(query) ||
+                    log.command.toLowerCase(Locale.ROOT).contains(query))
+                    mItems.add(log);
+            }
         } else {
             for (TerminowStore.Snippet snippet : mSnippets) {
                 if (query.isEmpty() || snippet.getTitle().toLowerCase(Locale.ROOT).contains(query) ||
@@ -403,7 +475,11 @@ public class TerminowHome {
             mEmptyView.setVisibility(View.GONE);
         } else {
             mEmptyView.setText(!query.isEmpty() ? R.string.terminow_no_results :
-                mPage == PAGE_HOSTS ? R.string.terminow_group_empty : R.string.terminow_no_snippets);
+                mPage == PAGE_HOSTS ? R.string.terminow_group_empty :
+                mPage == PAGE_KEYCHAIN ? R.string.terminow_no_keys :
+                mPage == PAGE_FORWARDING ? R.string.terminow_no_forwards :
+                mPage == PAGE_KNOWN_HOSTS ? R.string.terminow_no_known_hosts :
+                mPage == PAGE_LOGS ? R.string.terminow_no_logs : R.string.terminow_no_snippets);
             mEmptyView.setVisibility(View.VISIBLE);
         }
     }
@@ -414,14 +490,41 @@ public class TerminowHome {
         } else if (item instanceof Group) {
             mCurrentGroup = ((Group) item).name;
             updateItems();
-        } else if (item instanceof TerminowStore.Host)
+        } else if (item instanceof TerminowStore.Host) {
             connect((TerminowStore.Host) item);
-        else
+        } else if (item instanceof KeyItem) {
+            showKeyActions((KeyItem) item);
+        } else if (item instanceof TerminowStore.Forward) {
+            startForward((TerminowStore.Forward) item);
+        } else if (item instanceof KnownHost) {
+            showRemoveKnownHostDialog((KnownHost) item);
+        } else if (item instanceof TerminowStore.Snippet) {
             runSnippet((TerminowStore.Snippet) item);
+        }
     }
 
     private boolean onItemLongClick(@Nullable Object item) {
         if (item == null) return false;
+
+        if (item instanceof KeyItem) {
+            showKeyActions((KeyItem) item);
+            return true;
+        }
+        if (item instanceof KnownHost) {
+            showRemoveKnownHostDialog((KnownHost) item);
+            return true;
+        }
+        if (item instanceof TerminowStore.Log) {
+            new AlertDialog.Builder(mActivity)
+                .setMessage(R.string.terminow_logs_clear_confirm)
+                .setPositiveButton(R.string.terminow_logs_clear, (dialog, which) -> {
+                    mStore.clearLogs();
+                    updateItems();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+            return true;
+        }
 
         CharSequence[] actions = {mActivity.getString(R.string.terminow_edit), mActivity.getString(R.string.terminow_delete)};
         new AlertDialog.Builder(mActivity).setItems(actions, (dialog, which) -> {
@@ -436,6 +539,15 @@ public class TerminowHome {
                     mGroups.remove(group);
                     mStore.setGroups(mGroups);
                     mStore.setHosts(mHosts);
+                    updateItems();
+                }
+            } else if (item instanceof TerminowStore.Forward) {
+                TerminowStore.Forward forward = (TerminowStore.Forward) item;
+                if (which == 0) {
+                    showForwardDialog(forward, forward.type, forward.host);
+                } else {
+                    mForwards.remove(forward);
+                    mStore.setForwards(mForwards);
                     updateItems();
                 }
             } else if (item instanceof TerminowStore.Host) {
@@ -471,7 +583,34 @@ public class TerminowHome {
         TerminalSession session = addSession(host.getTitle());
         if (session == null) return;
 
-        writeWhenStarted(session, host.getCommand(mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax()) + "\r", 0);
+        String command = host.getCommand(mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
+        mStore.addLog(host.getTitle(), command);
+        writeWhenStarted(session, command + "\r", 0);
+        if (!host.password.isEmpty())
+            writePasswordWhenAsked(session, host.password, 0);
+    }
+
+    @Nullable
+    private TerminowStore.Host getHost(@NonNull String title) {
+        for (TerminowStore.Host host : mHosts)
+            if (host.getTitle().equals(title)) return host;
+        return null;
+    }
+
+    /** Start a session that forwards a port through the host of the forwarding until it is closed. */
+    private void startForward(@NonNull TerminowStore.Forward forward) {
+        TerminowStore.Host host = getHost(forward.host);
+        if (host == null) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_forward_host_missing), true);
+            return;
+        }
+
+        TerminalSession session = addSession(forward.getTitle());
+        if (session == null) return;
+
+        String command = host.getForwardCommand(forward, mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
+        mStore.addLog(forward.getTitle(), command);
+        writeWhenStarted(session, command + "\r", 0);
         if (!host.password.isEmpty())
             writePasswordWhenAsked(session, host.password, 0);
     }
@@ -811,6 +950,264 @@ public class TerminowHome {
         }
     }
 
+    /** An item of the keychain page for a private key file in `~/.ssh`. */
+    private static class KeyItem {
+        final String name;
+        final File file;
+        final File publicFile;
+
+        KeyItem(@NonNull File file) {
+            this.name = file.getName();
+            this.file = file;
+            this.publicFile = new File(file.getPath() + ".pub");
+        }
+    }
+
+    /** An item of the known hosts page for a line of `~/.ssh/known_hosts`. */
+    private static class KnownHost {
+        final String line;
+        final String hosts;
+        final String keyType;
+
+        KnownHost(@NonNull String line, @NonNull String hosts, @NonNull String keyType) {
+            this.line = line;
+            this.hosts = hosts;
+            this.keyType = keyType;
+        }
+    }
+
+    @NonNull
+    private static File getSshDir() {
+        return new File(TermuxConstants.TERMUX_HOME_DIR_PATH, ".ssh");
+    }
+
+    /** Get the private key files in `~/.ssh`. */
+    @NonNull
+    private List<KeyItem> getKeys() {
+        List<KeyItem> keys = new ArrayList<>();
+        File[] files = getSshDir().listFiles();
+        if (files == null) return keys;
+
+        for (File file : files) {
+            String name = file.getName();
+            // Skip public keys and the other files that ssh keeps in the directory
+            if (!file.isFile() || name.endsWith(".pub") || name.startsWith("known_hosts") ||
+                name.equals("config") || name.equals("authorized_keys") || name.equals("environment"))
+                continue;
+            keys.add(new KeyItem(file));
+        }
+        Collections.sort(keys, (a, b) -> a.name.compareTo(b.name));
+        return keys;
+    }
+
+    @NonNull
+    private static List<String> readLines(@NonNull File file) throws IOException {
+        List<String> lines = new ArrayList<>();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null)
+                lines.add(line);
+        }
+        return lines;
+    }
+
+    /** Get the first line of a file, {@code null} if it can not be read. */
+    @Nullable
+    private static String readFirstLine(@NonNull File file) {
+        try {
+            List<String> lines = readLines(file);
+            return lines.isEmpty() ? null : lines.get(0).trim();
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    private void showKeyActions(@NonNull KeyItem key) {
+        CharSequence[] actions = {mActivity.getString(R.string.terminow_key_copy_public), mActivity.getString(R.string.terminow_delete)};
+        new AlertDialog.Builder(mActivity).setTitle(key.name).setItems(actions, (dialog, which) -> {
+            if (which == 0) {
+                String publicKey = key.publicFile.isFile() ? readFirstLine(key.publicFile) : null;
+                if (publicKey == null || publicKey.isEmpty()) {
+                    mActivity.showToast(mActivity.getString(R.string.terminow_key_no_public), true);
+                    return;
+                }
+                ClipboardManager clipboardManager = (ClipboardManager) mActivity.getSystemService(Context.CLIPBOARD_SERVICE);
+                if (clipboardManager != null) {
+                    clipboardManager.setPrimaryClip(ClipData.newPlainText(key.publicFile.getName(), publicKey));
+                    mActivity.showToast(mActivity.getString(R.string.terminow_key_copied), false);
+                }
+            } else {
+                new AlertDialog.Builder(mActivity)
+                    .setMessage(mActivity.getString(R.string.terminow_key_delete_confirm, key.name))
+                    .setPositiveButton(R.string.terminow_delete, (confirmDialog, confirmWhich) -> {
+                        if (!key.file.delete())
+                            Logger.logError(LOG_TAG, "Failed to delete \"" + key.file + "\"");
+                        if (key.publicFile.isFile() && !key.publicFile.delete())
+                            Logger.logError(LOG_TAG, "Failed to delete \"" + key.publicFile + "\"");
+                        updateItems();
+                    })
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
+            }
+        }).show();
+    }
+
+    /** Ask for the file name of a new key and generate it with `ssh-keygen` in a local terminal. */
+    private void showNewKeyDialog() {
+        LinearLayout form = createForm();
+        EditText nameView = addField(form, R.string.terminow_key_name, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+        if (!new File(getSshDir(), "id_ed25519").exists())
+            nameView.setText("id_ed25519");
+
+        showFormDialog(R.string.terminow_key_new, form, () -> {
+            String name = nameView.getText().toString().trim();
+            if (!KEY_NAME_PATTERN.matcher(name).matches() || name.endsWith(".pub") || new File(getSshDir(), name).exists()) {
+                mActivity.showToast(mActivity.getString(R.string.terminow_key_invalid), true);
+                return false;
+            }
+
+            // ssh-keygen asks for the passphrase of the key in the terminal
+            TerminalSession session = addSession(null);
+            if (session != null)
+                writeWhenStarted(session, "mkdir -p ~/.ssh && chmod 700 ~/.ssh && ssh-keygen -t ed25519 -f ~/.ssh/" + name + "\r", 0);
+            return true;
+        });
+    }
+
+    /** Get the hosts whose keys are saved in `~/.ssh/known_hosts`. */
+    @NonNull
+    private List<KnownHost> getKnownHosts() {
+        List<KnownHost> knownHosts = new ArrayList<>();
+        File file = new File(getSshDir(), "known_hosts");
+        if (!file.isFile()) return knownHosts;
+
+        try {
+            for (String line : readLines(file)) {
+                String trimmed = line.trim();
+                if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
+
+                // The fields are an optional marker, the hosts, the key type and the key
+                String[] fields = trimmed.split("\\s+");
+                int hostsIndex = fields[0].startsWith("@") ? 1 : 0;
+                if (fields.length < hostsIndex + 2) continue;
+
+                String hosts = fields[hostsIndex];
+                // The host names are hashed if HashKnownHosts is set, so they can not be shown
+                if (hosts.startsWith("|"))
+                    hosts = mActivity.getString(R.string.terminow_known_host_hashed);
+                knownHosts.add(new KnownHost(line, hosts, fields[hostsIndex + 1]));
+            }
+        } catch (IOException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to read \"" + file + "\"", e);
+        }
+        return knownHosts;
+    }
+
+    private void showRemoveKnownHostDialog(@NonNull KnownHost knownHost) {
+        new AlertDialog.Builder(mActivity)
+            .setMessage(mActivity.getString(R.string.terminow_known_host_remove, knownHost.hosts))
+            .setPositiveButton(R.string.terminow_delete, (dialog, which) -> {
+                File file = new File(getSshDir(), "known_hosts");
+                try {
+                    // Read the file again, since it may have changed while the page was shown
+                    List<String> lines = readLines(file);
+                    if (lines.remove(knownHost.line)) {
+                        File tmpFile = new File(file.getPath() + ".tmp");
+                        try (FileOutputStream out = new FileOutputStream(tmpFile)) {
+                            for (String line : lines)
+                                out.write((line + "\n").getBytes(StandardCharsets.UTF_8));
+                        }
+                        if (!tmpFile.renameTo(file))
+                            throw new IOException("Failed to replace \"" + file + "\"");
+                    }
+                } catch (IOException e) {
+                    Logger.logStackTraceWithMessage(LOG_TAG, "Failed to remove known host", e);
+                    mActivity.showToast(e.getMessage() != null ? e.getMessage() : e.toString(), true);
+                }
+                updateItems();
+            })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    /** Ask for the type and the host of a new port forwarding and then show its form. */
+    private void showNewForwardDialog() {
+        if (mHosts.isEmpty()) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_forward_need_host), true);
+            return;
+        }
+
+        final String[] types = {TerminowStore.Forward.TYPE_LOCAL, TerminowStore.Forward.TYPE_REMOTE, TerminowStore.Forward.TYPE_DYNAMIC};
+        CharSequence[] typeLabels = {mActivity.getString(R.string.terminow_forward_local),
+            mActivity.getString(R.string.terminow_forward_remote), mActivity.getString(R.string.terminow_forward_dynamic)};
+        new AlertDialog.Builder(mActivity).setTitle(R.string.terminow_forward_type).setItems(typeLabels, (typeDialog, typeWhich) -> {
+            CharSequence[] hostTitles = new CharSequence[mHosts.size()];
+            for (int i = 0; i < hostTitles.length; i++)
+                hostTitles[i] = mHosts.get(i).getTitle();
+            new AlertDialog.Builder(mActivity).setTitle(R.string.terminow_forward_host).setItems(hostTitles, (hostDialog, hostWhich) ->
+                showForwardDialog(null, types[typeWhich], hostTitles[hostWhich].toString())).show();
+        }).show();
+    }
+
+    private static int parsePort(@NonNull EditText view) {
+        try {
+            return Integer.parseInt(view.getText().toString().trim());
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    private void showForwardDialog(@Nullable TerminowStore.Forward existingForward, @NonNull String type, @NonNull String hostTitle) {
+        boolean dynamic = TerminowStore.Forward.TYPE_DYNAMIC.equals(type);
+        boolean remote = TerminowStore.Forward.TYPE_REMOTE.equals(type);
+
+        LinearLayout form = createForm();
+        EditText labelView = addField(form, R.string.terminow_forward_label, InputType.TYPE_CLASS_TEXT);
+        EditText portView = addField(form, remote ? R.string.terminow_forward_port_remote : R.string.terminow_forward_port_local, InputType.TYPE_CLASS_NUMBER);
+        EditText destinationView = dynamic ? null : addField(form, R.string.terminow_forward_destination, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        EditText destinationPortView = dynamic ? null : addField(form, R.string.terminow_forward_destination_port, InputType.TYPE_CLASS_NUMBER);
+
+        if (existingForward != null) {
+            labelView.setText(existingForward.label);
+            portView.setText(String.valueOf(existingForward.port));
+            if (!dynamic) {
+                destinationView.setText(existingForward.destinationAddress);
+                destinationPortView.setText(String.valueOf(existingForward.destinationPort));
+            }
+        } else if (!dynamic) {
+            destinationView.setText("localhost");
+        }
+
+        showFormDialog(existingForward == null ? R.string.terminow_forward_new : R.string.terminow_forward_edit, form, () -> {
+            TerminowStore.Forward forward = new TerminowStore.Forward();
+            forward.label = labelView.getText().toString().trim();
+            forward.type = type;
+            forward.host = hostTitle;
+            forward.port = parsePort(portView);
+            if (!dynamic) {
+                forward.destinationAddress = destinationView.getText().toString().trim();
+                forward.destinationPort = parsePort(destinationPortView);
+            }
+
+            if (!TerminowStore.isValidPort(forward.port) || (!dynamic && !TerminowStore.isValidPort(forward.destinationPort))) {
+                mActivity.showToast(mActivity.getString(R.string.terminow_forward_invalid_port), true);
+                return false;
+            }
+            if (!TerminowStore.isValidForward(forward)) {
+                mActivity.showToast(mActivity.getString(R.string.terminow_host_invalid_address), true);
+                return false;
+            }
+
+            if (existingForward != null)
+                mForwards.set(mForwards.indexOf(existingForward), forward);
+            else
+                mForwards.add(forward);
+            mStore.setForwards(mForwards);
+            updateItems();
+            return true;
+        });
+    }
+
     private void showSnippetDialog(@Nullable TerminowStore.Snippet existingSnippet) {
         LinearLayout form = createForm();
         EditText nameView = addField(form, R.string.terminow_snippet_name, InputType.TYPE_CLASS_TEXT);
@@ -951,6 +1348,32 @@ public class TerminowHome {
                     subtitleView.setText(R.string.terminow_active);
                 else
                     subtitleView.setText((host.mosh ? "mosh" : "ssh") + (host.username.isEmpty() ? "" : ", " + host.username));
+            } else if (item instanceof KeyItem) {
+                KeyItem key = (KeyItem) item;
+                iconRes = R.drawable.ic_terminow_key;
+                iconColorRes = R.color.terminow_host_local;
+                titleView.setText(key.name);
+                // The public key starts with its type, like `ssh-ed25519`
+                String publicKey = key.publicFile.isFile() ? readFirstLine(key.publicFile) : null;
+                subtitleView.setText(publicKey == null || publicKey.isEmpty() ? mActivity.getString(R.string.terminow_key_private) : publicKey.split("\\s+")[0]);
+            } else if (item instanceof TerminowStore.Forward) {
+                TerminowStore.Forward forward = (TerminowStore.Forward) item;
+                iconRes = R.drawable.ic_terminow_forward;
+                iconColorRes = R.color.terminow_host_mosh;
+                titleView.setText(forward.getTitle());
+                subtitleView.setText(forward.getOption() + ", " + forward.host);
+            } else if (item instanceof KnownHost) {
+                KnownHost knownHost = (KnownHost) item;
+                iconRes = R.drawable.ic_terminow_known_hosts;
+                iconColorRes = R.color.terminow_host_group;
+                titleView.setText(knownHost.hosts);
+                subtitleView.setText(knownHost.keyType);
+            } else if (item instanceof TerminowStore.Log) {
+                TerminowStore.Log log = (TerminowStore.Log) item;
+                iconRes = R.drawable.ic_terminow_logs;
+                iconColorRes = R.color.terminow_host_group;
+                titleView.setText(log.title);
+                subtitleView.setText(DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(new Date(log.time)) + "  " + log.command);
             } else {
                 TerminowStore.Snippet snippet = (TerminowStore.Snippet) item;
                 iconRes = R.drawable.ic_terminow_snippets;

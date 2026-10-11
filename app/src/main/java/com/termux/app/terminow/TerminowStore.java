@@ -56,6 +56,23 @@ public class TerminowStore {
             return label.isEmpty() ? address : label;
         }
 
+        @NonNull
+        private String getTarget() {
+            return (username.isEmpty() ? "" : username + "@") + address;
+        }
+
+        @NonNull
+        private String getSshOptions(int keepAliveInterval, int keepAliveCountMax) {
+            return (keyPath.isEmpty() ? "" : " -i " + keyPath) + (port == 22 ? "" : " -p " + port) +
+                (keepAliveInterval <= 0 ? "" : " -o ServerAliveInterval=" + keepAliveInterval + " -o ServerAliveCountMax=" + keepAliveCountMax);
+        }
+
+        /** The command run in a new session to only forward a port through the host, see {@link Forward#getOption()}. */
+        @NonNull
+        public String getForwardCommand(@NonNull Forward forward, int keepAliveInterval, int keepAliveCountMax) {
+            return "ssh -N " + forward.getOption() + getSshOptions(keepAliveInterval, keepAliveCountMax) + " " + getTarget();
+        }
+
         /**
          * The command run in a new session to connect to the host.
          *
@@ -64,14 +81,54 @@ public class TerminowStore {
          */
         @NonNull
         public String getCommand(int keepAliveInterval, int keepAliveCountMax) {
-            String target = (username.isEmpty() ? "" : username + "@") + address;
-            String sshOptions = (keyPath.isEmpty() ? "" : " -i " + keyPath) + (port == 22 ? "" : " -p " + port) +
-                (keepAliveInterval <= 0 ? "" : " -o ServerAliveInterval=" + keepAliveInterval + " -o ServerAliveCountMax=" + keepAliveCountMax);
+            String target = getTarget();
+            String sshOptions = getSshOptions(keepAliveInterval, keepAliveCountMax);
             if (mosh)
                 return "mosh" + (sshOptions.isEmpty() ? "" : " --ssh='ssh" + sshOptions + "'") + " " + target;
             else
                 return "ssh" + sshOptions + " " + target;
         }
+    }
+
+    /** A port forwarded through a host with ssh. */
+    public static class Forward {
+        public static final String TYPE_LOCAL = "local";
+        public static final String TYPE_REMOTE = "remote";
+        public static final String TYPE_DYNAMIC = "dynamic";
+
+        public String label = "";
+        public String type = TYPE_LOCAL;
+        /** The title of the host to forward through, see {@link Host#getTitle()}. */
+        public String host = "";
+        /** The port that is listened on, on this device or on the host for {@link #TYPE_REMOTE}. */
+        public int port;
+        /** The address and port that connections are forwarded to, not used for {@link #TYPE_DYNAMIC}. */
+        public String destinationAddress = "";
+        public int destinationPort;
+
+        public boolean isDynamic() {
+            return TYPE_DYNAMIC.equals(type);
+        }
+
+        /** The ssh option for the forwarding, like `-L 8080:localhost:80`. */
+        @NonNull
+        public String getOption() {
+            if (isDynamic())
+                return "-D " + port;
+            return (TYPE_REMOTE.equals(type) ? "-R " : "-L ") + port + ":" + destinationAddress + ":" + destinationPort;
+        }
+
+        @NonNull
+        public String getTitle() {
+            return label.isEmpty() ? getOption() : label;
+        }
+    }
+
+    /** A connection that was started from the home screen. */
+    public static class Log {
+        public long time;
+        public String title = "";
+        public String command = "";
     }
 
     public static class Snippet {
@@ -98,6 +155,11 @@ public class TerminowStore {
     private static final String KEY_HOSTS = "hosts";
     private static final String KEY_SNIPPETS = "snippets";
     private static final String KEY_GROUPS = "groups";
+    private static final String KEY_FORWARDS = "forwards";
+    private static final String KEY_LOGS = "logs";
+
+    /** The number of connections that are kept in the logs. */
+    private static final int LOGS_MAX = 200;
     private static final String KEY_KEEP_ALIVE_INTERVAL = "keep_alive_interval";
     private static final String KEY_KEEP_ALIVE_COUNT_MAX = "keep_alive_count_max";
     private static final String KEY_SCREENSHOTS_BLOCKED = "screenshots_blocked";
@@ -251,6 +313,99 @@ public class TerminowStore {
 
     public void setScreenshotsBlocked(boolean blocked) {
         mPreferences.edit().putBoolean(KEY_SCREENSHOTS_BLOCKED, blocked).apply();
+    }
+
+    public static boolean isValidForward(@NonNull Forward forward) {
+        if (!isValidPort(forward.port)) return false;
+        if (forward.isDynamic()) return true;
+        return (Forward.TYPE_LOCAL.equals(forward.type) || Forward.TYPE_REMOTE.equals(forward.type)) &&
+            isValidAddress(forward.destinationAddress) && isValidPort(forward.destinationPort);
+    }
+
+    @NonNull
+    public List<Forward> getForwards() {
+        List<Forward> forwards = new ArrayList<>();
+        try {
+            JSONArray array = new JSONArray(mPreferences.getString(KEY_FORWARDS, "[]"));
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject object = array.getJSONObject(i);
+                Forward forward = new Forward();
+                forward.label = object.optString("label");
+                forward.type = object.optString("type", Forward.TYPE_LOCAL);
+                forward.host = object.optString("host");
+                forward.port = object.optInt("port");
+                forward.destinationAddress = object.optString("destinationAddress");
+                forward.destinationPort = object.optInt("destinationPort");
+                // Never run anything from storage that would not have passed validation when saved
+                if (isValidForward(forward))
+                    forwards.add(forward);
+            }
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to load forwards", e);
+        }
+        return forwards;
+    }
+
+    public void setForwards(@NonNull List<Forward> forwards) {
+        JSONArray array = new JSONArray();
+        try {
+            for (Forward forward : forwards) {
+                JSONObject object = new JSONObject();
+                object.put("label", forward.label);
+                object.put("type", forward.type);
+                object.put("host", forward.host);
+                object.put("port", forward.port);
+                object.put("destinationAddress", forward.destinationAddress);
+                object.put("destinationPort", forward.destinationPort);
+                array.put(object);
+            }
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to save forwards", e);
+            return;
+        }
+        mPreferences.edit().putString(KEY_FORWARDS, array.toString()).apply();
+    }
+
+    /** Get the logs of the connections that were started, the newest first. */
+    @NonNull
+    public List<Log> getLogs() {
+        List<Log> logs = new ArrayList<>();
+        try {
+            JSONArray array = new JSONArray(mPreferences.getString(KEY_LOGS, "[]"));
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject object = array.getJSONObject(i);
+                Log log = new Log();
+                log.time = object.optLong("time");
+                log.title = object.optString("title");
+                log.command = object.optString("command");
+                logs.add(log);
+            }
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to load logs", e);
+        }
+        return logs;
+    }
+
+    /** Add a connection to the logs. The command must not contain a password. */
+    public void addLog(@NonNull String title, @NonNull String command) {
+        try {
+            JSONArray oldArray = new JSONArray(mPreferences.getString(KEY_LOGS, "[]"));
+            JSONArray array = new JSONArray();
+            JSONObject object = new JSONObject();
+            object.put("time", System.currentTimeMillis());
+            object.put("title", title);
+            object.put("command", command);
+            array.put(object);
+            for (int i = 0; i < oldArray.length() && array.length() < LOGS_MAX; i++)
+                array.put(oldArray.get(i));
+            mPreferences.edit().putString(KEY_LOGS, array.toString()).apply();
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to save log", e);
+        }
+    }
+
+    public void clearLogs() {
+        mPreferences.edit().remove(KEY_LOGS).apply();
     }
 
     /** Get the names of the groups that hosts can be put in. */
