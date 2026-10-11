@@ -196,6 +196,10 @@ public class TerminowSettings {
             () -> ActivityUtils.startActivity(mActivity, new Intent(mActivity, HelpActivity.class)));
 
         addRow(R.string.terminow_settings_version, BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")", null);
+        // Identifies the exact build that is installed, like for reporting a problem
+        addRow(R.string.terminow_settings_build, BuildConfig.TERMINOW_BOOTSTRAP_RELEASE + " / " + BuildConfig.TERMINOW_COMMIT, null);
+        String repairResult = com.termux.app.TerminowPrefixRepair.getLastResult(mActivity);
+        addRow(R.string.terminow_settings_runtime_repair, repairResult != null ? repairResult : mActivity.getString(R.string.terminow_settings_runtime_repair_none), null);
     }
 
 

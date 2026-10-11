@@ -59,12 +59,22 @@ android {
         applicationId "com.terminow"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 132
+        versionCode 133
         versionName "0.118.0"
 
         if (appVersionName) versionName = appVersionName
         validateVersionName(versionName)
 
+        // Shown in the about section of the settings, to tell which build is installed
+        def terminowBootstrapUrl = terminowBootstrap.getProperty("url." + terminowBootstrapArchs[0]) ?: ""
+        def terminowBootstrapRelease = terminowBootstrapUrl.replaceAll(".*/download/([^/]+)/.*", '$1')
+        def terminowCommit = ""
+        try {
+            terminowCommit = ["git", "-C", rootDir.path, "rev-parse", "--short=8", "HEAD"].execute().text.trim()
+        } catch (Exception ignored) {
+        }
+        buildConfigField "String", "TERMINOW_BOOTSTRAP_RELEASE", "\"" + terminowBootstrapRelease + "\""
+        buildConfigField "String", "TERMINOW_COMMIT", "\"" + terminowCommit + "\""
         buildConfigField "String", "TERMUX_PACKAGE_VARIANT", "\"" + project.ext.packageVariant + "\"" // Used by TermuxApplication class
 
         manifestPlaceholders.TERMUX_PACKAGE_NAME = "com.terminow"

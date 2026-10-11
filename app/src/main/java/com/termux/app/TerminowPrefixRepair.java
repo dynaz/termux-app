@@ -44,6 +44,7 @@ public class TerminowPrefixRepair {
 
     private static final String PREFERENCES_NAME = "terminow_prefix_repair";
     private static final String KEY_REPAIRED_BOOTSTRAP = "repaired_bootstrap";
+    private static final String KEY_RESULT = "result";
 
     private static final String LOG_TAG = "TerminowPrefixRepair";
 
@@ -63,11 +64,24 @@ public class TerminowPrefixRepair {
         } catch (Exception e) {
             // Tried again on the next start
             Logger.logStackTraceWithMessage(LOG_TAG, "Failed to repair the prefix", e);
+            preferences.edit().putString(KEY_RESULT, "Failed, tried again on the next start: " + e.getMessage()).apply();
             return 0;
         }
-        preferences.edit().putString(KEY_REPAIRED_BOOTSTRAP, bootstrapId).apply();
+        preferences.edit()
+            .putString(KEY_REPAIRED_BOOTSTRAP, bootstrapId)
+            .putString(KEY_RESULT, (count == 0 ? "Checked, no files needed to be replaced" :
+                "Replaced " + count + " files, backed up in " + sLastBackupDir) +
+                " (version " + bootstrapId + ")")
+            .apply();
         return count;
     }
+
+    /** Get the result of the last repair to show, {@code null} if none was done yet. */
+    public static String getLastResult(@NonNull Context context) {
+        return context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE).getString(KEY_RESULT, null);
+    }
+
+    private static String sLastBackupDir = "";
 
     private static int repair() throws IOException {
         File prefix = new File(TermuxConstants.TERMUX_PREFIX_DIR_PATH);
@@ -77,6 +91,7 @@ public class TerminowPrefixRepair {
         File backupDir = new File(prefix, "var/backups/terminow-repair-" +
             new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date()));
         List<String> repaired = new ArrayList<>();
+        sLastBackupDir = "$PREFIX/var/backups/" + backupDir.getName();
 
         byte[] zipBytes = TermuxInstaller.loadZipBytes();
         try (ZipInputStream zipInput = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {

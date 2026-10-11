@@ -431,5 +431,8 @@
     <string name="terminow_notifications_empty">Check back later for updates and notifications</string>
     <string name="terminow_notification_updated">Updated to version %s</string>
     <string name="terminow_notification_updated_text">TermiNow was updated. See the Settings page for the new options.</string>
+    <string name="terminow_settings_build">Build</string>
+    <string name="terminow_settings_runtime_repair">Runtime repair</string>
+    <string name="terminow_settings_runtime_repair_none">Not run yet</string>
     <string name="terminow_close_session">Close this session?</string>
 </resources>
