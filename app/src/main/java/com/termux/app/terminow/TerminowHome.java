@@ -238,14 +238,14 @@ public class TerminowHome {
 
     private void closeSession(@NonNull TerminalSession session) {
         if (!session.isRunning()) {
-            mActivity.getTermuxTerminalSessionClient().removeFinishedSession(session);
+            mActivity.getTermuxTerminalSessionClient().closeSession(session);
             return;
         }
 
         new AlertDialog.Builder(mActivity)
             .setMessage(R.string.terminow_close_session)
             .setPositiveButton(android.R.string.ok, (dialog, which) ->
-                mActivity.getTermuxTerminalSessionClient().removeFinishedSession(session))
+                mActivity.getTermuxTerminalSessionClient().closeSession(session))
             .setNegativeButton(android.R.string.cancel, null)
             .show();
     }

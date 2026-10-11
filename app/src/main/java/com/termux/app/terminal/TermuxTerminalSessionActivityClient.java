@@ -35,7 +35,9 @@ import com.termux.terminal.TextStyle;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
+import java.util.HashSet;
 import java.util.Properties;
+import java.util.Set;
 
 /** The {@link TerminalSessionClient} implementation that may require an {@link Activity} for its interface methods. */
 public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionClientBase {
@@ -49,6 +51,9 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     private int mBellSoundId;
 
     private static final String LOG_TAG = "TermuxTerminalSessionActivityClient";
+
+    /** The sessions being closed by {@link #closeSession(TerminalSession)} whose processes have not exited yet. */
+    private final Set<TerminalSession> mSessionsToRemoveOnFinish = new HashSet<>();
 
     public TermuxTerminalSessionActivityClient(TermuxActivity activity) {
         this.mActivity = activity;
@@ -163,6 +168,12 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
             // Verify that session was not removed before we got told about it finishing:
             if (index >= 0)
                 mActivity.showToast(toToastTitle(finishedSession) + " - exited", true);
+        }
+
+        // The session was closed by the user, so do not keep it to show how its process exited
+        if (mSessionsToRemoveOnFinish.remove(finishedSession)) {
+            removeFinishedSession(finishedSession);
+            return;
         }
 
         if (mActivity.getPackageManager().hasSystemFeature(PackageManager.FEATURE_LEANBACK)) {
@@ -434,6 +445,20 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         if (service == null) return null;
 
         return service.getTerminalSessionForHandle(sessionHandle);
+    }
+
+    /** Close a session, its process is killed if it is still running. */
+    public void closeSession(TerminalSession session) {
+        if (session == null) return;
+
+        if (session.isRunning()) {
+            // The session can only be removed after its process has exited, which is
+            // notified to onSessionFinished()
+            mSessionsToRemoveOnFinish.add(session);
+            session.finishIfRunning();
+        } else {
+            removeFinishedSession(session);
+        }
     }
 
     public void removeFinishedSession(TerminalSession finishedSession) {
