@@ -387,7 +387,10 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
             TerminalSession currentSession = mActivity.getCurrentSession();
 
             String workingDirectory;
-            if (currentSession == null) {
+            if (mActivity.getTerminowHome() != null) {
+                // The folder set for new sessions, instead of the one of the session being shown
+                workingDirectory = mActivity.getTerminowHome().getStartDirectory();
+            } else if (currentSession == null) {
                 workingDirectory = mActivity.getProperties().getDefaultWorkingDirectory();
             } else {
                 workingDirectory = currentSession.getCwd();

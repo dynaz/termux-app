@@ -59,7 +59,7 @@ android {
         applicationId "com.terminow"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 128
+        versionCode 129
         versionName "0.118.0"
 
         if (appVersionName) versionName = appVersionName
@@ -298,6 +298,6 @@ afterEvaluate {
     android.applicationVariants.all { variant ->
         variant.javaCompileProvider.get().dependsOn(downloadBootstraps)
         // The proot loader must be downloaded before the native libraries are collected
-        variant.mergeJniLibFoldersProvider.get().dependsOn(downloadBootstraps)
+        tasks.named("merge" + variant.name.capitalize() + "JniLibFolders").configure { dependsOn(downloadBootstraps) }
     }
 }

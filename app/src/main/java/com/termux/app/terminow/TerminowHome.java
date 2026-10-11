@@ -170,7 +170,6 @@ public class TerminowHome {
         mEmptyView = activity.findViewById(R.id.terminow_empty);
 
         mHomeButton.setOnClickListener(v -> show());
-        activity.findViewById(R.id.terminow_new_tab).setOnClickListener(v -> openLocalTerminal());
 
         mRailHosts.setOnClickListener(v -> setPage(PAGE_HOSTS));
         mRailSnippets.setOnClickListener(v -> setPage(PAGE_SNIPPETS));
@@ -328,6 +327,16 @@ public class TerminowHome {
 
             mTabsView.addView(tab);
         }
+
+        // The button to add a session follows the last tab, like the one of Termius
+        ImageView addView = new ImageView(mActivity);
+        addView.setImageResource(R.drawable.ic_terminow_add);
+        addView.setPadding(dp(8), dp(8), dp(8), dp(8));
+        addView.setContentDescription(mActivity.getString(R.string.action_new_session));
+        addView.setOnClickListener(this::showNewSessionMenu);
+        LinearLayout.LayoutParams addParams = new LinearLayout.LayoutParams(dp(40), dp(40));
+        addParams.setMarginStart(dp(6));
+        mTabsView.addView(addView, addParams);
 
         if (selectedTab != null) {
             final View tab = selectedTab;
@@ -613,6 +622,64 @@ public class TerminowHome {
     }
 
 
+
+    /** Show the menu to start a session under the add button of the tab bar. */
+    private void showNewSessionMenu(@NonNull View anchor) {
+        LinearLayout menu = new LinearLayout(mActivity);
+        menu.setOrientation(LinearLayout.VERTICAL);
+        menu.setBackgroundResource(R.drawable.terminow_menu);
+        menu.setPadding(0, dp(10), 0, dp(10));
+
+        PopupWindow popup = new PopupWindow(menu, dp(280), ViewGroup.LayoutParams.WRAP_CONTENT, true);
+        popup.setElevation(dp(8));
+        popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+
+        addMenuItem(menu, popup, R.drawable.ic_terminow_hosts, R.string.terminow_connect, () -> {
+            // Pick the host to connect to on the hosts page
+            show();
+            setPage(PAGE_HOSTS);
+        });
+        addMenuItem(menu, popup, R.drawable.ic_terminow_group, R.string.terminow_connect_sftp, this::showSftpHostPicker);
+        addMenuItem(menu, popup, R.drawable.ic_terminow_terminal, R.string.terminow_local_terminal, this::openLocalTerminal);
+
+        popup.showAsDropDown(anchor, 0, dp(4));
+    }
+
+    private void showSftpHostPicker() {
+        final List<TerminowStore.Host> hosts = mStore.getHosts();
+        if (hosts.isEmpty()) {
+            // There is no host to pick yet, so show where to add one
+            show();
+            setPage(PAGE_HOSTS);
+            return;
+        }
+
+        CharSequence[] titles = new CharSequence[hosts.size()];
+        for (int i = 0; i < titles.length; i++)
+            titles[i] = hosts.get(i).getTitle();
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_connect_sftp_title)
+            .setItems(titles, (dialog, which) -> connectSftp(hosts.get(which)))
+            .show();
+    }
+
+    /** Start a session to transfer files to and from a host with sftp. */
+    private void connectSftp(@NonNull TerminowStore.Host host) {
+        TerminalSession session = addSession(mActivity.getString(R.string.terminow_sftp_session, host.getTitle()));
+        if (session == null) return;
+
+        String command = host.getSftpCommand(mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
+        mStore.addLog(mActivity.getString(R.string.terminow_sftp_session, host.getTitle()), command);
+        writeWhenStarted(session, command + "\r", 0);
+        if (!host.password.isEmpty())
+            writePasswordWhenAsked(session, host.password, 0);
+    }
+
+    /** Get the folder that a new session is started in. */
+    @NonNull
+    public String getStartDirectory() {
+        return mStore.shouldStartInHome() ? TermuxConstants.TERMUX_HOME_DIR_PATH : "/";
+    }
 
     private void openLocalTerminal() {
         addSession(null);

@@ -67,6 +67,15 @@ public class TerminowStore {
                 (keepAliveInterval <= 0 ? "" : " -o ServerAliveInterval=" + keepAliveInterval + " -o ServerAliveCountMax=" + keepAliveCountMax);
         }
 
+        /** The command run in a new session to transfer files to and from the host with sftp. */
+        @NonNull
+        public String getSftpCommand(int keepAliveInterval, int keepAliveCountMax) {
+            // The option for the port of sftp is upper case
+            return "sftp" + (keyPath.isEmpty() ? "" : " -i " + keyPath) + (port == 22 ? "" : " -P " + port) +
+                (keepAliveInterval <= 0 ? "" : " -o ServerAliveInterval=" + keepAliveInterval + " -o ServerAliveCountMax=" + keepAliveCountMax) +
+                " " + getTarget();
+        }
+
         /** The command run in a new session to only forward a port through the host, see {@link Forward#getOption()}. */
         @NonNull
         public String getForwardCommand(@NonNull Forward forward, int keepAliveInterval, int keepAliveCountMax) {
@@ -166,6 +175,7 @@ public class TerminowStore {
     private static final String KEY_KEEP_ALIVE_INTERVAL = "keep_alive_interval";
     private static final String KEY_KEEP_ALIVE_COUNT_MAX = "keep_alive_count_max";
     private static final String KEY_SCREENSHOTS_BLOCKED = "screenshots_blocked";
+    private static final String KEY_START_IN_HOME = "start_in_home";
 
     private static final String LOG_TAG = "TerminowStore";
 
@@ -308,6 +318,15 @@ public class TerminowStore {
 
     public void setKeepAliveCountMax(int count) {
         mPreferences.edit().putInt(KEY_KEEP_ALIVE_COUNT_MAX, count).apply();
+    }
+
+    /** Whether local terminals are started in the home folder instead of the root folder. */
+    public boolean shouldStartInHome() {
+        return mPreferences.getBoolean(KEY_START_IN_HOME, false);
+    }
+
+    public void setStartInHome(boolean startInHome) {
+        mPreferences.edit().putBoolean(KEY_START_IN_HOME, startInHome).apply();
     }
 
     public boolean areScreenshotsBlocked() {

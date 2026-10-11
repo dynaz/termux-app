@@ -240,7 +240,7 @@
     <string name="terminow_snippets">Snippets</string>
     <string name="terminow_add">Add</string>
     <string name="terminow_search_hint">Search</string>
-    <string name="terminow_local_terminal">Local terminal</string>
+    <string name="terminow_local_terminal">Local Terminal</string>
     <string name="terminow_local_terminal_subtitle">This device</string>
     <string name="terminow_active">Active</string>
     <string name="terminow_new_host">Add host</string>
@@ -414,5 +414,12 @@
     <string name="terminow_forward_label_summary">A name to find this port forwarding by. It can be left empty.</string>
     <string name="terminow_forward_privileged_port">Ports below 1024 can not be opened on this device, use 1024 or higher</string>
     <string name="terminow_forward_invalid_bind_address">Enter a valid bind address, like 127.0.0.1 or 0.0.0.0</string>
+    <string name="terminow_connect">Connect</string>
+    <string name="terminow_connect_sftp">Connect via SFTP</string>
+    <string name="terminow_connect_sftp_title">Connect via SFTP to</string>
+    <string name="terminow_sftp_session">%s SFTP</string>
+    <string name="terminow_settings_start_directory">Local terminal start folder</string>
+    <string name="terminow_settings_start_directory_root">Root folder (/)</string>
+    <string name="terminow_settings_start_directory_home">Home folder (~)</string>
     <string name="terminow_close_session">Close this session?</string>
 </resources>

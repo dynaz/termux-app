@@ -93,6 +93,14 @@ public class TerminowSettings {
 
         addRow(R.string.terminow_settings_font_size, String.valueOf(preferences.getFontSize()), this::pickFontSize);
 
+        final String[] startDirectoryLabels = {mActivity.getString(R.string.terminow_settings_start_directory_root),
+            mActivity.getString(R.string.terminow_settings_start_directory_home)};
+        addRow(R.string.terminow_settings_start_directory, startDirectoryLabels[mStore.shouldStartInHome() ? 1 : 0], () ->
+            pick(R.string.terminow_settings_start_directory, startDirectoryLabels, which -> {
+                mStore.setStartInHome(which == 1);
+                update();
+            }));
+
         addSwitchRow(R.string.terminow_settings_extra_keys, R.string.terminow_settings_extra_keys_summary,
             preferences.shouldShowTerminalToolbar(), preferences::setShowTerminalToolbar);
 
