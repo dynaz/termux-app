@@ -68,6 +68,12 @@ jobs:
           fi
           printf '%s\n' "$TERMINOW_REPO_GPG_PRIVATE_KEY" | gpg --batch --quiet --import
 
+      - name: Test repository scripts
+        run: |
+          sudo apt-get install -yq --no-install-recommends apt-utils gnupg xz-utils
+          python3 -I scripts/terminow/tests/test_check_repo_deps.py
+          ./scripts/terminow/tests/test-make-apt-repo.sh
+
       - name: Build bootstrap and packages
         run: |
           [ -n "$TERMINOW_PACKAGES_REF" ] || unset TERMINOW_PACKAGES_REF
@@ -81,7 +87,8 @@ jobs:
           git -C "$RUNNER_TEMP/work/termux-packages" fetch -q --depth 1 origin "$TERMINOW_PACKAGES_REF"
           git -C "$RUNNER_TEMP/work/termux-packages" checkout -q FETCH_HEAD
           "$RUNNER_TEMP/work/termux-packages/scripts/free-space.sh"
-          sudo apt-get install -yq --no-install-recommends jq apt-utils gnupg xz-utils
+          # python3 is used by the checks of the bootstrap and the repository, free-space.sh may remove it
+          sudo apt-get install -yq --no-install-recommends jq apt-utils gnupg xz-utils python3
 
           ./scripts/terminow/build-bootstrap.sh "$RUNNER_TEMP/work"
 
@@ -89,7 +96,13 @@ jobs:
           echo "TERMINOW_REPO_URL=$TERMINOW_REPO_URL" >> "$GITHUB_ENV"
 
       - name: Create package repository
-        run: ./scripts/terminow/make-apt-repo.sh "$RUNNER_TEMP/work/termux-packages/output" "$RUNNER_TEMP/site/apt/terminow-main"
+        run: |
+          . scripts/terminow/config.sh
+          ./scripts/terminow/make-apt-repo.sh "$RUNNER_TEMP/work/termux-packages/output" "$RUNNER_TEMP/site/apt/terminow-main"
+          # Like `pkg install` on a device, before the repository is published
+          for arch in ${TERMINOW_ARCHITECTURES//,/ }; do
+            ./scripts/terminow/test-repo-install.sh "$RUNNER_TEMP/site/apt/terminow-main" "$arch" ${TERMINOW_EXTRA_PACKAGES//,/ } ${TERMINOW_REPO_PACKAGES//,/ }
+          done
 
       - name: Publish package repository
         run: |
@@ -102,6 +115,21 @@ jobs:
           git commit -q -m "Publish package repository built from termux-packages $TERMINOW_PACKAGES_REF"
           # Every run builds all the packages, so the branch is replaced instead of growing with old packages
           git push -q --force "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" gh-pages
+
+      - name: Check published package repository
+        run: |
+          . scripts/terminow/config.sh
+          # GitHub Pages serves the new branch after its deployment, which takes a few minutes
+          for attempt in $(seq 1 30); do
+            if curl -fsS "$TERMINOW_REPO_URL/dists/stable/InRelease" | grep -q "^Date: $(date -u -r "$RUNNER_TEMP/site/apt/terminow-main/dists/stable/Release" '+%a, %d %b %Y')"; then
+              cmp <(curl -fsS "$TERMINOW_REPO_URL/dists/stable/InRelease") "$RUNNER_TEMP/site/apt/terminow-main/dists/stable/InRelease" && break
+            fi
+            sleep 20
+          done
+          cmp <(curl -fsS "$TERMINOW_REPO_URL/dists/stable/InRelease") "$RUNNER_TEMP/site/apt/terminow-main/dists/stable/InRelease"
+          for arch in ${TERMINOW_ARCHITECTURES//,/ }; do
+            ./scripts/terminow/test-repo-install.sh "$TERMINOW_REPO_URL" "$arch" ${TERMINOW_EXTRA_PACKAGES//,/ } ${TERMINOW_REPO_PACKAGES//,/ }
+          done
 
       - name: Release bootstrap
         env:

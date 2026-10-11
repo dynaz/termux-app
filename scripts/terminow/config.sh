@@ -27,4 +27,5 @@
 : "${TERMINOW_ARCHITECTURES:=aarch64}"
 
 # The public key of the key that signs the package repository, see generate-repo-key.sh.
-TERMINOW_REPO_PUBLIC_KEY_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/terminow-repo.gpg"
+# Can be set to another key for tests.
+: "${TERMINOW_REPO_PUBLIC_KEY_FILE:=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/terminow-repo.gpg}"

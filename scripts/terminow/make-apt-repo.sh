@@ -28,24 +28,35 @@ find "$debs_dir" -maxdepth 1 -name '*.deb' -exec cp -t "$repo_dir/pool/$componen
 
 cd "$repo_dir"
 
-# Leave out the packages that apt can never install, since their dependencies are not built,
-# like dpkg-perl that depends on clang. apt may fail a whole installation if it tries to install
-# one of them, like when another package recommends it.
-apt-ftparchive packages "pool/$component" > "$repo_dir/Packages.all"
-python3 -I "$script_dir/check-repo-deps.py" "$repo_dir/Packages.all" | while read -r filename; do
-	rm -f -- "$repo_dir/$filename"
-done
-rm -f "$repo_dir/Packages.all"
+# The packages that must be installable from the repository, the publication fails otherwise
+required_packages=(apt bash termux-tools termux-exec termux-keyring ${TERMINOW_EXTRA_PACKAGES//,/ } ${TERMINOW_REPO_PACKAGES//,/ })
 
 for arch in ${TERMINOW_ARCHITECTURES//,/ }; do
 	binary_dir="dists/$distribution/$component/binary-$arch"
 	mkdir -p "$binary_dir"
-	# Packages for all architectures are listed for every architecture.
-	apt-ftparchive --arch "$arch" packages "pool/$component" > "$binary_dir/Packages"
+	# The packages of the architecture and of the all architecture, like apt expects them
+	# without a separate binary-all index, see No-Support-for-Architecture-all below.
+	apt-ftparchive --arch "$arch" packages "pool/$component" > "$binary_dir/Packages.unchecked"
+	# Leave out the packages that apt can never install, since a mandatory dependency of them is
+	# not built, like dpkg-perl that depends on clang, and the ones that depend on them. apt may
+	# fail a whole installation if it tries to install one of them, like a recommended package.
+	python3 -I "$script_dir/check-repo-deps.py" "$binary_dir/Packages.unchecked" "$binary_dir/Packages" \
+		--require "${required_packages[@]}"
+	rm -f "$binary_dir/Packages.unchecked"
 	gzip -9 -k -f "$binary_dir/Packages"
 	xz -9 -k -f "$binary_dir/Packages"
 done
 
+# Remove the packages that were left out of every index from the pool
+find "pool/$component" -name '*.deb' | while read -r deb; do
+	if ! grep -q -x -F "Filename: $deb" dists/"$distribution"/"$component"/binary-*/Packages; then
+		echo "[*] Removing $deb from the pool, it is in no index"
+		rm -f -- "$deb"
+	fi
+done
+
+# Written to another directory first, so that the Release file does not list itself
+release_file="$(mktemp)"
 apt-ftparchive \
 	-o "APT::FTPArchive::Release::Origin=$TERMINOW_APP_NAME" \
 	-o "APT::FTPArchive::Release::Label=$TERMINOW_APP_NAME" \
@@ -53,7 +64,13 @@ apt-ftparchive \
 	-o "APT::FTPArchive::Release::Codename=$distribution" \
 	-o "APT::FTPArchive::Release::Architectures=${TERMINOW_ARCHITECTURES//,/ } all" \
 	-o "APT::FTPArchive::Release::Components=$component" \
-	release "dists/$distribution" > "dists/$distribution/Release"
+	release "dists/$distribution" > "$release_file"
+# The packages of the all architecture are in the index of each architecture instead of in a
+# binary-all index, which apt-ftparchive has no option for
+sed -i '/^Architectures:/a No-Support-for-Architecture-all: Packages' "$release_file"
+grep -q '^No-Support-for-Architecture-all: Packages$' "$release_file"
+mv "$release_file" "dists/$distribution/Release"
+chmod 644 "dists/$distribution/Release"
 
 gpg --batch --yes --local-user "$key_fingerprint" --clearsign -o "dists/$distribution/InRelease" "dists/$distribution/Release"
 gpg --batch --yes --local-user "$key_fingerprint" --armor --detach-sign -o "dists/$distribution/Release.gpg" "dists/$distribution/Release"
