@@ -102,6 +102,8 @@ public class TerminowStore {
         public String host = "";
         /** The port that is listened on, on this device or on the host for {@link #TYPE_REMOTE}. */
         public int port;
+        /** The address that {@link #port} is listened on, empty for the default of ssh. */
+        public String bindAddress = "";
         /** The address and port that connections are forwarded to, not used for {@link #TYPE_DYNAMIC}. */
         public String destinationAddress = "";
         public int destinationPort;
@@ -113,9 +115,10 @@ public class TerminowStore {
         /** The ssh option for the forwarding, like `-L 8080:localhost:80`. */
         @NonNull
         public String getOption() {
+            String listen = (bindAddress.isEmpty() ? "" : bindAddress + ":") + port;
             if (isDynamic())
-                return "-D " + port;
-            return (TYPE_REMOTE.equals(type) ? "-R " : "-L ") + port + ":" + destinationAddress + ":" + destinationPort;
+                return "-D " + listen;
+            return (TYPE_REMOTE.equals(type) ? "-R " : "-L ") + listen + ":" + destinationAddress + ":" + destinationPort;
         }
 
         @NonNull
@@ -317,6 +320,7 @@ public class TerminowStore {
 
     public static boolean isValidForward(@NonNull Forward forward) {
         if (!isValidPort(forward.port)) return false;
+        if (!forward.bindAddress.isEmpty() && !isValidAddress(forward.bindAddress)) return false;
         if (forward.isDynamic()) return true;
         return (Forward.TYPE_LOCAL.equals(forward.type) || Forward.TYPE_REMOTE.equals(forward.type)) &&
             isValidAddress(forward.destinationAddress) && isValidPort(forward.destinationPort);
@@ -334,6 +338,7 @@ public class TerminowStore {
                 forward.type = object.optString("type", Forward.TYPE_LOCAL);
                 forward.host = object.optString("host");
                 forward.port = object.optInt("port");
+                forward.bindAddress = object.optString("bindAddress");
                 forward.destinationAddress = object.optString("destinationAddress");
                 forward.destinationPort = object.optInt("destinationPort");
                 // Never run anything from storage that would not have passed validation when saved
@@ -355,6 +360,7 @@ public class TerminowStore {
                 object.put("type", forward.type);
                 object.put("host", forward.host);
                 object.put("port", forward.port);
+                object.put("bindAddress", forward.bindAddress);
                 object.put("destinationAddress", forward.destinationAddress);
                 object.put("destinationPort", forward.destinationPort);
                 array.put(object);

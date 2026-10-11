@@ -145,4 +145,19 @@
         <item name="android:textStyle">bold</item>
     </style>
 
+    <!-- The dialogs of the home screen, in its colors instead of the grey of the app dialogs. -->
+    <style name="TerminowAlertDialog" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/terminow_dialog</item>
+        <item name="android:colorAccent">@color/terminow_accent</item>
+        <item name="android:colorControlActivated">@color/terminow_accent</item>
+        <item name="android:textColorPrimary">@color/terminow_text</item>
+        <item name="android:textColorSecondary">@color/terminow_text_secondary</item>
+        <item name="android:textColorHint">@color/terminow_text_secondary</item>
+        <item name="android:buttonBarButtonStyle">@style/TerminowAlertDialog.Button</item>
+    </style>
+
+    <style name="TerminowAlertDialog.Button" parent="@android:style/Widget.Material.Button.Borderless">
+        <item name="android:textColor">@color/terminow_accent</item>
+    </style>
+
 </resources>

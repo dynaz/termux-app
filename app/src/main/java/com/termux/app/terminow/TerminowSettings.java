@@ -237,7 +237,7 @@ public class TerminowSettings {
     }
 
     private void pick(int titleRes, @NonNull CharSequence[] labels, @NonNull OnPicked onPicked) {
-        new AlertDialog.Builder(mActivity)
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
             .setTitle(titleRes)
             .setItems(labels, (dialog, which) -> onPicked.onPicked(which))
             .show();
