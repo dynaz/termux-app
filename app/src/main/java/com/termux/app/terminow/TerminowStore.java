@@ -176,6 +176,8 @@ public class TerminowStore {
     private static final String KEY_KEEP_ALIVE_COUNT_MAX = "keep_alive_count_max";
     private static final String KEY_SCREENSHOTS_BLOCKED = "screenshots_blocked";
     private static final String KEY_START_IN_HOME = "start_in_home";
+    private static final String KEY_TERMINAL_THEME = "terminal_theme";
+    private static final String KEY_TERMINAL_FONT = "terminal_font";
 
     private static final String LOG_TAG = "TerminowStore";
 
@@ -327,6 +329,26 @@ public class TerminowStore {
 
     public void setStartInHome(boolean startInHome) {
         mPreferences.edit().putBoolean(KEY_START_IN_HOME, startInHome).apply();
+    }
+
+    /** The name of the theme whose colors were set for the terminal, empty for the default colors. */
+    @NonNull
+    public String getTerminalTheme() {
+        return mPreferences.getString(KEY_TERMINAL_THEME, "");
+    }
+
+    public void setTerminalTheme(@NonNull String name) {
+        mPreferences.edit().putString(KEY_TERMINAL_THEME, name).apply();
+    }
+
+    /** The name of the font that was set for the terminal, empty for the default font. */
+    @NonNull
+    public String getTerminalFont() {
+        return mPreferences.getString(KEY_TERMINAL_FONT, "");
+    }
+
+    public void setTerminalFont(@NonNull String name) {
+        mPreferences.edit().putString(KEY_TERMINAL_FONT, name).apply();
     }
 
     public boolean areScreenshotsBlocked() {

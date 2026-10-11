@@ -91,7 +91,12 @@ public class TerminowSettings {
 
         addSection(R.string.terminow_settings_terminal, true);
 
-        addRow(R.string.terminow_settings_font_size, String.valueOf(preferences.getFontSize()), this::pickFontSize);
+        String theme = mStore.getTerminalTheme();
+        String font = mStore.getTerminalFont();
+        addRow(R.string.terminow_settings_font_and_colours,
+            (theme.isEmpty() ? TerminowThemes.DEFAULT_THEME_NAME : theme) + " / " + preferences.getFontSize() + " / " +
+                (font.isEmpty() ? mActivity.getString(R.string.terminow_theme_font_default) : font),
+            () -> new TerminowThemeDialog(mActivity, mStore, this::update).show());
 
         final String[] startDirectoryLabels = {mActivity.getString(R.string.terminow_settings_start_directory_root),
             mActivity.getString(R.string.terminow_settings_start_directory_home)};
@@ -191,30 +196,6 @@ public class TerminowSettings {
     }
 
 
-
-    private void pickFontSize() {
-        // The default, minimum and maximum font sizes for the display
-        int[] sizes = TermuxAppSharedPreferences.getDefaultFontSizes(mActivity);
-        List<Integer> options = new ArrayList<>();
-        int step = Math.max(1, (sizes[2] - sizes[1]) / 12);
-        for (int size = sizes[1]; size <= sizes[2]; size += step)
-            options.add(size);
-        if (!options.contains(sizes[0])) {
-            int index = 0;
-            while (index < options.size() && options.get(index) < sizes[0]) index++;
-            options.add(index, sizes[0]);
-        }
-
-        String[] labels = new String[options.size()];
-        for (int i = 0; i < labels.length; i++)
-            labels[i] = options.get(i) + (options.get(i) == sizes[0] ? " (" + mActivity.getString(R.string.terminow_settings_default) + ")" : "");
-
-        pick(R.string.terminow_settings_font_size, labels, which -> {
-            mActivity.getPreferences().setFontSize(options.get(which));
-            mActivity.getTerminalView().setTextSize(mActivity.getPreferences().getFontSize());
-            update();
-        });
-    }
 
     @NonNull
     private String getKeepAliveIntervalLabel(int seconds) {

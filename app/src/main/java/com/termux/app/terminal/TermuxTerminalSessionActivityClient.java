@@ -1,5 +1,6 @@
 package com.termux.app.terminal;
 
+import android.os.Build;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -547,7 +548,17 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
             }
             updateBackgroundColor();
 
-            final Typeface newTypeface = (fontFile.exists() && fontFile.length() > 0) ? Typeface.createFromFile(fontFile) : Typeface.MONOSPACE;
+            final Typeface newTypeface;
+            if (!fontFile.exists() || fontFile.length() == 0) {
+                newTypeface = Typeface.MONOSPACE;
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                // Use the regular weight of a variable font, whose default may be a lighter one.
+                // This is ignored for a font that is not variable.
+                Typeface typeface = new Typeface.Builder(fontFile).setFontVariationSettings("'wght' 400").build();
+                newTypeface = typeface != null ? typeface : Typeface.MONOSPACE;
+            } else {
+                newTypeface = Typeface.createFromFile(fontFile);
+            }
             mActivity.getTerminalView().setTypeface(newTypeface);
         } catch (Exception e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Error in checkForFontAndColors()", e);
