@@ -106,6 +106,11 @@ final class TermuxInstaller {
         if (FileUtils.directoryFileExists(TERMUX_PREFIX_DIR_PATH, true)) {
             if (TermuxFileUtils.isTermuxPrefixDirectoryEmpty()) {
                 Logger.logInfo(LOG_TAG, "The termux prefix directory \"" + TERMUX_PREFIX_DIR_PATH + "\" exists but is empty or only contains specific unimportant files.");
+            } else if (!new File(TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH, "login").exists()) {
+                // The login script is part of every bootstrap, so the bootstrap was not installed
+                // completely or is the placeholder of a build without a bootstrap. Install it again,
+                // otherwise sessions would only ever start the system shell without any packages.
+                Logger.logInfo(LOG_TAG, "The termux prefix directory \"" + TERMUX_PREFIX_DIR_PATH + "\" exists but has no login script, installing the bootstrap again.");
             } else {
                 whenDone.run();
                 return;

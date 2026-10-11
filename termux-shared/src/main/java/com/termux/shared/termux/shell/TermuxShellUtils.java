@@ -12,8 +12,11 @@ import com.termux.shared.termux.settings.properties.TermuxAppSharedProperties;
 
 import org.apache.commons.io.filefilter.TrueFileFilter;
 
+import android.content.Context;
 import android.os.Build;
 import android.os.Process;
+import android.system.ErrnoException;
+import android.system.Os;
 
 import com.termux.shared.logger.Logger;
 
@@ -35,6 +38,11 @@ public class TermuxShellUtils {
     public static final String TERMUX_EXEC_LD_PRELOAD_LIB_PATH = TermuxConstants.TERMUX_LIB_PREFIX_DIR_PATH + "/libtermux-exec-ld-preload.so";
     /** The variant of {@link #TERMUX_EXEC_LD_PRELOAD_LIB_PATH} that executes files with the system linker. */
     public static final String TERMUX_EXEC_LINKER_LD_PRELOAD_LIB_PATH = TermuxConstants.TERMUX_LIB_PREFIX_DIR_PATH + "/libtermux-exec-linker-ld-preload.so";
+
+    /** The path that the `proot` package executes its loader from. */
+    public static final String PROOT_LOADER_PATH = TermuxConstants.TERMUX_LIBEXEC_PREFIX_DIR_PATH + "/proot/loader";
+    /** The name of the proot loader in the native library directory of the app. */
+    public static final String PROOT_LOADER_LIB_NAME = "libproot-loader.so";
 
     private static Boolean SYSTEM_LINKER_EXEC_REQUIRED;
 
@@ -111,6 +119,49 @@ public class TermuxShellUtils {
             Logger.logInfo(LOG_TAG, "Set \"" + lib + "\" to the system linker exec variant");
         } catch (IOException e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Failed to setup \"" + lib + "\" for system linker exec", e);
+        }
+    }
+
+    /**
+     * Make the loader of the `proot` package a symlink to the loader in the native library
+     * directory of the app, if the app includes one.
+     *
+     * proot starts every program of the guest with its loader, a static executable. Android
+     * `>= 10` does not allow apps that use `targetSdkVersion` `>= 29` to execute files in their
+     * data directory and the system linker can not run a static executable, but files in the
+     * native library directory can be executed. The package for this app does not install
+     * anything at {@link #PROOT_LOADER_PATH}, so the symlink is not replaced by `dpkg`. The
+     * native library directory changes when the app is updated, so this is done for every
+     * shell that is started.
+     */
+    public static synchronized void setupProotLoader(@NonNull Context context) {
+        try {
+            if (!TermuxConstants.TERMUX_PACKAGE_NAME.equals(context.getPackageName())) return;
+            if (!TermuxConstants.TERMUX_PREFIX_DIR.isDirectory()) return;
+
+            String nativeLibraryDir = context.getApplicationInfo().nativeLibraryDir;
+            if (nativeLibraryDir == null) return;
+            File appLoader = new File(nativeLibraryDir, PROOT_LOADER_LIB_NAME);
+            if (!appLoader.isFile()) return;
+
+            File loader = new File(PROOT_LOADER_PATH);
+            try {
+                if (appLoader.getPath().equals(Os.readlink(loader.getPath()))) return;
+            } catch (ErrnoException e) {
+                // Not a symlink or does not exist
+            }
+
+            File loaderDir = loader.getParentFile();
+            if (loaderDir != null && !loaderDir.isDirectory() && !loaderDir.mkdirs())
+                throw new IOException("Failed to create \"" + loaderDir + "\"");
+            // Replace it with a rename, since proot may be starting a program with it
+            File tmpLoader = new File(loader.getPath() + ".tmp");
+            tmpLoader.delete();
+            Os.symlink(appLoader.getPath(), tmpLoader.getPath());
+            Os.rename(tmpLoader.getPath(), loader.getPath());
+            Logger.logInfo(LOG_TAG, "Set \"" + loader + "\" to \"" + appLoader + "\"");
+        } catch (Exception e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to setup the proot loader", e);
         }
     }
 

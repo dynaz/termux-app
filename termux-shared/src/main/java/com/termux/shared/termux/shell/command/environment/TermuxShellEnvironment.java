@@ -97,6 +97,9 @@ public class TermuxShellEnvironment extends AndroidShellEnvironment {
             }
         }
 
+        // Done here so that it is also set up for commands that are not run in a terminal session
+        TermuxShellUtils.setupProotLoader(currentPackageContext);
+
         // Used by the termux-exec library to decide whether to execute files with the system linker
         ShellEnvironmentUtils.putToEnvIfSet(environment, ENV_TERMUX__SE_PROCESS_CONTEXT, TermuxShellUtils.getSeProcessContext());
 

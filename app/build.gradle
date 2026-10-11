@@ -59,7 +59,7 @@ android {
         applicationId "com.terminow"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 127
+        versionCode 128
         versionName "0.118.0"
 
         if (appVersionName) versionName = appVersionName
@@ -152,7 +152,11 @@ android {
 
     packagingOptions {
         jniLibs {
+            // Native libraries must be extracted when the app is installed, since the proot loader
+            // is executed from the native library directory
             useLegacyPackaging true
+            // The proot loader is a static executable that is already stripped
+            keepDebugSymbols += "**/libproot-loader.so"
         }
     }
 
@@ -193,9 +197,12 @@ def validateVersionName(String versionName) {
 }
 
 def downloadBootstrap(String arch, String expectedChecksum, String remoteUrl) {
+    downloadVerifiedFile("src/main/cpp/bootstrap-" + arch + ".zip", expectedChecksum, remoteUrl)
+}
+
+def downloadVerifiedFile(String localUrl, String expectedChecksum, String remoteUrl) {
     def digest = java.security.MessageDigest.getInstance("SHA-256")
 
-    def localUrl = "src/main/cpp/bootstrap-" + arch + ".zip"
     def file = new File(projectDir, localUrl)
     if (file.exists()) {
         def buffer = new byte[8192]
@@ -239,6 +246,9 @@ clean {
         def tree = fileTree(new File(projectDir, 'src/main/cpp'))
         tree.include 'bootstrap-*.zip'
         tree.each { it.delete() }
+        def loaders = fileTree(new File(projectDir, 'src/main/jniLibs'))
+        loaders.include '**/libproot-loader.so'
+        loaders.each { it.delete() }
     }
 }
 
@@ -264,6 +274,22 @@ task downloadBootstraps() {
             } else {
                 downloadBootstrap(arch, checksum, url)
             }
+
+            // The proot loader is included as a native library, since the files that the proot
+            // package installs in the app data directory can not be executed. It is named like a
+            // library so that it is put in the APK and extracted to the native library directory.
+            def loaderUrl = "src/main/jniLibs/" + terminowAbiForArch[arch] + "/libproot-loader.so"
+            def loaderRemoteUrl = terminowBootstrap.getProperty("proot-loader.url." + arch) ?: ""
+            def loaderChecksum = terminowBootstrap.getProperty("proot-loader.sha256." + arch) ?: ""
+            if (System.getenv("TERMINOW_USE_LOCAL_BOOTSTRAP") == "1") {
+                logger.quiet((new File(projectDir, loaderUrl).exists() ? "Using" : "No") + " local proot loader: " + loaderUrl)
+            } else if (loaderRemoteUrl.isEmpty() || loaderChecksum.isEmpty()) {
+                new File(projectDir, loaderUrl).delete()
+                logger.quiet("The " + arch + " proot loader is not set in app/terminow-bootstrap.properties," +
+                    " proot and proot-distro will not work in this build.")
+            } else {
+                downloadVerifiedFile(loaderUrl, loaderChecksum, loaderRemoteUrl)
+            }
         }
     }
 }
@@ -271,5 +297,7 @@ task downloadBootstraps() {
 afterEvaluate {
     android.applicationVariants.all { variant ->
         variant.javaCompileProvider.get().dependsOn(downloadBootstraps)
+        // The proot loader must be downloaded before the native libraries are collected
+        variant.mergeJniLibFoldersProvider.get().dependsOn(downloadBootstraps)
     }
 }

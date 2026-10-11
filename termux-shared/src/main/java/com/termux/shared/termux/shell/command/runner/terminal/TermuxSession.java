@@ -96,7 +96,9 @@ public class TermuxSession {
             if (!executionCommand.isFailsafe) {
                 for (String shellBinary : UnixShellEnvironment.LOGIN_SHELL_BINARIES) {
                     File shellFile = new File(defaultBinPath, shellBinary);
-                    if (shellFile.canExecute()) {
+                    // With system linker exec the file is not executed itself, so it does not
+                    // need to be reported as executable to the app
+                    if (shellFile.canExecute() || (TermuxShellUtils.isSystemLinkerExecRequired() && shellFile.isFile())) {
                         executionCommand.executable = shellFile.getAbsolutePath();
                         break;
                     }
