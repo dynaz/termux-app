@@ -8,7 +8,8 @@
 # Usage: make-apt-repo.sh <directory with .deb files> <repository output directory>
 set -euo pipefail
 
-. "$(dirname "${BASH_SOURCE[0]}")/config.sh"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$script_dir/config.sh"
 
 debs_dir="${1:?Usage: $0 <directory with .deb files> <repository output directory>}"
 repo_dir="${2:?Usage: $0 <directory with .deb files> <repository output directory>}"
@@ -26,6 +27,16 @@ find "$debs_dir" -maxdepth 1 -name '*.deb' -exec cp -t "$repo_dir/pool/$componen
 [ -n "$(ls -A "$repo_dir/pool/$component")" ] || { echo "[!] No .deb files found in '$debs_dir'" 1>&2; exit 1; }
 
 cd "$repo_dir"
+
+# Leave out the packages that apt can never install, since their dependencies are not built,
+# like dpkg-perl that depends on clang. apt may fail a whole installation if it tries to install
+# one of them, like when another package recommends it.
+apt-ftparchive packages "pool/$component" > "$repo_dir/Packages.all"
+python3 -I "$script_dir/check-repo-deps.py" "$repo_dir/Packages.all" | while read -r filename; do
+	rm -f -- "$repo_dir/$filename"
+done
+rm -f "$repo_dir/Packages.all"
+
 for arch in ${TERMINOW_ARCHITECTURES//,/ }; do
 	binary_dir="dists/$distribution/$component/binary-$arch"
 	mkdir -p "$binary_dir"
@@ -40,7 +51,7 @@ apt-ftparchive \
 	-o "APT::FTPArchive::Release::Label=$TERMINOW_APP_NAME" \
 	-o "APT::FTPArchive::Release::Suite=$distribution" \
 	-o "APT::FTPArchive::Release::Codename=$distribution" \
-	-o "APT::FTPArchive::Release::Architectures=${TERMINOW_ARCHITECTURES//,/ }" \
+	-o "APT::FTPArchive::Release::Architectures=${TERMINOW_ARCHITECTURES//,/ } all" \
 	-o "APT::FTPArchive::Release::Components=$component" \
 	release "dists/$distribution" > "dists/$distribution/Release"
 
