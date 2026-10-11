@@ -106,6 +106,9 @@ public class TerminowSettings {
                 update();
             }));
 
+        addSwitchRow(R.string.terminow_settings_start_in_tmux, R.string.terminow_settings_start_in_tmux_summary,
+            mStore.shouldStartInTmux(), mStore::setStartInTmux);
+
         addSwitchRow(R.string.terminow_settings_extra_keys, R.string.terminow_settings_extra_keys_summary,
             preferences.shouldShowTerminalToolbar(), preferences::setShowTerminalToolbar);
 

@@ -176,6 +176,7 @@ public class TerminowStore {
     private static final String KEY_KEEP_ALIVE_COUNT_MAX = "keep_alive_count_max";
     private static final String KEY_SCREENSHOTS_BLOCKED = "screenshots_blocked";
     private static final String KEY_START_IN_HOME = "start_in_home";
+    private static final String KEY_START_IN_TMUX = "start_in_tmux";
     private static final String KEY_TERMINAL_THEME = "terminal_theme";
     private static final String KEY_TERMINAL_FONT = "terminal_font";
 
@@ -349,6 +350,15 @@ public class TerminowStore {
 
     public void setTerminalFont(@NonNull String name) {
         mPreferences.edit().putString(KEY_TERMINAL_FONT, name).apply();
+    }
+
+    /** Whether local terminals are started in a tmux session. */
+    public boolean shouldStartInTmux() {
+        return mPreferences.getBoolean(KEY_START_IN_TMUX, true);
+    }
+
+    public void setStartInTmux(boolean startInTmux) {
+        mPreferences.edit().putBoolean(KEY_START_IN_TMUX, startInTmux).apply();
     }
 
     public boolean areScreenshotsBlocked() {

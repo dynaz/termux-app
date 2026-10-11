@@ -424,5 +424,7 @@
     <string name="terminow_theme_title">Terminal theme &amp; font</string>
     <string name="terminow_theme_font_default">Default (monospace)</string>
     <string name="terminow_settings_font_and_colours">Font &amp; colours</string>
+    <string name="terminow_settings_start_in_tmux">Start local terminals in tmux</string>
+    <string name="terminow_settings_start_in_tmux_summary">Each local terminal opens a tmux session, which keeps running when its tab is closed</string>
     <string name="terminow_close_session">Close this session?</string>
 </resources>

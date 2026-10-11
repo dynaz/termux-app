@@ -682,7 +682,14 @@ public class TerminowHome {
     }
 
     private void openLocalTerminal() {
-        addSession(null);
+        TerminalSession session = addSession(null);
+        TermuxService service = mActivity.getTermuxService();
+        if (session == null || service == null || !mStore.shouldStartInTmux()) return;
+        // Only if tmux is installed, it is not in the system shell that is started without the packages
+        if (!new File(TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH, "tmux").exists()) return;
+
+        // A tmux session for each local terminal, which is attached to again if it is still running
+        writeWhenStarted(session, "tmux new-session -A -s local" + (service.getIndexOfSession(session) + 1) + "\r", 0);
     }
 
     private void connect(@NonNull TerminowStore.Host host) {
