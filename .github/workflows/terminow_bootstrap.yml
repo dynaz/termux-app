@@ -5,6 +5,8 @@
 #   served by GitHub Pages at TERMINOW_REPO_BASE_URL of scripts/terminow/config.sh.
 # - The bootstrap archive is attached to a new release and app/terminow-bootstrap.properties is
 #   updated to it, so that the next APK build includes it.
+# - The proot loader is attached to the same release and set in the same file, since the app
+#   includes it as a native library, see scripts/terminow/configure-termux-packages.sh.
 #
 # Requires the TERMINOW_REPO_GPG_PRIVATE_KEY repository secret, see scripts/terminow/generate-repo-key.sh.
 name: TermiNow bootstrap
@@ -28,6 +30,10 @@ on:
         description: "Comma separated packages to build in addition to the bootstrap ones, defaults to the ones in scripts/terminow/config.sh"
         required: false
         default: ""
+      repo_packages:
+        description: "Comma separated packages to build for the package repository only, defaults to the ones in scripts/terminow/config.sh"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -44,6 +50,7 @@ jobs:
       # Empty values fall back to the defaults of scripts/terminow/config.sh
       TERMINOW_PACKAGES_REF: ${{ inputs.packages_ref }}
       TERMINOW_EXTRA_PACKAGES: ${{ inputs.extra_packages }}
+      TERMINOW_REPO_PACKAGES: ${{ inputs.repo_packages }}
     steps:
       - name: Clone repository
         uses: actions/checkout@v6
@@ -65,6 +72,7 @@ jobs:
         run: |
           [ -n "$TERMINOW_PACKAGES_REF" ] || unset TERMINOW_PACKAGES_REF
           [ -n "$TERMINOW_EXTRA_PACKAGES" ] || unset TERMINOW_EXTRA_PACKAGES
+          [ -n "$TERMINOW_REPO_PACKAGES" ] || unset TERMINOW_REPO_PACKAGES
           . scripts/terminow/config.sh
 
           # Clone first to use its script for freeing the disk space needed by the build
@@ -101,8 +109,10 @@ jobs:
         run: |
           tag="terminow-bootstrap-$(date -u +%Y.%m.%d)-r${{ github.run_number }}"
           cd "$RUNNER_TEMP/work/termux-packages/output"
-          sha256sum bootstrap-*.zip > bootstrap-sha256sums
-          gh release create "$tag" bootstrap-*.zip bootstrap-sha256sums \
+          shopt -s nullglob
+          loaders=(proot-loader-*)
+          sha256sum bootstrap-*.zip "${loaders[@]}" > bootstrap-sha256sums
+          gh release create "$tag" bootstrap-*.zip "${loaders[@]}" bootstrap-sha256sums \
             --repo "${{ github.repository }}" --target "${{ github.sha }}" \
             --title "TermiNow bootstrap $tag" \
             --notes "Bootstrap for com.terminow built from termux-packages $TERMINOW_PACKAGES_REF. Packages: $TERMINOW_REPO_URL"
@@ -115,6 +125,22 @@ jobs:
             url="https://github.com/${{ github.repository }}/releases/download/$tag/bootstrap-$arch.zip"
             sed -i -E "s|^url\\.$arch=.*|url.$arch=$url|; s|^sha256\\.$arch=.*|sha256.$arch=$checksum|" app/terminow-bootstrap.properties
             grep -q "^sha256\\.$arch=$checksum$" app/terminow-bootstrap.properties
+
+            # The proot loader of the same build, empty if proot was not built
+            loader="$RUNNER_TEMP/work/termux-packages/output/proot-loader-$arch"
+            loader_url=""; loader_checksum=""
+            if [ -f "$loader" ]; then
+              loader_url="https://github.com/${{ github.repository }}/releases/download/$tag/proot-loader-$arch"
+              loader_checksum="$(sha256sum "$loader" | cut -d ' ' -f 1)"
+            fi
+            for line in "proot-loader.url.$arch=$loader_url" "proot-loader.sha256.$arch=$loader_checksum"; do
+              key="${line%%=*}"
+              if grep -q "^${key//./\\.}=" app/terminow-bootstrap.properties; then
+                sed -i -E "s|^${key//./\\.}=.*|$line|" app/terminow-bootstrap.properties
+              else
+                echo "$line" >> app/terminow-bootstrap.properties
+              fi
+            done
           done
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

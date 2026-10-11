@@ -85,6 +85,18 @@ replace_line scripts/build-bootstraps.sh '^([[:space:]]*)PACKAGES\+=\("command-n
 replace_line scripts/build-bootstraps.sh '^([[:space:]]*)mv -f "\$\{BOOTSTRAP_TMPDIR\}/bootstrap-\$\{1\}\.zip" "\$TERMUX_PACKAGES_DIRECTORY/"$' \
 	'\1mv -f "${BOOTSTRAP_TMPDIR}/bootstrap-${1}.zip" "$TERMUX_BUILT_DEBS_DIRECTORY/"'
 
+# proot starts every program of the guest with its loader, a static executable that the package
+# installs as libexec/proot/loader. The app targets an API level where files in the app data
+# directory can not be executed and the system linker can not run a static executable, so the
+# loader is run from the native library directory of the app instead: the app includes it as
+# libproot-loader.so and makes libexec/proot/loader a symlink to it, see
+# TermuxShellUtils.setupProotLoader(). The package keeps the loader under another name, so that
+# installing or upgrading it never replaces that symlink, and build-bootstrap.sh takes the
+# loader for the app from there.
+replace_line packages/proot/build.sh '^([[:space:]]*)chmod 700 \$TERMUX_PREFIX/bin/termux-chroot$' \
+	'\1chmod 700 $TERMUX_PREFIX/bin/termux-chroot\n\1mv "$TERMUX_PREFIX/libexec/proot/loader" "$TERMUX_PREFIX/libexec/proot/loader.elf"'
+grep -q 'loader\.elf' packages/proot/build.sh || fail "The loader was not renamed in packages/proot/build.sh"
+
 echo "[*] Adding the repository key to termux-keyring..."
 cp "$TERMINOW_REPO_PUBLIC_KEY_FILE" packages/termux-keyring/terminow.gpg
 replace_line packages/termux-keyring/build.sh '^([[:space:]]*)install -Dm600 "\$TERMUX_PKG_BUILDER_DIR/termux-autobuilds\.gpg" "\$GPG_SHARE_DIR"$' \

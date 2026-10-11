@@ -10,6 +10,7 @@
 # Results:
 #   <work directory>/termux-packages/output/bootstrap-<arch>.zip   The bootstrap archives for the app.
 #   <work directory>/termux-packages/output/*.deb                  The packages for make-apt-repo.sh.
+#   <work directory>/termux-packages/output/proot-loader-<arch>    The proot loader for the app.
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -34,5 +35,25 @@ cd termux-packages
 # libbz2 is the parent package of the bzip2 bootstrap package, which can not be built by its own name.
 ./scripts/run-docker.sh ./scripts/build-bootstraps.sh \
 	--architectures "$TERMINOW_ARCHITECTURES" --add "libbz2,$TERMINOW_EXTRA_PACKAGES"
+
+# The packages that are only in the package repository. Their dependencies that were built for
+# the bootstrap are not built again.
+for arch in ${TERMINOW_ARCHITECTURES//,/ }; do
+	for package in ${TERMINOW_REPO_PACKAGES//,/ }; do
+		./scripts/run-docker.sh ./build-package.sh -a "$arch" "$package"
+	done
+done
+
+# The proot loader is included in the app as a native library, see configure-termux-packages.sh.
+if [[ ",$TERMINOW_REPO_PACKAGES," == *",proot,"* ]]; then
+	for arch in ${TERMINOW_ARCHITECTURES//,/ }; do
+		proot_debs=(output/proot_*_"$arch".deb)
+		[ -f "${proot_debs[0]}" ] && [ "${#proot_debs[@]}" = "1" ] || { echo "[!] Expected one proot package for $arch but found: ${proot_debs[*]}" 1>&2; exit 1; }
+		loader="output/proot-loader-$arch"
+		ar p "${proot_debs[0]}" data.tar.xz | tar -xJ --wildcards -O '*/libexec/proot/loader.elf' > "$loader"
+		[ "$(head -c 4 "$loader" | od -An -c | tr -d ' ')" = '177ELF' ] || { echo "[!] '$loader' taken from '${proot_debs[0]}' is not an ELF file" 1>&2; exit 1; }
+	done
+	ls -l output/proot-loader-*
+fi
 
 ls -l output/bootstrap-*.zip

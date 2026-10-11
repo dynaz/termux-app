@@ -20,6 +20,10 @@
 # them and their dependencies also end up in the package repository.
 : "${TERMINOW_EXTRA_PACKAGES:=openssh,git,tmux}"
 
+# Packages built for the package repository only, to be installed with `pkg install`. proot-distro
+# runs Linux distributions like Ubuntu; it depends on python, which is too large for the bootstrap.
+: "${TERMINOW_REPO_PACKAGES:=proot,proot-distro}"
+
 : "${TERMINOW_ARCHITECTURES:=aarch64}"
 
 # The public key of the key that signs the package repository, see generate-repo-key.sh.
