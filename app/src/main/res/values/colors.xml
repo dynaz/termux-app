@@ -19,6 +19,14 @@
     <color name="terminow_host_mosh">#0D5C91</color>
     <color name="terminow_host_local">#2E7D5B</color>
 
+    <!-- Host form panel. -->
+    <color name="terminow_panel">#1E2233</color>
+    <color name="terminow_panel_card">#2B3046</color>
+    <color name="terminow_panel_line">#6B7190</color>
+    <color name="terminow_panel_accent">#21C17A</color>
+    <color name="terminow_panel_scrim">#99000000</color>
+    <color name="terminow_panel_button">#2F344B</color>
+
     <!-- Extra keys bar. -->
     <color name="terminow_keys_bar">#1C1C1E</color>
     <color name="terminow_keys_text">#E6E6E6</color>

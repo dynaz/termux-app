@@ -33,14 +33,19 @@ import com.termux.app.TermuxActivity;
 import com.termux.app.TermuxService;
 import com.termux.app.activities.SettingsActivity;
 import com.termux.shared.activity.ActivityUtils;
+import com.termux.shared.shell.ShellUtils;
+import com.termux.shared.termux.TermuxConstants;
 import com.termux.shared.termux.shell.command.runner.terminal.TermuxSession;
 import com.termux.shared.view.KeyboardUtils;
 import com.termux.shared.view.ViewUtils;
 import com.termux.terminal.TerminalSession;
 
+import java.io.File;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 /**
  * The home screen of {@link TermuxActivity} and the tab bar above it. The home screen is shown over
@@ -54,6 +59,18 @@ public class TerminowHome {
     /** How long to wait for the shell of a new session to start before giving up on sending it a command. */
     private static final int WRITE_RETRY_COUNT = 50;
     private static final int WRITE_RETRY_DELAY_MS = 100;
+
+    /** How long to wait for the password prompt of a host after connecting to it. */
+    private static final int PASSWORD_PROMPT_CHECK_COUNT = 200;
+    private static final int PASSWORD_PROMPT_CHECK_DELAY_MS = 300;
+    /** The line that ssh waits at for the password of a host, like `root@host's password: `. */
+    private static final Pattern PASSWORD_PROMPT_PATTERN = Pattern.compile("'s password:\\s*$", Pattern.CASE_INSENSITIVE);
+
+    /** The part of the screen width that the host form takes, like the Termius host panel. */
+    private static final float HOST_PANEL_SCREEN_WIDTH_FRACTION = 0.36f;
+    private static final int HOST_PANEL_MIN_WIDTH_DP = 340;
+    /** The host form takes the whole width of screens narrower than this. */
+    private static final int HOST_PANEL_MIN_SCREEN_WIDTH_DP = 600;
 
     private final TermuxActivity mActivity;
     private final TerminowStore mStore;
@@ -346,8 +363,36 @@ public class TerminowHome {
 
     private void connect(@NonNull TerminowStore.Host host) {
         TerminalSession session = addSession(host.getTitle());
-        if (session != null)
-            writeWhenStarted(session, host.getCommand() + "\r", 0);
+        if (session == null) return;
+
+        writeWhenStarted(session, host.getCommand() + "\r", 0);
+        if (!host.password.isEmpty())
+            writePasswordWhenAsked(session, host.password, 0);
+    }
+
+    /**
+     * Type in the password of a host the first time that the session waits at a password prompt
+     * after connecting, like `root@host's password: `. Other prompts before it, like to confirm
+     * the key of a new host, are left to the user. The password is only written once, so a wrong
+     * password ends at the prompt of ssh to enter it again instead of being retried.
+     */
+    private void writePasswordWhenAsked(@NonNull TerminalSession session, @NonNull String password, int attempt) {
+        if (attempt >= PASSWORD_PROMPT_CHECK_COUNT) return;
+
+        if (session.getPid() > 0) {
+            if (!session.isRunning()) return;
+
+            String transcript = ShellUtils.getTerminalSessionTranscriptText(session, false, true);
+            if (transcript != null) {
+                String lastLine = transcript.substring(transcript.lastIndexOf('\n') + 1);
+                if (PASSWORD_PROMPT_PATTERN.matcher(lastLine).find()) {
+                    session.write(password + "\r");
+                    return;
+                }
+            }
+        }
+
+        mHandler.postDelayed(() -> writePasswordWhenAsked(session, password, attempt + 1), PASSWORD_PROMPT_CHECK_DELAY_MS);
     }
 
     private void runSnippet(@NonNull TerminowStore.Snippet snippet) {
@@ -410,36 +455,40 @@ public class TerminowHome {
 
 
 
-    /** Show the full screen form to add or edit a host. */
+    /** Show the form to add or edit a host in a panel at the side of the screen. */
     private void showHostDialog(@Nullable TerminowStore.Host existingHost) {
-        Dialog dialog = new Dialog(mActivity, android.R.style.Theme_Material_NoActionBar);
+        Dialog dialog = new Dialog(mActivity, R.style.TerminowPanelDialog);
         dialog.setContentView(R.layout.dialog_terminow_host);
         Window window = dialog.getWindow();
         if (window != null) {
-            int backgroundColor = ContextCompat.getColor(mActivity, R.color.terminow_bg);
-            window.setStatusBarColor(backgroundColor);
-            window.setNavigationBarColor(backgroundColor);
+            window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
             window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         }
 
-        // Keep the form readable on wide screens instead of stretching the fields across them
+        // The panel takes the same part of a wide screen as the Termius host panel and all of a
+        // narrow screen, where the fields would not fit in a part of it.
         View rootView = dialog.findViewById(R.id.terminow_host_root);
         View columnView = dialog.findViewById(R.id.terminow_host_column);
         rootView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
-            int width = Math.min(right - left, dp(560));
+            int rootWidth = right - left;
+            int width = rootWidth < dp(HOST_PANEL_MIN_SCREEN_WIDTH_DP) ? rootWidth :
+                Math.max(dp(HOST_PANEL_MIN_WIDTH_DP), Math.round(rootWidth * HOST_PANEL_SCREEN_WIDTH_FRACTION));
             ViewGroup.LayoutParams params = columnView.getLayoutParams();
             if (params.width != width) {
                 params.width = width;
                 columnView.post(() -> columnView.setLayoutParams(params));
             }
         });
+        // Tapping the dimmed home screen next to the panel closes it
+        rootView.setOnClickListener(v -> dialog.dismiss());
 
         TextView titleView = dialog.findViewById(R.id.terminow_host_title);
-        ImageView iconView = dialog.findViewById(R.id.terminow_host_icon);
         EditText labelView = dialog.findViewById(R.id.terminow_host_label);
         EditText addressView = dialog.findViewById(R.id.terminow_host_address);
         EditText portView = dialog.findViewById(R.id.terminow_host_port);
         EditText usernameView = dialog.findViewById(R.id.terminow_host_username);
+        EditText passwordView = dialog.findViewById(R.id.terminow_host_password);
+        EditText keyView = dialog.findViewById(R.id.terminow_host_key);
         Switch moshView = dialog.findViewById(R.id.terminow_host_mosh);
 
         titleView.setText(existingHost == null ? R.string.terminow_new_host : R.string.terminow_edit_host);
@@ -447,22 +496,26 @@ public class TerminowHome {
             labelView.setText(existingHost.label);
             addressView.setText(existingHost.address);
             usernameView.setText(existingHost.username);
+            passwordView.setText(existingHost.password);
+            keyView.setText(existingHost.keyPath);
             moshView.setChecked(existingHost.mosh);
+            // The default port is shown as the hint of the empty field
+            if (existingHost.port != 22)
+                portView.setText(String.valueOf(existingHost.port));
         }
-        portView.setText(String.valueOf(existingHost != null ? existingHost.port : 22));
 
-        Runnable updateIcon = () -> iconView.getBackground().mutate().setColorFilter(ContextCompat.getColor(mActivity,
-            moshView.isChecked() ? R.color.terminow_host_mosh : R.color.terminow_host_ssh), PorterDuff.Mode.SRC_IN);
-        updateIcon.run();
-        moshView.setOnCheckedChangeListener((buttonView, isChecked) -> updateIcon.run());
+        dialog.findViewById(R.id.terminow_host_keys).setOnClickListener(v -> showKeyPicker(keyView));
+        dialog.findViewById(R.id.terminow_host_key_remove).setOnClickListener(v -> keyView.setText(""));
 
         dialog.findViewById(R.id.terminow_host_close).setOnClickListener(v -> dialog.dismiss());
         dialog.findViewById(R.id.terminow_host_save).setOnClickListener(v -> {
             String address = addressView.getText().toString().trim();
             String username = usernameView.getText().toString().trim();
+            String keyPath = keyView.getText().toString().trim();
+            String portText = portView.getText().toString().trim();
             int port;
             try {
-                port = Integer.parseInt(portView.getText().toString().trim());
+                port = portText.isEmpty() ? 22 : Integer.parseInt(portText);
             } catch (NumberFormatException e) {
                 port = -1;
             }
@@ -482,12 +535,19 @@ public class TerminowHome {
                 usernameView.requestFocus();
                 return;
             }
+            if (!TerminowStore.isValidKeyPath(keyPath)) {
+                mActivity.showToast(mActivity.getString(R.string.terminow_host_invalid_key), true);
+                keyView.requestFocus();
+                return;
+            }
 
             TerminowStore.Host host = existingHost != null ? existingHost : new TerminowStore.Host();
             host.label = labelView.getText().toString().trim();
             host.address = address;
             host.port = port;
             host.username = username;
+            host.password = passwordView.getText().toString();
+            host.keyPath = keyPath;
             host.mosh = moshView.isChecked();
             if (existingHost == null)
                 mHosts.add(host);
@@ -499,6 +559,37 @@ public class TerminowHome {
         dialog.show();
         if (existingHost == null)
             addressView.requestFocus();
+    }
+
+    /** Show the private keys in `~/.ssh` to pick the key of a host from. */
+    private void showKeyPicker(@NonNull EditText keyView) {
+        List<String> keys = new ArrayList<>();
+        File[] files = new File(TermuxConstants.TERMUX_HOME_DIR_PATH, ".ssh").listFiles();
+        if (files != null) {
+            for (File file : files) {
+                String name = file.getName();
+                // Skip public keys and the other files that ssh keeps in the directory
+                if (!file.isFile() || name.endsWith(".pub") || name.startsWith("known_hosts") ||
+                    name.equals("config") || name.equals("authorized_keys") || name.equals("environment"))
+                    continue;
+                if (TerminowStore.isValidKeyPath("~/.ssh/" + name))
+                    keys.add("~/.ssh/" + name);
+            }
+        }
+        Collections.sort(keys);
+
+        if (keys.isEmpty()) {
+            new AlertDialog.Builder(mActivity)
+                .setMessage(R.string.terminow_host_no_keys)
+                .setPositiveButton(android.R.string.ok, null)
+                .show();
+            return;
+        }
+
+        new AlertDialog.Builder(mActivity)
+            .setTitle(R.string.terminow_host_keys_title)
+            .setItems(keys.toArray(new CharSequence[0]), (dialog, which) -> keyView.setText(keys.get(which)))
+            .show();
     }
 
     private void showSnippetDialog(@Nullable TerminowStore.Snippet existingSnippet) {
