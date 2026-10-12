@@ -34,6 +34,10 @@ public class TerminowTransfer {
         public int filesCopied;
         public int skipped;
         public final List<String> skippedLinks = new ArrayList<>();
+        /** Links that were made again in the target, which keeps Linux links. */
+        public int linksCopied;
+        /** Files whose Linux permissions the target can not keep. */
+        public int permissionsNotKept;
         public final List<String> errors = new ArrayList<>();
         public boolean cancelled;
     }
@@ -134,6 +138,18 @@ public class TerminowTransfer {
                              @NonNull TerminowFs.Node targetDirectory) throws IOException {
         mCancel.check();
         if (node.link) {
+            // Between two Linux file systems a link is made again, pointing where it pointed
+            if (mSource instanceof TerminowFs.Metadata && mTarget instanceof TerminowFs.Metadata) {
+                String target = ((TerminowFs.Metadata) mSource).readLink(node);
+                if (mTarget.find(targetDirectory, node.name) != null) {
+                    mResult.errors.add(node.name + ": exists already, the link was not made");
+                    return false;
+                }
+                ((TerminowFs.Metadata) mTarget).createLink(targetDirectory, node.name, target);
+                mResult.linksCopied++;
+                if (mMove) mSource.delete(node, sourceParent, mCancel);
+                return true;
+            }
             mResult.skippedLinks.add(node.name);
             return false;
         }
@@ -162,6 +178,7 @@ public class TerminowTransfer {
         } else {
             directory = mTarget.createDirectory(targetDirectory, node.name);
         }
+        keepMode(node, targetDirectory, directory.name);
 
         boolean complete = true;
         for (TerminowFs.Node child : mSource.list(node, mCancel)) {
@@ -232,6 +249,7 @@ public class TerminowTransfer {
             }
             mTarget.rename(partial, targetDirectory, name);
             done = true;
+            keepMode(node, targetDirectory, name);
         } finally {
             if (!done) {
                 try {
@@ -247,6 +265,22 @@ public class TerminowTransfer {
         mListener.onProgress(node.name, mBytesDone, mBytesTotal, mFilesDone, mFilesTotal);
         if (mMove) mSource.delete(node, sourceParent, mCancel);
         return true;
+    }
+
+    /** Keep the Linux permissions of a copy where the target can, and count where it can not. */
+    private void keepMode(@NonNull TerminowFs.Node node, @NonNull TerminowFs.Node targetDirectory, @NonNull String name) {
+        if (!(mSource instanceof TerminowFs.Metadata)) return;
+        int mode = ((TerminowFs.Metadata) mSource).getMode(node);
+        if (mode < 0) return;
+        if (mTarget instanceof TerminowFs.Metadata) {
+            try {
+                ((TerminowFs.Metadata) mTarget).setMode(targetDirectory, name, mode);
+                return;
+            } catch (IOException e) {
+                // Counted below
+            }
+        }
+        mResult.permissionsNotKept++;
     }
 
     /** "name (2).ext", the first that does not exist. */
@@ -268,8 +302,13 @@ public class TerminowTransfer {
         if (result.cancelled) text.append("Cancelled. ");
         text.append(result.filesCopied).append(result.filesCopied == 1 ? " file" : " files").append(" done");
         if (result.skipped > 0) text.append(", ").append(result.skipped).append(" skipped");
+        if (result.linksCopied > 0)
+            text.append(", ").append(result.linksCopied).append(result.linksCopied == 1 ? " link" : " links").append(" made again");
         if (!result.skippedLinks.isEmpty())
             text.append(", ").append(result.skippedLinks.size()).append(" links not copied (links are never followed)");
+        if (result.permissionsNotKept > 0)
+            text.append(". The Linux permissions of ").append(result.permissionsNotKept)
+                .append(result.permissionsNotKept == 1 ? " item were" : " items were").append(" not kept: the target does not store them");
         if (!result.errors.isEmpty()) {
             text.append(".\n\nProblems:");
             for (int i = 0; i < Math.min(10, result.errors.size()); i++) text.append("\n• ").append(result.errors.get(i));

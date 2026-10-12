@@ -1236,6 +1236,58 @@ public class TerminowStore {
     // The key panel of the terminal
     // ---------------------------------------------------------------------------------------
 
+    /** The settings of the Linux environments by alias: default user and folder, shared folders. */
+    @NonNull
+    public JSONObject getLinuxSettings() {
+        try {
+            return new JSONObject(mPreferences.getString("linux_settings", "{}"));
+        } catch (JSONException e) {
+            return new JSONObject();
+        }
+    }
+
+    public void setLinuxSettings(@NonNull JSONObject settings) {
+        mPreferences.edit().putString("linux_settings", settings.toString()).apply();
+    }
+
+    /** The alias of an install that was started and not finished, to clean up after the app was killed. */
+    @Nullable
+    public String getLinuxInstalling() {
+        String alias = mPreferences.getString("linux_installing", "");
+        return alias.isEmpty() ? null : alias;
+    }
+
+    public void setLinuxInstalling(@Nullable String alias) {
+        mPreferences.edit().putString("linux_installing", alias == null ? "" : alias).apply();
+    }
+
+    /** The tmux sessions that were opened recently, by "environment|user", newest first. */
+    @NonNull
+    public List<String> getTmuxRecent(@NonNull String key) {
+        List<String> names = new ArrayList<>();
+        try {
+            JSONArray array = new JSONObject(mPreferences.getString("tmux_recent", "{}")).optJSONArray(key);
+            for (int i = 0; array != null && i < array.length(); i++) names.add(array.optString(i));
+        } catch (JSONException e) {
+            // None
+        }
+        return names;
+    }
+
+    public void addTmuxRecent(@NonNull String key, @NonNull String name) {
+        try {
+            JSONObject all = new JSONObject(mPreferences.getString("tmux_recent", "{}"));
+            List<String> names = getTmuxRecent(key);
+            names.remove(name);
+            names.add(0, name);
+            while (names.size() > 8) names.remove(names.size() - 1);
+            all.put(key, new JSONArray(names));
+            mPreferences.edit().putString("tmux_recent", all.toString()).apply();
+        } catch (JSONException e) {
+            // Not kept
+        }
+    }
+
     /** Whether the key panel is shown beside the terminal on a wide screen, closed until it is opened. */
     public boolean isKeyPanelShown() {
         return mPreferences.getBoolean("key_panel_shown", false);

@@ -160,6 +160,27 @@ public class TerminowClaudeSetup {
         return run(buildCommand(mTargets.getPrefixDir(), target, user, VERIFY_SCRIPT, directory, name), VERIFY_TIMEOUT_MS);
     }
 
+    /**
+     * Start a command with the environment of the terminal, from the TermiNow runtime itself,
+     * never inside an environment. Output is read by the caller.
+     */
+    @NonNull
+    public Process start(@NonNull List<String> command) throws IOException {
+        TermuxShellEnvironment shellEnvironment = new TermuxShellEnvironment();
+        HashMap<String, String> environment = shellEnvironment.getEnvironment(mContext, false);
+        TermuxShellUtils.setupSystemLinkerExecLdPreloadLib();
+        String[] args = shellEnvironment.setupShellCommandArguments(command.get(0),
+            command.subList(1, command.size()).toArray(new String[0]));
+        ProcessBuilder builder = new ProcessBuilder(args);
+        builder.environment().clear();
+        for (String entry : ShellEnvironmentUtils.convertEnvironmentToEnviron(environment)) {
+            int equals = entry.indexOf('=');
+            if (equals > 0) builder.environment().put(entry.substring(0, equals), entry.substring(equals + 1));
+        }
+        builder.directory(mTargets.getTerminowHome());
+        return builder.start();
+    }
+
     /** Run a command with the environment of the terminal and capture its output. */
     @NonNull
     ProcessResult run(@NonNull List<String> command, long timeoutMs) {

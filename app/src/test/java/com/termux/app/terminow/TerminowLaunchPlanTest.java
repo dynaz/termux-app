@@ -105,7 +105,7 @@ public class TerminowLaunchPlanTest {
         TerminowLaunchPlan plan = TerminowLaunchPlan.build(PREFIX, "ubuntu", "root", "/root/app", TerminowLaunchPlan.TOOL_CLAUDE_RESUME, "",
             TerminowLaunchPlan.TMUX_ATTACH, "app", true);
         assertEquals(Arrays.asList("login", "ubuntu", "--user", "root", "--work-dir", "/root/app", "--", "/bin/sh", "-c",
-            TerminowLaunchPlan.CONTAINER_TMUX_SCRIPT, "terminow", "attach", "app", "/bin/sh", "-c", TerminowLauncher.CLAUDE_SCRIPT,
+            TerminowLaunchPlan.CONTAINER_TMUX_SCRIPT, "terminow", "attach", "app", "terminow-root", "/bin/sh", "-c", TerminowLauncher.CLAUDE_SCRIPT,
             "claude", "--resume"), plan.arguments);
     }
 
@@ -152,7 +152,7 @@ public class TerminowLaunchPlanTest {
     }
 
     private List<String> containerScript(String mode, String name, String... args) {
-        List<String> command = new ArrayList<>(Arrays.asList("/bin/sh", "-c", TerminowLaunchPlan.CONTAINER_TMUX_SCRIPT, "terminow", mode, name));
+        List<String> command = new ArrayList<>(Arrays.asList("/bin/sh", "-c", TerminowLaunchPlan.CONTAINER_TMUX_SCRIPT, "terminow", mode, name, "terminow-dev"));
         command.addAll(printer());
         command.addAll(Arrays.asList(args));
         return command;
@@ -163,8 +163,8 @@ public class TerminowLaunchPlanTest {
         File bin = mFolder.newFolder("empty-bin");
         File dir = mFolder.newFolder("work dir");
         // Only a folder without tmux, and the shell by its full path
-        String output = run(dir, Collections.singletonMap("PATH", bin.getPath()), containerScript("attach", "x", "a b", "$(id)"));
-        assertTrue(output, output.contains("tmux is not installed here"));
+        String output = run(dir, mapOf("PATH", bin.getPath(), "TERMINOW_TMUX_DIRS", bin.getPath()), containerScript("attach", "x", "a b", "$(id)"));
+        assertTrue(output, output.contains("tmux is not installed in this environment"));
         assertTrue(output, output.contains("PWD=" + dir.getPath() + "\n"));
         assertTrue(output, output.contains("ARG=[a b]\nARG=[$(id)]\n"));
     }
@@ -172,7 +172,7 @@ public class TerminowLaunchPlanTest {
     @Test
     public void containerScriptInsideTmuxDoesNotNestIt() throws Exception {
         File bin = fakeTmux();
-        String output = run(mFolder.getRoot(), mapOf("PATH", bin.getPath() + ":/usr/bin:/bin", "TMUX", "/tmp/sock,1,0"),
+        String output = run(mFolder.getRoot(), mapOf("PATH", "/usr/bin:/bin", "TERMINOW_TMUX_DIRS", bin.getPath(), "TMUX", "/tmp/sock,1,0"),
             containerScript("attach", "x", "plain"));
         assertFalse(output, output.contains("TMUX-ARG"));
         assertTrue(output, output.contains("ARG=[plain]"));
@@ -182,10 +182,11 @@ public class TerminowLaunchPlanTest {
     public void containerScriptAttachesOrCreatesInTheFolder() throws Exception {
         File bin = fakeTmux();
         File dir = mFolder.newFolder("pro ject");
-        String output = run(dir, Collections.singletonMap("PATH", bin.getPath() + ":/usr/bin:/bin"), containerScript("attach", "work", "x y"));
-        assertTrue(output, output.contains("TMUX-ARG=[new-session]\nTMUX-ARG=[-A]\nTMUX-ARG=[-s]\nTMUX-ARG=[work]\nTMUX-ARG=[-c]\nTMUX-ARG=[" + dir.getPath() + "]\n"));
+        Map<String, String> env = mapOf("PATH", "/usr/bin:/bin", "TERMINOW_TMUX_DIRS", bin.getPath());
+        String output = run(dir, env, containerScript("attach", "work", "x y"));
+        assertTrue(output, output.contains("TMUX-ARG=[-L]\nTMUX-ARG=[terminow-dev]\nTMUX-ARG=[new-session]\nTMUX-ARG=[-A]\nTMUX-ARG=[-s]\nTMUX-ARG=[work]\nTMUX-ARG=[-c]\nTMUX-ARG=[" + dir.getPath() + "]\n"));
         assertTrue(output, output.contains("TMUX-ARG=[x y]\n"));
-        output = run(dir, Collections.singletonMap("PATH", bin.getPath() + ":/usr/bin:/bin"), containerScript("create", "work"));
+        output = run(dir, env, containerScript("create", "work"));
         assertFalse(output, output.contains("TMUX-ARG=[-A]"));
     }
 
@@ -230,24 +231,62 @@ public class TerminowLaunchPlanTest {
     }
 
     @Test
-    public void tmuxListScriptWithAFakeTmux() throws Exception {
-        File bin = fakeTmux();
-        String output = run(mFolder.getRoot(), Collections.singletonMap("PATH", bin.getPath() + ":/usr/bin:/bin"),
-            Arrays.asList("/bin/sh", "-c", TerminowLauncher.TMUX_LIST_SCRIPT, "terminow-setup"));
-        TerminowLauncher.TmuxState state = new TerminowLauncher.TmuxState();
-        TerminowLauncher.parseTmux(state, output);
+    public void tmuxListUsesTheEnvironmentsOwnTmuxAndServer() throws Exception {
+        File guest = fakeTmux();
+        // A "host" tmux on PATH, like the one of TermiNow that proot-distro adds, which must not be used
+        File host = mFolder.newFolder("host-bin");
+        File hostTmux = new File(host, "tmux");
+        Files.write(hostTmux.toPath(), "#!/bin/sh\necho HOST-TMUX-USED\n".getBytes(StandardCharsets.UTF_8));
+        assertTrue(hostTmux.setExecutable(true));
+        String output = run(mFolder.getRoot(), mapOf("PATH", host.getPath() + ":/usr/bin:/bin", "TERMINOW_TMUX_DIRS", guest.getPath()),
+            Arrays.asList("/bin/sh", "-c", TerminowTmux.SCRIPT, "terminow-setup", "guest", "terminow-dev", "list"));
+        assertFalse(output, output.contains("HOST-TMUX-USED"));
+        TerminowTmux.State state = TerminowTmux.parse(output);
         assertTrue(state.checked);
-        assertTrue(state.installed);
+        assertTrue(state.isInstalled());
+        assertEquals(new File(guest, "tmux").getPath(), state.binary);
+        assertTrue(state.socket, state.socket.endsWith("/terminow-dev"));
         assertEquals(2, state.sessions.size());
-        assertEquals("main", state.sessions.get(0)[0]);
-        assertEquals("1", state.sessions.get(0)[1]);
-        assertEquals("my work", state.sessions.get(1)[0]);
+        assertEquals("main", state.sessions.get(0).name);
+        assertEquals(1, state.sessions.get(0).attached);
+        assertEquals("my work", state.sessions.get(1).name);
+        assertTrue(output, output.contains("SERVER=[terminow-dev]"));
 
-        TerminowLauncher.TmuxState none = new TerminowLauncher.TmuxState();
-        TerminowLauncher.parseTmux(none, run(mFolder.getRoot(), Collections.singletonMap("PATH", mFolder.newFolder("nothing").getPath()),
-            Arrays.asList("/bin/sh", "-c", TerminowLauncher.TMUX_LIST_SCRIPT, "terminow-setup")));
+        // Another user has another server
+        String other = run(mFolder.getRoot(), mapOf("PATH", "/usr/bin:/bin", "TERMINOW_TMUX_DIRS", guest.getPath()),
+            Arrays.asList("/bin/sh", "-c", TerminowTmux.SCRIPT, "terminow-setup", "guest", TerminowLaunchPlan.tmuxSocket(false, "alice"), "list"));
+        assertTrue(other, other.contains("SERVER=[terminow-alice]"));
+        assertEquals("", TerminowLaunchPlan.tmuxSocket(true, "root"));
+
+        // No tmux in the environment: not installed, even though the host has one
+        TerminowTmux.State none = TerminowTmux.parse(run(mFolder.getRoot(), mapOf("PATH", host.getPath() + ":/usr/bin:/bin",
+            "TERMINOW_TMUX_DIRS", mFolder.newFolder("empty-guest").getPath()),
+            Arrays.asList("/bin/sh", "-c", TerminowTmux.SCRIPT, "terminow-setup", "guest", "terminow-root", "list")));
         assertTrue(none.checked);
-        assertFalse(none.installed);
+        assertFalse(none.isInstalled());
+    }
+
+    @Test
+    public void tmuxOperationsTargetTheExactSession() throws Exception {
+        File guest = fakeTmux();
+        Map<String, String> env = mapOf("PATH", "/usr/bin:/bin", "TERMINOW_TMUX_DIRS", guest.getPath());
+        String rename = run(mFolder.getRoot(), env, Arrays.asList("/bin/sh", "-c", TerminowTmux.SCRIPT, "s", "guest", "terminow-root", "rename", "old", "new"));
+        assertTrue(rename, rename.contains("TMUX-ARG=[rename-session]\nTMUX-ARG=[-t]\nTMUX-ARG=[=old]\nTMUX-ARG=[new]"));
+        assertTrue(TerminowTmux.parse(rename).done);
+        String kill = run(mFolder.getRoot(), env, Arrays.asList("/bin/sh", "-c", TerminowTmux.SCRIPT, "s", "guest", "terminow-root", "kill", "work"));
+        assertTrue(kill, kill.contains("TMUX-ARG=[kill-session]\nTMUX-ARG=[-t]\nTMUX-ARG=[=work]"));
+        String detach = run(mFolder.getRoot(), env, Arrays.asList("/bin/sh", "-c", TerminowTmux.SCRIPT, "s", "guest", "terminow-root", "detach", "work"));
+        assertTrue(detach, detach.contains("TMUX-ARG=[detach-client]\nTMUX-ARG=[-s]\nTMUX-ARG=[=work]"));
+    }
+
+    @Test
+    public void containerLaunchHasTheUserFolderAndSharedFolders() {
+        TerminowLaunchPlan plan = TerminowLaunchPlan.build(PREFIX, "debian", "alice", "/home/alice/src", TerminowLaunchPlan.TOOL_SHELL, "",
+            TerminowLaunchPlan.TMUX_ATTACH, "work", true, Arrays.asList("--bind", "/storage/emulated/0/Projects:/mnt/projects"));
+        assertEquals(Arrays.asList("login", "debian", "--user", "alice", "--work-dir", "/home/alice/src", "--bind",
+            "/storage/emulated/0/Projects:/mnt/projects", "--", "/bin/sh", "-c", TerminowLaunchPlan.CONTAINER_TMUX_SCRIPT, "terminow",
+            "attach", "work", "terminow-alice", "/bin/bash", "-l"), plan.arguments);
+        assertEquals(PREFIX + "/bin/proot-distro", plan.executable);
     }
 
     /** A tmux that prints its arguments, and lists two sessions. */
@@ -255,7 +294,7 @@ public class TerminowLaunchPlanTest {
         File bin = mFolder.newFolder();
         File tmux = new File(bin, "tmux");
         Files.write(tmux.toPath(), ("#!/bin/sh\n" +
-            "if [ \"$1\" = list-sessions ]; then echo 'TERMINOW_SESSION=main|1|3'; echo 'TERMINOW_SESSION=my work|0|1'; exit 0; fi\n" +
+            "if [ \"$1\" = -L ] && [ \"$3\" = list-sessions ]; then echo \"SERVER=[$2]\"; echo 'TERMINOW_SESSION=main|1|3|1700000000'; echo 'TERMINOW_SESSION=my work|0|1|1700000001'; exit 0; fi\n" +
             "for a; do printf 'TMUX-ARG=[%s]\\n' \"$a\"; done\n").getBytes(StandardCharsets.UTF_8));
         assertTrue(tmux.setExecutable(true));
         return bin;

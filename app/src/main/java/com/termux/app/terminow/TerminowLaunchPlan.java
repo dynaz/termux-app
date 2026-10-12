@@ -33,20 +33,34 @@ public final class TerminowLaunchPlan {
 
     /**
      * Runs the arguments in tmux in a proot-distro container: attaches to the session or creates
-     * it. Without tmux, or inside tmux already, it runs the arguments directly, so there is always
-     * a usable shell and tmux is never nested.
+     * it, on the tmux server of the user ($3, like "terminow-root"). Only the tmux of the
+     * environment itself is used, never the one of TermiNow that proot-distro puts at the end of
+     * PATH. Without tmux, or inside tmux already, it runs the arguments directly, so there is
+     * always a usable shell and tmux is never nested.
      */
     static final String CONTAINER_TMUX_SCRIPT =
-        "mode=\"$1\"; name=\"$2\"; shift 2\n" +
-        "if ! command -v tmux >/dev/null 2>&1; then\n" +
-        "  echo \"TermiNow: tmux is not installed here, install it with: apt install tmux\"\n" +
+        "mode=\"$1\"; name=\"$2\"; socket=\"$3\"; shift 3\n" +
+        "t=\n" +
+        "for d in ${TERMINOW_TMUX_DIRS:-/usr/local/bin /usr/bin /bin}; do if [ -x \"$d/tmux\" ]; then t=\"$d/tmux\"; break; fi; done\n" +
+        "if [ -z \"$t\" ]; then\n" +
+        "  echo \"TermiNow: tmux is not installed in this environment. Install it from Open tools.\"\n" +
         "  echo \"TermiNow: starting without tmux\"\n" +
         "  exec \"$@\"\n" +
         "fi\n" +
         "if [ -n \"$TMUX\" ]; then exec \"$@\"; fi\n" +
         "SHELL=$(command -v bash || echo /bin/sh); export SHELL\n" +
-        "if [ \"$mode\" = attach ]; then exec tmux new-session -A -s \"$name\" -c \"$PWD\" \"$@\"; fi\n" +
-        "exec tmux new-session -s \"$name\" -c \"$PWD\" \"$@\"\n";
+        "if [ \"$mode\" = attach ]; then exec \"$t\" -L \"$socket\" new-session -A -s \"$name\" -c \"$PWD\" \"$@\"; fi\n" +
+        "exec \"$t\" -L \"$socket\" new-session -s \"$name\" -c \"$PWD\" \"$@\"\n";
+
+    /**
+     * The tmux server of a user in an environment: each environment has its own /tmp, and each
+     * user gets a server of their own, so sessions of different users and environments never
+     * mix. TermiNow's own (local) tmux keeps its default server, where Local Terminals are.
+     */
+    @NonNull
+    public static String tmuxSocket(boolean local, @NonNull String user) {
+        return local ? "" : "terminow-" + user;
+    }
 
     private static final Pattern TMUX_NAME = Pattern.compile("[A-Za-z0-9_][A-Za-z0-9_-]{0,39}");
 
@@ -102,6 +116,19 @@ public final class TerminowLaunchPlan {
     public static TerminowLaunchPlan build(@NonNull String prefix, @NonNull String container, @NonNull String user,
                                            @NonNull String folder, @NonNull String tool, @NonNull String customCommand,
                                            @NonNull String tmuxMode, @NonNull String tmuxName, boolean localTmuxInstalled) {
+        return build(prefix, container, user, folder, tool, customCommand, tmuxMode, tmuxName, localTmuxInstalled,
+            Collections.emptyList());
+    }
+
+    /**
+     * @param bindArguments More arguments of `proot-distro login`, the bindings of the folders
+     *                      that the user shared into the environment.
+     */
+    @NonNull
+    public static TerminowLaunchPlan build(@NonNull String prefix, @NonNull String container, @NonNull String user,
+                                           @NonNull String folder, @NonNull String tool, @NonNull String customCommand,
+                                           @NonNull String tmuxMode, @NonNull String tmuxName, boolean localTmuxInstalled,
+                                           @NonNull List<String> bindArguments) {
         if (!TerminowMcpTargets.TARGET_TERMINOW.equals(container) && !container.isEmpty()) {
             if (!TerminowMcpTargets.isValidContainerName(container) || !TerminowMcpTargets.isValidUserName(user))
                 throw new IllegalArgumentException("Invalid container or user");
@@ -134,6 +161,7 @@ public final class TerminowLaunchPlan {
         }
 
         List<String> args = new ArrayList<>(Arrays.asList("login", container, "--user", user, "--work-dir", folder));
+        args.addAll(bindArguments);
         List<String> program = new ArrayList<>();
         if (TOOL_CUSTOM.equals(tool)) {
             program.addAll(Arrays.asList("/bin/bash", "-lc", customCommand));
@@ -144,7 +172,7 @@ public final class TerminowLaunchPlan {
             program.addAll(Arrays.asList("/bin/bash", "-l"));
         }
         if (!TMUX_OFF.equals(tmuxMode)) {
-            args.addAll(Arrays.asList("--", "/bin/sh", "-c", CONTAINER_TMUX_SCRIPT, "terminow", tmuxMode, tmuxName));
+            args.addAll(Arrays.asList("--", "/bin/sh", "-c", CONTAINER_TMUX_SCRIPT, "terminow", tmuxMode, tmuxName, tmuxSocket(false, user)));
             args.addAll(program);
         } else if (!program.isEmpty()) {
             args.add("--");

@@ -136,6 +136,7 @@ public class TerminowHome {
     private final View mVaultButton;
     private final TerminowVaultsUi mVaultsUi;
     private final TerminowKeyPanel mKeyPanel;
+    private final TerminowLinuxUi mLinuxUi;
     private final View mLauncherButton;
     private final View mHomeButton;
     private final HorizontalScrollView mTabsScrollView;
@@ -209,6 +210,31 @@ public class TerminowHome {
                 openTerminalAt(directory);
             }
         });
+        mLinuxUi = new TerminowLinuxUi(activity, mStore, new TerminowLinuxUi.Host() {
+            @Override
+            public void openFiles(@NonNull com.termux.app.terminow.linux.TerminowLinuxEnv env, @NonNull String user, @NonNull String path) {
+                show();
+                setPage(PAGE_FILES);
+                mExplorer.openLinux(env, path);
+            }
+
+            @Override
+            public void openTerminal(@NonNull com.termux.app.terminow.linux.TerminowLinuxEnv env, @NonNull String user, @NonNull String path) {
+                mLauncher.openLinuxTerminal(env.alias, user, path);
+            }
+
+            @NonNull
+            @Override
+            public List<TerminalSession> sessionsOf(@NonNull String alias) {
+                return mLauncher.sessionsOf(alias);
+            }
+
+            @Override
+            public void onChanged() {
+                if (mExplorer != null) mExplorer.refresh();
+            }
+        });
+        mLauncher.setLinux(mLinuxUi);
         mLauncherButton = activity.findViewById(R.id.terminow_launcher_button);
         mLauncherButton.setOnClickListener(v -> mLauncher.show());
         mTerminalToolbar = activity.findViewById(R.id.terminow_terminal_toolbar);
@@ -260,7 +286,19 @@ public class TerminowHome {
             public void showAccountSettings() {
                 setPage(PAGE_SETTINGS);
             }
+
+            @Nullable
+            @Override
+            public TerminowLinuxUi getLinux() {
+                return mLinuxUi;
+            }
+
+            @Override
+            public void openLinuxTerminal(@NonNull String alias, @NonNull String user, @NonNull String folder) {
+                mLauncher.openLinuxTerminal(alias, user, folder);
+            }
         });
+        mExplorer.setLinuxSessionCounter(alias -> mLauncher.sessionsOf(alias).size());
         mRailSettings = activity.findViewById(R.id.terminow_rail_settings);
         mRailSettings.setOnClickListener(v -> setPage(PAGE_SETTINGS));
         mHeaderView = activity.findViewById(R.id.terminow_header);

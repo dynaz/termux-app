@@ -99,9 +99,12 @@ public class TerminowVaultsTest {
             // Refused
         }
 
-        String data = TerminowVaultCrypto.encryptVault(vaultKey, "aaaaaaaaaaaaaaaaaaaaaaaa", "{\"x\":1}");
-        assertFalse(data.contains("x"));
-        assertEquals("{\"x\":1}", TerminowVaultCrypto.decryptVault(vaultKey, "aaaaaaaaaaaaaaaaaaaaaaaa", data));
+        String plain = "{\"password\":\"correct-horse-battery-staple\"}";
+        String data = TerminowVaultCrypto.encryptVault(vaultKey, "aaaaaaaaaaaaaaaaaaaaaaaa", plain);
+        // Neither the text nor its base64 is in the ciphertext
+        assertFalse(data.contains("correct-horse"));
+        assertFalse(data.contains(TerminowPpk.encodeBase64(plain.getBytes(StandardCharsets.UTF_8)).substring(0, 16)));
+        assertEquals(plain, TerminowVaultCrypto.decryptVault(vaultKey, "aaaaaaaaaaaaaaaaaaaaaaaa", data));
         try {
             // Bound to its vault: the data of one vault can not be passed off as another one's
             TerminowVaultCrypto.decryptVault(vaultKey, "bbbbbbbbbbbbbbbbbbbbbbbb", data);

@@ -83,6 +83,22 @@ public interface TerminowFs {
         }
     }
 
+    /**
+     * A file system with Linux metadata: symbolic links and permission bits, which a copy
+     * between two of them keeps. Other file systems can not keep them, which is reported.
+     */
+    interface Metadata {
+        /** The target of a link, as it is written in it. */
+        @NonNull String readLink(@NonNull Node link) throws IOException;
+
+        void createLink(@NonNull Node directory, @NonNull String name, @NonNull String target) throws IOException;
+
+        /** The permission bits, like 0755, -1 if not known. */
+        int getMode(@NonNull Node node);
+
+        void setMode(@NonNull Node directory, @NonNull String name, int mode) throws IOException;
+    }
+
     /** An identifier of the file system, like "home", "saf:<uri>" or "sftp:<host>". */
     @NonNull String getId();
 

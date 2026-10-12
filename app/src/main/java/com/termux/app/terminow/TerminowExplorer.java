@@ -62,6 +62,9 @@ import com.termux.app.terminow.files.TerminowSafFs;
 import com.termux.app.terminow.files.TerminowSftpFs;
 import com.termux.app.terminow.files.TerminowTransfer;
 import com.termux.app.terminow.files.TerminowTransferQueue;
+import com.termux.app.terminow.linux.TerminowLinuxEnv;
+import com.termux.app.terminow.linux.TerminowLinuxFs;
+import com.termux.app.terminow.linux.TerminowLinuxPaths;
 import com.termux.shared.termux.TermuxConstants;
 
 import org.json.JSONArray;
@@ -110,6 +113,12 @@ public class TerminowExplorer {
         void exportFile();
 
         void showAccountSettings();
+
+        /** The Linux environments of the app, {@code null} before they are set up. */
+        @Nullable TerminowLinuxUi getLinux();
+
+        /** A new tab of a Linux environment, as the user, in the Linux folder. */
+        void openLinuxTerminal(@NonNull String alias, @NonNull String user, @NonNull String folder);
     }
 
     private enum Screen { DASHBOARD, BROWSER, CATEGORY, SEARCH, ANALYZER, QUEUE, RECENTS, BOOKMARKS }
@@ -239,6 +248,11 @@ public class TerminowExplorer {
             !mAccountUi.isCheckingPremium())
             mAccountUi.checkPremiumNow();
         render();
+    }
+
+    /** Draw again after something outside changed, like an environment was installed. */
+    public void refresh() {
+        if (mVisible) render();
     }
 
     /**
@@ -912,6 +926,10 @@ public class TerminowExplorer {
             page.addView(row, cardParams());
         }
 
+        // Linux environments, installed ones and Browse Linux
+        View linux = linuxSection(storageColumns);
+        if (linux != null) page.addView(linux, cardParams());
+
         // Categories
         LinearLayout categories = card();
         categories.addView(sectionTitle(R.string.terminow_explorer_section_categories), matchWrap());
@@ -985,6 +1003,148 @@ public class TerminowExplorer {
         tools.addView(toolRow, matchWrap());
         page.addView(tools, cardParams());
         return scroll;
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Linux environments
+    // ---------------------------------------------------------------------------------------
+
+    @Nullable
+    private View linuxSection(int columns) {
+        TerminowLinuxUi linux = mHost.getLinux();
+        if (linux == null) return null;
+        LinearLayout section = vertical();
+        section.addView(sectionTitle(R.string.terminow_linux_section), matchWrap());
+        List<View> cards = new ArrayList<>();
+        for (TerminowLinuxEnv env : linux.getRegistry().list()) cards.add(linuxCard(linux, env));
+        cards.add(browseLinuxCard(linux));
+        for (int start = 0; start < cards.size(); start += columns) {
+            LinearLayout row = new LinearLayout(mActivity);
+            for (int i = start; i < start + columns; i++) {
+                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1);
+                if (i < start + columns - 1) params.setMarginEnd(dp(10));
+                row.addView(i < cards.size() ? cards.get(i) : new View(mActivity), params);
+            }
+            LinearLayout.LayoutParams rowParams = matchWrap();
+            rowParams.bottomMargin = dp(10);
+            section.addView(row, rowParams);
+        }
+        return section;
+    }
+
+    /** An installed environment: its version, status, size, open tabs, and Files, Terminal and more. */
+    @NonNull
+    private View linuxCard(@NonNull TerminowLinuxUi linux, @NonNull TerminowLinuxEnv env) {
+        LinearLayout card = card();
+        LinearLayout head = new LinearLayout(mActivity);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        head.addView(linux.badge(env.distroId), new LinearLayout.LayoutParams(dp(48), dp(48)));
+        LinearLayout texts = vertical();
+        texts.setPadding(dp(14), 0, 0, 0);
+        TextView title = text(env.getShortName(), 16, mPalette.text);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        texts.addView(title);
+        texts.addView(text(env.version.isEmpty() ? mActivity.getString(R.string.terminow_linux_version_unknown) : env.version, 12, mPalette.secondary));
+        boolean installed = env.isInstalled();
+        texts.addView(text(linux.statusText(env), 12, installed ? mPalette.accent : mPalette.danger));
+        if (installed) {
+            texts.addView(text(linux.usageText(env), 12, mPalette.secondary));
+            int open = mHost.getLinux() != null ? linuxSessions(env) : 0;
+            texts.addView(text(mActivity.getResources().getQuantityString(R.plurals.terminow_linux_terminals, open, open), 12, mPalette.secondary));
+        }
+        head.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        ImageView more = iconButton(R.drawable.ic_terminow_more, R.string.terminow_toolbar_more);
+        more.setOnClickListener(v -> linux.showDetails(env));
+        head.addView(more);
+        card.addView(head, matchWrap());
+        if (installed) {
+            LinearLayout buttons = new LinearLayout(mActivity);
+            buttons.setPadding(0, dp(10), 0, 0);
+            TextView files = button(mActivity.getString(R.string.terminow_linux_files), false);
+            files.setOnClickListener(v -> linux.openFiles(env, env.defaultUser, env.startFolder(env.defaultUser)));
+            buttons.addView(files, buttonParams());
+            TextView terminal = button(mActivity.getString(R.string.terminow_linux_terminal), true);
+            terminal.setOnClickListener(v -> mHost.openLinuxTerminal(env.alias, env.defaultUser, env.startFolder(env.defaultUser)));
+            buttons.addView(terminal, buttonParams());
+            card.addView(buttons, matchWrap());
+        } else {
+            card.setOnClickListener(v -> linux.showDetails(env));
+        }
+        return card;
+    }
+
+    private int linuxSessions(@NonNull TerminowLinuxEnv env) {
+        return mLinuxSessionCounter != null ? mLinuxSessionCounter.count(env.alias) : 0;
+    }
+
+    /** Counts the open tabs of an environment, set by the home screen. */
+    public interface SessionCounter {
+        int count(@NonNull String alias);
+    }
+
+    @Nullable private SessionCounter mLinuxSessionCounter;
+
+    public void setLinuxSessionCounter(@NonNull SessionCounter counter) {
+        mLinuxSessionCounter = counter;
+    }
+
+    @NonNull
+    private View browseLinuxCard(@NonNull TerminowLinuxUi linux) {
+        LinearLayout card = card();
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.addView(round(R.drawable.ic_terminow_add, 0xFF3C4258, 48), new LinearLayout.LayoutParams(dp(48), dp(48)));
+        LinearLayout texts = vertical();
+        texts.setPadding(dp(14), 0, 0, 0);
+        TextView title = text(mActivity.getString(R.string.terminow_linux_browse) + "  ›", 16, mPalette.text);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        texts.addView(title);
+        texts.addView(text(mActivity.getString(R.string.terminow_linux_browse_summary), 12, mPalette.secondary));
+        row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        card.addView(row, matchWrap());
+        card.setOnClickListener(v -> linux.showBrowse(true));
+        return card;
+    }
+
+    /** Open the files of an environment at a Linux path, for the Files buttons. */
+    public void openLinux(@NonNull TerminowLinuxEnv env, @NonNull String path) {
+        TerminowLinuxUi linux = mHost.getLinux();
+        if (linux == null) return;
+        TerminowLinuxFs fs = linux.filesOf(env);
+        mFileSystems.put(fs.getId(), fs);
+        background(() -> {
+            try {
+                return fs.crumbsOf(path);
+            } catch (IOException e) {
+                // The folder is gone: the root of the environment
+                return Collections.singletonList(fs.getRoot());
+            }
+        }, crumbs -> open(fs, crumbs));
+    }
+
+    /** Home, Filesystem and the shared folders of the environment that is browsed. */
+    private void addLinuxShortcuts(@NonNull LinearLayout tools, @NonNull TerminowLinuxFs fs) {
+        TerminowLinuxEnv env = fs.getEnv();
+        String user = env.defaultUser;
+        TextView home = chip("⌂ " + mActivity.getString(R.string.terminow_linux_home), false);
+        home.setOnClickListener(v -> openLinux(env, env.homeOf(user)));
+        tools.addView(home, chipParams());
+        TextView root = chip("/ " + mActivity.getString(R.string.terminow_linux_filesystem), false);
+        root.setOnClickListener(v -> openLinux(env, "/"));
+        tools.addView(root, chipParams());
+        List<TerminowLinuxPaths.Mount> shared = new ArrayList<>();
+        for (TerminowLinuxPaths.Mount mount : fs.getMounts()) if (mount.userShared || mount.guest.equals("/sdcard")) shared.add(mount);
+        if (!shared.isEmpty()) {
+            TextView sharedChip = chip("⇄ " + mActivity.getString(R.string.terminow_linux_shared), false);
+            sharedChip.setOnClickListener(v -> {
+                CharSequence[] labels = new CharSequence[shared.size()];
+                for (int i = 0; i < shared.size(); i++) labels[i] = shared.get(i).guest;
+                dialog().setTitle(R.string.terminow_linux_shared_folders)
+                    .setItems(labels, (d, which) -> openLinux(env, shared.get(which).guest))
+                    .show();
+            });
+            tools.addView(sharedChip, chipParams());
+        }
     }
 
     /** A volume of shared storage, with its own used, free and total space. */
@@ -1231,6 +1391,11 @@ public class TerminowExplorer {
                     // Skipped
                 }
             }
+        }
+        // Linux environments, without their bound folders, which are shared storage or HOME
+        TerminowLinuxUi linux = mHost.getLinux();
+        if (linux != null && TerminowAccountUi.isPremium(mStore)) {
+            for (TerminowLinuxEnv env : linux.getRegistry().installed()) locations.add(linux.filesOf(env).forScan());
         }
         JSONArray folders = mStore.getExplorer().optJSONArray("folders");
         for (int i = 0; folders != null && i < folders.length(); i++) {
@@ -2131,6 +2296,7 @@ public class TerminowExplorer {
         LinearLayout tools = new LinearLayout(mActivity);
         tools.setGravity(Gravity.CENTER_VERTICAL);
         tools.setPadding(0, 0, 0, dp(4));
+        if (fs instanceof TerminowLinuxFs) addLinuxShortcuts(tools, (TerminowLinuxFs) fs);
         TextView up = chip("↑ " + mActivity.getString(R.string.terminow_explorer_up), false);
         up.setOnClickListener(v -> {
             setActive(index);
@@ -2653,6 +2819,12 @@ public class TerminowExplorer {
     /** Open a real folder of HOME in a new terminal. Other folders can not be a working directory. */
     private void openInTerminal(@Nullable TerminowFs fs, @Nullable TerminowFs.Node directory) {
         if (fs == null || directory == null) return;
+        if (fs instanceof TerminowLinuxFs) {
+            // The environment and its default user, in the Linux folder
+            TerminowLinuxEnv env = ((TerminowLinuxFs) fs).getEnv();
+            mHost.openLinuxTerminal(env.alias, env.defaultUser, directory.directory ? directory.id : TerminowLinuxPaths.parent(directory.id));
+            return;
+        }
         if (!(fs instanceof TerminowLocalFs)) {
             showMessage(mActivity.getString(R.string.terminow_explorer_open_terminal),
                 mActivity.getString(fs instanceof TerminowSafFs ? R.string.terminow_explorer_terminal_saf : R.string.terminow_explorer_terminal_sftp));

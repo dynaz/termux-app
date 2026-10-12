@@ -36,6 +36,7 @@ import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 
 import com.termux.R;
+import com.termux.app.terminow.linux.TerminowLinuxEnv;
 import com.termux.app.TermuxActivity;
 import com.termux.shared.shell.ShellUtils;
 import com.termux.shared.termux.TermuxConstants;
@@ -109,16 +110,6 @@ public class TerminowLauncher {
     /** Starts Claude Code with the arguments after `$0`, from the folder the session starts in. */
     static final String CLAUDE_SCRIPT = "PATH=\"$HOME/.local/bin:$PATH\"; export PATH; exec claude \"$@\"";
 
-    /**
-     * Lists the tmux sessions of an environment as `TERMINOW_SESSION=name|attached|windows`
-     * lines, after `TERMINOW_TMUX=yes` if tmux is installed there.
-     */
-    static final String TMUX_LIST_SCRIPT =
-        "echo TERMINOW_CHECKED=yes\n" +
-        "command -v tmux >/dev/null 2>&1 || { echo TERMINOW_TMUX=; exit 0; }\n" +
-        "echo TERMINOW_TMUX=yes\n" +
-        "tmux list-sessions -F 'TERMINOW_SESSION=#{session_name}|#{session_attached}|#{session_windows}' 2>/dev/null\n" +
-        "exit 0\n";
 
     /**
      * Installs proot-distro and Ubuntu, step by step in a tab that shows everything. It is only
@@ -170,25 +161,6 @@ public class TerminowLauncher {
         }
     }
 
-    /** The tmux sessions of an environment. */
-    static class TmuxState {
-        boolean checked;
-        @Nullable String error;
-        boolean installed;
-        final List<String[]> sessions = new ArrayList<>();
-    }
-
-    static void parseTmux(@NonNull TmuxState state, @NonNull String stdout) {
-        for (String line : stdout.split("\n")) {
-            line = line.trim();
-            if (line.equals("TERMINOW_CHECKED=yes")) state.checked = true;
-            else if (line.equals("TERMINOW_TMUX=yes")) state.installed = true;
-            else if (line.startsWith("TERMINOW_SESSION=")) {
-                String[] parts = line.substring("TERMINOW_SESSION=".length()).split("\\|", -1);
-                if (parts.length == 3 && !parts[0].isEmpty()) state.sessions.add(parts);
-            }
-        }
-    }
 
     /** What was found out about Claude Code in an environment. */
     static class ClaudeState {
@@ -225,11 +197,14 @@ public class TerminowLauncher {
         final String key;
         final String label;
         @Nullable final TerminowMcpTargets.Container container;
+        /** "Local", "Ubuntu", "Debian", from the distribution of the environment. */
+        private final String mShortName;
 
-        Environment(String key, String label, @Nullable TerminowMcpTargets.Container container) {
+        Environment(String key, String label, @Nullable TerminowMcpTargets.Container container, @NonNull String shortName) {
             this.key = key;
             this.label = label;
             this.container = container;
+            mShortName = shortName;
         }
 
         boolean isLocal() {
@@ -238,7 +213,7 @@ public class TerminowLauncher {
 
         @NonNull
         String shortName() {
-            return container == null ? "Local" : container.isUbuntu ? "Ubuntu" : container.name;
+            return mShortName;
         }
     }
 
@@ -252,11 +227,12 @@ public class TerminowLauncher {
     private final Set<String> mChecking = new HashSet<>();
     /** The sessions that the launcher started, by what they run, to switch to them instead of starting more. */
     private final Map<String, WeakReference<TerminalSession>> mSessions = new HashMap<>();
-    private final Map<String, TmuxState> mTmux = new HashMap<>();
+    private final Map<String, TerminowTmux.State> mTmux = new HashMap<>();
     private final Set<String> mTmuxChecking = new HashSet<>();
     /** What each tab that TermiNow started runs. Tabs that are not in it are unknown. */
     private final Map<TerminalSession, SessionInfo> mInfo = new WeakHashMap<>();
     private final TerminowLaunchProfilesUi mProfiles;
+    @Nullable private TerminowLinuxUi mLinux;
     @Nullable private TextView mToolbarEnvironment;
     @Nullable private TextView mToolbarFolder;
     private boolean mLaunching;
@@ -271,6 +247,29 @@ public class TerminowLauncher {
         mTargets = new TerminowMcpTargets(new File(TermuxConstants.TERMUX_PREFIX_DIR_PATH), new File(TermuxConstants.TERMUX_HOME_DIR_PATH));
         mEnvironmentKey = getPrefs().optString("environment", TerminowMcpTargets.TARGET_TERMINOW);
         mProfiles = new TerminowLaunchProfilesUi(activity, store, this);
+    }
+
+    /** The registry of Linux environments, for their names, users, folders and shared folders. */
+    public void setLinux(@NonNull TerminowLinuxUi linux) {
+        mLinux = linux;
+    }
+
+    @Nullable
+    private TerminowLinuxEnv linuxOf(@NonNull Environment environment) {
+        return mLinux != null && environment.container != null ? mLinux.getRegistry().get(environment.key) : null;
+    }
+
+    /** The bindings of the folders that the user shared into the environment. */
+    @NonNull
+    private List<String> bindsOf(@NonNull Environment environment) {
+        TerminowLinuxEnv linux = linuxOf(environment);
+        return linux != null ? linux.bindArguments() : new ArrayList<>();
+    }
+
+    /** Claude Code and tmux are found out for each environment and user, never shared. */
+    @NonNull
+    private String stateKey(@NonNull Environment environment) {
+        return TerminowTmux.key(environment.key, getUser(environment));
     }
 
     @NonNull
@@ -325,9 +324,15 @@ public class TerminowLauncher {
     @NonNull
     List<Environment> environments() {
         List<Environment> list = new ArrayList<>();
-        list.add(new Environment(TerminowMcpTargets.TARGET_TERMINOW, mActivity.getString(R.string.terminow_launcher_env_local), null));
+        list.add(new Environment(TerminowMcpTargets.TARGET_TERMINOW, mActivity.getString(R.string.terminow_launcher_env_local), null, "Local"));
         for (TerminowMcpTargets.Container container : mTargets.getContainers())
-            list.add(new Environment(container.name, container.label, container));
+        {
+            TerminowLinuxEnv linux = mLinux != null ? mLinux.getRegistry().get(container.name) : null;
+            // Only installed environments can be opened, an incomplete one is shown in Browse Linux
+            if (linux != null && !linux.isInstalled()) continue;
+            String shortName = linux != null ? linux.getShortName() : container.isUbuntu ? "Ubuntu" : container.name;
+            list.add(new Environment(container.name, container.label, container, shortName));
+        }
         return list;
     }
 
@@ -433,6 +438,13 @@ public class TerminowLauncher {
                 mActivity.getString(R.string.terminow_launcher_ubuntu_summary, container.name, getUser(environment)));
             card.addView(status(mActivity.getString(R.string.terminow_tools_available), R.color.terminow_panel_accent), matchWrap());
             addButtons(card, button(R.string.terminow_launcher_open, true, () -> launchUbuntu(environment)),
+                button(R.string.terminow_linux_files, false, () -> {
+                    // The Linux files of the environment, at the folder of the launcher
+                    TerminowLinuxEnv linux = linuxOf(environment);
+                    if (linux == null || mLinux == null) return;
+                    dismiss();
+                    mLinux.openFiles(linux, getUser(environment), getFolder(environment));
+                }),
                 button(R.string.terminow_launcher_user, false, () -> pickUser(environment)));
             content.addView(card, cardParams());
         }
@@ -452,8 +464,8 @@ public class TerminowLauncher {
 
     @NonNull
     private View claudeCard(@NonNull Environment environment) {
-        ClaudeState state = mClaude.get(environment.key);
-        boolean checking = mChecking.contains(environment.key);
+        ClaudeState state = mClaude.get(stateKey(environment));
+        boolean checking = mChecking.contains(stateKey(environment));
         String status;
         int statusColor = R.color.terminow_text_secondary;
         if (checking || state == null) status = mActivity.getString(R.string.terminow_launcher_claude_checking);
@@ -534,11 +546,18 @@ public class TerminowLauncher {
 
     @NonNull
     private View tmuxCard(@NonNull Environment environment) {
-        TmuxState state = mTmux.get(environment.key);
-        boolean checking = mTmuxChecking.contains(environment.key);
+        String user = getUser(environment);
+        String key = stateKey(environment);
         LinearLayout card = card(R.drawable.ic_terminow_terminal, R.color.terminow_host_local,
-            mActivity.getString(R.string.terminow_tools_tmux), mActivity.getString(R.string.terminow_tools_tmux_summary, environment.label));
-        if (checking || state == null) {
+            mActivity.getString(R.string.terminow_tools_tmux), mActivity.getString(R.string.terminow_tools_tmux_summary_user, environment.label, user));
+        if (!TerminowAccountUi.isPremium(mStore)) {
+            card.addView(status(mActivity.getString(R.string.terminow_tools_tmux_premium), R.color.terminow_text_secondary), matchWrap());
+            addButtons(card, button(R.string.terminow_vault_check_premium, false, () -> TerminowPremiumGate.require(mActivity, mStore,
+                TerminowPremiumGate.Feature.TMUX, 0, () -> checkTmux(environment, true))));
+            return card;
+        }
+        TerminowTmux.State state = mTmux.get(key);
+        if (mTmuxChecking.contains(key) || state == null) {
             card.addView(status(mActivity.getString(R.string.terminow_tools_tmux_checking), R.color.terminow_text_secondary), matchWrap());
             return card;
         }
@@ -547,48 +566,178 @@ public class TerminowLauncher {
             addButtons(card, button(R.string.terminow_launcher_check_again, false, () -> checkTmux(environment, true)));
             return card;
         }
-        if (!state.installed) {
-            card.addView(status(mActivity.getString(R.string.terminow_tools_tmux_missing, environment.label), R.color.terminow_mcp_warn), matchWrap());
-            card.addView(command(environment.isLocal() ? "pkg install tmux" : "apt update && apt install -y tmux"), matchWrap());
-            addButtons(card, button(R.string.terminow_launcher_check_again, false, () -> checkTmux(environment, true)));
+        if (!state.isInstalled()) {
+            card.addView(status(mActivity.getString(R.string.terminow_tools_tmux_missing_env, environment.label), R.color.terminow_mcp_warn), matchWrap());
+            String install = installTmuxCommand(environment);
+            if (!install.isEmpty()) card.addView(command(install), matchWrap());
+            List<View> buttons = new ArrayList<>();
+            if (!install.isEmpty()) buttons.add(button(R.string.terminow_tools_tmux_install, true, () -> confirmInstallTmux(environment, install)));
+            buttons.add(button(R.string.terminow_launcher_check_again, false, () -> checkTmux(environment, true)));
+            addButtons(card, buttons.toArray(new View[0]));
             return card;
         }
+        // Which tmux and which server, so that sessions of other environments and users are never mixed up
+        card.addView(status(mActivity.getString(R.string.terminow_tools_tmux_server, state.binary, state.socket), R.color.terminow_text_secondary), matchWrap());
         if (state.sessions.isEmpty())
             card.addView(status(mActivity.getString(R.string.terminow_tools_tmux_none), R.color.terminow_text_secondary), matchWrap());
-        for (String[] session : state.sessions) {
-            String name = session[0];
-            boolean attached = !"0".equals(session[1]);
+        List<String> running = new ArrayList<>();
+        for (TerminowTmux.Session session : state.sessions) {
+            running.add(session.name);
             LinearLayout row = new LinearLayout(mActivity);
             row.setGravity(Gravity.CENTER_VERTICAL);
             row.setPadding(0, dp(8), 0, 0);
             LinearLayout texts = vertical();
-            TextView nameView = text(name, 15, R.color.terminow_text);
+            TextView nameView = text(session.name, 15, R.color.terminow_text);
             nameView.setTypeface(Typeface.MONOSPACE);
             texts.addView(nameView);
-            texts.addView(text(mActivity.getString(attached ? R.string.terminow_tools_tmux_attached : R.string.terminow_tools_tmux_detached,
-                session[2]), 12, R.color.terminow_text_secondary));
+            texts.addView(text(mActivity.getString(session.attached > 0 ? R.string.terminow_tools_tmux_attached : R.string.terminow_tools_tmux_detached,
+                String.valueOf(session.windows)), 12, R.color.terminow_text_secondary));
             row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-            if (TerminowLaunchPlan.isValidTmuxName(name)) {
-                row.addView(button(R.string.terminow_tools_tmux_attach, false, () -> launchTmux(environment, name)),
+            if (TerminowLaunchPlan.isValidTmuxName(session.name)) {
+                row.addView(button(R.string.terminow_tools_tmux_attach, false, () -> launchTmux(environment, session.name)),
                     new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(38)));
+                TextView more = text("⋮", 20, R.color.terminow_text);
+                more.setPadding(dp(12), 0, dp(4), 0);
+                more.setContentDescription(mActivity.getString(R.string.terminow_toolbar_more));
+                more.setOnClickListener(v -> tmuxActions(environment, session));
+                row.addView(more);
             } else {
-                // A name the launcher does not pass on, the user can attach by hand
                 row.addView(text(mActivity.getString(R.string.terminow_tools_tmux_by_hand), 12, R.color.terminow_text_secondary));
             }
             card.addView(row, matchWrap());
         }
+        // Sessions opened before that do not run now, which are not the same as running ones
+        List<String> recent = new ArrayList<>();
+        for (String name : mStore.getTmuxRecent(key)) if (!running.contains(name) && TerminowLaunchPlan.isValidTmuxName(name)) recent.add(name);
+        if (!recent.isEmpty()) {
+            TextView title = text(mActivity.getString(R.string.terminow_tools_tmux_recent), 12, R.color.terminow_text_secondary);
+            title.setTypeface(Typeface.DEFAULT_BOLD);
+            title.setPadding(0, dp(12), 0, 0);
+            card.addView(title, matchWrap());
+            for (String name : recent) {
+                LinearLayout row = new LinearLayout(mActivity);
+                row.setGravity(Gravity.CENTER_VERTICAL);
+                row.setPadding(0, dp(6), 0, 0);
+                TextView nameView = text(name, 14, R.color.terminow_text_secondary);
+                nameView.setTypeface(Typeface.MONOSPACE);
+                row.addView(nameView, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+                row.addView(button(R.string.terminow_tools_tmux_start_again, false, () -> launchTmux(environment, name)),
+                    new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(38)));
+                card.addView(row, matchWrap());
+            }
+        }
+        TextView note = text(mActivity.getString(R.string.terminow_tools_tmux_persistence), 11, R.color.terminow_text_secondary);
+        note.setPadding(0, dp(10), 0, 0);
+        card.addView(note, matchWrap());
         addButtons(card, button(R.string.terminow_tools_tmux_new, true, () -> newTmuxSession(environment)),
             button(R.string.terminow_launcher_check_again, false, () -> checkTmux(environment, true)));
         return card;
     }
 
     @NonNull
+    private String installTmuxCommand(@NonNull Environment environment) {
+        if (environment.isLocal()) return "pkg install -y tmux";
+        TerminowLinuxEnv linux = linuxOf(environment);
+        return linux != null ? linux.installCommand("tmux") : "";
+    }
+
+    /** Install tmux visibly in a new tab, as root of the environment, after it was confirmed. */
+    private void confirmInstallTmux(@NonNull Environment environment, @NonNull String command) {
+        TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.TMUX, 0, () ->
+            new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setTitle(R.string.terminow_tools_tmux_install)
+                .setMessage(mActivity.getString(R.string.terminow_tools_tmux_install_message, environment.label, command))
+                .setPositiveButton(R.string.terminow_tools_run, (d, w) -> {
+                    String user = environment.isLocal() ? "root" : "root";
+                    launchPlan("install-tmux|" + environment.key + "|" + System.nanoTime(), environment, user,
+                        environment.isLocal() ? TermuxConstants.TERMUX_HOME_DIR_PATH : homeOf(environment, "root"),
+                        TerminowLaunchPlan.TOOL_CUSTOM, command + "; echo; echo 'TermiNow: done, check again in Open tools'; exec \"${SHELL:-/bin/sh}\"",
+                        TerminowLaunchPlan.TMUX_OFF, "", mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), "install tmux"),
+                        true, "install tmux");
+                    mTmux.remove(stateKey(environment));
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show());
+    }
+
+    private void tmuxActions(@NonNull Environment environment, @NonNull TerminowTmux.Session session) {
+        CharSequence[] actions = {mActivity.getString(R.string.terminow_tools_tmux_detach), mActivity.getString(R.string.terminow_tools_tmux_rename),
+            mActivity.getString(R.string.terminow_tools_tmux_end)};
+        new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(session.name)
+            .setItems(actions, (d, which) -> {
+                if (which == 0) tmuxOperation(environment, "detach", session.name, "");
+                else if (which == 1) renameTmux(environment, session.name);
+                else new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                    .setTitle(mActivity.getString(R.string.terminow_tools_tmux_end_title, session.name))
+                    .setMessage(R.string.terminow_tools_tmux_end_message)
+                    .setPositiveButton(R.string.terminow_tools_tmux_end, (d2, w2) -> tmuxOperation(environment, "kill", session.name, ""))
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
+            })
+            .show();
+    }
+
+    private void renameTmux(@NonNull Environment environment, @NonNull String name) {
+        EditText field = new EditText(mActivity);
+        field.setSingleLine(true);
+        field.setText(name);
+        field.setTextColor(color(R.color.terminow_text));
+        LinearLayout box = vertical();
+        box.setPadding(dp(22), dp(6), dp(22), 0);
+        box.addView(field, matchWrap());
+        TextView hint = text(mActivity.getString(R.string.terminow_tools_tmux_name_hint), 12, R.color.terminow_text_secondary);
+        box.addView(hint, matchWrap());
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_tools_tmux_rename)
+            .setView(box)
+            .setPositiveButton(R.string.terminow_profiles_save, null)
+            .setNegativeButton(android.R.string.cancel, null)
+            .create();
+        dialog.setOnShowListener(d -> dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String newName = field.getText().toString().trim();
+            if (!TerminowLaunchPlan.isValidTmuxName(newName)) {
+                hint.setTextColor(color(R.color.terminow_mcp_warn));
+                return;
+            }
+            dialog.dismiss();
+            tmuxOperation(environment, "rename", name, newName);
+        }));
+        dialog.show();
+    }
+
+    /** Run a tmux operation in the environment, as the user, with its own tmux, then list again. */
+    private void tmuxOperation(@NonNull Environment environment, @NonNull String op, @NonNull String name, @NonNull String newName) {
+        TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.TMUX, 0, () -> {
+            String user = getUser(environment);
+            String key = stateKey(environment);
+            mTmuxChecking.add(key);
+            render();
+            mExecutor.execute(() -> {
+                TerminowClaudeSetup.ProcessResult result = new TerminowClaudeSetup(mActivity, mTargets).run(TerminowClaudeSetup.buildCommand(
+                    mTargets.getPrefixDir(), environment.key, user, TerminowTmux.SCRIPT, environment.isLocal() ? "local" : "guest",
+                    TerminowLaunchPlan.tmuxSocket(environment.isLocal(), user), op, name, newName), TerminowClaudeSetup.DETECT_TIMEOUT_MS);
+                boolean done = result.error == null && TerminowTmux.parse(result.stdout).done;
+                String error = result.error != null ? result.error : TerminowClaudeSetup.lastLines(result.stderr, 3);
+                mHandler.post(() -> {
+                    mTmuxChecking.remove(key);
+                    if (!done) mActivity.showToast(mActivity.getString(R.string.terminow_tools_tmux_failed, error), true);
+                    if (done && op.equals("rename")) mStore.addTmuxRecent(key, newName);
+                    checkTmux(environment, true);
+                });
+            });
+        });
+    }
+
+    @NonNull
     private View commandsCard() {
         LinearLayout card = card(R.drawable.ic_terminow_snippets, R.color.terminow_host_mosh,
             mActivity.getString(R.string.terminow_tools_commands), mActivity.getString(R.string.terminow_tools_commands_summary));
+        // The commands of the environment that is chosen, which follow it when it changes
+        String environmentKey = currentEnvironment().key;
         List<TerminowLaunchProfile> commands = new ArrayList<>();
         for (TerminowLaunchProfile profile : mStore.getLaunchProfiles())
-            if (TerminowLaunchPlan.TOOL_CUSTOM.equals(profile.tool)) commands.add(profile);
+            if (TerminowLaunchPlan.TOOL_CUSTOM.equals(profile.tool) && profile.environment.equals(environmentKey)) commands.add(profile);
         if (commands.isEmpty())
             card.addView(status(mActivity.getString(R.string.terminow_tools_commands_none), R.color.terminow_text_secondary), matchWrap());
         for (TerminowLaunchProfile profile : commands) {
@@ -655,38 +804,42 @@ public class TerminowLauncher {
     // ---------------------------------------------------------------------------------------
 
     private void checkTmux(@NonNull Environment environment, boolean force) {
-        if (mTmuxChecking.contains(environment.key)) return;
-        if (!force && mTmux.containsKey(environment.key)) return;
-        mTmuxChecking.add(environment.key);
+        if (!TerminowAccountUi.isPremium(mStore)) return;
+        String key = stateKey(environment);
+        if (mTmuxChecking.contains(key)) return;
+        if (!force && mTmux.containsKey(key)) return;
+        mTmuxChecking.add(key);
         render();
         String user = getUser(environment);
         mExecutor.execute(() -> {
-            TmuxState state = new TmuxState();
+            TerminowTmux.State state;
             try {
                 TerminowClaudeSetup.ProcessResult result = new TerminowClaudeSetup(mActivity, mTargets).run(TerminowClaudeSetup.buildCommand(
-                    mTargets.getPrefixDir(), environment.key, user, TMUX_LIST_SCRIPT), TerminowClaudeSetup.DETECT_TIMEOUT_MS);
+                    mTargets.getPrefixDir(), environment.key, user, TerminowTmux.SCRIPT, environment.isLocal() ? "local" : "guest",
+                    TerminowLaunchPlan.tmuxSocket(environment.isLocal(), user), "list"), TerminowClaudeSetup.DETECT_TIMEOUT_MS);
+                state = result.error != null ? new TerminowTmux.State() : TerminowTmux.parse(result.stdout);
                 if (result.error != null) state.error = result.error;
                 else if (result.timedOut) state.error = mActivity.getString(R.string.terminow_launcher_claude_timeout);
-                else {
-                    parseTmux(state, result.stdout);
-                    if (!state.checked)
-                        state.error = mActivity.getString(R.string.terminow_launcher_env_failed, TerminowClaudeSetup.lastLines(result.stderr, 3));
-                }
+                else if (!state.checked)
+                    state.error = mActivity.getString(R.string.terminow_launcher_env_failed, TerminowClaudeSetup.lastLines(result.stderr, 3));
             } catch (RuntimeException e) {
+                state = new TerminowTmux.State();
                 state.error = String.valueOf(e.getMessage());
             }
+            TerminowTmux.State finalState = state;
             mHandler.post(() -> {
-                mTmuxChecking.remove(environment.key);
-                mTmux.put(environment.key, state);
+                mTmuxChecking.remove(key);
+                mTmux.put(key, finalState);
                 render();
             });
         });
     }
 
     private void checkClaude(@NonNull Environment environment, boolean force) {
-        if (mChecking.contains(environment.key)) return;
-        if (!force && mClaude.containsKey(environment.key)) return;
-        mChecking.add(environment.key);
+        String key = stateKey(environment);
+        if (mChecking.contains(key)) return;
+        if (!force && mClaude.containsKey(key)) return;
+        mChecking.add(key);
         render();
         String user = getUser(environment);
         mExecutor.execute(() -> {
@@ -706,8 +859,8 @@ public class TerminowLauncher {
                 state.error = String.valueOf(e.getMessage());
             }
             mHandler.post(() -> {
-                mChecking.remove(environment.key);
-                mClaude.put(environment.key, state);
+                mChecking.remove(key);
+                mClaude.put(key, state);
                 render();
             });
         });
@@ -728,7 +881,9 @@ public class TerminowLauncher {
     private void launchUbuntu(@NonNull Environment environment) {
         if (environment.container == null) return;
         String folder = getFolder(environment);
-        String[] args = {"login", environment.container.name, "--user", getUser(environment), "--work-dir", folder};
+        List<String> login = new ArrayList<>(Arrays.asList("login", environment.container.name, "--user", getUser(environment), "--work-dir", folder));
+        login.addAll(bindsOf(environment));
+        String[] args = login.toArray(new String[0]);
         launch("ubuntu|" + environment.key + "|" + folder, new File(mTargets.getPrefixDir(), "bin/proot-distro").getPath(), args,
             TermuxConstants.TERMUX_HOME_DIR_PATH, mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), "bash"), false,
             new SessionInfo(environment.key, environment.shortName(), "bash", folder, ""));
@@ -749,8 +904,9 @@ public class TerminowLauncher {
             workingDirectory = folder;
         } else {
             executable = new File(mTargets.getPrefixDir(), "bin/proot-distro").getPath();
-            args.addAll(Arrays.asList("login", environment.key, "--user", getUser(environment), "--work-dir", folder,
-                "--", "/bin/sh", "-c", CLAUDE_SCRIPT, "claude"));
+            args.addAll(Arrays.asList("login", environment.key, "--user", getUser(environment), "--work-dir", folder));
+            args.addAll(bindsOf(environment));
+            args.addAll(Arrays.asList("--", "/bin/sh", "-c", CLAUDE_SCRIPT, "claude"));
             workingDirectory = TermuxConstants.TERMUX_HOME_DIR_PATH;
         }
         args.addAll(Arrays.asList(claudeArgs));
@@ -830,8 +986,9 @@ public class TerminowLauncher {
                 watchLogin(session, environment, shown);
                 return;
             }
-            mClaude.remove(environment.key);
-            mChecking.add(environment.key);
+            String key = stateKey(environment);
+            mClaude.remove(key);
+            mChecking.add(key);
             String user = getUser(environment);
             mExecutor.execute(() -> {
                 ClaudeState state = new ClaudeState();
@@ -839,8 +996,8 @@ public class TerminowLauncher {
                     TerminowClaudeSetup.buildCommand(mTargets.getPrefixDir(), environment.key, user, DETECT_SCRIPT), TerminowClaudeSetup.DETECT_TIMEOUT_MS);
                 if (result.error == null && !result.timedOut) parse(state, result.stdout);
                 mHandler.post(() -> {
-                    mChecking.remove(environment.key);
-                    mClaude.put(environment.key, state);
+                    mChecking.remove(key);
+                    mClaude.put(key, state);
                     int message = state.loggedIn.equals("yes") ? R.string.terminow_launcher_login_done :
                         state.loggedIn.equals("no") ? R.string.terminow_launcher_login_not_done : R.string.terminow_launcher_claude_login_unknown;
                     mActivity.showToast(mActivity.getString(message), true);
@@ -954,11 +1111,15 @@ public class TerminowLauncher {
 
     /** Open a tmux session of an environment in a new tab, creating it if it is gone. */
     private void launchTmux(@NonNull Environment environment, @NonNull String name) {
-        launchPlan("tmux|" + environment.key + "|" + name, environment, getUser(environment), getFolder(environment),
-            TerminowLaunchPlan.TOOL_SHELL, "", TerminowLaunchPlan.TMUX_ATTACH, name,
-            mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), "tmux " + name), false, "bash");
-        // The list shows it as attached now
-        mTmux.remove(environment.key);
+        TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.TMUX, 0, () -> {
+            String user = getUser(environment);
+            launchPlan("tmux|" + environment.key + "|" + user + "|" + name, environment, user, getFolder(environment),
+                TerminowLaunchPlan.TOOL_SHELL, "", TerminowLaunchPlan.TMUX_ATTACH, name,
+                mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), "tmux " + name), false, "bash");
+            mStore.addTmuxRecent(stateKey(environment), name);
+            // The list shows it as attached now
+            mTmux.remove(stateKey(environment));
+        });
     }
 
     private void newTmuxSession(@NonNull Environment environment) {
@@ -998,7 +1159,7 @@ public class TerminowLauncher {
         TerminowLaunchPlan plan;
         try {
             plan = TerminowLaunchPlan.build(mTargets.getPrefixDir().getPath(), environment.isLocal() ? "" : environment.key, user,
-                folder, tool, command, tmuxMode, tmuxName, isLocalTmuxInstalled());
+                folder, tool, command, tmuxMode, tmuxName, isLocalTmuxInstalled(), bindsOf(environment));
         } catch (IllegalArgumentException e) {
             showFailure(tabName, String.valueOf(e.getMessage()));
             return null;
@@ -1086,7 +1247,7 @@ public class TerminowLauncher {
     /** Start Claude Code in the chosen project from the add menu, or show the launcher if it is not ready. */
     void openClaudeForProject() {
         Environment environment = claudeEnvironment();
-        ClaudeState state = mClaude.get(environment.key);
+        ClaudeState state = mClaude.get(stateKey(environment));
         if (state != null && state.checked && state.isInstalled() && !state.loggedIn.equals("no")) {
             launchClaude(environment, new String[0], false);
             return;
@@ -1099,6 +1260,41 @@ public class TerminowLauncher {
     // ---------------------------------------------------------------------------------------
     // What each tab runs, and the terminal toolbar
     // ---------------------------------------------------------------------------------------
+
+    /**
+     * Open a new tab of a Linux environment, as the user, in a Linux folder, for the File
+     * Manager's "Open in Terminal" and the environment cards. It is started from the TermiNow
+     * runtime, never from inside another environment, and nothing is typed into other tabs.
+     */
+    public void openLinuxTerminal(@NonNull String alias, @NonNull String user, @NonNull String folder) {
+        Environment environment = environmentFor(alias);
+        if (environment == null || environment.container == null) {
+            showFailure(alias, mActivity.getString(R.string.terminow_profiles_env_missing, alias));
+            return;
+        }
+        if (!TerminowMcpTargets.getUsers(environment.container).contains(user)) {
+            showFailure(environment.shortName(), mActivity.getString(R.string.terminow_profiles_user_missing, user, environment.label));
+            return;
+        }
+        String path = folder.isEmpty() ? homeOf(environment, user) : folder;
+        if (resolve(environment, path) == null) {
+            showFailure(environment.shortName(), mActivity.getString(R.string.terminow_profiles_folder_missing, path));
+            return;
+        }
+        launchPlan("linux|" + alias + "|" + user + "|" + System.nanoTime(), environment, user, path, TerminowLaunchPlan.TOOL_SHELL, "",
+            TerminowLaunchPlan.TMUX_OFF, "", mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), "bash"), true, "bash");
+    }
+
+    /** The tabs that TermiNow started in an environment and that still run. */
+    @NonNull
+    public List<TerminalSession> sessionsOf(@NonNull String alias) {
+        List<TerminalSession> sessions = new ArrayList<>();
+        for (Map.Entry<TerminalSession, SessionInfo> entry : mInfo.entrySet()) {
+            TerminalSession session = entry.getKey();
+            if (session != null && session.isRunning() && alias.equals(entry.getValue().environmentKey)) sessions.add(session);
+        }
+        return sessions;
+    }
 
     /** Remember what a tab runs that TermiNow started some other way, like a Local Terminal. */
     public void track(@NonNull TerminalSession session, @NonNull SessionInfo info) {
@@ -1293,12 +1489,18 @@ public class TerminowLauncher {
 
     private void pickEnvironment() {
         List<Environment> environments = environments();
-        CharSequence[] labels = new CharSequence[environments.size()];
+        CharSequence[] labels = new CharSequence[environments.size() + 1];
         for (int i = 0; i < environments.size(); i++) labels[i] = environments.get(i).label;
+        labels[environments.size()] = "+ " + mActivity.getString(R.string.terminow_linux_browse);
         new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
             .setTitle(R.string.terminow_launcher_environment)
             .setItems(labels, (d, which) -> {
+                if (which >= environments.size()) {
+                    if (mLinux != null) mLinux.showBrowse(true);
+                    return;
+                }
                 setEnvironment(environments.get(which).key);
+                checkTmux(currentEnvironment(), false);
                 render();
             })
             .show();
@@ -1307,8 +1509,10 @@ public class TerminowLauncher {
     @NonNull
     String getUser(@NonNull Environment environment) {
         if (environment.container == null) return "root";
-        String user = getPrefs().optString("user:" + environment.key, "root");
-        return TerminowMcpTargets.getUsers(environment.container).contains(user) ? user : "root";
+        TerminowLinuxEnv linux = linuxOf(environment);
+        String fallback = linux != null ? linux.defaultUser : "root";
+        String user = getPrefs().optString("user:" + environment.key, fallback);
+        return TerminowMcpTargets.getUsers(environment.container).contains(user) ? user : fallback;
     }
 
     private void pickUser(@NonNull Environment environment) {
@@ -1320,9 +1524,9 @@ public class TerminowLauncher {
                 putPref("user:" + environment.key, users.get(which));
                 // Another user has another home, folder and Claude login
                 putPref("folder:" + environment.key, "");
-                mClaude.remove(environment.key);
                 render();
-                checkClaude(environment, true);
+                checkClaude(environment, false);
+                checkTmux(environment, false);
             })
             .show();
     }
@@ -1332,6 +1536,9 @@ public class TerminowLauncher {
     private String getFolder(@NonNull Environment environment) {
         String folder = getPrefs().optString("folder:" + environment.key);
         if (!folder.isEmpty() && resolve(environment, folder) != null) return folder;
+        // The default folder of the environment's settings, when it can be opened
+        TerminowLinuxEnv linux = linuxOf(environment);
+        if (linux != null && !linux.defaultFolder.isEmpty() && resolve(environment, linux.defaultFolder) != null) return linux.defaultFolder;
         return homeOf(environment);
     }
 
@@ -1356,7 +1563,9 @@ public class TerminowLauncher {
         if (!path.startsWith("/") || path.contains("\0") || path.contains("\n")) return null;
         File file;
         if (environment.container != null) {
-            file = TerminowMcpTargets.resolveGuestPath(environment.container, path);
+            // Like the environment resolves it: links inside it, and its bound folders
+            TerminowLinuxEnv linux = linuxOf(environment);
+            file = linux != null ? mLinux.filesOf(linux).hostFileOf(path) : TerminowMcpTargets.resolveGuestPath(environment.container, path);
         } else {
             file = mTargets.resolveTerminowPath(path);
             // Shared storage, when the build may use it by path and access is on
