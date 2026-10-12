@@ -16,6 +16,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.StatFs;
@@ -53,6 +54,7 @@ import androidx.core.content.FileProvider;
 
 import com.termux.R;
 import com.termux.app.TermuxActivity;
+import com.termux.app.terminow.files.TerminowDeviceFs;
 import com.termux.app.terminow.files.TerminowFileScan;
 import com.termux.app.terminow.files.TerminowFs;
 import com.termux.app.terminow.files.TerminowLocalFs;
@@ -163,6 +165,7 @@ public class TerminowExplorer {
         boolean running;
         String status = "";
         @Nullable TerminowFs.Cancel cancel;
+        @Nullable TerminowFileScan.Filter filter;
         int generation;
     }
 
@@ -209,6 +212,8 @@ public class TerminowExplorer {
     private boolean mHomeBytesRunning;
     @Nullable private BaseAdapter mListAdapter;
     private boolean mRenderPosted;
+    /** Whether shared storage could be browsed by path the last time it was checked. */
+    private boolean mHadStorageAccess;
 
     public TerminowExplorer(@NonNull TermuxActivity activity, @NonNull TerminowStore store, @NonNull FrameLayout container,
                             @NonNull Host host) {
@@ -228,11 +233,29 @@ public class TerminowExplorer {
 
     public void show() {
         mVisible = true;
+        mHadStorageAccess = TerminowStorageAccess.hasAccess(mActivity);
         TerminowEntitlement.State state = TerminowEntitlement.get(mStore);
         if ((state == TerminowEntitlement.State.NEEDS_CHECK || state == TerminowEntitlement.State.EXPIRED) &&
             !mAccountUi.isCheckingPremium())
             mAccountUi.checkPremiumNow();
         render();
+    }
+
+    /**
+     * Called when the app comes back, for example from the All files access screen of Android.
+     * A change of the access is applied at once, also to search results.
+     */
+    public void onResume() {
+        boolean access = TerminowStorageAccess.hasAccess(mActivity);
+        if (access == mHadStorageAccess) {
+            if (mVisible) render();
+            return;
+        }
+        mHadStorageAccess = access;
+        // Folders that were listed before access was given or after it was taken away are stale
+        for (Pane pane : mPanes) if (pane.fs instanceof TerminowDeviceFs && mVisible && mScreen == Screen.BROWSER) load(pane);
+        if (mVisible && (mScreen == Screen.CATEGORY || mScreen == Screen.SEARCH) && mScan.filter != null) runScan(mScan.filter);
+        else if (mVisible) render();
     }
 
     /** Leaving the page closes the SFTP connections of the File Manager when nothing uses them. */
@@ -480,7 +503,7 @@ public class TerminowExplorer {
             return pane.fs != null ? pane.fs.getDisplayPath(pane.crumbs) : null;
         }
         if (mScreen == Screen.CATEGORY || mScreen == Screen.SEARCH || mScreen == Screen.ANALYZER)
-            return mActivity.getString(R.string.terminow_explorer_accessible_only);
+            return mActivity.getString(R.string.terminow_explorer_scope, scopeLabel());
         return null;
     }
 
@@ -569,6 +592,9 @@ public class TerminowExplorer {
         drawer.addView(header, matchWrap());
 
         if (drawerSection(drawer, "storage", R.string.terminow_explorer_section_storage, R.drawable.ic_terminow_folder)) {
+            for (TerminowStorageAccess.Volume volume : TerminowStorageAccess.getVolumes(mActivity))
+                drawerItem(drawer, volume.removable ? R.drawable.ic_terminow_sdcard : R.drawable.ic_terminow_phone, volume.title,
+                    volumeStatus(volume), () -> openVolume(volume));
             drawerItem(drawer, R.drawable.ic_terminow_folder, mActivity.getString(R.string.terminow_explorer_home), null, () -> openHome(null));
             JSONArray folders = mStore.getExplorer().optJSONArray("folders");
             for (int i = 0; folders != null && i < folders.length(); i++) {
@@ -613,6 +639,15 @@ public class TerminowExplorer {
             drawerItem(drawer, R.drawable.ic_terminow_analyzer, mActivity.getString(R.string.terminow_explorer_analyzer), null, this::startAnalyzer);
             drawerItem(drawer, R.drawable.ic_terminow_terminal, mActivity.getString(R.string.terminow_explorer_open_terminal_home), null,
                 () -> mHost.openTerminalAt(new File(TermuxConstants.TERMUX_HOME_DIR_PATH)));
+        }
+
+        if (TerminowStorageAccess.isSupported()) {
+            boolean access = TerminowStorageAccess.hasAccess(mActivity);
+            drawerItem(drawer, R.drawable.ic_terminow_phone, mActivity.getString(R.string.terminow_explorer_access_title),
+                mActivity.getString(access ? R.string.terminow_explorer_access_on : R.string.terminow_explorer_access_off), () -> {
+                    if (access) TerminowStorageAccess.request(mActivity);
+                    else explainAccess();
+                });
         }
 
         View divider = new View(mActivity);
@@ -783,6 +818,7 @@ public class TerminowExplorer {
             }
             reloadShowing(job.target);
             reloadShowing(job.source);
+            rescanIfShown();
         }
         if (mVisible) postRender();
     }
@@ -860,21 +896,21 @@ public class TerminowExplorer {
         scroll.addView(page);
         int width = isLarge() && !mSidebarCollapsed ? widthDp() - 264 - 96 : widthDp() - 96;
 
-        // Storage and Space Analyzer
-        LinearLayout storage = new LinearLayout(mActivity);
-        storage.setOrientation(width >= 520 ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
-        View homeCard = storageCard();
-        View analyzerCard = analyzerCard();
-        if (width >= 520) {
-            LinearLayout.LayoutParams left = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1);
-            left.setMarginEnd(dp(10));
-            storage.addView(homeCard, left);
-            storage.addView(analyzerCard, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1));
-        } else {
-            storage.addView(homeCard, cardParams());
-            storage.addView(analyzerCard, matchWrap());
+        // Storage: each volume with its own capacity, TermiNow Home with its own size, the analyzer
+        List<View> storageCards = new ArrayList<>();
+        for (TerminowStorageAccess.Volume volume : TerminowStorageAccess.getVolumes(mActivity)) storageCards.add(volumeCard(volume));
+        storageCards.add(homeCard());
+        storageCards.add(analyzerCard());
+        int storageColumns = width >= 520 ? 2 : 1;
+        for (int start = 0; start < storageCards.size(); start += storageColumns) {
+            LinearLayout row = new LinearLayout(mActivity);
+            for (int i = start; i < start + storageColumns; i++) {
+                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1);
+                if (i < start + storageColumns - 1) params.setMarginEnd(dp(10));
+                row.addView(i < storageCards.size() ? storageCards.get(i) : new View(mActivity), params);
+            }
+            page.addView(row, cardParams());
         }
-        page.addView(storage, cardParams());
 
         // Categories
         LinearLayout categories = card();
@@ -951,31 +987,52 @@ public class TerminowExplorer {
         return scroll;
     }
 
-    /** The capacity of the device storage that holds HOME, and the size of HOME itself. */
+    /** A volume of shared storage, with its own used, free and total space. */
     @NonNull
-    private View storageCard() {
+    private View volumeCard(@NonNull TerminowStorageAccess.Volume volume) {
         LinearLayout card = card();
         LinearLayout row = new LinearLayout(mActivity);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        long total = -1, free = -1;
-        try {
-            StatFs stat = new StatFs(TermuxConstants.TERMUX_HOME_DIR_PATH);
-            total = stat.getTotalBytes();
-            free = stat.getAvailableBytes();
-        } catch (IllegalArgumentException e) {
-            // Shown as not known
-        }
-        float used = total > 0 ? (float) (total - free) / total : 0f;
+        long[] space = volume.getSpace();
+        float used = space != null && space[2] > 0 ? (float) space[0] / space[2] : 0f;
         row.addView(new UsageRing(mActivity, used, mPalette), new LinearLayout.LayoutParams(dp(64), dp(64)));
+        LinearLayout texts = vertical();
+        texts.setPadding(dp(14), 0, 0, 0);
+        TextView title = text(volume.title + "  ›", 16, mPalette.text);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        texts.addView(title);
+        if (space != null)
+            texts.addView(text(mActivity.getString(R.string.terminow_explorer_capacity, size(space[0]), size(space[1]), size(space[2])), 13, mPalette.text));
+        TextView status = text(volumeStatus(volume), 12, TerminowStorageAccess.hasAccess(mActivity) && volume.isReadable() ? mPalette.accent : mPalette.secondary);
+        texts.addView(status);
+        row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        card.addView(row, matchWrap());
+        card.setOnClickListener(v -> openVolume(volume));
+        return card;
+    }
+
+    @NonNull
+    private String volumeStatus(@NonNull TerminowStorageAccess.Volume volume) {
+        if (!TerminowStorageAccess.isSupported()) return mActivity.getString(R.string.terminow_explorer_volume_play);
+        if (!TerminowStorageAccess.hasAccess(mActivity)) return mActivity.getString(R.string.terminow_explorer_volume_no_access);
+        if (!volume.isReadable()) return mActivity.getString(R.string.terminow_explorer_volume_unreadable);
+        return mActivity.getString(Environment.MEDIA_MOUNTED_READ_ONLY.equals(volume.state) ?
+            R.string.terminow_explorer_volume_read_only : R.string.terminow_explorer_volume_ok);
+    }
+
+    /** TermiNow HOME: the size of the folder itself, never the capacity of the device. */
+    @NonNull
+    private View homeCard() {
+        LinearLayout card = card();
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.addView(round(R.drawable.ic_terminow_folder, mPalette.accent, 52), new LinearLayout.LayoutParams(dp(52), dp(52)));
         LinearLayout texts = vertical();
         texts.setPadding(dp(14), 0, 0, 0);
         TextView title = text(mActivity.getString(R.string.terminow_explorer_home) + "  ›", 16, mPalette.text);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         texts.addView(title);
-        if (total > 0) {
-            texts.addView(text(mActivity.getString(R.string.terminow_explorer_capacity_label), 11, mPalette.secondary));
-            texts.addView(text(mActivity.getString(R.string.terminow_explorer_capacity, size(total - free), size(free), size(total)), 13, mPalette.text));
-        }
+        texts.addView(text(mActivity.getString(R.string.terminow_explorer_home_label), 12, mPalette.secondary));
         if (mHomeBytes < 0 || System.currentTimeMillis() - mHomeBytesTime > 10 * 60 * 1000) computeHomeSize();
         texts.addView(text(mHomeBytes >= 0 ? mActivity.getString(R.string.terminow_explorer_home_size, size(mHomeBytes)) :
             mActivity.getString(R.string.terminow_explorer_home_size_calculating), 12, mPalette.accent));
@@ -983,6 +1040,64 @@ public class TerminowExplorer {
         card.addView(row, matchWrap());
         card.setOnClickListener(v -> openHome(null));
         return card;
+    }
+
+    /** Open a volume by path, asking for access first when the build has the broad mode. */
+    private void openVolume(@NonNull TerminowStorageAccess.Volume volume) {
+        mDrawerOpen = false;
+        if (!TerminowStorageAccess.isSupported()) {
+            dialog().setTitle(volume.title)
+                .setMessage(R.string.terminow_explorer_play_storage_message)
+                .setPositiveButton(R.string.terminow_explorer_add_folder, (d, w) -> addFolder())
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+            render();
+            return;
+        }
+        if (!TerminowStorageAccess.hasAccess(mActivity)) {
+            explainAccess();
+            render();
+            return;
+        }
+        if (!volume.isReadable() || volume.directory == null) {
+            dialog().setTitle(volume.title)
+                .setMessage(R.string.terminow_explorer_volume_unreadable_message)
+                .setPositiveButton(R.string.terminow_explorer_add_folder, (d, w) -> addFolder())
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+            render();
+            return;
+        }
+        try {
+            TerminowDeviceFs fs = deviceFs(volume);
+            open(fs, Collections.singletonList(fs.getRoot()));
+        } catch (IOException e) {
+            toast(e.getMessage());
+        }
+    }
+
+    /** Explain what All files access gives, then open the screen of Android to turn it on. */
+    private void explainAccess() {
+        dialog().setTitle(R.string.terminow_explorer_access_title)
+            .setMessage(R.string.terminow_explorer_access_message)
+            .setPositiveButton(R.string.terminow_explorer_access_open, (d, w) -> TerminowStorageAccess.request(mActivity))
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    /** The result of the storage permission dialog of Android 6 to 10. */
+    public void onStoragePermissionResult() {
+        onResume();
+    }
+
+    @NonNull
+    private TerminowDeviceFs deviceFs(@NonNull TerminowStorageAccess.Volume volume) throws IOException {
+        TerminowFs existing = mFileSystems.get(volume.getFsId());
+        if (existing instanceof TerminowDeviceFs) return (TerminowDeviceFs) existing;
+        if (volume.directory == null) throw new IOException(volume.title + " has no path");
+        TerminowDeviceFs fs = new TerminowDeviceFs(volume.directory, volume.getFsId(), volume.title);
+        mFileSystems.put(fs.getId(), fs);
+        return fs;
     }
 
     private void computeHomeSize() {
@@ -1092,7 +1207,11 @@ public class TerminowExplorer {
     // Categories, search and the space analyzer
     // ---------------------------------------------------------------------------------------
 
-    /** The locations that the app can read: HOME and the device folders it has access to. */
+    /**
+     * The locations that the app can read: HOME, the volumes of shared storage when All files
+     * access is on, and the folders picked with the Storage Access Framework that are not inside
+     * one of those volumes already, so that nothing is found twice.
+     */
     @NonNull
     private List<TerminowFs> accessibleLocations() {
         List<TerminowFs> locations = new ArrayList<>();
@@ -1101,15 +1220,48 @@ public class TerminowExplorer {
         } catch (IOException e) {
             // Without HOME
         }
+        List<String> coveredVolumes = new ArrayList<>();
+        if (TerminowStorageAccess.hasAccess(mActivity)) {
+            for (TerminowStorageAccess.Volume volume : TerminowStorageAccess.getVolumes(mActivity)) {
+                if (!volume.isReadable()) continue;
+                try {
+                    locations.add(deviceFs(volume));
+                    coveredVolumes.add(volume.uuid);
+                } catch (IOException e) {
+                    // Skipped
+                }
+            }
+        }
         JSONArray folders = mStore.getExplorer().optJSONArray("folders");
         for (int i = 0; folders != null && i < folders.length(); i++) {
             JSONObject folder = folders.optJSONObject(i);
             if (folder == null) continue;
             Uri uri = Uri.parse(folder.optString("uri"));
+            if (isInsideVolume(uri, coveredVolumes)) continue;
             TerminowFs fs = findFs(TerminowSafFs.idFor(uri), folder.optString("name"));
             if (fs instanceof TerminowSafFs && ((TerminowSafFs) fs).hasAccess()) locations.add(fs);
         }
         return locations;
+    }
+
+    private static boolean isInsideVolume(@NonNull Uri treeUri, @NonNull List<String> volumeUuids) {
+        if (!"com.android.externalstorage.documents".equals(treeUri.getAuthority())) return false;
+        String treeId;
+        try {
+            treeId = android.provider.DocumentsContract.getTreeDocumentId(treeUri);
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+        for (String uuid : volumeUuids)
+            if (TerminowDeviceFs.treeDocumentPath(treeId, uuid) != null) return true;
+        return false;
+    }
+
+    @NonNull
+    private String scopeLabel() {
+        List<String> titles = new ArrayList<>();
+        for (TerminowFs fs : accessibleLocations()) titles.add(fs.getTitle());
+        return TextUtils.join(", ", titles);
     }
 
     private void startCategory(@NonNull TerminowFileScan.Category category) {
@@ -1134,6 +1286,7 @@ public class TerminowExplorer {
 
     private void runScan(@NonNull TerminowFileScan.Filter filter) {
         if (mScan.cancel != null) mScan.cancel.cancel();
+        mScan.filter = filter;
         TerminowFs.Cancel cancel = new TerminowFs.Cancel();
         mScan.cancel = cancel;
         mScan.results.clear();
@@ -1321,7 +1474,7 @@ public class TerminowExplorer {
         LinearLayout head = new LinearLayout(mActivity);
         head.setGravity(Gravity.CENTER_VERTICAL);
         head.setPadding(dp(4), 0, 0, dp(8));
-        TextView status = text(mAnalyzing ? mAnalyzeStatus : mActivity.getString(R.string.terminow_explorer_analyzer_note), 13, mPalette.secondary);
+        TextView status = text(mAnalyzing ? mAnalyzeStatus : mActivity.getString(R.string.terminow_explorer_analyzer_note, scopeLabel()), 13, mPalette.secondary);
         head.addView(status, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         TextView action = chip(mActivity.getString(mAnalyzing ? android.R.string.cancel : R.string.terminow_explorer_analyze_again), false);
         action.setOnClickListener(v -> {
@@ -1345,6 +1498,13 @@ public class TerminowExplorer {
                 TerminowFileScan.Space space = location.space;
                 card.addView(text(mActivity.getString(R.string.terminow_explorer_space_total, size(space.totalBytes), space.files, space.folders) +
                     (space.incomplete ? " · " + mActivity.getString(R.string.terminow_explorer_space_incomplete) : ""), 13, mPalette.secondary));
+                if (!space.unreadable.isEmpty()) {
+                    TextView unreadable = text(mActivity.getString(R.string.terminow_explorer_space_unreadable,
+                        TextUtils.join(", ", space.unreadable.subList(0, Math.min(5, space.unreadable.size()))) +
+                            (space.unreadable.size() > 5 ? " …" : "")), 12, mPalette.warning);
+                    unreadable.setPadding(0, dp(4), 0, 0);
+                    card.addView(unreadable, matchWrap());
+                }
                 long max = space.top.isEmpty() ? 1 : Math.max(1, space.top.get(0).bytes);
                 for (int i = 0; i < Math.min(10, space.top.size()); i++) {
                     TerminowFileScan.Entry entry = space.top.get(i);
@@ -1640,6 +1800,17 @@ public class TerminowExplorer {
             fs = new TerminowSafFs(mActivity, Uri.parse(id.substring(4)), title);
             mFileSystems.put(id, fs);
             return fs;
+        }
+        if (id.startsWith("device:")) {
+            if (!TerminowStorageAccess.hasAccess(mActivity)) return null;
+            for (TerminowStorageAccess.Volume volume : TerminowStorageAccess.getVolumes(mActivity)) {
+                if (!volume.getFsId().equals(id)) continue;
+                try {
+                    return deviceFs(volume);
+                } catch (IOException e) {
+                    return null;
+                }
+            }
         }
         if (id.startsWith("sftp:")) {
             for (TerminowStore.Host host : mStore.getHosts())
@@ -2075,7 +2246,19 @@ public class TerminowExplorer {
         String title;
         String message = pane.error;
         TextView action;
-        if (fs instanceof TerminowSafFs && !((TerminowSafFs) fs).hasAccess()) {
+        if (fs instanceof TerminowDeviceFs && pane.error != null && pane.error.contains("protected by Android")) {
+            title = mActivity.getString(R.string.terminow_explorer_error_protected);
+            action = button(mActivity.getString(R.string.terminow_explorer_up), true);
+            action.setOnClickListener(v -> {
+                if (pane.crumbs.size() > 1) pane.crumbs.remove(pane.crumbs.size() - 1);
+                load(pane);
+            });
+        } else if (fs instanceof TerminowDeviceFs && !TerminowStorageAccess.hasAccess(mActivity)) {
+            title = mActivity.getString(R.string.terminow_explorer_error_no_access);
+            message = mActivity.getString(R.string.terminow_explorer_access_message);
+            action = button(mActivity.getString(R.string.terminow_explorer_access_open), true);
+            action.setOnClickListener(v -> TerminowStorageAccess.request(mActivity));
+        } else if (fs instanceof TerminowSafFs && !((TerminowSafFs) fs).hasAccess()) {
             title = mActivity.getString(R.string.terminow_explorer_error_access);
             message = mActivity.getString(R.string.terminow_explorer_access_lost_message);
             action = button(mActivity.getString(R.string.terminow_explorer_choose_again), true);
@@ -2091,7 +2274,7 @@ public class TerminowExplorer {
                 ((TerminowSftpFs) fs).connect();
                 return true;
             }, ok -> load(pane)));
-        } else if (pane.error != null && pane.error.toLowerCase(Locale.ROOT).contains("permission")) {
+        } else if (pane.error != null && (pane.error.toLowerCase(Locale.ROOT).contains("permission") || pane.error.contains("denied access"))) {
             title = mActivity.getString(R.string.terminow_explorer_error_permission);
             action = button(mActivity.getString(R.string.terminow_retry), true);
             action.setOnClickListener(v -> load(pane));
@@ -2363,6 +2546,7 @@ public class TerminowExplorer {
                         progress.dismiss();
                         if (finalError != null) showMessage(mActivity.getString(R.string.terminow_explorer_failed_title), finalError);
                         reloadShowing(fs);
+                        rescanIfShown();
                     });
                 });
             })
@@ -2439,6 +2623,11 @@ public class TerminowExplorer {
             .show();
     }
 
+    /** Search results are a snapshot, so they are run again after files changed. */
+    private void rescanIfShown() {
+        if (mVisible && (mScreen == Screen.CATEGORY || mScreen == Screen.SEARCH) && mScan.filter != null && !mScan.running) runScan(mScan.filter);
+    }
+
     private void reloadShowing(@NonNull TerminowFs fs) {
         for (Pane pane : mPanes) if (pane.fs == fs && mScreen == Screen.BROWSER) load(pane);
     }
@@ -2481,7 +2670,7 @@ public class TerminowExplorer {
 
     /** The files of ~/.ssh are keys and credentials, which are not given to other apps. */
     private static boolean isSensitive(@NonNull TerminowFs fs, @NonNull TerminowFs.Node node) {
-        return fs instanceof TerminowLocalFs && (node.id.equals(".ssh") || node.id.startsWith(".ssh/"));
+        return TerminowLocalFs.ID.equals(fs.getId()) && (node.id.equals(".ssh") || node.id.startsWith(".ssh/"));
     }
 
     private void openFile(@NonNull TerminowFs fs, @NonNull TerminowFs.Node file, @NonNull String path) {

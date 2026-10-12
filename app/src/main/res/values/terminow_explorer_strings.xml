@@ -18,18 +18,17 @@
 
     <string name="terminow_explorer_section_storage">Storage</string>
     <string name="terminow_explorer_section_categories">Categories</string>
-    <string name="terminow_explorer_section_device">Device folders</string>
+    <string name="terminow_explorer_section_device">Selected folders</string>
     <string name="terminow_explorer_section_sftp">SFTP</string>
     <string name="terminow_explorer_section_tools">Tools</string>
     <string name="terminow_explorer_home">TermiNow Home</string>
-    <string name="terminow_explorer_capacity_label">Device storage, shared by all apps</string>
     <string name="terminow_explorer_capacity">Used %1$s · Free %2$s · Total %3$s</string>
     <string name="terminow_explorer_home_size">TermiNow Home folder: %1$s</string>
     <string name="terminow_explorer_home_size_calculating">TermiNow Home folder: calculating…</string>
     <string name="terminow_explorer_analyzer">Space Analyzer</string>
     <string name="terminow_explorer_analyzer_summary">See what uses space in Home and your device folders</string>
     <string name="terminow_explorer_analyzer_result">%1$s in %2$d locations</string>
-    <string name="terminow_explorer_analyzer_note">Sizes of TermiNow Home and the device folders you chose. Links are not followed.</string>
+    <string name="terminow_explorer_analyzer_note">Scanned: %1$s. Links are not followed. Folders that Android protects, like the private files of other apps, are not scanned.</string>
     <string name="terminow_explorer_analyzing">Analyzing…</string>
     <string name="terminow_explorer_analyzing_in">Analyzing %1$s… %2$d files</string>
     <string name="terminow_explorer_analyze_again">Analyze again</string>
@@ -42,7 +41,6 @@
     <string name="terminow_explorer_cat_documents">Documents</string>
     <string name="terminow_explorer_cat_apk">APK files</string>
     <string name="terminow_explorer_cat_archives">Archives</string>
-    <string name="terminow_explorer_accessible_only">In TermiNow Home and the device folders you chose</string>
 
     <string name="terminow_explorer_device_folder">Shared storage folder, chosen with the Android picker</string>
     <string name="terminow_explorer_access_lost">Access lost. Tap to choose the folder again</string>
@@ -202,4 +200,21 @@
     <string name="terminow_explorer_host_key_accept">Accept and connect</string>
     <string name="terminow_explorer_host_key_changed">Host key changed</string>
     <string name="terminow_explorer_passphrase">Passphrase of the key %1$s</string>
+    <string name="terminow_explorer_home_label">The app\'s private home, used by the terminal</string>
+    <string name="terminow_explorer_volume_ok">All files access on</string>
+    <string name="terminow_explorer_volume_read_only">All files access on, read only</string>
+    <string name="terminow_explorer_volume_no_access">Tap to allow access to shared storage</string>
+    <string name="terminow_explorer_volume_unreadable">Not readable by path, use Add folder</string>
+    <string name="terminow_explorer_volume_play">Use Add folder to choose folders</string>
+    <string name="terminow_explorer_play_storage_message">This version of TermiNow from Google Play uses the folder picker of Android: choose the folders you want with Add folder, and TermiNow only sees those.</string>
+    <string name="terminow_explorer_volume_unreadable_message">Android does not let apps read this storage by path. Choose its folders with Add folder instead.</string>
+    <string name="terminow_explorer_access_title">All files access</string>
+    <string name="terminow_explorer_access_message">To browse Internal Storage, SD cards and USB storage like a file manager, Android asks you to turn on All files access for TermiNow.\n\nIt lets TermiNow read and change your files in shared storage, like Download, DCIM and Documents. It does not give access to the private data of other apps or to Android system files.\n\nTermiNow Home and the folders you chose keep working without it. You can turn it off again in the same Android screen.</string>
+    <string name="terminow_explorer_access_open">Open Android settings</string>
+    <string name="terminow_explorer_access_on">On, tap to change in Android settings</string>
+    <string name="terminow_explorer_access_off">Off, tap to turn on</string>
+    <string name="terminow_explorer_scope">In %1$s</string>
+    <string name="terminow_explorer_space_unreadable">Not scanned, protected or denied: %1$s</string>
+    <string name="terminow_explorer_error_protected">Protected by Android</string>
+    <string name="terminow_explorer_error_no_access">All files access is off</string>
 </resources>

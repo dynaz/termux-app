@@ -122,6 +122,8 @@ public class TerminowFileScan {
         public int files;
         public int folders;
         public boolean incomplete;
+        /** The folders that could not be read, protected by Android or denied, which were not counted. */
+        public final List<String> unreadable = new ArrayList<>();
         /** The folders and files at the top, with their sizes, the largest first. */
         public final List<Entry> top = new ArrayList<>();
         /** The largest files anywhere, the largest first. */
@@ -183,6 +185,7 @@ public class TerminowFileScan {
             throw e;
         } catch (IOException e) {
             space.incomplete = true;
+            if (space.unreadable.size() < 50) space.unreadable.add(fs.getDisplayPath(path));
             return 0;
         }
         long total = 0;

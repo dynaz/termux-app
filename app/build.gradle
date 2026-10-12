@@ -67,7 +67,7 @@ android {
         applicationId "com.terminow"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 144
+        versionCode 145
         versionName "0.118.0"
 
         if (appVersionName) versionName = appVersionName
@@ -203,11 +203,26 @@ android {
         variant.outputs.all { output ->
             if (variant.buildType.name == "debug") {
                 def abi = output.getFilter(com.android.build.OutputFile.ABI)
-                outputFileName = new File("termux-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "debug") + "_" + (abi ? abi : "universal") + ".apk")
+                outputFileName = new File("termux-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "debug") + "_" + variant.flavorName + "_" + (abi ? abi : "universal") + ".apk")
             } else if (variant.buildType.name == "release") {
                 def abi = output.getFilter(com.android.build.OutputFile.ABI)
-                outputFileName = new File("termux-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "release") + "_" + (abi ? abi : "universal") + ".apk")
+                outputFileName = new File("termux-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "release") + "_" + variant.flavorName + "_" + (abi ? abi : "universal") + ".apk")
             }
+        }
+    }
+
+    // Two distributions, so that the Google Play build never declares All files access:
+    // "play" reaches shared storage only through folders that the user picks with the Storage
+    // Access Framework, "full" adds browsing shared storage by path for direct APK installs.
+    flavorDimensions += "distribution"
+    productFlavors {
+        play {
+            dimension "distribution"
+            buildConfigField "boolean", "TERMINOW_ALL_FILES_ACCESS", "false"
+        }
+        full {
+            dimension "distribution"
+            buildConfigField "boolean", "TERMINOW_ALL_FILES_ACCESS", "true"
         }
     }
 

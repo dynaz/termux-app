@@ -27,17 +27,24 @@ public class TerminowLocalFs implements TerminowFs {
     private final File mHome;
     private final String mTitle;
     private final String mCanonicalHome;
+    private final String mId;
 
     public TerminowLocalFs(@NonNull File home, @NonNull String title) throws IOException {
-        mHome = home;
+        this(home, ID, title);
+    }
+
+    /** A real directory of the device as the root, which is never left, like HOME. */
+    protected TerminowLocalFs(@NonNull File root, @NonNull String id, @NonNull String title) throws IOException {
+        mHome = root;
         mTitle = title;
-        mCanonicalHome = home.getCanonicalPath();
+        mCanonicalHome = root.getCanonicalPath();
+        mId = id;
     }
 
     @NonNull
     @Override
     public String getId() {
-        return ID;
+        return mId;
     }
 
     @NonNull
@@ -76,6 +83,13 @@ public class TerminowLocalFs implements TerminowFs {
             return path.equals(mCanonicalHome) || path.startsWith(mCanonicalHome + "/");
         } catch (IOException e) {
             return false;
+        }
+    }
+
+    /** Listing a folder failed because Android denied access, which is not the same as empty. */
+    public static class AccessDeniedException extends IOException {
+        public AccessDeniedException(@NonNull String what) {
+            super("Android denied access to " + what);
         }
     }
 
@@ -122,7 +136,8 @@ public class TerminowLocalFs implements TerminowFs {
         File dir = toFile(directory.id);
         if (!isInsideHome(dir)) throw new IOException("This link points outside TermiNow Home");
         File[] files = dir.listFiles();
-        if (files == null) throw new IOException("Can not read " + (directory.id.isEmpty() ? "Home" : directory.id));
+        // Not an empty folder: Android did not let the app read it
+        if (files == null) throw new AccessDeniedException(directory.id.isEmpty() ? mTitle : directory.id);
         List<Node> nodes = new ArrayList<>(files.length);
         for (File file : files) {
             cancel.check();

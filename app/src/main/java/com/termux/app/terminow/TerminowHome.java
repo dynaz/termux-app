@@ -925,8 +925,17 @@ public class TerminowHome {
      * Open a local terminal in a new tab, which starts in {@link #getStartDirectory()}. The only
      * input that is written to it is the first command of its fresh shell, before it can be used.
      */
+    /** The activity was resumed, for example after a screen of Android settings. */
+    public void onResume() {
+        mExplorer.onResume();
+    }
+
+    public void onStoragePermissionResult() {
+        mExplorer.onStoragePermissionResult();
+    }
+
     /**
-     * Open a new terminal in a folder of HOME, for the File Explorer. The session is started with
+     * Open a new terminal in a real folder, of HOME or shared storage, for the File Manager. The session is started with
      * the folder as its working directory, nothing is typed into it or into another session, and
      * tmux sessions that run are not touched.
      */

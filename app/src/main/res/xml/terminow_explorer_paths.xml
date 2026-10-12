@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- What the File Explorer shares with other apps: files of TermiNow Home, and downloads of remote files. -->
+<!-- What the File Manager shares with other apps: files of TermiNow Home, files of shared storage
+     when All files access is on, and downloads of remote files. -->
 <paths>
     <files-path name="home" path="home/" />
     <cache-path name="explorer" path="explorer/" />
+    <!-- Internal Storage, SD cards and USB storage, all mounted below /storage -->
+    <root-path name="storage" path="storage/" />
 </paths>

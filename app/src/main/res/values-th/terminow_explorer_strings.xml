@@ -18,18 +18,17 @@
 
     <string name="terminow_explorer_section_storage">พื้นที่จัดเก็บ</string>
     <string name="terminow_explorer_section_categories">หมวดหมู่</string>
-    <string name="terminow_explorer_section_device">โฟลเดอร์ในเครื่อง</string>
+    <string name="terminow_explorer_section_device">โฟลเดอร์ที่เลือก</string>
     <string name="terminow_explorer_section_sftp">SFTP</string>
     <string name="terminow_explorer_section_tools">เครื่องมือ</string>
     <string name="terminow_explorer_home">TermiNow Home</string>
-    <string name="terminow_explorer_capacity_label">พื้นที่ของเครื่อง ใช้ร่วมกันทุกแอป</string>
     <string name="terminow_explorer_capacity">ใช้แล้ว %1$s · ว่าง %2$s · ทั้งหมด %3$s</string>
     <string name="terminow_explorer_home_size">โฟลเดอร์ TermiNow Home: %1$s</string>
     <string name="terminow_explorer_home_size_calculating">โฟลเดอร์ TermiNow Home: กำลังคำนวณ…</string>
     <string name="terminow_explorer_analyzer">วิเคราะห์พื้นที่</string>
     <string name="terminow_explorer_analyzer_summary">ดูว่าอะไรใช้พื้นที่ใน Home และโฟลเดอร์ในเครื่องของคุณ</string>
     <string name="terminow_explorer_analyzer_result">%1$s ใน %2$d ตำแหน่ง</string>
-    <string name="terminow_explorer_analyzer_note">ขนาดของ TermiNow Home และโฟลเดอร์ในเครื่องที่คุณเลือก ไม่ติดตามลิงก์</string>
+    <string name="terminow_explorer_analyzer_note">ตำแหน่งที่สแกน: %1$s ไม่ติดตามลิงก์ และไม่สแกนโฟลเดอร์ที่ Android ป้องกันไว้ เช่น ไฟล์ส่วนตัวของแอปอื่น</string>
     <string name="terminow_explorer_analyzing">กำลังวิเคราะห์…</string>
     <string name="terminow_explorer_analyzing_in">กำลังวิเคราะห์ %1$s… %2$d ไฟล์</string>
     <string name="terminow_explorer_analyze_again">วิเคราะห์อีกครั้ง</string>
@@ -42,7 +41,6 @@
     <string name="terminow_explorer_cat_documents">เอกสาร</string>
     <string name="terminow_explorer_cat_apk">ไฟล์ APK</string>
     <string name="terminow_explorer_cat_archives">ไฟล์บีบอัด</string>
-    <string name="terminow_explorer_accessible_only">ใน TermiNow Home และโฟลเดอร์ในเครื่องที่คุณเลือก</string>
 
     <string name="terminow_explorer_device_folder">โฟลเดอร์พื้นที่ส่วนกลาง เลือกผ่านตัวเลือกของ Android</string>
     <string name="terminow_explorer_access_lost">สิทธิ์เข้าถึงหายไป แตะเพื่อเลือกโฟลเดอร์อีกครั้ง</string>
@@ -198,4 +196,21 @@
     <string name="terminow_explorer_host_key_accept">ยอมรับและเชื่อมต่อ</string>
     <string name="terminow_explorer_host_key_changed">คีย์ของโฮสต์เปลี่ยนไป</string>
     <string name="terminow_explorer_passphrase">รหัสผ่านของคีย์ %1$s</string>
+    <string name="terminow_explorer_home_label">โฮมส่วนตัวของแอป ที่เทอร์มินัลใช้</string>
+    <string name="terminow_explorer_volume_ok">เปิดสิทธิ์เข้าถึงไฟล์ทั้งหมดแล้ว</string>
+    <string name="terminow_explorer_volume_read_only">เปิดสิทธิ์เข้าถึงไฟล์ทั้งหมดแล้ว อ่านอย่างเดียว</string>
+    <string name="terminow_explorer_volume_no_access">แตะเพื่ออนุญาตให้เข้าถึงพื้นที่ส่วนกลาง</string>
+    <string name="terminow_explorer_volume_unreadable">อ่านด้วยพาธไม่ได้ ใช้ “เพิ่มโฟลเดอร์”</string>
+    <string name="terminow_explorer_volume_play">ใช้ “เพิ่มโฟลเดอร์” เพื่อเลือกโฟลเดอร์</string>
+    <string name="terminow_explorer_play_storage_message">TermiNow เวอร์ชันจาก Google Play ใช้ตัวเลือกโฟลเดอร์ของ Android เลือกโฟลเดอร์ที่ต้องการด้วย “เพิ่มโฟลเดอร์” แล้ว TermiNow จะเห็นเฉพาะโฟลเดอร์เหล่านั้น</string>
+    <string name="terminow_explorer_volume_unreadable_message">Android ไม่อนุญาตให้แอปอ่านพื้นที่จัดเก็บนี้ด้วยพาธ ให้เลือกโฟลเดอร์ด้วย “เพิ่มโฟลเดอร์” แทน</string>
+    <string name="terminow_explorer_access_title">สิทธิ์เข้าถึงไฟล์ทั้งหมด</string>
+    <string name="terminow_explorer_access_message">หากต้องการเปิดดูพื้นที่เก็บข้อมูลภายใน การ์ด SD และ USB แบบแอปจัดการไฟล์ Android จะให้คุณเปิด “สิทธิ์เข้าถึงไฟล์ทั้งหมด” ให้ TermiNow\n\nสิทธิ์นี้ทำให้ TermiNow อ่านและแก้ไขไฟล์ในพื้นที่ส่วนกลางได้ เช่น Download, DCIM และ Documents แต่ไม่ได้ให้สิทธิ์เข้าถึงข้อมูลส่วนตัวของแอปอื่นหรือไฟล์ระบบของ Android\n\nTermiNow Home และโฟลเดอร์ที่คุณเลือกยังใช้งานได้โดยไม่ต้องมีสิทธิ์นี้ และปิดสิทธิ์ได้ที่หน้าเดียวกันของ Android</string>
+    <string name="terminow_explorer_access_open">เปิดการตั้งค่า Android</string>
+    <string name="terminow_explorer_access_on">เปิดอยู่ แตะเพื่อเปลี่ยนในการตั้งค่า Android</string>
+    <string name="terminow_explorer_access_off">ปิดอยู่ แตะเพื่อเปิด</string>
+    <string name="terminow_explorer_scope">ใน %1$s</string>
+    <string name="terminow_explorer_space_unreadable">ไม่ได้สแกน (ถูกป้องกันหรือถูกปฏิเสธ): %1$s</string>
+    <string name="terminow_explorer_error_protected">Android ป้องกันไว้</string>
+    <string name="terminow_explorer_error_no_access">สิทธิ์เข้าถึงไฟล์ทั้งหมดปิดอยู่</string>
 </resources>

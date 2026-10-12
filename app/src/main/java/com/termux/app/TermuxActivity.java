@@ -342,6 +342,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         if (mTermuxTerminalViewClient != null)
             mTermuxTerminalViewClient.onResume();
 
+        // The File Manager checks again whether All files access was turned on or off meanwhile
+        if (mTerminowHome != null)
+            mTerminowHome.onResume();
+
         // Show the home screen if the sessions were closed while the activity was in the background
         if (mTerminowHome != null && mTermuxService != null)
             mTerminowHome.refresh();
@@ -850,7 +854,9 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         Logger.logVerbose(LOG_TAG, "onActivityResult: requestCode: " + requestCode + ", resultCode: "  + resultCode + ", data: "  + IntentUtils.getIntentString(data));
         if (requestCode == PermissionUtils.REQUEST_GRANT_STORAGE_PERMISSION) {
             requestStoragePermission(true);
-        } else if (mTerminowHome != null) {
+        }
+        if (requestCode == com.termux.app.terminow.TerminowStorageAccess.REQUEST_STORAGE_PERMISSION && mTerminowHome != null)
+            mTerminowHome.onStoragePermissionResult(); else if (mTerminowHome != null) {
             mTerminowHome.onActivityResult(requestCode, resultCode, data);
         }
     }
@@ -862,6 +868,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         if (requestCode == PermissionUtils.REQUEST_GRANT_STORAGE_PERMISSION) {
             requestStoragePermission(true);
         }
+        if (requestCode == com.termux.app.terminow.TerminowStorageAccess.REQUEST_STORAGE_PERMISSION && mTerminowHome != null)
+            mTerminowHome.onStoragePermissionResult();
     }
 
 

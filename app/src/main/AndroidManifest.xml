@@ -23,11 +23,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Shared storage is only used by path on Android 9 and lower, where these permissions give
          access to it. On newer versions files are imported and exported with the system file
-         picker, which needs no permission. All files access (MANAGE_EXTERNAL_STORAGE) is not used. -->
+         picker, which needs no permission. All files access (MANAGE_EXTERNAL_STORAGE) is only in
+         the "full" build, see src/full/AndroidManifest.xml, and removed in src/play. -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
-    <!-- Removes it if a library would add it -->
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:node="remove" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
