@@ -1236,9 +1236,9 @@ public class TerminowStore {
     // The key panel of the terminal
     // ---------------------------------------------------------------------------------------
 
-    /** Whether the key panel is shown beside the terminal on a wide screen. */
+    /** Whether the key panel is shown beside the terminal on a wide screen, closed until it is opened. */
     public boolean isKeyPanelShown() {
-        return mPreferences.getBoolean("key_panel_shown", true);
+        return mPreferences.getBoolean("key_panel_shown", false);
     }
 
     public void setKeyPanelShown(boolean shown) {
