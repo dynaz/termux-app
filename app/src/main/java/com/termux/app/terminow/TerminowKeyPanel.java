@@ -110,11 +110,27 @@ public class TerminowKeyPanel {
             mSide.removeAllViews();
             mSide.addView(build(), new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
             mSide.setVisibility(View.VISIBLE);
+            setTerminalEndMargin(mActivity.getResources().getDimensionPixelSize(R.dimen.terminow_key_panel_width));
         } else if (!side && mSide.getVisibility() != View.GONE) {
             mSide.setVisibility(View.GONE);
             mSide.removeAllViews();
             mContent = null;
+            setTerminalEndMargin(dp(3));
         }
+    }
+
+    /**
+     * Leave room for the panel at the right of the terminal. The terminal keeps a plain size of
+     * its own, which its drawer needs: it can not be measured as a weighted part of a row.
+     */
+    private void setTerminalEndMargin(int margin) {
+        View terminal = mActivity.findViewById(R.id.activity_termux_root_relative_layout);
+        if (terminal == null || !(terminal.getLayoutParams() instanceof ViewGroup.MarginLayoutParams)) return;
+        ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) terminal.getLayoutParams();
+        if (params.getMarginEnd() == margin) return;
+        params.setMarginEnd(margin);
+        params.rightMargin = margin;
+        terminal.setLayoutParams(params);
     }
 
     /** The button of the toolbar: the panel beside the terminal on and off, or over it on a narrow screen. */
