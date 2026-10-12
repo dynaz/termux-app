@@ -244,6 +244,9 @@ public class TerminowHome {
         mVaultButton = activity.findViewById(R.id.terminow_vault_button);
         mVaultsUi = new TerminowVaultsUi(activity, mStore, this::reloadVault);
         mVaultButton.setOnClickListener(v -> mVaultsUi.showSwitcher(v));
+        // The cloud says whether the vault is synced, a tap says why and offers to sync
+        mVaultSyncIcon.setOnClickListener(v -> mVaultsUi.showStatus());
+        mVaultSyncIcon.setContentDescription(activity.getString(R.string.terminow_vault_status));
         mKeyPanel = new TerminowKeyPanel(activity, mStore, activity.findViewById(R.id.terminow_key_panel));
         activity.findViewById(R.id.terminow_toolbar_keys).setOnClickListener(v -> mKeyPanel.toggle());
         mRailHosts = activity.findViewById(R.id.terminow_rail_hosts);
@@ -418,6 +421,7 @@ public class TerminowHome {
         // Like Termius: the vault and its switcher on the home screen, "Vaults" over a terminal
         mHomeTitle.setText(homeVisible ? mVaultsUi.getActiveName() : mActivity.getString(R.string.terminow_vaults));
         mVaultSyncIcon.setImageResource(mVaultsUi.getSyncIcon());
+        mVaultSyncIcon.setContentDescription(mVaultsUi.getStatusText());
         mVaultSyncIcon.setVisibility(homeVisible ? View.VISIBLE : View.GONE);
         mVaultButton.setVisibility(homeVisible ? View.VISIBLE : View.GONE);
         mVaultsUi.onListsChanged();

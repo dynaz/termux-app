@@ -1236,6 +1236,15 @@ public class TerminowStore {
     // The key panel of the terminal
     // ---------------------------------------------------------------------------------------
 
+    /** When the vaults last synced without an error, 0 for never. */
+    public long getVaultLastSync() {
+        return mPreferences.getLong("vault_last_sync", 0);
+    }
+
+    public void setVaultLastSync(long time) {
+        mPreferences.edit().putLong("vault_last_sync", time).apply();
+    }
+
     /** The settings of the Linux environments by alias: default user and folder, shared folders. */
     @NonNull
     public JSONObject getLinuxSettings() {

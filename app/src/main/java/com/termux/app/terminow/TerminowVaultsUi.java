@@ -112,11 +112,106 @@ public class TerminowVaultsUi {
         return mActivity.getString(R.string.terminow_vault_personal);
     }
 
-    /** The cloud icon next to the name: synced, not synced, or a problem. */
+    /** Where syncing of the vault that is shown stands. */
+    public enum State { OFF, BLOCKED, SYNCING, PENDING, SYNCED, FAILED }
+
+    @NonNull
+    public State getState() {
+        if (mSyncing) return State.SYNCING;
+        if (blockedReason() != 0) return mVaults.getPersonal() == null && mStore.getActiveVault().isEmpty() ? State.OFF : State.BLOCKED;
+        if (mStore.getActiveVault().isEmpty() && mVaults.getPersonal() == null) return State.OFF;
+        if (mSyncError != null) return State.FAILED;
+        if (mStore.isVaultDirty(mStore.getActiveVault())) return State.PENDING;
+        return State.SYNCED;
+    }
+
+    /** Why syncing can not run now, as a string resource, 0 when it can. */
+    private int blockedReason() {
+        TerminowAccount.Session session = mStore.getAccount();
+        if (session == null) return R.string.terminow_vault_state_sign_in;
+        if (!session.emailVerified) return R.string.terminow_vault_state_verify;
+        if (!TerminowAccountUi.isPremium(mStore)) return R.string.terminow_vault_state_premium;
+        if (!mVaults.isUnlocked()) return R.string.terminow_vault_state_locked;
+        return 0;
+    }
+
+    /** One line that says whether the vault is synced, and if not, why. */
+    @NonNull
+    public String getStatusText() {
+        switch (getState()) {
+            case SYNCING: return mActivity.getString(R.string.terminow_vault_state_syncing);
+            case OFF: {
+                int reason = blockedReason();
+                String text = mActivity.getString(R.string.terminow_vault_state_off);
+                return reason == 0 || reason == R.string.terminow_vault_state_locked ? text : text + " · " + mActivity.getString(reason);
+            }
+            case BLOCKED: return mActivity.getString(R.string.terminow_vault_state_blocked, mActivity.getString(blockedReason()));
+            case FAILED: return mActivity.getString(R.string.terminow_vault_sync_failed, mSyncError);
+            case PENDING: return mActivity.getString(R.string.terminow_vault_state_pending);
+            default: {
+                long last = mStore.getVaultLastSync();
+                return last <= 0 ? mActivity.getString(R.string.terminow_vault_state_synced_now) : mActivity.getString(R.string.terminow_vault_state_synced,
+                    android.text.format.DateUtils.getRelativeTimeSpanString(last, System.currentTimeMillis(),
+                        android.text.format.DateUtils.MINUTE_IN_MILLIS));
+            }
+        }
+    }
+
+    /** The cloud icon next to the name: synced, syncing or waiting, not synced, or failed. */
     public int getSyncIcon() {
-        String active = mStore.getActiveVault();
-        boolean synced = active.isEmpty() ? mVaults.getPersonal() != null && mVaults.isUnlocked() : mVaults.isUnlocked();
-        return synced && mSyncError == null ? R.drawable.ic_terminow_cloud : R.drawable.ic_terminow_cloud_off;
+        switch (getState()) {
+            case SYNCED: return R.drawable.ic_terminow_cloud;
+            case SYNCING: case PENDING: return R.drawable.ic_terminow_cloud_sync;
+            case FAILED: return R.drawable.ic_terminow_cloud_error;
+            default: return R.drawable.ic_terminow_cloud_off;
+        }
+    }
+
+    /** The status, and what to do next, for a tap on the cloud icon. */
+    public void showStatus() {
+        State state = getState();
+        AlertDialog.Builder builder = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(getActiveName())
+            .setMessage(getStatusText())
+            .setNegativeButton(R.string.terminow_profiles_close, null)
+            .setNeutralButton(R.string.terminow_vault_settings, (d, w) -> showSettings());
+        if (state == State.OFF || state == State.BLOCKED)
+            builder.setPositiveButton(R.string.terminow_vault_enable_sync, (d, w) -> ready(this::enablePersonalSync));
+        else if (state != State.SYNCING)
+            builder.setPositiveButton(R.string.terminow_vault_sync_now, (d, w) -> syncQuietly(true));
+        builder.show();
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Notifications of syncing
+    // ---------------------------------------------------------------------------------------
+
+    private static final String CHANNEL_ID = "terminow_vault_sync";
+    private static final int NOTIFICATION_ID = 7301;
+
+    /** A notification of Android, and an entry in the bell of the app. */
+    private void notifySync(boolean ok, @NonNull String text) {
+        String title = mActivity.getString(ok ? R.string.terminow_vault_notification_ok : R.string.terminow_vault_notification_failed);
+        mStore.addNotification(title, text);
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O)
+                com.termux.shared.notification.NotificationUtils.setupNotificationChannel(mActivity, CHANNEL_ID,
+                    mActivity.getString(R.string.terminow_vault_notification_channel), android.app.NotificationManager.IMPORTANCE_DEFAULT);
+            android.content.Intent intent = new android.content.Intent(mActivity, mActivity.getClass())
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            android.app.PendingIntent pending = android.app.PendingIntent.getActivity(mActivity, NOTIFICATION_ID, intent,
+                android.app.PendingIntent.FLAG_IMMUTABLE | android.app.PendingIntent.FLAG_UPDATE_CURRENT);
+            android.app.Notification.Builder builder = com.termux.shared.notification.NotificationUtils.geNotificationBuilder(mActivity,
+                CHANNEL_ID, android.app.Notification.PRIORITY_DEFAULT, title, text, text, pending, null,
+                com.termux.shared.notification.NotificationUtils.NOTIFICATION_MODE_SILENT);
+            android.app.NotificationManager manager = com.termux.shared.notification.NotificationUtils.getNotificationManager(mActivity);
+            if (builder == null || manager == null) return;
+            builder.setSmallIcon(R.drawable.ic_service_notification);
+            builder.setAutoCancel(true);
+            manager.notify(NOTIFICATION_ID, builder.build());
+        } catch (RuntimeException e) {
+            // The entry in the bell is there
+        }
     }
 
     // ---------------------------------------------------------------------------------------
@@ -144,8 +239,14 @@ public class TerminowVaultsUi {
     }
 
     private void syncQuietly(boolean report) {
-        if (mSyncing || !canSync()) return;
+        if (mSyncing) return;
+        if (!canSync()) {
+            // Asked for: say why it does not sync instead of doing nothing
+            if (report) showStatus();
+            return;
+        }
         mSyncing = true;
+        mListener.onVaultChanged();
         mExecutor.execute(() -> {
             String error = null;
             try {
@@ -156,10 +257,15 @@ public class TerminowVaultsUi {
             }
             String result = error;
             mHandler.post(() -> {
+                String before = mSyncError;
                 mSyncing = false;
                 mLastSync = System.currentTimeMillis();
                 mSyncError = result;
+                if (result == null) mStore.setVaultLastSync(mLastSync);
                 mListener.onVaultChanged();
+                // Asked for, or a change: failing, or working again; not every quiet sync
+                if (report || (result != null && !result.equals(before)) || (result == null && before != null))
+                    notifySync(result == null, result == null ? getStatusText() : mActivity.getString(R.string.terminow_vault_sync_failed, result));
                 if (report)
                     mActivity.showToast(result == null ? mActivity.getString(R.string.terminow_vault_synced) :
                         mActivity.getString(R.string.terminow_vault_sync_failed, result), true);
@@ -188,7 +294,7 @@ public class TerminowVaultsUi {
 
         // Personal
         int personalAction = personal != null && unlocked ? R.string.terminow_vault_sync_now : R.string.terminow_vault_enable_sync;
-        addRow(menu, popup, mActivity.getString(R.string.terminow_vault_personal), active.isEmpty(),
+        addRow(menu, popup, mActivity.getString(R.string.terminow_vault_personal), active.isEmpty() ? getStatusText() : null, active.isEmpty(),
             personal != null && unlocked ? R.drawable.ic_terminow_cloud : R.drawable.ic_terminow_cloud_off,
             mActivity.getString(personalAction), true,
             () -> switchTo(""),
@@ -237,6 +343,11 @@ public class TerminowVaultsUi {
 
     private void addRow(@NonNull LinearLayout menu, @NonNull PopupWindow popup, @NonNull String name, boolean selected,
                         int actionIcon, @NonNull String action, boolean enabled, @NonNull Runnable onRow, @NonNull Runnable onAction) {
+        addRow(menu, popup, name, null, selected, actionIcon, action, enabled, onRow, onAction);
+    }
+
+    private void addRow(@NonNull LinearLayout menu, @NonNull PopupWindow popup, @NonNull String name, @Nullable String status, boolean selected,
+                        int actionIcon, @NonNull String action, boolean enabled, @NonNull Runnable onRow, @NonNull Runnable onAction) {
         LinearLayout row = new LinearLayout(mActivity);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(16), 0, dp(8), 0);
@@ -248,10 +359,22 @@ public class TerminowVaultsUi {
         TextView nameView = text(name, 16, enabled ? R.color.terminow_text : R.color.terminow_text_secondary);
         nameView.setSingleLine(true);
         nameView.setEllipsize(TextUtils.TruncateAt.END);
-        nameView.setPadding(dp(14), 0, dp(8), 0);
-        row.addView(nameView, new LinearLayout.LayoutParams(0, dp(52), 1));
         nameView.setGravity(Gravity.CENTER_VERTICAL);
-        nameView.setOnClickListener(v -> {
+        LinearLayout names = new LinearLayout(mActivity);
+        names.setOrientation(LinearLayout.VERTICAL);
+        names.setGravity(Gravity.CENTER_VERTICAL);
+        names.setPadding(dp(14), dp(6), dp(8), dp(6));
+        names.addView(nameView);
+        if (status != null) {
+            // Whether it is synced, and if not, why, right where sync is turned on
+            TextView statusView = text(status, 12, getState() == State.FAILED ? R.color.terminow_mcp_warn : R.color.terminow_text_secondary);
+            statusView.setMaxLines(2);
+            statusView.setEllipsize(TextUtils.TruncateAt.END);
+            names.addView(statusView);
+        }
+        names.setMinimumHeight(dp(52));
+        row.addView(names, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        names.setOnClickListener(v -> {
             popup.dismiss();
             onRow.run();
         });
@@ -387,7 +510,10 @@ public class TerminowVaultsUi {
             return new JSONObject();
         }, r -> {
             mSyncError = null;
+            mLastSync = System.currentTimeMillis();
+            mStore.setVaultLastSync(mLastSync);
             mListener.onVaultChanged();
+            notifySync(true, mActivity.getString(R.string.terminow_vault_personal_enabled));
             mActivity.showToast(mActivity.getString(R.string.terminow_vault_personal_enabled), true);
         });
     }
@@ -660,6 +786,11 @@ public class TerminowVaultsUi {
             mHandler.post(() -> {
                 if (!mActivity.isFinishing()) progress.dismiss();
                 if (finalError != null) {
+                    if (messageRes == R.string.terminow_vault_syncing) {
+                        mSyncError = finalError;
+                        mListener.onVaultChanged();
+                        notifySync(false, mActivity.getString(R.string.terminow_vault_sync_failed, finalError));
+                    }
                     message(R.string.terminow_vault_error_title, finalError, 0, null);
                     return;
                 }

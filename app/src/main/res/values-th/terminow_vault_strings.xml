@@ -99,4 +99,18 @@
     <string name="terminow_keys_no_session">ไม่มีเทอร์มินัลที่ทำงานอยู่ให้ส่งไป</string>
     <string name="terminow_keys_no_snippets">ยังไม่มีสนิปเป็ตในห้องนิรภัยนี้ เพิ่มได้ที่หน้า สนิปเป็ต</string>
     <string name="terminow_keys_snippets_hint">แตะเพื่อวาง กดค้างเพื่อวางและเรียกใช้</string>
+    <string name="terminow_vault_status">สถานะการซิงก์</string>
+    <string name="terminow_vault_state_syncing">กำลังซิงก์…</string>
+    <string name="terminow_vault_state_off">ยังไม่ซิงก์: อยู่ในโทรศัพท์เครื่องนี้เท่านั้น</string>
+    <string name="terminow_vault_state_blocked">ไม่ได้ซิงก์: %1$s</string>
+    <string name="terminow_vault_state_pending">มีการเปลี่ยนแปลงรอซิงก์</string>
+    <string name="terminow_vault_state_synced">ซิงก์แล้ว %1$s</string>
+    <string name="terminow_vault_state_synced_now">ซิงก์แล้ว</string>
+    <string name="terminow_vault_state_sign_in">ลงชื่อเข้าใช้บัญชี TermiNow ก่อน</string>
+    <string name="terminow_vault_state_verify">ยืนยันอีเมลก่อน</string>
+    <string name="terminow_vault_state_premium">ต้องใช้ TermiNow Premium</string>
+    <string name="terminow_vault_state_locked">ใส่รหัสผ่านห้องนิรภัยในโทรศัพท์เครื่องนี้</string>
+    <string name="terminow_vault_notification_channel">การซิงก์ห้องนิรภัย</string>
+    <string name="terminow_vault_notification_ok">ซิงก์ห้องนิรภัยแล้ว</string>
+    <string name="terminow_vault_notification_failed">ซิงก์ห้องนิรภัยไม่สำเร็จ</string>
 </resources>

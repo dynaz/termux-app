@@ -101,4 +101,18 @@
     <string name="terminow_keys_no_session">No running terminal to send to</string>
     <string name="terminow_keys_no_snippets">No snippets in this vault yet. Add them on the Snippets page.</string>
     <string name="terminow_keys_snippets_hint">Tap to paste, long press to paste and run</string>
+    <string name="terminow_vault_status">Sync status</string>
+    <string name="terminow_vault_state_syncing">Syncing…</string>
+    <string name="terminow_vault_state_off">Not synced: only on this phone</string>
+    <string name="terminow_vault_state_blocked">Not syncing: %1$s</string>
+    <string name="terminow_vault_state_pending">Changes waiting to sync</string>
+    <string name="terminow_vault_state_synced">Synced %1$s</string>
+    <string name="terminow_vault_state_synced_now">Synced</string>
+    <string name="terminow_vault_state_sign_in">sign in to your TermiNow account first</string>
+    <string name="terminow_vault_state_verify">verify your email first</string>
+    <string name="terminow_vault_state_premium">needs TermiNow Premium</string>
+    <string name="terminow_vault_state_locked">enter your vault password on this phone</string>
+    <string name="terminow_vault_notification_channel">Vault sync</string>
+    <string name="terminow_vault_notification_ok">Vault synced</string>
+    <string name="terminow_vault_notification_failed">Vault sync failed</string>
 </resources>
