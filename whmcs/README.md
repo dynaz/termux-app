@@ -14,9 +14,9 @@ TermiNow account has Premium. The endpoint:
 1. Upload the folder `terminow/` (both `premium.php` and `lib.php`) into the
    WHMCS directory, next to `init.php`:
    `/home/accmovecom/domains/cp.accmove.com/public_html/terminow/`
-2. Create the product(s) for TermiNow Premium in WHMCS. By default every product
-   whose name or group contains "TermiNow" counts. To use exact products instead,
-   put their ids in `TERMINOW_PREMIUM_PRODUCT_IDS` at the top of `premium.php`.
+2. Premium is an Active service of a product whose name or group contains
+   "TermiNow", or of a product id in `TERMINOW_PREMIUM_PRODUCT_IDS` at the top of
+   `premium.php` (90, MobiClaude Premium, which includes TermiNow Premium).
 3. Check it: `curl -X POST https://cp.accmove.com/terminow/premium.php` must
    answer `{"error":"Sign in first"}` with HTTP 401.
 

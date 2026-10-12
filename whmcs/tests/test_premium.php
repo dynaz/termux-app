@@ -80,8 +80,14 @@ check(decide($products, [])['premium'] === false, 'suspended TermiNow and other 
 $products[] = ['pid' => 10, 'name' => 'TermiNow Premium Yearly', 'status' => 'Active', 'nextduedate' => '2027-10-12'];
 $decision = decide($products, []);
 check($decision['premium'] === true && $decision['nextDueDate'] === '2027-10-12', 'active TermiNow service is Premium');
-check(decide($products, [9])['premium'] === false, 'configured product ids only');
-check(decide($products, [10])['premium'] === true, 'configured product id that is active');
+check(decide($products, [9])['premium'] === true, 'TermiNow products count with configured ids too');
+$mobiclaude = [['pid' => 90, 'name' => 'MobiClaude Premium', 'status' => 'Active', 'nextduedate' => '2026-12-01'],
+    ['pid' => 5, 'name' => 'Web Hosting', 'status' => 'Active', 'nextduedate' => '2027-01-01']];
+check(decide($mobiclaude, [90])['premium'] === true && decide($mobiclaude, [90])['plan'] === 'MobiClaude Premium',
+    'configured product id that is active');
+check(decide($mobiclaude, [])['premium'] === false, 'MobiClaude Premium only counts when configured');
+check(decide([['pid' => 90, 'name' => 'MobiClaude Premium', 'status' => 'Suspended']], [90])['premium'] === false,
+    'suspended configured product');
 check(decide([['pid' => 3, 'name' => 'Lifetime', 'groupname' => 'TermiNow', 'status' => 'Active', 'nextduedate' => '0000-00-00']], [])['nextDueDate'] === null,
     'one-time service has no due date');
 check(decide([], [])['premium'] === false, 'no services');

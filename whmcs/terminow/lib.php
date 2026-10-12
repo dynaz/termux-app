@@ -61,12 +61,12 @@ function verify_id_token(string $token, array $certs, int $now, string $projectI
 }
 
 /**
- * Whether a product of WHMCS is TermiNow Premium: one of the configured product ids, or, when
- * none are configured, a product whose name contains "TermiNow".
+ * Whether a product of WHMCS is TermiNow Premium: one of the configured product ids, or a
+ * product whose name or group name contains "TermiNow".
  */
 function is_premium_product(array $product, array $productIds): bool
 {
-    if (!empty($productIds)) return in_array((int)($product['pid'] ?? 0), array_map('intval', $productIds), true);
+    if (in_array((int)($product['pid'] ?? 0), array_map('intval', $productIds), true)) return true;
     return stripos((string)($product['name'] ?? ''), 'terminow') !== false ||
         stripos((string)($product['groupname'] ?? ''), 'terminow') !== false;
 }

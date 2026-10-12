@@ -1,6 +1,7 @@
 package com.termux.app.terminow;
 
 import android.app.AlertDialog;
+import android.os.CancellationSignal;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.InputType;
@@ -12,6 +13,17 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
+import androidx.credentials.Credential;
+import androidx.credentials.CredentialManager;
+import androidx.credentials.CredentialManagerCallback;
+import androidx.credentials.CustomCredential;
+import androidx.credentials.GetCredentialRequest;
+import androidx.credentials.GetCredentialResponse;
+import androidx.credentials.exceptions.GetCredentialCancellationException;
+import androidx.credentials.exceptions.GetCredentialException;
+
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption;
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
 
 import com.termux.BuildConfig;
 import com.termux.R;
@@ -109,6 +121,26 @@ public class TerminowAccountUi {
 
     private void showSignIn() {
         LinearLayout form = form();
+        final AlertDialog[] dialogHolder = new AlertDialog[1];
+        if (!BuildConfig.TERMINOW_GOOGLE_WEB_CLIENT_ID.isEmpty()) {
+            TextView google = new TextView(mActivity);
+            google.setText(R.string.terminow_account_google);
+            google.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
+            google.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+            google.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            google.setGravity(android.view.Gravity.CENTER);
+            google.setBackgroundResource(R.drawable.terminow_action);
+            google.setOnClickListener(v -> signInWithGoogle(dialogHolder[0]));
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44));
+            params.topMargin = dp(8);
+            params.bottomMargin = dp(8);
+            form.addView(google, params);
+            TextView or = new TextView(mActivity);
+            or.setText(R.string.terminow_account_or_email);
+            or.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+            or.setGravity(android.view.Gravity.CENTER);
+            form.addView(or);
+        }
         EditText emailView = field(form, R.string.terminow_account_email, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
         EditText passwordView = field(form, R.string.terminow_account_password, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         TextView note = new TextView(mActivity);
@@ -125,6 +157,7 @@ public class TerminowAccountUi {
             .setNeutralButton(R.string.terminow_account_create, null)
             .setNegativeButton(android.R.string.cancel, null)
             .create();
+        dialogHolder[0] = dialog;
         dialog.setOnShowListener(d -> {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> submit(dialog, emailView, passwordView, false));
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> submit(dialog, emailView, passwordView, true));
@@ -146,6 +179,47 @@ public class TerminowAccountUi {
                 mActivity.showToast(mActivity.getString(R.string.terminow_account_reset_sent, email), true));
         });
         form.addView(forgot);
+    }
+
+    /** Show the Google account picker of Android, then sign in to Firebase with its ID token. */
+    private void signInWithGoogle(@Nullable AlertDialog dialog) {
+        GetSignInWithGoogleOption option = new GetSignInWithGoogleOption.Builder(BuildConfig.TERMINOW_GOOGLE_WEB_CLIENT_ID).build();
+        GetCredentialRequest request = new GetCredentialRequest.Builder().addCredentialOption(option).build();
+        CredentialManager.create(mActivity).getCredentialAsync(mActivity, request, new CancellationSignal(),
+            ContextCompat.getMainExecutor(mActivity), new CredentialManagerCallback<GetCredentialResponse, GetCredentialException>() {
+                @Override
+                public void onResult(GetCredentialResponse response) {
+                    Credential credential = response.getCredential();
+                    String idToken = null;
+                    if (credential instanceof CustomCredential &&
+                        GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL.equals(credential.getType())) {
+                        try {
+                            idToken = GoogleIdTokenCredential.createFrom(credential.getData()).getIdToken();
+                        } catch (Exception e) {
+                            idToken = null;
+                        }
+                    }
+                    if (idToken == null) {
+                        mActivity.showToast(mActivity.getString(R.string.terminow_account_google_failed, "no Google account"), true);
+                        return;
+                    }
+                    String token = idToken;
+                    final TerminowAccount.Session[] result = new TerminowAccount.Session[1];
+                    run(() -> result[0] = mAccount.signInWithGoogle(token), () -> {
+                        mStore.setAccount(result[0]);
+                        mPremiumError = null;
+                        if (dialog != null) dialog.dismiss();
+                        mOnChanged.run();
+                    });
+                }
+
+                @Override
+                public void onError(GetCredentialException e) {
+                    // Closing the picker is not an error
+                    if (e instanceof GetCredentialCancellationException) return;
+                    mActivity.showToast(mActivity.getString(R.string.terminow_account_google_failed, String.valueOf(e.getMessage())), true);
+                }
+            });
     }
 
     private void submit(@NonNull AlertDialog dialog, @NonNull EditText emailView, @NonNull EditText passwordView, boolean create) {

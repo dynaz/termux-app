@@ -47,6 +47,10 @@ android {
         implementation "io.noties.markwon:linkify:$markwonVersion"
         implementation "io.noties.markwon:recycler:$markwonVersion"
         implementation 'com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava'
+        // Sign in with Google, through the Credential Manager of Android
+        implementation "androidx.credentials:credentials:1.3.0"
+        implementation "androidx.credentials:credentials-play-services-auth:1.3.0"
+        implementation "com.google.android.libraries.identity.googleid:googleid:1.1.1"
         // Argon2 for the passphrases of PuTTY v3 keys
         implementation "org.bouncycastle:bcprov-jdk18on:1.78.1"
 
@@ -61,7 +65,7 @@ android {
         applicationId "com.terminow"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 141
+        versionCode 142
         versionName "0.118.0"
 
         if (appVersionName) versionName = appVersionName
@@ -82,6 +86,7 @@ android {
         // committed. Without it the build works, and accounts are shown as not set up.
         def firebaseApiKey = ""
         def firebaseProjectId = ""
+        def googleWebClientId = ""
         def googleServicesFile = file("google-services.json")
         if (googleServicesFile.isFile()) {
             def googleServices = new groovy.json.JsonSlurper().parse(googleServicesFile)
@@ -89,10 +94,14 @@ android {
             if (firebaseClient != null) {
                 firebaseApiKey = firebaseClient.api_key[0].current_key
                 firebaseProjectId = googleServices.project_info.project_id
+                // Google sign-in asks for an ID token for the web client of the project
+                def webClient = (firebaseClient.oauth_client ?: []).find { it.client_type == 3 }
+                if (webClient != null) googleWebClientId = webClient.client_id
             }
         }
         buildConfigField "String", "TERMINOW_FIREBASE_API_KEY", "\"" + firebaseApiKey + "\""
         buildConfigField "String", "TERMINOW_FIREBASE_PROJECT_ID", "\"" + firebaseProjectId + "\""
+        buildConfigField "String", "TERMINOW_GOOGLE_WEB_CLIENT_ID", "\"" + googleWebClientId + "\""
         buildConfigField "String", "TERMUX_PACKAGE_VARIANT", "\"" + project.ext.packageVariant + "\"" // Used by TermuxApplication class
 
         manifestPlaceholders.TERMUX_PACKAGE_NAME = "com.terminow"

@@ -94,6 +94,29 @@ public class TerminowAccount {
         return session;
     }
 
+    /**
+     * Sign in with the Google ID token from the account picker of Android. Google has verified
+     * the email already. A new Google user gets a TermiNow account, an existing one signs in.
+     */
+    @NonNull
+    public Session signInWithGoogle(@NonNull String googleIdToken) throws AccountException {
+        JSONObject body = object("postBody", "id_token=" + encode(googleIdToken) + "&providerId=google.com",
+            "requestUri", "http://localhost");
+        try {
+            body.put("returnSecureToken", true);
+            body.put("returnIdpCredential", true);
+        } catch (JSONException e) {
+            throw new AccountException("", String.valueOf(e.getMessage()));
+        }
+        JSONObject result = post("accounts:signInWithIdp", body);
+        // An email that has a password account already needs that to be linked first
+        if (result.optBoolean("needConfirmation"))
+            throw new AccountException("NEED_CONFIRMATION", "This email has an account with a password. Sign in with the password");
+        Session session = fromSignIn(result);
+        session.emailVerified = result.optBoolean("emailVerified");
+        return session;
+    }
+
     public void sendVerificationEmail(@NonNull Session session) throws AccountException {
         post("accounts:sendOobCode", object("requestType", "VERIFY_EMAIL", "idToken", getIdToken(session)));
     }

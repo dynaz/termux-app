@@ -17,10 +17,10 @@ use function TermiNow\Premium\verify_id_token;
 require __DIR__ . '/lib.php';
 
 /**
- * The WHMCS product ids that are TermiNow Premium. Leave empty to count every product whose
- * name or group name contains "TermiNow".
+ * WHMCS product ids that are TermiNow Premium, in addition to every product whose name or
+ * group name contains "TermiNow". 90 is MobiClaude Premium, which includes TermiNow Premium.
  */
-const TERMINOW_PREMIUM_PRODUCT_IDS = [];
+const TERMINOW_PREMIUM_PRODUCT_IDS = [90];
 
 header('Content-Type: application/json');
 header('Cache-Control: no-store');

@@ -91,6 +91,16 @@ public class TerminowAccountTest {
                     } else {
                         response = signIn(request.getString("email"));
                     }
+                } else if (path.startsWith("/auth/accounts:signInWithIdp")) {
+                    JSONObject request = new JSONObject(text);
+                    if (!request.getString("postBody").equals("id_token=google-id-token&providerId=google.com") ||
+                        !request.getBoolean("returnSecureToken")) {
+                        status = 400;
+                        response = "{\"error\":{\"code\":400,\"message\":\"INVALID_IDP_RESPONSE\"}}";
+                    } else {
+                        response = "{\"localId\":\"uid2\",\"email\":\"g@example.com\",\"emailVerified\":true,\"providerId\":\"google.com\"," +
+                            "\"idToken\":\"id-g\",\"refreshToken\":\"refresh-g\",\"expiresIn\":\"3600\"}";
+                    }
                 } else if (path.startsWith("/auth/accounts:sendOobCode")) {
                     response = "{\"email\":\"x\"}";
                 } else if (path.startsWith("/auth/accounts:lookup")) {
@@ -182,6 +192,19 @@ public class TerminowAccountTest {
             premium = account.checkPremium(session);
             assertFalse(premium.premium);
             assertNull(premium.nextDueDate);
+        }
+    }
+
+    @Test
+    public void googleSignInIsVerifiedAndCanCheckPremium() throws Exception {
+        try (FakeServer server = new FakeServer()) {
+            TerminowAccount account = account(server);
+            TerminowAccount.Session session = account.signInWithGoogle("google-id-token");
+            assertEquals("uid2", session.uid);
+            assertEquals("g@example.com", session.email);
+            assertTrue(session.emailVerified);
+            assertTrue(account.checkPremium(session).premium);
+            expect(() -> account.signInWithGoogle("forged"), "INVALID_IDP_RESPONSE", "Failed (INVALID_IDP_RESPONSE)");
         }
     }
 
