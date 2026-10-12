@@ -1048,6 +1048,17 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         }
     }
 
+    /**
+     * Load the font and colors files into the terminal now, without a broadcast that may not
+     * arrive, for the theme dialog. Returns why the colors could not be used, {@code null} if
+     * they were.
+     */
+    @Nullable
+    public String applyTerminalStyle() {
+        reloadActivityStyling(false);
+        return mTermuxTerminalSessionActivityClient != null ? mTermuxTerminalSessionActivityClient.getStyleError() : null;
+    }
+
     private void reloadActivityStyling(boolean recreateActivity) {
         if (mProperties != null) {
             reloadProperties();

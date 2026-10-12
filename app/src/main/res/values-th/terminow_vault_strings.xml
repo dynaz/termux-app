@@ -113,4 +113,5 @@
     <string name="terminow_vault_notification_channel">การซิงก์ห้องนิรภัย</string>
     <string name="terminow_vault_notification_ok">ซิงก์ห้องนิรภัยแล้ว</string>
     <string name="terminow_vault_notification_failed">ซิงก์ห้องนิรภัยไม่สำเร็จ</string>
+    <string name="terminow_theme_not_applied">ใช้สีไม่ได้: %1$s</string>
 </resources>

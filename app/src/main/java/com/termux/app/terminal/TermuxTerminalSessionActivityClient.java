@@ -529,7 +529,16 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     }
 
 
+    /** Why the last colors or font could not be used, {@code null} if they were. */
+    @Nullable private String mStyleError;
+
+    @Nullable
+    public String getStyleError() {
+        return mStyleError;
+    }
+
     public void checkForFontAndColors() {
+        mStyleError = null;
         try {
             File colorsFile = TermuxConstants.TERMUX_COLOR_PROPERTIES_FILE;
             File fontFile = TermuxConstants.TERMUX_FONT_FILE;
@@ -572,6 +581,7 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
             mActivity.getTerminalView().setTypeface(newTypeface);
         } catch (Exception e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Error in checkForFontAndColors()", e);
+            mStyleError = String.valueOf(e.getMessage());
         }
     }
 

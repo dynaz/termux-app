@@ -115,4 +115,5 @@
     <string name="terminow_vault_notification_channel">Vault sync</string>
     <string name="terminow_vault_notification_ok">Vault synced</string>
     <string name="terminow_vault_notification_failed">Vault sync failed</string>
+    <string name="terminow_theme_not_applied">The colors were not applied: %1$s</string>
 </resources>

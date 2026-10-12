@@ -246,9 +246,13 @@ public class TerminowThemeDialog {
             throw new IOException("Failed to create \"" + directory + "\"");
     }
 
-    /** Make the terminal load the font and colors files again. */
+    /**
+     * Make the terminal load the font and colors files again, at once and in every tab, and say
+     * so if the colors could not be used instead of showing a selection that is not applied.
+     */
     private void reloadStyle() {
-        TermuxActivity.updateTermuxActivityStyling(mActivity, false);
+        String error = mActivity.applyTerminalStyle();
+        if (error != null) mActivity.showToast(mActivity.getString(R.string.terminow_theme_not_applied, error), true);
         update();
     }
 
