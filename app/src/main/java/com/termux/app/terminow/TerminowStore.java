@@ -200,6 +200,18 @@ public class TerminowStore {
     private static final int EXPLORER_RECENTS_MAX = 30;
     private static final String KEY_PREMIUM = "premium";
     private static final String KEY_FORWARDS = "forwards";
+    private static final String KEY_ACTIVE_VAULT = "active_vault";
+    private static final String KEY_VAULTS = "vaults";
+    private static final String KEY_VAULT_ACCOUNT = "vault_account";
+    private static final String KEY_KEY_GROUPS = "key_groups";
+
+    /**
+     * The vault that the hosts, groups, snippets and forwards are read from and written to on
+     * this thread, instead of the active one, while a vault is synced in the background.
+     */
+    private static final ThreadLocal<String> sVaultScope = new ThreadLocal<>();
+    /** Set while the data of a vault is replaced by a sync, which is not a change to sync again. */
+    private static final ThreadLocal<Boolean> sImporting = new ThreadLocal<>();
     private static final String KEY_LOGS = "logs";
     private static final String KEY_NOTIFICATIONS = "notifications";
     private static final String KEY_NOTIFICATIONS_READ_TIME = "notifications_read_time";
@@ -227,8 +239,23 @@ public class TerminowStore {
     private final SharedPreferences mPreferences;
 
     public TerminowStore(@NonNull Context context) {
-        mPreferences = context.getApplicationContext().getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE);
+        this(context, PREFERENCES_NAME);
     }
+
+    TerminowStore(@NonNull Context context, @NonNull String preferencesName) {
+        this(context.getApplicationContext().getSharedPreferences(preferencesName, Context.MODE_PRIVATE));
+    }
+
+    /** For the tests, the store of another phone, without Android. */
+    TerminowStore(@NonNull SharedPreferences preferences) {
+        mPreferences = preferences;
+    }
+
+    /**
+     * Only for the unit tests, whose Android has no keystore: secrets are kept with a marker
+     * instead of encrypted. Never set by the app.
+     */
+    static boolean sTestsWithoutKeystore;
 
     public static boolean isValidAddress(String address) {
         return address != null && ADDRESS_PATTERN.matcher(address).matches();
@@ -250,7 +277,7 @@ public class TerminowStore {
     public List<Host> getHosts() {
         List<Host> hosts = new ArrayList<>();
         try {
-            JSONArray array = new JSONArray(mPreferences.getString(KEY_HOSTS, "[]"));
+            JSONArray array = new JSONArray(mPreferences.getString(ns(KEY_HOSTS), "[]"));
             for (int i = 0; i < array.length(); i++) {
                 JSONObject object = array.getJSONObject(i);
                 Host host = new Host();
@@ -294,7 +321,7 @@ public class TerminowStore {
             Logger.logStackTraceWithMessage(LOG_TAG, "Failed to save hosts", e);
             return;
         }
-        mPreferences.edit().putString(KEY_HOSTS, array.toString()).apply();
+        putVaultList(KEY_HOSTS, array.toString());
     }
 
     @NonNull
@@ -318,6 +345,7 @@ public class TerminowStore {
     @NonNull
     private static String encryptPassword(@NonNull String password) {
         if (password.isEmpty()) return "";
+        if (sTestsWithoutKeystore) return "test:" + password;
         try {
             Cipher cipher = Cipher.getInstance(PASSWORD_CIPHER);
             cipher.init(Cipher.ENCRYPT_MODE, getPasswordKey());
@@ -337,6 +365,7 @@ public class TerminowStore {
     @NonNull
     private static String decryptPassword(@NonNull String encryptedPassword) {
         if (encryptedPassword.isEmpty()) return "";
+        if (sTestsWithoutKeystore) return encryptedPassword.startsWith("test:") ? encryptedPassword.substring(5) : "";
         try {
             byte[] data = Base64.decode(encryptedPassword, Base64.NO_WRAP);
             if (data.length <= PASSWORD_IV_LENGTH) return "";
@@ -672,7 +701,7 @@ public class TerminowStore {
     public List<Forward> getForwards() {
         List<Forward> forwards = new ArrayList<>();
         try {
-            JSONArray array = new JSONArray(mPreferences.getString(KEY_FORWARDS, "[]"));
+            JSONArray array = new JSONArray(mPreferences.getString(ns(KEY_FORWARDS), "[]"));
             for (int i = 0; i < array.length(); i++) {
                 JSONObject object = array.getJSONObject(i);
                 Forward forward = new Forward();
@@ -711,7 +740,7 @@ public class TerminowStore {
             Logger.logStackTraceWithMessage(LOG_TAG, "Failed to save forwards", e);
             return;
         }
-        mPreferences.edit().putString(KEY_FORWARDS, array.toString()).apply();
+        putVaultList(KEY_FORWARDS, array.toString());
     }
 
     /** Get the logs of the connections that were started, the newest first. */
@@ -819,7 +848,7 @@ public class TerminowStore {
     public List<String> getGroups() {
         List<String> groups = new ArrayList<>();
         try {
-            JSONArray array = new JSONArray(mPreferences.getString(KEY_GROUPS, "[]"));
+            JSONArray array = new JSONArray(mPreferences.getString(ns(KEY_GROUPS), "[]"));
             for (int i = 0; i < array.length(); i++) {
                 String group = array.optString(i).trim();
                 if (!group.isEmpty() && !groups.contains(group))
@@ -832,7 +861,7 @@ public class TerminowStore {
     }
 
     public void setGroups(@NonNull List<String> groups) {
-        mPreferences.edit().putString(KEY_GROUPS, new JSONArray(groups).toString()).apply();
+        putVaultList(KEY_GROUPS, new JSONArray(groups).toString());
     }
 
     /**
@@ -907,7 +936,7 @@ public class TerminowStore {
     public List<Snippet> getSnippets() {
         List<Snippet> snippets = new ArrayList<>();
         try {
-            JSONArray array = new JSONArray(mPreferences.getString(KEY_SNIPPETS, "[]"));
+            JSONArray array = new JSONArray(mPreferences.getString(ns(KEY_SNIPPETS), "[]"));
             for (int i = 0; i < array.length(); i++) {
                 JSONObject object = array.getJSONObject(i);
                 Snippet snippet = new Snippet();
@@ -965,7 +994,272 @@ public class TerminowStore {
             Logger.logStackTraceWithMessage(LOG_TAG, "Failed to save snippets", e);
             return;
         }
-        mPreferences.edit().putString(KEY_SNIPPETS, array.toString()).apply();
+        putVaultList(KEY_SNIPPETS, array.toString());
+    }
+
+
+    // ---------------------------------------------------------------------------------------
+    // Vaults: the personal one keeps its data where TermiNow always kept it, each team vault
+    // has its own copy of the lists, under "v:<id>:".
+    // ---------------------------------------------------------------------------------------
+
+    /** The id of the team vault that is shown, "" for the personal vault. */
+    @NonNull
+    public String getActiveVault() {
+        return mPreferences.getString(KEY_ACTIVE_VAULT, "");
+    }
+
+    public void setActiveVault(@NonNull String id) {
+        mPreferences.edit().putString(KEY_ACTIVE_VAULT, id).apply();
+    }
+
+    @NonNull
+    private String vaultScope() {
+        String scope = sVaultScope.get();
+        return scope != null ? scope : getActiveVault();
+    }
+
+    @NonNull
+    private String ns(@NonNull String key) {
+        String scope = vaultScope();
+        return scope.isEmpty() ? key : "v:" + scope + ":" + key;
+    }
+
+    private void putVaultList(@NonNull String key, @NonNull String value) {
+        SharedPreferences.Editor editor = mPreferences.edit().putString(ns(key), value);
+        if (!Boolean.TRUE.equals(sImporting.get()))
+            editor.putInt("vault_change:" + vaultScope(), mPreferences.getInt("vault_change:" + vaultScope(), 0) + 1);
+        editor.apply();
+    }
+
+    /** A counter of the changes to the lists of a vault ("" personal) on this phone. */
+    public synchronized int getVaultChange(@NonNull String scope) {
+        return mPreferences.getInt("vault_change:" + scope, 0);
+    }
+
+    /** Whether the lists of a vault changed since they were last synced. */
+    public boolean isVaultDirty(@NonNull String scope) {
+        return getVaultChange(scope) != mPreferences.getInt("vault_synced:" + scope, 0);
+    }
+
+    /**
+     * The changes up to the counter were synced. A change made while syncing has a higher
+     * counter, so it is still synced the next time.
+     */
+    public void setVaultSynced(@NonNull String scope, int change) {
+        mPreferences.edit().putInt("vault_synced:" + scope, change).apply();
+    }
+
+    /** Count everything of a vault as not synced, to merge it into the server the first time. */
+    public void setVaultUnsynced(@NonNull String scope) {
+        mPreferences.edit().putInt("vault_synced:" + scope, getVaultChange(scope) - 1).apply();
+    }
+
+    /** The lists of a vault as {@link TerminowVaultData}, with the passwords of the hosts in clear. */
+    @NonNull
+    public JSONObject exportVault(@NonNull String scope) throws JSONException {
+        String previous = sVaultScope.get();
+        sVaultScope.set(scope);
+        try {
+            JSONObject data = TerminowVaultData.empty();
+            JSONArray hosts = data.getJSONArray("hosts");
+            for (Host host : getHosts()) {
+                hosts.put(new JSONObject().put("label", host.label).put("address", host.address).put("port", host.port)
+                    .put("username", host.username).put("mosh", host.mosh).put("keyPath", host.keyPath).put("group", host.group)
+                    .put("startupSnippet", host.startupSnippet).put("password", host.password));
+            }
+            data.put("groups", new JSONArray(getGroups()));
+            JSONArray snippets = data.getJSONArray("snippets");
+            for (Snippet snippet : getSnippets())
+                snippets.put(new JSONObject().put("name", snippet.name).put("command", snippet.command));
+            JSONArray forwards = data.getJSONArray("forwards");
+            for (Forward forward : getForwards()) {
+                forwards.put(new JSONObject().put("label", forward.label).put("type", forward.type).put("host", forward.host)
+                    .put("port", forward.port).put("bindAddress", forward.bindAddress)
+                    .put("destinationAddress", forward.destinationAddress).put("destinationPort", forward.destinationPort));
+            }
+            return data;
+        } finally {
+            sVaultScope.set(previous);
+        }
+    }
+
+    /**
+     * Replace the lists of a vault with synced data. Each item is checked again when it is read,
+     * like everything that is stored, so an invalid host from another phone is never run.
+     */
+    public void importVault(@NonNull String scope, @NonNull JSONObject data) throws JSONException {
+        String previous = sVaultScope.get();
+        sVaultScope.set(scope);
+        sImporting.set(true);
+        try {
+            List<Host> hosts = new ArrayList<>();
+            JSONArray hostArray = data.optJSONArray("hosts");
+            for (int i = 0; hostArray != null && i < hostArray.length(); i++) {
+                JSONObject object = hostArray.optJSONObject(i);
+                if (object == null) continue;
+                Host host = new Host();
+                host.label = object.optString("label");
+                host.address = object.optString("address");
+                host.port = object.optInt("port", 22);
+                host.username = object.optString("username");
+                host.mosh = object.optBoolean("mosh");
+                host.keyPath = object.optString("keyPath");
+                host.group = object.optString("group");
+                host.startupSnippet = object.optString("startupSnippet");
+                host.password = object.optString("password");
+                hosts.add(host);
+            }
+            setHosts(hosts);
+            JSONArray groups = data.optJSONArray("groups");
+            setGroups(groups == null ? new ArrayList<>() : TerminowVaultData.strings(groups));
+            List<Snippet> snippets = new ArrayList<>();
+            JSONArray snippetArray = data.optJSONArray("snippets");
+            for (int i = 0; snippetArray != null && i < snippetArray.length(); i++) {
+                JSONObject object = snippetArray.optJSONObject(i);
+                if (object == null) continue;
+                Snippet snippet = new Snippet();
+                snippet.name = object.optString("name");
+                snippet.command = object.optString("command");
+                if (!snippet.command.isEmpty()) snippets.add(snippet);
+            }
+            setSnippets(snippets);
+            List<Forward> forwards = new ArrayList<>();
+            JSONArray forwardArray = data.optJSONArray("forwards");
+            for (int i = 0; forwardArray != null && i < forwardArray.length(); i++) {
+                JSONObject object = forwardArray.optJSONObject(i);
+                if (object == null) continue;
+                Forward forward = new Forward();
+                forward.label = object.optString("label");
+                forward.type = object.optString("type", Forward.TYPE_LOCAL);
+                forward.host = object.optString("host");
+                forward.port = object.optInt("port");
+                forward.bindAddress = object.optString("bindAddress");
+                forward.destinationAddress = object.optString("destinationAddress");
+                forward.destinationPort = object.optInt("destinationPort");
+                forwards.add(forward);
+            }
+            setForwards(forwards);
+        } finally {
+            sImporting.set(false);
+            sVaultScope.set(previous);
+        }
+    }
+
+    /** Remove the copy of a team vault from this phone, after leaving it or when it was deleted. */
+    public void deleteVaultData(@NonNull String id) {
+        if (id.isEmpty()) return;
+        SharedPreferences.Editor editor = mPreferences.edit();
+        for (String key : new String[]{KEY_HOSTS, KEY_GROUPS, KEY_SNIPPETS, KEY_FORWARDS})
+            editor.remove("v:" + id + ":" + key);
+        editor.remove("vault_change:" + id).remove("vault_synced:" + id).remove("vault_base:" + id).remove("vault_key:" + id);
+        if (getActiveVault().equals(id)) editor.putString(KEY_ACTIVE_VAULT, "");
+        editor.apply();
+    }
+
+    /** The vaults that the server listed last, see {@link TerminowVaults}. */
+    @NonNull
+    public JSONArray getVaults() {
+        try {
+            return new JSONArray(mPreferences.getString(KEY_VAULTS, "[]"));
+        } catch (JSONException e) {
+            return new JSONArray();
+        }
+    }
+
+    public void setVaults(@NonNull JSONArray vaults) {
+        mPreferences.edit().putString(KEY_VAULTS, vaults.toString()).apply();
+    }
+
+    /** The version of a vault on the server that this phone last synced with, 0 for never. */
+    public int getVaultBase(@NonNull String id) {
+        return mPreferences.getInt("vault_base:" + id, 0);
+    }
+
+    public void setVaultBase(@NonNull String id, int version) {
+        mPreferences.edit().putInt("vault_base:" + id, version).apply();
+    }
+
+    /** The key of a vault, kept encrypted with the Android keystore, {@code null} if not known here. */
+    @Nullable
+    public byte[] getVaultKey(@NonNull String id) {
+        String stored = decryptPassword(mPreferences.getString("vault_key:" + id, ""));
+        if (stored.isEmpty()) return null;
+        try {
+            return TerminowPpk.decodeBase64(stored);
+        } catch (TerminowPpk.PpkException e) {
+            return null;
+        }
+    }
+
+    public void setVaultKey(@NonNull String id, @NonNull byte[] key) {
+        mPreferences.edit().putString("vault_key:" + id, encryptPassword(TerminowPpk.encodeBase64(key))).apply();
+    }
+
+    /**
+     * The vault account of this phone: email, public key, and the private key encrypted with
+     * the Android keystore, so that the vault password is only asked once on each phone.
+     */
+    @Nullable
+    public JSONObject getVaultAccount() {
+        String text = mPreferences.getString(KEY_VAULT_ACCOUNT, "");
+        if (text.isEmpty()) return null;
+        try {
+            JSONObject account = new JSONObject(text);
+            String privateKey = decryptPassword(account.optString("privateKey"));
+            if (privateKey.isEmpty()) return null;
+            account.put("privateKey", privateKey);
+            return account;
+        } catch (JSONException e) {
+            return null;
+        }
+    }
+
+    public void setVaultAccount(@Nullable String email, @Nullable String publicKey, @Nullable byte[] privateKey) {
+        if (email == null || publicKey == null || privateKey == null) {
+            // Locked: the vault keys of this phone go too, they are useless without the private key
+            SharedPreferences.Editor editor = mPreferences.edit().remove(KEY_VAULT_ACCOUNT);
+            for (String key : mPreferences.getAll().keySet())
+                if (key.startsWith("vault_key:")) editor.remove(key);
+            editor.apply();
+            return;
+        }
+        try {
+            mPreferences.edit().putString(KEY_VAULT_ACCOUNT, new JSONObject().put("email", email).put("publicKey", publicKey)
+                .put("privateKey", encryptPassword(TerminowPpk.encodeBase64(privateKey))).toString()).apply();
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to save the vault account", e);
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // The key panel of the terminal
+    // ---------------------------------------------------------------------------------------
+
+    /** Whether the key panel is shown beside the terminal on a wide screen. */
+    public boolean isKeyPanelShown() {
+        return mPreferences.getBoolean("key_panel_shown", true);
+    }
+
+    public void setKeyPanelShown(boolean shown) {
+        mPreferences.edit().putBoolean("key_panel_shown", shown).apply();
+    }
+
+    /** The groups of keys of the key panel, {@code null} for the default ones. */
+    @Nullable
+    public JSONArray getKeyGroups() {
+        String text = mPreferences.getString(KEY_KEY_GROUPS, "");
+        if (text.isEmpty()) return null;
+        try {
+            return new JSONArray(text);
+        } catch (JSONException e) {
+            return null;
+        }
+    }
+
+    public void setKeyGroups(@Nullable JSONArray groups) {
+        if (groups == null) mPreferences.edit().remove(KEY_KEY_GROUPS).apply();
+        else mPreferences.edit().putString(KEY_KEY_GROUPS, groups.toString()).apply();
     }
 
 }

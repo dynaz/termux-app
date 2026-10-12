@@ -69,12 +69,18 @@ public class TerminowSettings {
     private final LinearLayout mContainer;
 
     private final TerminowAccountUi mAccountUi;
+    @Nullable private Runnable mVaultSettings;
 
     public TerminowSettings(@NonNull TermuxActivity activity, @NonNull TerminowStore store, @NonNull LinearLayout container) {
         mActivity = activity;
         mStore = store;
         mContainer = container;
         mAccountUi = new TerminowAccountUi(activity, store, this::update);
+    }
+
+    /** The row of the vault password and syncing, which the vault switcher provides. */
+    public void setVaultSettings(@NonNull Runnable showVaultSettings) {
+        mVaultSettings = showVaultSettings;
     }
 
     /** Apply the setting to block screenshots and screen recording of the app. */
@@ -94,6 +100,8 @@ public class TerminowSettings {
 
         addSection(R.string.terminow_account, true);
         mAccountUi.addRows(this::addRow);
+        if (mVaultSettings != null)
+            addRow(R.string.terminow_vault_settings, mActivity.getString(R.string.terminow_vault_settings_summary), mVaultSettings);
 
         addSection(R.string.terminow_settings_terminal, false);
 

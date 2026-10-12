@@ -131,6 +131,11 @@ public class TerminowHome {
     private final View mHomeView;
     private final View mTabBar;
     private final View mTerminalToolbar;
+    private final TextView mHomeTitle;
+    private final ImageView mVaultSyncIcon;
+    private final View mVaultButton;
+    private final TerminowVaultsUi mVaultsUi;
+    private final TerminowKeyPanel mKeyPanel;
     private final View mLauncherButton;
     private final View mHomeButton;
     private final HorizontalScrollView mTabsScrollView;
@@ -208,6 +213,13 @@ public class TerminowHome {
         mLauncherButton.setOnClickListener(v -> mLauncher.show());
         mTerminalToolbar = activity.findViewById(R.id.terminow_terminal_toolbar);
         mLauncher.bindToolbar(mTerminalToolbar);
+        mHomeTitle = activity.findViewById(R.id.terminow_home_title);
+        mVaultSyncIcon = activity.findViewById(R.id.terminow_vault_sync_icon);
+        mVaultButton = activity.findViewById(R.id.terminow_vault_button);
+        mVaultsUi = new TerminowVaultsUi(activity, mStore, this::reloadVault);
+        mVaultButton.setOnClickListener(v -> mVaultsUi.showSwitcher(v));
+        mKeyPanel = new TerminowKeyPanel(activity, mStore, activity.findViewById(R.id.terminow_key_panel));
+        activity.findViewById(R.id.terminow_toolbar_keys).setOnClickListener(v -> mKeyPanel.toggle());
         mRailHosts = activity.findViewById(R.id.terminow_rail_hosts);
         mRailSnippets = activity.findViewById(R.id.terminow_rail_snippets);
         mSearchView = activity.findViewById(R.id.terminow_search);
@@ -256,6 +268,7 @@ public class TerminowHome {
         mFabView = activity.findViewById(R.id.terminow_fab);
         mSettingsScrollView = activity.findViewById(R.id.terminow_settings_scroll);
         mSettings = new TerminowSettings(activity, mStore, activity.findViewById(R.id.terminow_settings));
+        mSettings.setVaultSettings(mVaultsUi::showSettings);
         TerminowSettings.applyScreenshotsBlocked(activity, mStore);
         addUpdateNotification();
 
@@ -363,6 +376,13 @@ public class TerminowHome {
         mTerminalToolbar.setVisibility(!homeVisible && hasSessions ? View.VISIBLE : View.GONE);
         mLauncherButton.setVisibility(homeVisible || !hasSessions ? View.VISIBLE : View.GONE);
         mLauncher.updateToolbar(null);
+        mKeyPanel.update(!homeVisible && hasSessions);
+        // Like Termius: the vault and its switcher on the home screen, "Vaults" over a terminal
+        mHomeTitle.setText(homeVisible ? mVaultsUi.getActiveName() : mActivity.getString(R.string.terminow_vaults));
+        mVaultSyncIcon.setImageResource(mVaultsUi.getSyncIcon());
+        mVaultSyncIcon.setVisibility(homeVisible ? View.VISIBLE : View.GONE);
+        mVaultButton.setVisibility(homeVisible ? View.VISIBLE : View.GONE);
+        mVaultsUi.onListsChanged();
         if (homeVisible)
             updateItems();
     }
@@ -991,9 +1011,22 @@ public class TerminowHome {
         return session.getTerminalSession();
     }
 
+    /** The vault was switched or synced: show its hosts, groups, snippets and forwards. */
+    public void reloadVault() {
+        mHosts = mStore.getHosts();
+        mSnippets = mStore.getSnippets();
+        mGroups = mStore.getGroups();
+        mForwards = mStore.getForwards();
+        if (mCurrentGroup != null && !mGroups.contains(mCurrentGroup))
+            mCurrentGroup = null;
+        refresh();
+        if (isVisible()) updateItems();
+    }
+
     /** The activity was resumed, for example after a screen of Android settings. */
     public void onResume() {
         mExplorer.onResume();
+        mVaultsUi.onResume();
     }
 
     public void onStoragePermissionResult() {

@@ -138,7 +138,7 @@ public class TerminowAccountUi {
 
     // -----------------------------------------------------------------------------------------
 
-    private void showSignIn() {
+    void showSignIn() {
         LinearLayout form = form();
         final AlertDialog[] dialogHolder = new AlertDialog[1];
         if (!BuildConfig.TERMINOW_GOOGLE_WEB_CLIENT_ID.isEmpty()) {

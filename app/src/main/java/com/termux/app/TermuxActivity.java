@@ -644,6 +644,14 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
 
     @SuppressLint("RtlHardcoded")
+    /** Folding or unfolding the phone: the key panel goes beside the terminal or away. */
+    @Override
+    public void onConfigurationChanged(@NonNull android.content.res.Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        if (mTerminowHome != null && mTermuxService != null)
+            mTerminowHome.refresh();
+    }
+
     @Override
     public void onBackPressed() {
         if (getDrawer().isDrawerOpen(Gravity.LEFT)) {
