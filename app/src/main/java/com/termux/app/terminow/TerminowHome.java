@@ -147,6 +147,7 @@ public class TerminowHome {
     private final View mRailFiles;
     private final View mExplorerView;
     private final TerminowExplorer mExplorer;
+    private final TerminowLauncher mLauncher;
     private final View mHeaderView;
     private final View mGridView;
     private final View mFabView;
@@ -182,6 +183,26 @@ public class TerminowHome {
         activity.findViewById(R.id.terminow_notifications_button).setOnClickListener(v ->
             new TerminowNotifications(mActivity, mStore, this::updateNotificationsBadge).show());
         mTabsView = activity.findViewById(R.id.terminow_tabs);
+        mLauncher = new TerminowLauncher(activity, mStore, new TerminowLauncher.Host() {
+            @Nullable
+            @Override
+            public TerminalSession startSession(@NonNull String executable, @NonNull String[] arguments,
+                                                @NonNull String workingDirectory, @NonNull String name) {
+                return TerminowHome.this.startSession(executable, arguments, workingDirectory, name);
+            }
+
+            @Override
+            public void showSession(@NonNull TerminalSession session) {
+                mActivity.getTermuxTerminalSessionClient().setCurrentSession(session);
+                hide();
+            }
+
+            @Override
+            public void openShell(@NonNull File directory) {
+                openTerminalAt(directory);
+            }
+        });
+        activity.findViewById(R.id.terminow_launcher_button).setOnClickListener(v -> mLauncher.show());
         mRailHosts = activity.findViewById(R.id.terminow_rail_hosts);
         mRailSnippets = activity.findViewById(R.id.terminow_rail_snippets);
         mSearchView = activity.findViewById(R.id.terminow_search);
@@ -925,6 +946,25 @@ public class TerminowHome {
      * Open a local terminal in a new tab, which starts in {@link #getStartDirectory()}. The only
      * input that is written to it is the first command of its fresh shell, before it can be used.
      */
+    /**
+     * Start a program in a new session, for the launcher, with its arguments and folder as they
+     * are: nothing is typed into this or any other session. An empty executable is the default
+     * login shell.
+     */
+    @Nullable
+    TerminalSession startSession(@NonNull String executable, @NonNull String[] arguments, @NonNull String workingDirectory,
+                                 @NonNull String name) {
+        TermuxService service = mActivity.getTermuxService();
+        if (service == null) return null;
+        TermuxSession session = executable.isEmpty() ?
+            service.createTermuxSession(null, null, null, workingDirectory, false, name) :
+            service.createTermuxSession(executable, arguments, null, workingDirectory, false, name);
+        if (session == null) return null;
+        mActivity.getTermuxTerminalSessionClient().setCurrentSession(session.getTerminalSession());
+        hide();
+        return session.getTerminalSession();
+    }
+
     /** The activity was resumed, for example after a screen of Android settings. */
     public void onResume() {
         mExplorer.onResume();

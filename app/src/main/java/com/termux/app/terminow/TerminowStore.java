@@ -194,6 +194,7 @@ public class TerminowStore {
     private static final String KEY_MCP_LOCAL_HTTP = "mcp_local_http";
     private static final String KEY_ACCOUNT = "account";
     private static final String KEY_EXPLORER = "explorer";
+    private static final String KEY_LAUNCHER = "launcher";
     private static final int EXPLORER_RECENTS_MAX = 30;
     private static final String KEY_PREMIUM = "premium";
     private static final String KEY_FORWARDS = "forwards";
@@ -471,6 +472,20 @@ public class TerminowStore {
 
     public void setExplorer(@NonNull JSONObject explorer) {
         mPreferences.edit().putString(KEY_EXPLORER, explorer.toString()).apply();
+    }
+
+    /** The choices of the terminal launcher: environment, and user and folder per environment. */
+    @NonNull
+    public JSONObject getLauncher() {
+        try {
+            return new JSONObject(mPreferences.getString(KEY_LAUNCHER, "{}"));
+        } catch (JSONException e) {
+            return new JSONObject();
+        }
+    }
+
+    public void setLauncher(@NonNull JSONObject launcher) {
+        mPreferences.edit().putString(KEY_LAUNCHER, launcher.toString()).apply();
     }
 
     /** Add a recent file, newest first, without duplicates. */

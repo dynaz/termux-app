@@ -56,6 +56,17 @@
                 android:orientation="horizontal" />
         </HorizontalScrollView>
 
+        <!-- The launcher: TermiNow shell, Ubuntu and Claude Code -->
+        <ImageView
+            android:id="@+id/terminow_launcher_button"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginStart="6dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/terminow_launcher_title"
+            android:padding="10dp"
+            android:src="@drawable/ic_terminow_launch" />
+
         <FrameLayout
             android:id="@+id/terminow_notifications_button"
             android:layout_width="44dp"
