@@ -220,6 +220,21 @@
             </intent-filter>
         </service>
 
+        <!-- Terminal sessions shown in another app (MobiClaude), see TerminowPtyService -->
+        <service
+            android:name=".app.terminow.TerminowPtyService"
+            android:exported="true"
+            android:foregroundServiceType="specialUse"
+            android:permission="${TERMUX_PACKAGE_NAME}.permission.RUN_COMMAND">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Runs terminal sessions that another app shows in its own terminal view" />
+            <intent-filter>
+                <action android:name="${TERMUX_PACKAGE_NAME}.PTY_OPEN" />
+                <action android:name="${TERMUX_PACKAGE_NAME}.PTY_STATUS" />
+            </intent-filter>
+        </service>
+
 
         <!-- This (or rather, value 2.1 or higher) is needed to make the Samsung Galaxy S8 mark the
         app with "This app is optimized to run in full screen." -->
