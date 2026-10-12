@@ -4,6 +4,9 @@ import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
+import android.content.pm.PackageManager;
+import android.content.pm.Signature;
+import android.content.pm.SigningInfo;
 import android.os.Build;
 import android.os.Environment;
 
@@ -36,6 +39,13 @@ import com.termux.shared.shell.command.ExecutionCommand;
 import com.termux.shared.data.DataUtils;
 import com.termux.shared.markdown.MarkdownUtils;
 import com.termux.shared.termux.TermuxUtils;
+
+import java.security.MessageDigest;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 public class TermuxPluginUtils {
 
@@ -454,6 +464,69 @@ public class TermuxPluginUtils {
      * @param context The {@link Context} to get error string.
      * @return Returns the {@code error} if policy is violated, otherwise {@code null}.
      */
+    public static String checkIfAllowExternalAppsPolicyIsViolated(final Context context, String apiName,
+                                                                   @Nullable PendingIntent resultPendingIntent) {
+        if (isTrustedCompanionApp(context, resultPendingIntent)) return null;
+        return checkIfAllowExternalAppsPolicyIsViolated(context, apiName);
+    }
+
+    /**
+     * Apps that may run commands without {@link TermuxConstants#PROP_ALLOW_EXTERNAL_APPS}: package
+     * name to the SHA-256 digests of the signing certificates it may be signed with. They must
+     * still hold {@link TermuxConstants#PERMISSION_RUN_COMMAND}, which the user grants.
+     */
+    private static final Map<String, Set<String>> TRUSTED_COMPANION_APPS = Collections.singletonMap(
+        // MobiClaude runs Ubuntu, Claude Code and its bridge in TermiNow
+        "com.xcdev.mobiclaude", new HashSet<>(Arrays.asList(
+            // Debug builds
+            "c7f4794d3665d908519e361e5a206d0721aa48c905beab42e62692d3f1985072"
+            // Add the app signing key of Google Play builds here, from Play Console > App integrity
+        )));
+
+    /**
+     * Whether the command was sent by a trusted companion app. The sender is the creator of the
+     * result {@link PendingIntent}, which Android sets and the sender can not change. It must be
+     * one of {@link #TRUSTED_COMPANION_APPS}, signed only with one of its certificates, and hold
+     * the RUN_COMMAND permission.
+     */
+    public static boolean isTrustedCompanionApp(@NonNull final Context context, @Nullable PendingIntent pendingIntent) {
+        if (pendingIntent == null) return false;
+        String packageName = pendingIntent.getCreatorPackage();
+        Set<String> allowedDigests = packageName == null ? null : TRUSTED_COMPANION_APPS.get(packageName);
+        if (allowedDigests == null || allowedDigests.isEmpty()) return false;
+
+        try {
+            PackageManager packageManager = context.getPackageManager();
+            if (packageManager.getPackageUid(packageName, 0) != pendingIntent.getCreatorUid()) return false;
+            if (packageManager.checkPermission(TermuxConstants.PERMISSION_RUN_COMMAND, packageName) != PackageManager.PERMISSION_GRANTED)
+                return false;
+
+            Signature[] signatures;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                SigningInfo signingInfo = packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES).signingInfo;
+                if (signingInfo == null) return false;
+                signatures = signingInfo.getApkContentsSigners();
+            } else {
+                //noinspection deprecation
+                signatures = packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNATURES).signatures;
+            }
+            if (signatures == null || signatures.length == 0) return false;
+
+            MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
+            for (Signature signature : signatures) {
+                byte[] digest = sha256.digest(signature.toByteArray());
+                StringBuilder hex = new StringBuilder();
+                for (byte b : digest) hex.append(String.format("%02x", b));
+                if (!allowedDigests.contains(hex.toString())) return false;
+            }
+            Logger.logDebug(LOG_TAG, "Allowing the trusted companion app " + packageName + " without allow-external-apps");
+            return true;
+        } catch (Exception e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to check if " + packageName + " is a trusted companion app", e);
+            return false;
+        }
+    }
+
     public static String checkIfAllowExternalAppsPolicyIsViolated(final Context context, String apiName) {
         String errmsg = null;
 
