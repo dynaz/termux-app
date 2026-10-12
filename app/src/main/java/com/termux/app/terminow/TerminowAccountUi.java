@@ -89,10 +89,29 @@ public class TerminowAccountUi {
             checkPremium(session, false);
     }
 
-    /** Whether the account has Premium, from the last check. */
+    /** Whether Premium features may be used now, see {@link TerminowEntitlement}. */
     public static boolean isPremium(@NonNull TerminowStore store) {
-        JSONObject premium = store.getAccount() != null ? store.getPremium() : null;
-        return premium != null && premium.optBoolean("premium");
+        return TerminowEntitlement.get(store) == TerminowEntitlement.State.ACTIVE;
+    }
+
+    /** Check Premium with WHMCS now, like tapping the Premium row. */
+    public void checkPremiumNow() {
+        TerminowAccount.Session session = mStore.getAccount();
+        if (session == null) {
+            showSignIn();
+            return;
+        }
+        checkPremium(session, true);
+    }
+
+    public boolean isCheckingPremium() {
+        return mBusy;
+    }
+
+    /** Why the last check failed, {@code null} if it did not. */
+    @Nullable
+    public String getPremiumError() {
+        return mPremiumError;
     }
 
     @NonNull

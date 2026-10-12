@@ -55,6 +55,47 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/terminow_rail_files"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="14dp"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <!-- The crown marks a Premium feature -->
+                <FrameLayout
+                    android:layout_width="56dp"
+                    android:layout_height="34dp"
+                    android:duplicateParentState="true">
+
+                    <ImageView
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:duplicateParentState="true"
+                        android:padding="6dp"
+                        android:src="@drawable/ic_terminow_folder"
+                        tools:ignore="ContentDescription" />
+
+                    <ImageView
+                        android:layout_width="14dp"
+                        android:layout_height="14dp"
+                        android:layout_gravity="top|end"
+                        android:layout_marginEnd="6dp"
+                        android:src="@drawable/ic_terminow_crown"
+                        tools:ignore="ContentDescription" />
+                </FrameLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:gravity="center"
+                    android:maxLines="2"
+                    android:text="@string/terminow_explorer_rail"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <LinearLayout
                 android:id="@+id/terminow_rail_keychain"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -351,6 +392,13 @@
                 android:paddingStart="8dp"
                 android:paddingBottom="24dp" />
         </ScrollView>
+
+        <!-- The File Explorer, built by TerminowExplorer, over the whole content area -->
+        <FrameLayout
+            android:id="@+id/terminow_explorer"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
 
         <!-- The MCP Servers page, built by TerminowMcpPage -->
         <ScrollView

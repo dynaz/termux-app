@@ -163,6 +163,17 @@
             </intent-filter>
         </activity-alias>
 
+        <!-- Content URIs of the File Explorer, for opening and sharing files. Not exported, apps only get a granted URI. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${TERMUX_PACKAGE_NAME}.explorer"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/terminow_explorer_paths" />
+        </provider>
+
         <provider
             android:name=".filepicker.TermuxDocumentsProvider"
             android:authorities="${TERMUX_PACKAGE_NAME}.documents"

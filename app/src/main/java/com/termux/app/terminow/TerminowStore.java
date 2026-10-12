@@ -193,6 +193,8 @@ public class TerminowStore {
     private static final String KEY_MCP_PROFILES = "mcp_profiles";
     private static final String KEY_MCP_LOCAL_HTTP = "mcp_local_http";
     private static final String KEY_ACCOUNT = "account";
+    private static final String KEY_EXPLORER = "explorer";
+    private static final int EXPLORER_RECENTS_MAX = 30;
     private static final String KEY_PREMIUM = "premium";
     private static final String KEY_FORWARDS = "forwards";
     private static final String KEY_LOGS = "logs";
@@ -451,6 +453,44 @@ public class TerminowStore {
         } catch (JSONException e) {
             Logger.logError(LOG_TAG, "Failed to save the Premium status");
         }
+    }
+
+    /**
+     * The state of the File Explorer: the device folders that the user picked ("folders": uri,
+     * name), "bookmarks" and "recents" (fs, fsTitle, id, name, path, time), and view settings.
+     * Only names, URIs and paths, never file contents.
+     */
+    @NonNull
+    public JSONObject getExplorer() {
+        try {
+            return new JSONObject(mPreferences.getString(KEY_EXPLORER, "{}"));
+        } catch (JSONException e) {
+            return new JSONObject();
+        }
+    }
+
+    public void setExplorer(@NonNull JSONObject explorer) {
+        mPreferences.edit().putString(KEY_EXPLORER, explorer.toString()).apply();
+    }
+
+    /** Add a recent file, newest first, without duplicates. */
+    public void addExplorerRecent(@NonNull JSONObject recent) {
+        JSONObject explorer = getExplorer();
+        JSONArray recents = explorer.optJSONArray("recents");
+        JSONArray updated = new JSONArray();
+        updated.put(recent);
+        for (int i = 0; recents != null && i < recents.length() && updated.length() < EXPLORER_RECENTS_MAX; i++) {
+            JSONObject item = recents.optJSONObject(i);
+            if (item == null) continue;
+            if (item.optString("fs").equals(recent.optString("fs")) && item.optString("id").equals(recent.optString("id"))) continue;
+            updated.put(item);
+        }
+        try {
+            explorer.put("recents", updated);
+        } catch (JSONException e) {
+            return;
+        }
+        setExplorer(explorer);
     }
 
     /** Whether MCP servers on this device may be used over plain HTTP, for local development. */

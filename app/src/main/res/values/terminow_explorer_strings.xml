@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_explorer_rail">File Explorer</string>
+    <string name="terminow_explorer_title">File Explorer</string>
+    <string name="terminow_explorer_premium_title">File Explorer is a Premium feature</string>
+    <string name="terminow_explorer_premium_features">• Browse TermiNow Home, folders you choose on this device, and your saved SFTP hosts\n• Copy and move between them with progress, cancel, and Skip / Replace / Keep both\n• Search, sort, list and grid views, bookmarks and recent files\n• Open a Home folder in a new terminal</string>
+    <string name="terminow_explorer_state_signed_out">Sign in with the email of your accmove.com account to check Premium.</string>
+    <string name="terminow_explorer_state_unknown">Premium has not been checked yet. Verify your email if you have not, then check.</string>
+    <string name="terminow_explorer_state_needs_check">Premium was last checked more than %1$d days ago. Connect to the internet and check again.</string>
+    <string name="terminow_explorer_state_expired">Your Premium service is past its due date. Check again after it is renewed.</string>
+    <string name="terminow_explorer_state_free">This account does not have Premium. Premium is managed in your accmove.com account with the same email.</string>
+    <string name="terminow_explorer_check_premium">Check Premium</string>
+    <string name="terminow_explorer_account">Account</string>
+    <string name="terminow_explorer_data_kept">Nothing is deleted without Premium: your files stay in TermiNow Home, and you can still use the terminal and Export a file to save them elsewhere.</string>
+    <string name="terminow_explorer_export">Export a file</string>
+
+    <string name="terminow_explorer_pick_location">Choose a location</string>
+    <string name="terminow_explorer_locations">Locations</string>
+    <string name="terminow_explorer_section_local">TERMINOW</string>
+    <string name="terminow_explorer_section_device">DEVICE FOLDERS</string>
+    <string name="terminow_explorer_section_sftp">SFTP HOSTS</string>
+    <string name="terminow_explorer_section_bookmarks">BOOKMARKS</string>
+    <string name="terminow_explorer_section_recent">RECENT FILES</string>
+    <string name="terminow_explorer_home">TermiNow Home</string>
+    <string name="terminow_explorer_home_storage">Internal storage of the device: %1$s free of %2$s</string>
+    <string name="terminow_explorer_device_folder">Shared storage folder, chosen with the Android picker</string>
+    <string name="terminow_explorer_access_lost">Access lost. Tap to choose the folder again</string>
+    <string name="terminow_explorer_access_lost_message">TermiNow no longer has permission for this folder, for example because it was moved or the permission was removed. Choose it again to keep using it.</string>
+    <string name="terminow_explorer_choose_again">Choose folder again</string>
+    <string name="terminow_explorer_remove_folder">Remove</string>
+    <string name="terminow_explorer_remove_folder_confirm">Remove %1$s from the explorer? The folder and its files stay on the device, only TermiNow\'s access is removed.</string>
+    <string name="terminow_explorer_add_folder">Add device folder</string>
+    <string name="terminow_explorer_add_folder_summary">Choose a folder like Download or Documents. TermiNow only sees the folders you choose.</string>
+    <string name="terminow_explorer_no_picker">No folder picker is available on this device</string>
+    <string name="terminow_explorer_not_kept">Android did not let TermiNow keep this permission, the folder works until TermiNow restarts</string>
+    <string name="terminow_explorer_no_hosts">No saved hosts. Add a host on the Hosts page to browse it with SFTP.</string>
+    <string name="terminow_explorer_no_bookmarks">No bookmarks yet. Use ⋯ › Bookmark this folder.</string>
+    <string name="terminow_explorer_no_recents">No recent files yet</string>
+    <string name="terminow_explorer_clear_recents">Clear recent files</string>
+    <string name="terminow_explorer_remove_bookmark">Remove the bookmark %1$s?</string>
+    <string name="terminow_explorer_location_gone">This location is not available anymore</string>
+
+    <string name="terminow_explorer_up">Up</string>
+    <string name="terminow_explorer_more">More</string>
+    <string name="terminow_explorer_search">Search</string>
+    <string name="terminow_explorer_search_hint">Search in this folder</string>
+    <string name="terminow_explorer_sort">Sort: %1$s</string>
+    <string name="terminow_explorer_sort_title">Sort by</string>
+    <string name="terminow_explorer_sort_name">Name</string>
+    <string name="terminow_explorer_sort_size">Size</string>
+    <string name="terminow_explorer_sort_modified">Modified</string>
+    <string name="terminow_explorer_sort_type">Type</string>
+    <string name="terminow_explorer_sort_reverse">Reverse order</string>
+    <string name="terminow_explorer_view_list">List</string>
+    <string name="terminow_explorer_view_grid">Grid</string>
+    <string name="terminow_explorer_hidden">Hidden files</string>
+    <string name="terminow_explorer_two_panes">Two panes</string>
+    <string name="terminow_explorer_empty_folder">This folder is empty</string>
+    <string name="terminow_explorer_link_outside">This is a link to a place outside TermiNow Home, which is not opened</string>
+    <string name="terminow_explorer_working">Working…</string>
+    <string name="terminow_explorer_failed_title">That did not work</string>
+
+    <string name="terminow_explorer_selected">%1$d selected</string>
+    <string name="terminow_explorer_select_all">Select all</string>
+    <string name="terminow_explorer_copy">Copy</string>
+    <string name="terminow_explorer_move">Move</string>
+    <string name="terminow_explorer_copy_other">Copy to other pane</string>
+    <string name="terminow_explorer_move_other">Move to other pane</string>
+    <string name="terminow_explorer_to_home">Copy to Home</string>
+    <string name="terminow_explorer_rename">Rename</string>
+    <string name="terminow_explorer_share">Share</string>
+    <string name="terminow_explorer_properties">Properties</string>
+    <string name="terminow_explorer_one_only">Select one item for this</string>
+    <string name="terminow_explorer_not_supported">This location does not support that</string>
+    <string name="terminow_explorer_copied_hint">Open the folder to copy to, then tap Paste here</string>
+    <string name="terminow_explorer_moved_hint">Open the folder to move to, then tap Paste here</string>
+    <string name="terminow_explorer_paste">Paste here</string>
+    <plurals name="terminow_explorer_clip_copy">
+        <item quantity="one">%1$d item to copy from %2$s</item>
+        <item quantity="other">%1$d items to copy from %2$s</item>
+    </plurals>
+    <plurals name="terminow_explorer_clip_move">
+        <item quantity="one">%1$d item to move from %2$s</item>
+        <item quantity="other">%1$d items to move from %2$s</item>
+    </plurals>
+    <plurals name="terminow_explorer_items">
+        <item quantity="one">%d item</item>
+        <item quantity="other">%d items</item>
+    </plurals>
+
+    <string name="terminow_explorer_new_folder">New folder</string>
+    <string name="terminow_explorer_invalid_name">Enter a name without /</string>
+    <string name="terminow_explorer_open_terminal">Open in Terminal</string>
+    <string name="terminow_explorer_terminal_saf">Folders chosen with the Android picker are not real paths that a terminal can start in. Use Copy to Home to work on the files in the terminal, then copy them back.</string>
+    <string name="terminow_explorer_terminal_sftp">This folder is on another host. Connect to the host from the Hosts page to use a terminal there.</string>
+    <string name="terminow_explorer_folder_to_home">Copy this folder to Home</string>
+    <string name="terminow_explorer_bookmark">Bookmark this folder</string>
+    <string name="terminow_explorer_bookmarked">Bookmarked</string>
+    <string name="terminow_explorer_refresh">Refresh</string>
+    <string name="terminow_explorer_disconnect">Disconnect</string>
+    <string name="terminow_explorer_dashboard">Explorer home</string>
+
+    <string name="terminow_explorer_delete_title">Delete permanently?</string>
+    <string name="terminow_explorer_delete_confirm">%1$s will be deleted permanently from %2$s, with everything inside. There is no recycle bin, this can not be undone.</string>
+    <string name="terminow_explorer_delete_permanently">Delete permanently</string>
+    <string name="terminow_explorer_deleting">Deleting</string>
+    <string name="terminow_explorer_copying">Copying</string>
+    <string name="terminow_explorer_moving">Moving</string>
+    <string name="terminow_explorer_conflict_title">The item exists already</string>
+    <string name="terminow_explorer_conflict_message">%1$s exists in the destination.</string>
+    <string name="terminow_explorer_skip">Skip</string>
+    <string name="terminow_explorer_replace">Replace</string>
+    <string name="terminow_explorer_keep_both">Keep both</string>
+    <string name="terminow_explorer_apply_all">Do this for all conflicts</string>
+
+    <string name="terminow_explorer_share_folders">Folders can not be shared, select files</string>
+    <string name="terminow_explorer_sensitive">Files in ~/.ssh are private keys and credentials. TermiNow does not open or share them with other apps.</string>
+    <string name="terminow_explorer_no_app">No app can open this</string>
+
+    <string name="terminow_explorer_prop_name">Name: %1$s</string>
+    <string name="terminow_explorer_prop_type">Type: %1$s</string>
+    <string name="terminow_explorer_prop_size">Size: %1$s (%2$d bytes)</string>
+    <string name="terminow_explorer_prop_modified">Modified: %1$s</string>
+    <string name="terminow_explorer_prop_location">Location: %1$s, %2$s</string>
+    <string name="terminow_explorer_prop_saf">A folder chosen with the Android picker. Its location is shown by name, it is not a file path.</string>
+    <string name="terminow_explorer_prop_home">In TermiNow Home, a real folder of the app.</string>
+    <string name="terminow_explorer_prop_contents">Contains %1$d files, %2$s (links not counted)</string>
+    <string name="terminow_explorer_type_folder">Folder</string>
+    <string name="terminow_explorer_type_link">Symbolic link</string>
+
+    <string name="terminow_explorer_host_key_title">Unknown host</string>
+    <string name="terminow_explorer_host_key_message">TermiNow has not connected to %1$s before.\n\n%2$s key fingerprint:\n%3$s\n\nCompare it with the fingerprint of the server before you accept. It is then saved in ~/.ssh/known_hosts, which ssh uses too.</string>
+    <string name="terminow_explorer_host_key_accept">Accept and connect</string>
+    <string name="terminow_explorer_host_key_changed">Host key changed</string>
+    <string name="terminow_explorer_passphrase">Passphrase of the key %1$s</string>
+</resources>

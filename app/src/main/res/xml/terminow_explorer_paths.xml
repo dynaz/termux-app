@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What the File Explorer shares with other apps: files of TermiNow Home, and downloads of remote files. -->
+<paths>
+    <files-path name="home" path="home/" />
+    <cache-path name="explorer" path="explorer/" />
+</paths>

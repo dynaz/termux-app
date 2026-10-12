@@ -95,6 +95,7 @@ public class TerminowHome {
     private static final int PAGE_KNOWN_HOSTS = 5;
     private static final int PAGE_LOGS = 6;
     private static final int PAGE_MCP = 7;
+    private static final int PAGE_FILES = 8;
 
     private static final Pattern KEY_NAME_PATTERN = Pattern.compile("[A-Za-z0-9_][A-Za-z0-9._-]*");
     private static final int KEY_FILE_MAX_SIZE = 64 * 1024;
@@ -143,6 +144,9 @@ public class TerminowHome {
     private final View mRailMcp;
     private final View mMcpScrollView;
     private final TerminowMcpPage mMcpPage;
+    private final View mRailFiles;
+    private final View mExplorerView;
+    private final TerminowExplorer mExplorer;
     private final View mHeaderView;
     private final View mGridView;
     private final View mFabView;
@@ -200,6 +204,25 @@ public class TerminowHome {
         mRailMcp.setOnClickListener(v -> setPage(PAGE_MCP));
         mMcpScrollView = activity.findViewById(R.id.terminow_mcp_scroll);
         mMcpPage = new TerminowMcpPage(activity, mStore, activity.findViewById(R.id.terminow_mcp));
+        mRailFiles = activity.findViewById(R.id.terminow_rail_files);
+        mRailFiles.setOnClickListener(v -> setPage(PAGE_FILES));
+        mExplorerView = activity.findViewById(R.id.terminow_explorer);
+        mExplorer = new TerminowExplorer(activity, mStore, activity.findViewById(R.id.terminow_explorer), new TerminowExplorer.Host() {
+            @Override
+            public void openTerminalAt(@NonNull File directory) {
+                TerminowHome.this.openTerminalAt(directory);
+            }
+
+            @Override
+            public void exportFile() {
+                mFiles.exportFile();
+            }
+
+            @Override
+            public void showAccountSettings() {
+                setPage(PAGE_SETTINGS);
+            }
+        });
         mRailSettings = activity.findViewById(R.id.terminow_rail_settings);
         mRailSettings.setOnClickListener(v -> setPage(PAGE_SETTINGS));
         mHeaderView = activity.findViewById(R.id.terminow_header);
@@ -415,6 +438,7 @@ public class TerminowHome {
 
 
     private void setPage(int page) {
+        if (mPage == PAGE_FILES && page != PAGE_FILES) mExplorer.onHidden();
         mPage = page;
         setRailItemSelected(mRailHosts, page == PAGE_HOSTS);
         setRailItemSelected(mRailSnippets, page == PAGE_SNIPPETS);
@@ -424,6 +448,7 @@ public class TerminowHome {
         setRailItemSelected(mRailKnownHosts, page == PAGE_KNOWN_HOSTS);
         setRailItemSelected(mRailLogs, page == PAGE_LOGS);
         setRailItemSelected(mRailMcp, page == PAGE_MCP);
+        setRailItemSelected(mRailFiles, page == PAGE_FILES);
         mActionsView.setVisibility(page == PAGE_HOSTS ? View.VISIBLE : View.GONE);
         mSearchView.setHint(page == PAGE_KEYCHAIN ? R.string.terminow_search_keys_hint :
             page == PAGE_MCP ? R.string.terminow_mcp_search_hint : R.string.terminow_search_hint);
@@ -434,6 +459,19 @@ public class TerminowHome {
         mSectionTitleView.setVisibility(settings ? View.GONE : View.VISIBLE);
         mGridView.setVisibility(settings || page == PAGE_MCP ? View.GONE : View.VISIBLE);
         mMcpScrollView.setVisibility(page == PAGE_MCP ? View.VISIBLE : View.GONE);
+        // The explorer has its own toolbar, search and actions over the whole content area
+        boolean files = page == PAGE_FILES;
+        mExplorerView.setVisibility(files ? View.VISIBLE : View.GONE);
+        if (files) {
+            mHeaderView.setVisibility(View.GONE);
+            mSectionTitleView.setVisibility(View.GONE);
+            mGridView.setVisibility(View.GONE);
+            mFabView.setVisibility(View.GONE);
+            mEmptyView.setVisibility(View.GONE);
+            mSettingsScrollView.setVisibility(View.GONE);
+            mExplorer.show();
+            return;
+        }
         // Known hosts and logs are only added by connecting to hosts
         mFabView.setVisibility(settings || page == PAGE_KNOWN_HOSTS || page == PAGE_LOGS ? View.GONE : View.VISIBLE);
         mSettingsScrollView.setVisibility(settings ? View.VISIBLE : View.GONE);
@@ -445,6 +483,7 @@ public class TerminowHome {
 
     /** Go back to all hosts from a group. Returns {@code false} if there was nothing to go back from. */
     public boolean onBackPressed() {
+        if (isVisible() && mPage == PAGE_FILES) return mExplorer.onBackPressed();
         if (!isVisible() || mPage != PAGE_HOSTS || mCurrentGroup == null) return false;
         mCurrentGroup = null;
         updateItems();
@@ -486,12 +525,14 @@ public class TerminowHome {
     private void setRailItemSelected(@NonNull View railItem, boolean selected) {
         ViewGroup group = (ViewGroup) railItem;
         int color = ContextCompat.getColor(mActivity, selected ? R.color.terminow_text : R.color.terminow_text_secondary);
-        ImageView iconView = (ImageView) group.getChildAt(0);
+        // An icon with a badge, like the crown of a Premium feature, is in a frame
+        View iconFrame = group.getChildAt(0);
+        ImageView iconView = iconFrame instanceof ImageView ? (ImageView) iconFrame : (ImageView) ((ViewGroup) iconFrame).getChildAt(0);
         iconView.setColorFilter(color, PorterDuff.Mode.SRC_IN);
         if (selected)
-            iconView.setBackgroundResource(R.drawable.terminow_rail_selected);
+            iconFrame.setBackgroundResource(R.drawable.terminow_rail_selected);
         else
-            iconView.setBackground(null);
+            iconFrame.setBackground(null);
         TextView labelView = (TextView) group.getChildAt(1);
         labelView.setTextColor(color);
         labelView.setTypeface(null, selected ? Typeface.BOLD : Typeface.NORMAL);
@@ -500,7 +541,7 @@ public class TerminowHome {
     private void updateItems() {
         String query = mSearchView.getText().toString().trim().toLowerCase(Locale.ROOT);
 
-        if (mPage == PAGE_SETTINGS) {
+        if (mPage == PAGE_SETTINGS || mPage == PAGE_FILES) {
             mEmptyView.setVisibility(View.GONE);
             return;
         }
@@ -884,6 +925,20 @@ public class TerminowHome {
      * Open a local terminal in a new tab, which starts in {@link #getStartDirectory()}. The only
      * input that is written to it is the first command of its fresh shell, before it can be used.
      */
+    /**
+     * Open a new terminal in a folder of HOME, for the File Explorer. The session is started with
+     * the folder as its working directory, nothing is typed into it or into another session, and
+     * tmux sessions that run are not touched.
+     */
+    void openTerminalAt(@NonNull File directory) {
+        TermuxService service = mActivity.getTermuxService();
+        if (service == null) return;
+        TermuxSession session = service.createTermuxSession(null, null, null, directory.getAbsolutePath(), false, directory.getName());
+        if (session == null) return;
+        mActivity.getTermuxTerminalSessionClient().setCurrentSession(session.getTerminalSession());
+        hide();
+    }
+
     private void openLocalTerminal() {
         TerminalSession session = addSession(null);
         TermuxService service = mActivity.getTermuxService();
@@ -1785,6 +1840,7 @@ public class TerminowHome {
 
     /** Handle the result of an activity that was started for the home screen. Returns {@code true} if it was for it. */
     public boolean onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
+        if (mExplorer.onActivityResult(requestCode, resultCode, data)) return true;
         if (mFiles.onActivityResult(requestCode, resultCode, data)) return true;
         if (requestCode != REQUEST_IMPORT_KEY) return false;
         if (resultCode != Activity.RESULT_OK || data == null || data.getData() == null) return true;
