@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_account">Account</string>
+    <string name="terminow_account_not_configured">Accounts are not set up in this build</string>
+    <string name="terminow_account_sign_in">Sign in or create account</string>
+    <string name="terminow_account_sign_in_summary">Your TermiNow account, for Premium</string>
+    <string name="terminow_account_sign_in_button">Sign in</string>
+    <string name="terminow_account_create">Create account</string>
+    <string name="terminow_account_sign_in_note">Use the email of your accmove.com account, so that TermiNow can find your Premium. Your hosts, keys and passwords stay on this device.</string>
+    <string name="terminow_account_email">Email</string>
+    <string name="terminow_account_password">Password</string>
+    <string name="terminow_account_enter_email">Enter your email address</string>
+    <string name="terminow_account_enter_password">Enter your password</string>
+    <string name="terminow_account_password_short">Use at least 8 characters</string>
+    <string name="terminow_account_forgot">Forgot password?</string>
+    <string name="terminow_account_reset_sent">If %1$s has an account, an email to reset the password is on its way</string>
+    <string name="terminow_account_working">Please wait…</string>
+    <string name="terminow_account_verified">Verified</string>
+    <string name="terminow_account_not_verified">Not verified yet. Tap after opening the link in the email</string>
+    <string name="terminow_account_verify_title">Verify your email</string>
+    <string name="terminow_account_verify_sent">We sent a link to %1$s. Open it, then come back and tap the email in the settings.</string>
+    <string name="terminow_account_verify_message">Open the link that was sent to %1$s, then tap I have verified. Premium is only checked for a verified email, so that nobody can use someone else\'s.</string>
+    <string name="terminow_account_verify_done">I have verified</string>
+    <string name="terminow_account_verify_resend">Send again</string>
+    <string name="terminow_account_still_not_verified">The email is not verified yet</string>
+    <string name="terminow_account_premium">Premium</string>
+    <string name="terminow_account_premium_verify_first">Verify your email to check Premium</string>
+    <string name="terminow_account_premium_checking">Checking…</string>
+    <string name="terminow_account_premium_unknown">Not checked yet, tap to check</string>
+    <string name="terminow_account_premium_active">Active: %1$s</string>
+    <string name="terminow_account_premium_until">Renews or ends %1$s</string>
+    <string name="terminow_account_premium_inactive">Not active for %1$s. Premium is managed in your accmove.com account with the same email.</string>
+    <string name="terminow_account_premium_checked">Checked %1$s, tap to check again</string>
+    <string name="terminow_account_premium_failed">Could not check: %1$s</string>
+    <string name="terminow_account_sign_out">Sign out</string>
+    <string name="terminow_account_sign_out_confirm">Sign out of TermiNow? Your hosts, keys and settings stay on this device.</string>
+    <string name="terminow_account_delete">Delete account</string>
+    <string name="terminow_account_delete_summary">Deletes your TermiNow sign-in. Your accmove.com account and services are not changed.</string>
+    <string name="terminow_account_delete_confirm">Delete the TermiNow account %1$s? This can not be undone. Your hosts and keys on this device are kept, and your accmove.com services are not changed.</string>
+    <string name="terminow_account_deleted">The account was deleted</string>
+</resources>

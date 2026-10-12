@@ -68,10 +68,13 @@ public class TerminowSettings {
     private final TerminowStore mStore;
     private final LinearLayout mContainer;
 
+    private final TerminowAccountUi mAccountUi;
+
     public TerminowSettings(@NonNull TermuxActivity activity, @NonNull TerminowStore store, @NonNull LinearLayout container) {
         mActivity = activity;
         mStore = store;
         mContainer = container;
+        mAccountUi = new TerminowAccountUi(activity, store, this::update);
     }
 
     /** Apply the setting to block screenshots and screen recording of the app. */
@@ -89,7 +92,10 @@ public class TerminowSettings {
         if (preferences == null) return;
 
 
-        addSection(R.string.terminow_settings_terminal, true);
+        addSection(R.string.terminow_account, true);
+        mAccountUi.addRows(this::addRow);
+
+        addSection(R.string.terminow_settings_terminal, false);
 
         String theme = mStore.getTerminalTheme();
         String font = mStore.getTerminalFont();

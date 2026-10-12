@@ -61,7 +61,7 @@ android {
         applicationId "com.terminow"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 140
+        versionCode 141
         versionName "0.118.0"
 
         if (appVersionName) versionName = appVersionName
@@ -77,6 +77,22 @@ android {
         }
         buildConfigField "String", "TERMINOW_BOOTSTRAP_RELEASE", "\"" + terminowBootstrapRelease + "\""
         buildConfigField "String", "TERMINOW_COMMIT", "\"" + terminowCommit + "\""
+
+        // The Firebase project of TermiNow accounts, from app/google-services.json, which is not
+        // committed. Without it the build works, and accounts are shown as not set up.
+        def firebaseApiKey = ""
+        def firebaseProjectId = ""
+        def googleServicesFile = file("google-services.json")
+        if (googleServicesFile.isFile()) {
+            def googleServices = new groovy.json.JsonSlurper().parse(googleServicesFile)
+            def firebaseClient = googleServices.client.find { it.client_info.android_client_info.package_name == "com.terminow" }
+            if (firebaseClient != null) {
+                firebaseApiKey = firebaseClient.api_key[0].current_key
+                firebaseProjectId = googleServices.project_info.project_id
+            }
+        }
+        buildConfigField "String", "TERMINOW_FIREBASE_API_KEY", "\"" + firebaseApiKey + "\""
+        buildConfigField "String", "TERMINOW_FIREBASE_PROJECT_ID", "\"" + firebaseProjectId + "\""
         buildConfigField "String", "TERMUX_PACKAGE_VARIANT", "\"" + project.ext.packageVariant + "\"" // Used by TermuxApplication class
 
         manifestPlaceholders.TERMUX_PACKAGE_NAME = "com.terminow"

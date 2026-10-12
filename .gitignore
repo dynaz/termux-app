@@ -40,3 +40,6 @@ Thumbs.db
 
 # Python
 __pycache__/
+
+# The Firebase config of TermiNow, kept out of the public repository
+app/google-services.json

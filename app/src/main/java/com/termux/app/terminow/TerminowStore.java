@@ -192,6 +192,8 @@ public class TerminowStore {
     private static final String KEY_KEY_LABELS = "key_labels";
     private static final String KEY_MCP_PROFILES = "mcp_profiles";
     private static final String KEY_MCP_LOCAL_HTTP = "mcp_local_http";
+    private static final String KEY_ACCOUNT = "account";
+    private static final String KEY_PREMIUM = "premium";
     private static final String KEY_FORWARDS = "forwards";
     private static final String KEY_LOGS = "logs";
     private static final String KEY_NOTIFICATIONS = "notifications";
@@ -389,6 +391,66 @@ public class TerminowStore {
             return;
         }
         mPreferences.edit().putString(KEY_MCP_PROFILES, array.toString()).apply();
+    }
+
+    /** The signed in account, {@code null} if none. The refresh token is encrypted. */
+    @Nullable
+    public TerminowAccount.Session getAccount() {
+        try {
+            String text = mPreferences.getString(KEY_ACCOUNT, "");
+            if (text.isEmpty()) return null;
+            JSONObject object = new JSONObject(text);
+            TerminowAccount.Session session = new TerminowAccount.Session();
+            session.uid = object.optString("uid");
+            session.email = object.optString("email");
+            session.emailVerified = object.optBoolean("emailVerified");
+            session.refreshToken = decryptPassword(object.optString("refreshToken"));
+            // A token that could not be decrypted, like after a restore, needs a new sign in
+            return session.refreshToken.isEmpty() ? null : session;
+        } catch (JSONException e) {
+            return null;
+        }
+    }
+
+    public void setAccount(@Nullable TerminowAccount.Session session) {
+        if (session == null) {
+            mPreferences.edit().remove(KEY_ACCOUNT).remove(KEY_PREMIUM).apply();
+            return;
+        }
+        try {
+            JSONObject object = new JSONObject()
+                .put("uid", session.uid)
+                .put("email", session.email)
+                .put("emailVerified", session.emailVerified)
+                .put("refreshToken", encryptPassword(session.refreshToken));
+            mPreferences.edit().putString(KEY_ACCOUNT, object.toString()).apply();
+        } catch (JSONException e) {
+            Logger.logError(LOG_TAG, "Failed to save the account");
+        }
+    }
+
+    /** The last known Premium status, {@code null} if never checked. */
+    @Nullable
+    public JSONObject getPremium() {
+        try {
+            String text = mPreferences.getString(KEY_PREMIUM, "");
+            return text.isEmpty() ? null : new JSONObject(text);
+        } catch (JSONException e) {
+            return null;
+        }
+    }
+
+    public void setPremium(@NonNull TerminowAccount.Premium premium) {
+        try {
+            JSONObject object = new JSONObject()
+                .put("premium", premium.premium)
+                .put("plan", premium.plan)
+                .put("nextDueDate", premium.nextDueDate == null ? JSONObject.NULL : premium.nextDueDate)
+                .put("checked", System.currentTimeMillis());
+            mPreferences.edit().putString(KEY_PREMIUM, object.toString()).apply();
+        } catch (JSONException e) {
+            Logger.logError(LOG_TAG, "Failed to save the Premium status");
+        }
     }
 
     /** Whether MCP servers on this device may be used over plain HTTP, for local development. */
