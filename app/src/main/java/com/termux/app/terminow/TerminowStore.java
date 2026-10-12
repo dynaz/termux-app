@@ -190,6 +190,8 @@ public class TerminowStore {
     private static final String KEY_SNIPPETS = "snippets";
     private static final String KEY_GROUPS = "groups";
     private static final String KEY_KEY_LABELS = "key_labels";
+    private static final String KEY_MCP_PROFILES = "mcp_profiles";
+    private static final String KEY_MCP_LOCAL_HTTP = "mcp_local_http";
     private static final String KEY_FORWARDS = "forwards";
     private static final String KEY_LOGS = "logs";
     private static final String KEY_NOTIFICATIONS = "notifications";
@@ -338,6 +340,64 @@ public class TerminowStore {
             Logger.logStackTraceWithMessage(LOG_TAG, "Failed to decrypt password", e);
             return "";
         }
+    }
+
+    /**
+     * The MCP server profiles. Their secrets are decrypted with the keystore key. A profile whose
+     * secrets could not be decrypted, for example after a restore to another device, is loaded
+     * without them.
+     */
+    @NonNull
+    public List<TerminowMcpProfile> getMcpProfiles() {
+        List<TerminowMcpProfile> profiles = new ArrayList<>();
+        try {
+            JSONArray array = new JSONArray(mPreferences.getString(KEY_MCP_PROFILES, "[]"));
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject object = array.getJSONObject(i);
+                TerminowMcpProfile profile = TerminowMcpProfile.fromJson(object);
+                String secrets = decryptPassword(object.optString("secrets"));
+                if (!secrets.isEmpty()) {
+                    JSONObject secretsObject = new JSONObject(secrets);
+                    profile.bearerToken = secretsObject.optString("bearer");
+                    JSONArray values = secretsObject.optJSONArray("headers");
+                    for (int j = 0; values != null && j < values.length() && j < profile.headers.size(); j++)
+                        profile.headers.get(j).value = values.optString(j);
+                }
+                profiles.add(profile);
+            }
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to load MCP profiles", e);
+        }
+        return profiles;
+    }
+
+    public void setMcpProfiles(@NonNull List<TerminowMcpProfile> profiles) {
+        JSONArray array = new JSONArray();
+        try {
+            for (TerminowMcpProfile profile : profiles) {
+                JSONObject object = profile.toJson();
+                if (profile.hasSecrets() || !profile.bearerToken.isEmpty()) {
+                    JSONArray values = new JSONArray();
+                    for (TerminowMcpProfile.Header header : profile.headers) values.put(header.value);
+                    object.put("secrets", encryptPassword(new JSONObject().put("bearer", profile.bearerToken).put("headers", values).toString()));
+                }
+                array.put(object);
+            }
+        } catch (JSONException e) {
+            // Never log the profile, it has secrets
+            Logger.logError(LOG_TAG, "Failed to save MCP profiles");
+            return;
+        }
+        mPreferences.edit().putString(KEY_MCP_PROFILES, array.toString()).apply();
+    }
+
+    /** Whether MCP servers on this device may be used over plain HTTP, for local development. */
+    public boolean isMcpLocalHttpAllowed() {
+        return mPreferences.getBoolean(KEY_MCP_LOCAL_HTTP, false);
+    }
+
+    public void setMcpLocalHttpAllowed(boolean allowed) {
+        mPreferences.edit().putBoolean(KEY_MCP_LOCAL_HTTP, allowed).apply();
     }
 
     /** The seconds after which ssh checks that a host that sent nothing is still connected, 0 to not check. */

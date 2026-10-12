@@ -81,6 +81,32 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/terminow_rail_mcp"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="14dp"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <ImageView
+                    android:layout_width="56dp"
+                    android:layout_height="34dp"
+                    android:duplicateParentState="true"
+                    android:padding="6dp"
+                    android:src="@drawable/ic_terminow_mcp"
+                    tools:ignore="ContentDescription" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:text="@string/terminow_mcp"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <LinearLayout
                 android:id="@+id/terminow_rail_forwarding"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -324,6 +350,24 @@
                 android:orientation="vertical"
                 android:paddingStart="8dp"
                 android:paddingBottom="24dp" />
+        </ScrollView>
+
+        <!-- The MCP Servers page, built by TerminowMcpPage -->
+        <ScrollView
+            android:id="@+id/terminow_mcp_scroll"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_below="@id/terminow_section_title"
+            android:clipToPadding="false"
+            android:paddingBottom="88dp"
+            android:scrollbars="none"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/terminow_mcp"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
         </ScrollView>
 
         <ImageButton

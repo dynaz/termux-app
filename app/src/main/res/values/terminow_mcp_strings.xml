@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_mcp">MCP Servers</string>
+    <string name="terminow_mcp_search_hint">Search MCP servers</string>
+    <string name="terminow_mcp_add">Add MCP server</string>
+    <string name="terminow_mcp_edit">Edit MCP server</string>
+    <string name="terminow_mcp_empty_title">No MCP servers yet</string>
+    <string name="terminow_mcp_empty_body">Save a remote MCP server, test it from TermiNow, then add it to Claude Code in TermiNow or in your Ubuntu. Claude Code keeps using your own login.</string>
+    <string name="terminow_mcp_stdio_unsupported">Local stdio server, not supported in this release</string>
+
+    <string name="terminow_mcp_state_saved">Profile saved</string>
+    <string name="terminow_mcp_state_saved_no_secret">Profile saved, but its credentials are missing. Edit it to enter them again</string>
+    <string name="terminow_mcp_state_not_tested">Not tested from TermiNow</string>
+    <string name="terminow_mcp_state_testing">Testing the connection…</string>
+    <string name="terminow_mcp_state_test_passed">App connection test passed, %1$d tools · %2$s</string>
+    <string name="terminow_mcp_state_test_failed">App connection test failed · %1$s</string>
+    <string name="terminow_mcp_state_auth_required">Authentication required · %1$s</string>
+    <string name="terminow_mcp_state_checking_claude">Checking Claude Code…</string>
+    <string name="terminow_mcp_state_not_configured">Not configured for Claude Code</string>
+    <string name="terminow_mcp_state_configured">Configured for Claude Code in %1$s · %2$s</string>
+    <string name="terminow_mcp_state_configured_unverified">Written to %1$s, but Claude Code did not confirm it · %2$s</string>
+    <string name="terminow_mcp_state_enabled">Enabled in Claude Code</string>
+    <string name="terminow_mcp_state_disabled">Disabled: removed from Claude Code, the profile is kept</string>
+    <string name="terminow_mcp_test_note">The test checks the connection from this app only, not from Claude Code in the selected environment.</string>
+
+    <string name="terminow_mcp_test">Test</string>
+    <string name="terminow_mcp_cancel_test">Cancel test</string>
+    <string name="terminow_mcp_configure">Configure Claude Code</string>
+    <string name="terminow_mcp_details">Details</string>
+    <string name="terminow_mcp_disable">Disable in Claude Code</string>
+    <string name="terminow_mcp_manual">Manual setup</string>
+    <string name="terminow_mcp_manual_title">Manual setup</string>
+
+    <string name="terminow_mcp_local_http">Local development HTTP</string>
+    <string name="terminow_mcp_local_http_summary">Allow plain HTTP to MCP servers on this device only (localhost and 127.0.0.1), like a server you run in a terminal while developing it. Everything sent over HTTP, including tokens, is unencrypted. Other servers always need HTTPS with a valid certificate.</string>
+    <string name="terminow_mcp_not_in_release">Not in this release: local stdio servers, configuring SSH hosts, and OAuth sign-in from TermiNow. For OAuth servers, add them without credentials and sign in with /mcp in Claude Code.</string>
+
+    <string name="terminow_mcp_name">Name</string>
+    <string name="terminow_mcp_name_invalid">Use letters, numbers, - and _ only, as Claude Code requires</string>
+    <string name="terminow_mcp_name_taken">Another MCP server has this name</string>
+    <string name="terminow_mcp_url">MCP endpoint URL</string>
+    <string name="terminow_mcp_auth">Authentication</string>
+    <string name="terminow_mcp_auth_none">None</string>
+    <string name="terminow_mcp_auth_bearer">Bearer token</string>
+    <string name="terminow_mcp_auth_headers">Custom headers</string>
+    <string name="terminow_mcp_token_hint">Token</string>
+    <string name="terminow_mcp_token_needed">Enter the token</string>
+    <string name="terminow_mcp_secret_saved">Saved, leave empty to keep it</string>
+    <string name="terminow_mcp_add_header">+ Add header</string>
+    <string name="terminow_mcp_header_name">Header</string>
+    <string name="terminow_mcp_header_value">Value</string>
+    <string name="terminow_mcp_header_twice">%1$s is entered twice</string>
+    <string name="terminow_mcp_headers_needed">Add at least one header, or choose None</string>
+    <string name="terminow_mcp_oauth_note">Tokens and header values are stored encrypted with a key in the Android keystore and are never shown again. OAuth sign-in is not supported in TermiNow in this release.</string>
+    <string name="terminow_mcp_target">Target environment</string>
+    <string name="terminow_mcp_target_terminow">TermiNow</string>
+    <string name="terminow_mcp_target_container">%1$s (%2$s, %3$s)</string>
+    <string name="terminow_mcp_target_user">User: %1$s</string>
+    <string name="terminow_mcp_target_user_title">User in the container</string>
+    <string name="terminow_mcp_target_no_containers">No Ubuntu is installed. TermiNow does not install one, use proot-distro in a terminal. SSH hosts are not supported yet.</string>
+    <string name="terminow_mcp_target_ssh_note">Each environment has its own home and Claude Code configuration. SSH hosts are not supported yet.</string>
+    <string name="terminow_mcp_scope">Configuration scope</string>
+    <string name="terminow_mcp_scope_user">User: all projects (~/.claude.json)</string>
+    <string name="terminow_mcp_scope_local">Project, private to you (~/.claude.json)</string>
+    <string name="terminow_mcp_scope_project">Project, shared (.mcp.json in the project)</string>
+    <string name="terminow_mcp_scope_user_short">User scope</string>
+    <string name="terminow_mcp_scope_local_short">Private project</string>
+    <string name="terminow_mcp_scope_project_short">Shared project</string>
+    <string name="terminow_mcp_project_dir">Project directory, in the target environment</string>
+    <string name="terminow_mcp_project_invalid">Enter the absolute path of the project directory</string>
+    <string name="terminow_mcp_shared_no_secrets">A shared .mcp.json is often committed to version control, so it can not hold credentials. Use the user or private project scope for this server.</string>
+    <string name="terminow_mcp_reconfigure_hint">Saved. Configure Claude Code again to use the changes there</string>
+
+    <string name="terminow_mcp_delete_confirm">Delete the MCP server %1$s from TermiNow?</string>
+    <string name="terminow_mcp_delete_configured">Delete the MCP server %1$s from TermiNow? It is still in the Claude Code configuration, which this does not change. Disable it first to remove it from Claude Code.</string>
+
+    <string name="terminow_mcp_details_test_ok">App connection test passed %1$s\nServer: %2$s\nProtocol: %3$s\nTools:</string>
+    <string name="terminow_mcp_details_test_failed">App connection test failed %1$s:</string>
+    <string name="terminow_mcp_details_applied">Claude Code configuration: %1$s\nScope: %2$s\nClaude Code %3$s · %4$s</string>
+    <string name="terminow_mcp_secret_in_file_short">The credentials are also in that file, readable only by its owner.</string>
+
+    <string name="terminow_mcp_result_ok">Connection test passed</string>
+    <string name="terminow_mcp_result_failed">Connection test failed</string>
+    <string name="terminow_mcp_result_auth">Authentication required</string>
+    <string name="terminow_mcp_result_ok_summary">Server: %1$s %2$s\nProtocol: %3$s (%4$s)</string>
+    <string name="terminow_mcp_era_modern">without sessions</string>
+    <string name="terminow_mcp_era_legacy">initialize handshake</string>
+    <string name="terminow_mcp_result_no_tools">The server offers no tools.</string>
+    <string name="terminow_mcp_result_ok_note">TermiNow connected from this app. This does not show that Claude Code in %1$s can reach the server: it may have a different network, proxy or certificates. No tool was called.</string>
+    <string name="terminow_mcp_result_oauth">This server requires OAuth sign-in, which TermiNow does not support in this release, so it could not be tested.\n\nClaude Code can sign in itself: configure the server without credentials, then run /mcp in Claude Code and choose to authenticate.</string>
+    <string name="terminow_mcp_result_auth_failed">Check the token or headers of the profile.</string>
+
+    <string name="terminow_mcp_checking">Checking Claude Code in %1$s…</string>
+    <string name="terminow_mcp_applying">Updating the configuration and checking it with Claude Code…</string>
+    <string name="terminow_mcp_container_missing">The container %1$s is not installed anymore. TermiNow does not install it.</string>
+    <string name="terminow_mcp_claude_missing">Claude Code was not found in %1$s.</string>
+    <string name="terminow_mcp_claude_no_http">This Claude Code (%1$s) does not support HTTP MCP servers. Update it first.</string>
+    <string name="terminow_mcp_project_missing">The project directory %1$s does not exist in %2$s.</string>
+    <string name="terminow_mcp_path_unusable">TermiNow can not write %1$s in this environment.</string>
+    <string name="terminow_mcp_changed_since_preview">The configuration changed since the preview. Nothing was written, configure again to see the change.</string>
+    <string name="terminow_mcp_apply_failed">Nothing was changed</string>
+    <string name="terminow_mcp_verify_timeout">Claude Code did not answer in time.</string>
+
+    <string name="terminow_mcp_preview_title">Configure Claude Code</string>
+    <string name="terminow_mcp_preview_title_disable">Disable in Claude Code</string>
+    <string name="terminow_mcp_preview_environment">Environment: %1$s</string>
+    <string name="terminow_mcp_preview_claude">Claude Code: %1$s (%2$s)</string>
+    <string name="terminow_mcp_preview_claude_missing">Claude Code: not found</string>
+    <string name="terminow_mcp_preview_profile">Server: %1$s, %2$s</string>
+    <string name="terminow_mcp_preview_scope">Scope: %1$s\nFile: %2$s</string>
+    <string name="terminow_mcp_preview_manual_hint">You can set it up yourself with the manual setup commands.</string>
+    <string name="terminow_mcp_preview_add">This adds a new entry.</string>
+    <string name="terminow_mcp_preview_update">This updates the entry that TermiNow wrote before.</string>
+    <string name="terminow_mcp_preview_unchanged">The entry is already there as it should be. Nothing is written, Claude Code is only asked to confirm it.</string>
+    <string name="terminow_mcp_preview_remove">This removes only this entry.</string>
+    <string name="terminow_mcp_preview_not_present">The entry is not in the configuration anymore. The server is only marked as disabled.</string>
+    <string name="terminow_mcp_preview_conflict">An entry named %1$s is already there, and TermiNow did not write it or it was changed since:\n%2$s\n\nReplace it? A backup is made first.</string>
+    <string name="terminow_mcp_preview_conflict_remove">The entry %1$s was not written by TermiNow or was changed since:\n%2$s\n\nRemove it anyway? A backup is made first.</string>
+    <string name="terminow_mcp_preview_others">Other servers that are kept: %1$s</string>
+    <string name="terminow_mcp_preview_backup">The file is backed up next to it first, and written as a whole so it is never half written. All other settings stay as they are.</string>
+    <string name="terminow_mcp_preview_secret">Claude Code reads the credentials of a server from its configuration, so they will be stored in %1$s as plain text, readable only by its owner (permissions 600). They are then not only in the encrypted store of TermiNow.</string>
+    <plurals name="terminow_mcp_preview_running">
+        <item quantity="one">Claude Code is running (%d process). It rewrites ~/.claude.json and could undo this change. Quit it first, or apply anyway and restart it.</item>
+        <item quantity="other">Claude Code is running (%d processes). It rewrites ~/.claude.json and could undo this change. Quit it first, or apply anyway and restart it.</item>
+    </plurals>
+    <string name="terminow_mcp_apply">Apply</string>
+    <string name="terminow_mcp_apply_anyway">Apply anyway</string>
+    <string name="terminow_mcp_replace">Replace entry</string>
+    <string name="terminow_mcp_remove_anyway">Remove anyway</string>
+    <string name="terminow_mcp_verify">Check</string>
+    <string name="terminow_mcp_mark_disabled">Mark disabled</string>
+
+    <string name="terminow_mcp_done_written">Written to %1$s.</string>
+    <string name="terminow_mcp_done_unchanged">%1$s already had this entry.</string>
+    <string name="terminow_mcp_done_verified">Claude Code lists the server.</string>
+    <string name="terminow_mcp_done_not_verified">Claude Code did not list the server. Check its output below.</string>
+    <string name="terminow_mcp_done_project_approval">Claude Code asks to approve servers of a shared .mcp.json the next time it starts in the project.</string>
+    <string name="terminow_mcp_done_restart">Claude Code sessions that are already running do not see the change until you restart them, or reconnect the server with /mcp.</string>
+    <string name="terminow_mcp_done_disabled">Removed the entry from %1$s. Restart running Claude Code sessions.</string>
+    <string name="terminow_mcp_done_disabled_absent">The entry was not in %1$s anymore. Marked as disabled.</string>
+    <string name="terminow_mcp_done_still_listed">Claude Code still lists a server with this name, from another scope or file.</string>
+    <string name="terminow_mcp_done_backup">Backup: %1$s</string>
+
+    <string name="terminow_mcp_manual_intro">Nothing is run or written by TermiNow. Run these in a terminal of %1$s:</string>
+    <string name="terminow_mcp_manual_secret_note">read -rs keeps the secret out of the screen and the shell history. Claude Code still stores it in its configuration file.</string>
+    <string name="terminow_mcp_copy_commands">Copy commands</string>
+    <string name="terminow_mcp_commands_copied">Commands copied, without secrets</string>
+
+    <plurals name="terminow_mcp_tools">
+        <item quantity="one">%d tool</item>
+        <item quantity="other">%d tools</item>
+    </plurals>
+</resources>

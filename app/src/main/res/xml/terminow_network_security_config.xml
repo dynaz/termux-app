@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Plain HTTP is only allowed to this device, for MCP servers in local development. The MCP
+    Manager also only uses it when "Local development HTTP" is turned on. All other connections
+    use the default policy: HTTPS with the certificates that the system trusts.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+    </domain-config>
+</network-security-config>

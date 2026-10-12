@@ -25,6 +25,7 @@
     <color name="terminow_panel_card">#2B3046</color>
     <color name="terminow_panel_line">#6B7190</color>
     <color name="terminow_panel_accent">#21C17A</color>
+    <color name="terminow_mcp_warn">#F5A623</color>
     <color name="terminow_panel_scrim">#99000000</color>
     <color name="terminow_panel_button">#2F344B</color>
 

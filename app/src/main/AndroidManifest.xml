@@ -45,6 +45,7 @@
     <application
         android:name=".app.TermuxApplication"
         android:allowBackup="false"
+        android:networkSecurityConfig="@xml/terminow_network_security_config"
         android:banner="@drawable/banner"
         android:enableOnBackInvokedCallback="false"
         android:icon="@mipmap/ic_launcher"

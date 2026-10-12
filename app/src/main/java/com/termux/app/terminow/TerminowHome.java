@@ -94,6 +94,7 @@ public class TerminowHome {
     private static final int PAGE_FORWARDING = 4;
     private static final int PAGE_KNOWN_HOSTS = 5;
     private static final int PAGE_LOGS = 6;
+    private static final int PAGE_MCP = 7;
 
     private static final Pattern KEY_NAME_PATTERN = Pattern.compile("[A-Za-z0-9_][A-Za-z0-9._-]*");
     private static final int KEY_FILE_MAX_SIZE = 64 * 1024;
@@ -139,6 +140,9 @@ public class TerminowHome {
     private final View mRailForwarding;
     private final View mRailKnownHosts;
     private final View mRailLogs;
+    private final View mRailMcp;
+    private final View mMcpScrollView;
+    private final TerminowMcpPage mMcpPage;
     private final View mHeaderView;
     private final View mGridView;
     private final View mFabView;
@@ -192,6 +196,10 @@ public class TerminowHome {
         mRailKnownHosts.setOnClickListener(v -> setPage(PAGE_KNOWN_HOSTS));
         mRailLogs = activity.findViewById(R.id.terminow_rail_logs);
         mRailLogs.setOnClickListener(v -> setPage(PAGE_LOGS));
+        mRailMcp = activity.findViewById(R.id.terminow_rail_mcp);
+        mRailMcp.setOnClickListener(v -> setPage(PAGE_MCP));
+        mMcpScrollView = activity.findViewById(R.id.terminow_mcp_scroll);
+        mMcpPage = new TerminowMcpPage(activity, mStore, activity.findViewById(R.id.terminow_mcp));
         mRailSettings = activity.findViewById(R.id.terminow_rail_settings);
         mRailSettings.setOnClickListener(v -> setPage(PAGE_SETTINGS));
         mHeaderView = activity.findViewById(R.id.terminow_header);
@@ -221,6 +229,8 @@ public class TerminowHome {
                 showKeyMenu(v);
             else if (mPage == PAGE_FORWARDING)
                 showForwardWizard(null);
+            else if (mPage == PAGE_MCP)
+                mMcpPage.showProfileDialog(null);
             else
                 showSnippetDialog(null);
         });
@@ -413,14 +423,17 @@ public class TerminowHome {
         setRailItemSelected(mRailForwarding, page == PAGE_FORWARDING);
         setRailItemSelected(mRailKnownHosts, page == PAGE_KNOWN_HOSTS);
         setRailItemSelected(mRailLogs, page == PAGE_LOGS);
+        setRailItemSelected(mRailMcp, page == PAGE_MCP);
         mActionsView.setVisibility(page == PAGE_HOSTS ? View.VISIBLE : View.GONE);
-        mSearchView.setHint(page == PAGE_KEYCHAIN ? R.string.terminow_search_keys_hint : R.string.terminow_search_hint);
+        mSearchView.setHint(page == PAGE_KEYCHAIN ? R.string.terminow_search_keys_hint :
+            page == PAGE_MCP ? R.string.terminow_mcp_search_hint : R.string.terminow_search_hint);
 
         // The settings are shown instead of the list of hosts or snippets and what belongs to it
         boolean settings = page == PAGE_SETTINGS;
         mHeaderView.setVisibility(settings ? View.GONE : View.VISIBLE);
         mSectionTitleView.setVisibility(settings ? View.GONE : View.VISIBLE);
-        mGridView.setVisibility(settings ? View.GONE : View.VISIBLE);
+        mGridView.setVisibility(settings || page == PAGE_MCP ? View.GONE : View.VISIBLE);
+        mMcpScrollView.setVisibility(page == PAGE_MCP ? View.VISIBLE : View.GONE);
         // Known hosts and logs are only added by connecting to hosts
         mFabView.setVisibility(settings || page == PAGE_KNOWN_HOSTS || page == PAGE_LOGS ? View.GONE : View.VISIBLE);
         mSettingsScrollView.setVisibility(settings ? View.VISIBLE : View.GONE);
@@ -441,6 +454,8 @@ public class TerminowHome {
     private void updateSectionTitle() {
         if (mPage == PAGE_KEYCHAIN)
             mSectionTitleView.setText(R.string.terminow_ssh_keys);
+        else if (mPage == PAGE_MCP)
+            mSectionTitleView.setText(R.string.terminow_mcp);
         else if (mPage == PAGE_FORWARDING)
             mSectionTitleView.setText(R.string.terminow_forwarding);
         else if (mPage == PAGE_KNOWN_HOSTS)
@@ -492,6 +507,13 @@ public class TerminowHome {
 
         updateSectionTitle();
         mItems.clear();
+        if (mPage == PAGE_MCP) {
+            // The page shows its own cards and empty state
+            mAdapter.notifyDataSetChanged();
+            mEmptyView.setVisibility(View.GONE);
+            mMcpPage.update(query);
+            return;
+        }
         if (mPage == PAGE_HOSTS && query.isEmpty()) {
             if (mCurrentGroup == null) {
                 mItems.add(null);
