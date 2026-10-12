@@ -111,6 +111,9 @@ public class TerminowKeyPanel {
             mSide.addView(build(), new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
             mSide.setVisibility(View.VISIBLE);
             setTerminalEndMargin(mActivity.getResources().getDimensionPixelSize(R.dimen.terminow_key_panel_width));
+        } else if (side) {
+            // The margins of the terminal may have been reset, like when its style is reloaded
+            setTerminalEndMargin(mActivity.getResources().getDimensionPixelSize(R.dimen.terminow_key_panel_width));
         } else if (!side && mSide.getVisibility() != View.GONE) {
             mSide.setVisibility(View.GONE);
             mSide.removeAllViews();

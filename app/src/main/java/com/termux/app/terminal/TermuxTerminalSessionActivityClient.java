@@ -542,11 +542,21 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
             }
 
             TerminalColors.COLOR_SCHEME.updateWith(props);
+            // Every tab takes the new colors, not only the one that is shown
+            TermuxService service = mActivity.getTermuxService();
+            if (service != null) {
+                for (com.termux.shared.termux.shell.command.runner.terminal.TermuxSession termuxSession : service.getTermuxSessions()) {
+                    TerminalSession other = termuxSession.getTerminalSession();
+                    if (other != null && other.getEmulator() != null) other.getEmulator().mColors.reset();
+                }
+            }
             TerminalSession session = mActivity.getCurrentSession();
             if (session != null && session.getEmulator() != null) {
                 session.getEmulator().mColors.reset();
             }
             updateBackgroundColor();
+            // Draw with them now, not only when the program in the tab prints something
+            if (mActivity.getTerminalView() != null) mActivity.getTerminalView().onScreenUpdated();
 
             final Typeface newTypeface;
             if (!fontFile.exists() || fontFile.length() == 0) {

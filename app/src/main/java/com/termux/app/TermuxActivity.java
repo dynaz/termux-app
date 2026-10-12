@@ -1072,6 +1072,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         if (mTermuxTerminalViewClient != null)
             mTermuxTerminalViewClient.onReloadActivityStyling();
 
+        // setMargins() reset the room that the key panel needs
+        if (mTerminowHome != null && mTermuxService != null)
+            mTerminowHome.refresh();
+
         // To change the activity and drawer theme, activity needs to be recreated.
         // It will destroy the activity, including all stored variables and views, and onCreate()
         // will be called again. Extra keys input text, terminal sessions and transcripts will be preserved.
