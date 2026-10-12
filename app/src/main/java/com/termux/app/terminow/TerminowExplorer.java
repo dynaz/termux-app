@@ -3,11 +3,19 @@ package com.termux.app.terminow;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
+import android.content.Context;
 import android.content.Intent;
 import android.content.res.ColorStateList;
+import android.content.res.Configuration;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.StatFs;
@@ -16,10 +24,13 @@ import android.text.InputType;
 import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.text.format.Formatter;
+import android.util.LruCache;
+import android.util.Size;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.inputmethod.EditorInfo;
 import android.webkit.MimeTypeMap;
 import android.widget.BaseAdapter;
 import android.widget.CheckBox;
@@ -29,8 +40,10 @@ import android.widget.GridView;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.PopupMenu;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
+import android.widget.Switch;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -40,11 +53,13 @@ import androidx.core.content.FileProvider;
 
 import com.termux.R;
 import com.termux.app.TermuxActivity;
+import com.termux.app.terminow.files.TerminowFileScan;
 import com.termux.app.terminow.files.TerminowFs;
 import com.termux.app.terminow.files.TerminowLocalFs;
 import com.termux.app.terminow.files.TerminowSafFs;
 import com.termux.app.terminow.files.TerminowSftpFs;
 import com.termux.app.terminow.files.TerminowTransfer;
+import com.termux.app.terminow.files.TerminowTransferQueue;
 import com.termux.shared.termux.TermuxConstants;
 
 import org.json.JSONArray;
@@ -53,12 +68,14 @@ import org.json.JSONObject;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -71,12 +88,12 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * The File Explorer page, a Premium feature: TermiNow HOME, folders of shared storage that the
+ * The File Manager page, a Premium feature: TermiNow HOME, folders of shared storage that the
  * user picked with the Storage Access Framework, and saved SFTP hosts.
  *
- * Listing, searching and transfers run on worker threads. Nothing outside HOME is browsable on
- * the device, there is no device "/" and no Ubuntu rootfs. Deleting is permanent, there is no
- * recycle bin.
+ * Listing, searching, analyzing and transfers run on worker threads. Nothing outside HOME is
+ * browsable on the device: no device "/", no other app's files, no Ubuntu rootfs. Deleting is
+ * permanent, there is no recycle bin. Only features that work are shown.
  */
 public class TerminowExplorer {
 
@@ -93,7 +110,16 @@ public class TerminowExplorer {
         void showAccountSettings();
     }
 
-    /** One browser pane. Wide screens can show two, to copy between them. */
+    private enum Screen { DASHBOARD, BROWSER, CATEGORY, SEARCH, ANALYZER, QUEUE, RECENTS, BOOKMARKS }
+
+    /** The colors of the light or dark theme of the File Manager. */
+    private static class Palette {
+        boolean dark;
+        int background, card, field, text, secondary, accent, selected, divider, danger, warning;
+        int dialogTheme;
+    }
+
+    /** One browser pane. Large screens can show two, to transfer between them. */
     private static class Pane {
         @Nullable TerminowFs fs;
         final List<TerminowFs.Node> crumbs = new ArrayList<>();
@@ -118,12 +144,36 @@ public class TerminowExplorer {
         final TerminowFs.Node parent;
         final List<TerminowFs.Node> nodes;
         final boolean move;
+        final String from;
 
-        Clip(TerminowFs fs, TerminowFs.Node parent, List<TerminowFs.Node> nodes, boolean move) {
+        Clip(TerminowFs fs, TerminowFs.Node parent, List<TerminowFs.Node> nodes, boolean move, String from) {
             this.fs = fs;
             this.parent = parent;
             this.nodes = nodes;
             this.move = move;
+            this.from = from;
+        }
+    }
+
+    /** A search over the accessible locations, for a category or a name. */
+    private static class Scan {
+        @Nullable TerminowFileScan.Category category;
+        String query = "";
+        final List<TerminowFileScan.Match> results = new ArrayList<>();
+        boolean running;
+        String status = "";
+        @Nullable TerminowFs.Cancel cancel;
+        int generation;
+    }
+
+    /** The space of one location, for the analyzer. */
+    private static class LocationSpace {
+        final TerminowFs fs;
+        @Nullable TerminowFileScan.Space space;
+        @Nullable String error;
+
+        LocationSpace(TerminowFs fs) {
+            this.fs = fs;
         }
     }
 
@@ -136,14 +186,29 @@ public class TerminowExplorer {
     private final TerminowAccountUi mAccountUi;
     private final Map<String, TerminowFs> mFileSystems = new HashMap<>();
     private final Pane[] mPanes = {new Pane(), new Pane()};
+    private final TerminowTransferQueue mQueue;
+    private final Scan mScan = new Scan();
+    private final List<LocationSpace> mSpaces = new ArrayList<>();
+    private final LruCache<String, Bitmap> mThumbnails = new LruCache<>(80);
+    private final Set<String> mThumbnailsLoading = new HashSet<>();
+    private final Set<String> mCollapsed = new HashSet<>();
+    private Palette mPalette = new Palette();
+    private Screen mScreen = Screen.DASHBOARD;
     private int mActivePane;
     private boolean mTwoPanes;
-    private boolean mDashboard = true;
     private boolean mDrawerOpen;
+    private boolean mSidebarCollapsed;
+    private boolean mAnalyzing;
+    private String mAnalyzeStatus = "";
+    @Nullable private TerminowFs.Cancel mAnalyzeCancel;
     @Nullable private Clip mClip;
-    /** The device folder that is chosen again, by its index. */
     private int mRepickIndex = -1;
     private boolean mVisible;
+    private long mHomeBytes = -1;
+    private long mHomeBytesTime;
+    private boolean mHomeBytesRunning;
+    @Nullable private BaseAdapter mListAdapter;
+    private boolean mRenderPosted;
 
     public TerminowExplorer(@NonNull TermuxActivity activity, @NonNull TerminowStore store, @NonNull FrameLayout container,
                             @NonNull Host host) {
@@ -154,6 +219,7 @@ public class TerminowExplorer {
         mAccountUi = new TerminowAccountUi(activity, store, () -> {
             if (mVisible) render();
         });
+        mQueue = new TerminowTransferQueue(job -> mHandler.post(() -> onJobChanged(job)));
     }
 
     // ---------------------------------------------------------------------------------------
@@ -163,90 +229,310 @@ public class TerminowExplorer {
     public void show() {
         mVisible = true;
         TerminowEntitlement.State state = TerminowEntitlement.get(mStore);
-        // An old check is renewed when the explorer opens, like the settings do
         if ((state == TerminowEntitlement.State.NEEDS_CHECK || state == TerminowEntitlement.State.EXPIRED) &&
             !mAccountUi.isCheckingPremium())
             mAccountUi.checkPremiumNow();
         render();
     }
 
-    /** Leaving the page closes the SFTP connections of the explorer, nothing else. */
+    /** Leaving the page closes the SFTP connections of the File Manager when nothing uses them. */
     public void onHidden() {
         mVisible = false;
         for (Pane pane : mPanes) if (pane.cancel != null) pane.cancel.cancel();
-        for (TerminowFs fs : mFileSystems.values()) {
+        if (mScan.cancel != null) mScan.cancel.cancel();
+        if (mAnalyzeCancel != null) mAnalyzeCancel.cancel();
+        // A transfer that is still running keeps its connection
+        if (mQueue.getActiveCount() > 0) return;
+        for (TerminowFs fs : mFileSystems.values())
             if (fs instanceof TerminowSftpFs) mExecutor.execute(fs::close);
-        }
-        mFileSystems.keySet().removeIf(id -> id.startsWith("sftp:"));
-        for (Pane pane : mPanes) {
-            if (pane.fs instanceof TerminowSftpFs) {
-                pane.fs = null;
-                pane.crumbs.clear();
-                pane.entries.clear();
-            }
-        }
-        if (mClip != null && mClip.fs instanceof TerminowSftpFs) mClip = null;
-        if (mPanes[mActivePane].fs == null) mDashboard = true;
     }
 
     public boolean onBackPressed() {
         if (!mVisible) return false;
-        Pane pane = mPanes[mActivePane];
         if (mDrawerOpen) {
             mDrawerOpen = false;
             render();
             return true;
         }
-        if (!pane.selection.isEmpty()) {
-            pane.selection.clear();
-            render();
-            return true;
+        Pane pane = mPanes[mActivePane];
+        if (mScreen == Screen.BROWSER) {
+            if (!pane.selection.isEmpty()) {
+                pane.selection.clear();
+                render();
+                return true;
+            }
+            if (pane.searching) {
+                pane.searching = false;
+                pane.query = "";
+                render();
+                return true;
+            }
+            if (pane.crumbs.size() > 1) {
+                pane.crumbs.remove(pane.crumbs.size() - 1);
+                load(pane);
+                return true;
+            }
         }
-        if (mDashboard) return false;
-        if (pane.crumbs.size() > 1) {
-            pane.crumbs.remove(pane.crumbs.size() - 1);
-            load(pane);
-            return true;
-        }
-        mDashboard = true;
+        if (mScreen == Screen.DASHBOARD) return false;
+        if (mScan.cancel != null && (mScreen == Screen.CATEGORY || mScreen == Screen.SEARCH)) mScan.cancel.cancel();
+        mScreen = Screen.DASHBOARD;
         render();
         return true;
     }
 
-    private boolean isWide() {
-        return mActivity.getResources().getConfiguration().screenWidthDp >= 760;
+    private int widthDp() {
+        return mActivity.getResources().getConfiguration().screenWidthDp;
+    }
+
+    /** A secondary sidebar instead of a drawer, when the screen is wide enough. */
+    private boolean isLarge() {
+        return widthDp() >= 720;
+    }
+
+    private void postRender() {
+        if (mRenderPosted) return;
+        mRenderPosted = true;
+        mHandler.post(() -> {
+            mRenderPosted = false;
+            render();
+        });
     }
 
     private void render() {
         if (!mVisible) return;
+        mPalette = palette();
         mContainer.removeAllViews();
+        mListAdapter = null;
+        if (!mPalette.dark) mContainer.setBackgroundColor(mPalette.background);
+        else mContainer.setBackground(null);
+
+        LinearLayout root = vertical();
         TerminowEntitlement.State state = TerminowEntitlement.get(mStore);
         if (state != TerminowEntitlement.State.ACTIVE) {
-            renderLocked(state);
+            root.addView(toolbar(false), matchWrap());
+            root.addView(locked(state), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+            mContainer.addView(root, matchMatch());
             return;
         }
-        if (isWide()) {
-            // The locations stay at the side, like the rail of the app
+
+        root.addView(toolbar(true), matchWrap());
+        View content = content();
+        if (isLarge() && !mSidebarCollapsed) {
             LinearLayout row = new LinearLayout(mActivity);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            ScrollView side = new ScrollView(mActivity);
-            LinearLayout locations = vertical();
-            locations.setPadding(0, dp(12), dp(10), dp(24));
-            side.addView(locations);
-            addLocations(locations, true);
-            row.addView(side, new LinearLayout.LayoutParams(dp(250), ViewGroup.LayoutParams.MATCH_PARENT));
-            View content = mDashboard ? dashboard() : browsers();
+            ScrollView sidebar = new ScrollView(mActivity);
+            LinearLayout drawer = vertical();
+            drawer.setPadding(0, dp(4), dp(10), dp(24));
+            sidebar.addView(drawer);
+            drawerContent(drawer);
+            row.addView(sidebar, new LinearLayout.LayoutParams(dp(264), ViewGroup.LayoutParams.MATCH_PARENT));
             row.addView(content, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1));
-            mContainer.addView(row, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            root.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
         } else {
-            mContainer.addView(mDashboard ? dashboard() : browsers(),
-                new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-            if (mDrawerOpen && !mDashboard) addDrawer();
+            root.addView(content, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        }
+        View strip = transferStrip();
+        if (strip != null) root.addView(strip, matchWrap());
+        mContainer.addView(root, matchMatch());
+        if (mDrawerOpen && !isLarge()) addDrawerOverlay();
+    }
+
+    @NonNull
+    private View content() {
+        switch (mScreen) {
+            case BROWSER: return browsers();
+            case CATEGORY:
+            case SEARCH: return scanScreen();
+            case ANALYZER: return analyzerScreen();
+            case QUEUE: return queueScreen();
+            case RECENTS: return recentsScreen();
+            case BOOKMARKS: return bookmarksScreen();
+            default: return dashboard();
         }
     }
 
-    /** On a narrow screen, the locations are a drawer over the browser. */
-    private void addDrawer() {
+    // ---------------------------------------------------------------------------------------
+    // Theme
+    // ---------------------------------------------------------------------------------------
+
+    @NonNull
+    private Palette palette() {
+        String theme = mStore.getExplorer().optString("theme", "system");
+        boolean dark = theme.equals("dark") || (theme.equals("system") &&
+            (mActivity.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES);
+        Palette p = new Palette();
+        p.dark = dark;
+        p.accent = color(R.color.terminow_panel_accent);
+        p.danger = color(R.color.terminow_host_ssh);
+        p.warning = 0xFFF5A623;
+        if (dark) {
+            p.background = color(R.color.terminow_bar_home);
+            p.card = color(R.color.terminow_surface);
+            p.field = color(R.color.terminow_field);
+            p.text = color(R.color.terminow_text);
+            p.secondary = color(R.color.terminow_text_secondary);
+            p.selected = color(R.color.terminow_rail_selected);
+            p.divider = 0x22FFFFFF;
+            p.dialogTheme = R.style.TerminowAlertDialog;
+        } else {
+            p.background = 0xFFF1F3F7;
+            p.card = 0xFFFFFFFF;
+            p.field = 0xFFE6E9F0;
+            p.text = 0xFF1B1E2B;
+            p.secondary = 0xFF667085;
+            p.selected = 0xFFCDEFE0;
+            p.divider = 0x14000000;
+            p.dialogTheme = android.R.style.Theme_Material_Light_Dialog_Alert;
+        }
+        return p;
+    }
+
+    @NonNull
+    private AlertDialog.Builder dialog() {
+        return new AlertDialog.Builder(mActivity, mPalette.dialogTheme);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Toolbar, drawer and transfer strip
+    // ---------------------------------------------------------------------------------------
+
+    @NonNull
+    private View toolbar(boolean premium) {
+        LinearLayout bar = new LinearLayout(mActivity);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setPadding(0, dp(8), 0, dp(4));
+        if (premium) {
+            ImageView menu = iconButton(R.drawable.ic_terminow_menu, R.string.terminow_explorer_drawer);
+            menu.setOnClickListener(v -> {
+                if (isLarge()) mSidebarCollapsed = !mSidebarCollapsed;
+                else mDrawerOpen = true;
+                render();
+            });
+            bar.addView(menu);
+            if (mScreen != Screen.DASHBOARD) {
+                ImageView back = iconButton(R.drawable.ic_terminow_back, R.string.terminow_explorer_up);
+                back.setOnClickListener(v -> onBackPressed());
+                bar.addView(back);
+            }
+        }
+        LinearLayout titles = vertical();
+        titles.setPadding(dp(premium ? 4 : 8), 0, 0, 0);
+        TextView title = text(screenTitle(), 19, mPalette.text);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setSingleLine(true);
+        title.setEllipsize(TextUtils.TruncateAt.END);
+        titles.addView(title, matchWrap());
+        String subtitle = screenSubtitle();
+        if (subtitle != null) {
+            TextView sub = text(subtitle, 12, mPalette.secondary);
+            sub.setSingleLine(true);
+            sub.setEllipsize(TextUtils.TruncateAt.START);
+            titles.addView(sub, matchWrap());
+        }
+        bar.addView(titles, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        ImageView crown = new ImageView(mActivity);
+        crown.setImageResource(R.drawable.ic_terminow_crown);
+        crown.setContentDescription(mActivity.getString(R.string.terminow_account_premium));
+        crown.setPadding(dp(12), dp(12), dp(12), dp(12));
+        bar.addView(crown, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        if (!premium) return bar;
+
+        ImageView search = iconButton(R.drawable.ic_terminow_search, R.string.terminow_explorer_search);
+        search.setOnClickListener(v -> {
+            if (mScreen == Screen.BROWSER) {
+                Pane pane = mPanes[mActivePane];
+                pane.searching = !pane.searching;
+                if (!pane.searching) pane.query = "";
+                render();
+            } else {
+                startNameSearch();
+            }
+        });
+        bar.addView(search);
+        ImageView more = iconButton(R.drawable.ic_terminow_more, R.string.terminow_explorer_more);
+        more.setOnClickListener(this::showOverflow);
+        bar.addView(more);
+        return bar;
+    }
+
+    @NonNull
+    private String screenTitle() {
+        switch (mScreen) {
+            case BROWSER: {
+                Pane pane = mPanes[mActivePane];
+                TerminowFs.Node current = pane.current();
+                if (pane.fs == null || current == null) return mActivity.getString(R.string.terminow_explorer_title);
+                return pane.crumbs.size() > 1 ? current.name : pane.fs.getTitle();
+            }
+            case CATEGORY: return categoryLabel(mScan.category);
+            case SEARCH: return mActivity.getString(R.string.terminow_explorer_search);
+            case ANALYZER: return mActivity.getString(R.string.terminow_explorer_analyzer);
+            case QUEUE: return mActivity.getString(R.string.terminow_explorer_queue);
+            case RECENTS: return mActivity.getString(R.string.terminow_explorer_recent);
+            case BOOKMARKS: return mActivity.getString(R.string.terminow_explorer_bookmarks);
+            default: return mActivity.getString(R.string.terminow_explorer_title);
+        }
+    }
+
+    @Nullable
+    private String screenSubtitle() {
+        if (mScreen == Screen.BROWSER) {
+            Pane pane = mPanes[mActivePane];
+            return pane.fs != null ? pane.fs.getDisplayPath(pane.crumbs) : null;
+        }
+        if (mScreen == Screen.CATEGORY || mScreen == Screen.SEARCH || mScreen == Screen.ANALYZER)
+            return mActivity.getString(R.string.terminow_explorer_accessible_only);
+        return null;
+    }
+
+    private void showOverflow(@NonNull View anchor) {
+        PopupMenu menu = new PopupMenu(mActivity, anchor);
+        List<Runnable> actions = new ArrayList<>();
+        Pane pane = mPanes[mActivePane];
+        if (mScreen == Screen.BROWSER && pane.fs != null) {
+            addMenu(menu, actions, R.string.terminow_explorer_new_folder, () -> {
+                if (pane.fs.getCapabilities().write) createFolder(pane);
+                else toast(pane.fs.getCapabilities().readOnlyReason);
+            });
+            addMenu(menu, actions, R.string.terminow_explorer_refresh, () -> load(pane));
+            addMenu(menu, actions, R.string.terminow_explorer_bookmark, () -> bookmark(pane));
+            addMenu(menu, actions, R.string.terminow_explorer_open_terminal, () -> openInTerminal(pane.fs, pane.current()));
+            if (!(pane.fs instanceof TerminowLocalFs))
+                addMenu(menu, actions, R.string.terminow_explorer_folder_to_home, () -> copyToHome(pane.fs,
+                    pane.crumbs.size() > 1 ? pane.crumbs.get(pane.crumbs.size() - 2) : pane.current(), Collections.singletonList(pane.current())));
+            if (widthDp() >= 900)
+                addMenu(menu, actions, mTwoPanes ? R.string.terminow_explorer_one_pane : R.string.terminow_explorer_two_panes, this::toggleTwoPanes);
+            addMenu(menu, actions, R.string.terminow_explorer_properties, () -> showProperties(pane.fs, pane.current(), pane.fs.getDisplayPath(pane.crumbs)));
+            if (pane.fs instanceof TerminowSftpFs) addMenu(menu, actions, R.string.terminow_explorer_disconnect, () -> disconnect(pane.fs));
+        } else {
+            addMenu(menu, actions, R.string.terminow_explorer_refresh, () -> {
+                mHomeBytes = -1;
+                render();
+            });
+        }
+        addMenu(menu, actions, R.string.terminow_explorer_queue, () -> go(Screen.QUEUE));
+        addMenu(menu, actions, mStore.getExplorer().optBoolean("showHidden") ? R.string.terminow_explorer_hide_hidden :
+            R.string.terminow_explorer_show_hidden, () -> setView("showHidden", !mStore.getExplorer().optBoolean("showHidden")));
+        addMenu(menu, actions, R.string.terminow_explorer_theme, this::showThemeDialog);
+        if (mScreen != Screen.DASHBOARD) addMenu(menu, actions, R.string.terminow_explorer_dashboard, () -> go(Screen.DASHBOARD));
+        menu.setOnMenuItemClickListener(item -> {
+            actions.get(item.getItemId()).run();
+            return true;
+        });
+        menu.show();
+    }
+
+    private void addMenu(@NonNull PopupMenu menu, @NonNull List<Runnable> actions, int titleRes, @NonNull Runnable action) {
+        menu.getMenu().add(0, actions.size(), actions.size(), titleRes);
+        actions.add(action);
+    }
+
+    private void go(@NonNull Screen screen) {
+        mScreen = screen;
+        mDrawerOpen = false;
+        render();
+    }
+
+    private void addDrawerOverlay() {
         FrameLayout scrim = new FrameLayout(mActivity);
         scrim.setBackgroundColor(0x99000000);
         scrim.setOnClickListener(v -> {
@@ -254,36 +540,274 @@ public class TerminowExplorer {
             render();
         });
         ScrollView panel = new ScrollView(mActivity);
-        panel.setBackgroundColor(color(R.color.terminow_bar_home));
+        panel.setBackgroundColor(mPalette.background);
         panel.setClickable(true);
-        LinearLayout locations = vertical();
-        locations.setPadding(dp(12), dp(16), dp(12), dp(24));
-        panel.addView(locations);
-        addLocations(locations, true);
-        scrim.addView(panel, new FrameLayout.LayoutParams(dp(280), ViewGroup.LayoutParams.MATCH_PARENT));
-        mContainer.addView(scrim, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        LinearLayout drawer = vertical();
+        drawer.setPadding(dp(10), dp(12), dp(10), dp(24));
+        panel.addView(drawer);
+        drawerContent(drawer);
+        int width = mContainer.getWidth() > 0 ? Math.min(dp(300), (int) (mContainer.getWidth() * 0.86f)) : dp(300);
+        scrim.addView(panel, new FrameLayout.LayoutParams(width, ViewGroup.LayoutParams.MATCH_PARENT));
+        mContainer.addView(scrim, matchMatch());
+    }
+
+    /** The sections of the File Manager drawer, the same in the overlay and the sidebar. */
+    private void drawerContent(@NonNull LinearLayout drawer) {
+        LinearLayout header = new LinearLayout(mActivity);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(dp(8), dp(6), 0, dp(10));
+        ImageView crown = new ImageView(mActivity);
+        crown.setImageResource(R.drawable.ic_terminow_crown);
+        header.addView(crown, new LinearLayout.LayoutParams(dp(28), dp(28)));
+        LinearLayout titles = vertical();
+        titles.setPadding(dp(10), 0, 0, 0);
+        TextView name = text(mActivity.getString(R.string.terminow_explorer_title), 16, mPalette.text);
+        name.setTypeface(Typeface.DEFAULT_BOLD);
+        titles.addView(name);
+        titles.addView(text(mActivity.getString(R.string.terminow_explorer_premium_active), 12, mPalette.accent));
+        header.addView(titles);
+        drawer.addView(header, matchWrap());
+
+        if (drawerSection(drawer, "storage", R.string.terminow_explorer_section_storage, R.drawable.ic_terminow_folder)) {
+            drawerItem(drawer, R.drawable.ic_terminow_folder, mActivity.getString(R.string.terminow_explorer_home), null, () -> openHome(null));
+            JSONArray folders = mStore.getExplorer().optJSONArray("folders");
+            for (int i = 0; folders != null && i < folders.length(); i++) {
+                JSONObject folder = folders.optJSONObject(i);
+                if (folder == null) continue;
+                int index = i;
+                Uri uri = Uri.parse(folder.optString("uri"));
+                boolean access = new TerminowSafFs(mActivity, uri, folder.optString("name")).hasAccess();
+                drawerItem(drawer, R.drawable.ic_terminow_folder, folder.optString("name"),
+                    access ? null : mActivity.getString(R.string.terminow_explorer_access_lost_short), () -> {
+                        if (access) openSaf(uri, folder.optString("name"), null);
+                        else repickFolder(index);
+                    });
+            }
+            drawerItem(drawer, R.drawable.ic_terminow_add, mActivity.getString(R.string.terminow_explorer_add_folder), null, this::addFolder);
+        }
+        if (drawerSection(drawer, "categories", R.string.terminow_explorer_section_categories, R.drawable.ic_terminow_image)) {
+            for (TerminowFileScan.Category category : TerminowFileScan.Category.values())
+                drawerItem(drawer, categoryIcon(category), categoryLabel(category), null, () -> startCategory(category));
+        }
+        if (drawerSection(drawer, "sftp", R.string.terminow_explorer_section_sftp, R.drawable.ic_terminow_hosts)) {
+            List<TerminowStore.Host> hosts = mStore.getHosts();
+            if (hosts.isEmpty()) drawerNote(drawer, R.string.terminow_explorer_no_hosts);
+            for (TerminowStore.Host host : hosts)
+                drawerItem(drawer, R.drawable.ic_terminow_hosts, host.getTitle(), isConnected(host) ?
+                    mActivity.getString(R.string.terminow_explorer_connected) : null, () -> openSftp(host, null));
+        }
+        if (drawerSection(drawer, "bookmarks", R.string.terminow_explorer_bookmarks, R.drawable.ic_terminow_bookmark)) {
+            JSONArray bookmarks = mStore.getExplorer().optJSONArray("bookmarks");
+            if (bookmarks == null || bookmarks.length() == 0) drawerNote(drawer, R.string.terminow_explorer_no_bookmarks);
+            for (int i = 0; bookmarks != null && i < bookmarks.length(); i++) {
+                JSONObject bookmark = bookmarks.optJSONObject(i);
+                if (bookmark != null)
+                    drawerItem(drawer, R.drawable.ic_terminow_bookmark, bookmark.optString("name"), bookmark.optString("fsTitle"), () -> openBookmark(bookmark));
+            }
+        }
+        if (drawerSection(drawer, "tools", R.string.terminow_explorer_section_tools, R.drawable.ic_terminow_analyzer)) {
+            drawerItem(drawer, R.drawable.ic_terminow_logs, mActivity.getString(R.string.terminow_explorer_recent), null, () -> go(Screen.RECENTS));
+            int active = mQueue.getActiveCount();
+            drawerItem(drawer, R.drawable.ic_terminow_queue, mActivity.getString(R.string.terminow_explorer_queue),
+                active > 0 ? mActivity.getString(R.string.terminow_explorer_queue_active, active) : null, () -> go(Screen.QUEUE));
+            drawerItem(drawer, R.drawable.ic_terminow_analyzer, mActivity.getString(R.string.terminow_explorer_analyzer), null, this::startAnalyzer);
+            drawerItem(drawer, R.drawable.ic_terminow_terminal, mActivity.getString(R.string.terminow_explorer_open_terminal_home), null,
+                () -> mHost.openTerminalAt(new File(TermuxConstants.TERMUX_HOME_DIR_PATH)));
+        }
+
+        View divider = new View(mActivity);
+        divider.setBackgroundColor(mPalette.divider);
+        LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
+        dividerParams.setMargins(dp(8), dp(10), dp(8), dp(6));
+        drawer.addView(divider, dividerParams);
+
+        LinearLayout hidden = new LinearLayout(mActivity);
+        hidden.setGravity(Gravity.CENTER_VERTICAL);
+        hidden.setMinimumHeight(dp(52));
+        hidden.setPadding(dp(12), 0, dp(4), 0);
+        hidden.addView(text(mActivity.getString(R.string.terminow_explorer_hidden), 15, mPalette.text),
+            new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        Switch toggle = new Switch(mActivity);
+        toggle.setChecked(mStore.getExplorer().optBoolean("showHidden"));
+        toggle.setThumbTintList(ContextCompat.getColorStateList(mActivity, R.color.terminow_panel_switch_thumb));
+        toggle.setTrackTintList(ContextCompat.getColorStateList(mActivity, R.color.terminow_panel_switch_track));
+        toggle.setOnCheckedChangeListener((b, checked) -> setView("showHidden", checked));
+        hidden.addView(toggle);
+        drawer.addView(hidden, matchWrap());
+        boolean grid = mStore.getExplorer().optBoolean("grid");
+        drawerItem(drawer, grid ? R.drawable.ic_terminow_grid : R.drawable.ic_terminow_list, mActivity.getString(R.string.terminow_explorer_view),
+            mActivity.getString(grid ? R.string.terminow_explorer_view_grid : R.string.terminow_explorer_view_list), () -> setView("grid", !grid));
+        drawerItem(drawer, R.drawable.ic_terminow_theme, mActivity.getString(R.string.terminow_explorer_theme), themeLabel(), this::showThemeDialog);
+    }
+
+    /** A collapsible section header. Returns whether its items are shown. */
+    private boolean drawerSection(@NonNull LinearLayout drawer, @NonNull String key, int titleRes, int iconRes) {
+        boolean expanded = !mCollapsed.contains(key);
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(dp(48));
+        row.setPadding(dp(8), dp(4), dp(8), dp(4));
+        row.setBackground(ripple());
+        row.addView(round(iconRes, mPalette.accent, 30), new LinearLayout.LayoutParams(dp(30), dp(30)));
+        TextView title = text(mActivity.getString(titleRes), 15, mPalette.text);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setPadding(dp(12), 0, 0, 0);
+        row.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        row.addView(text(expanded ? "⌃" : "⌄", 16, mPalette.secondary));
+        row.setContentDescription(mActivity.getString(titleRes));
+        row.setOnClickListener(v -> {
+            if (!mCollapsed.remove(key)) mCollapsed.add(key);
+            render();
+        });
+        drawer.addView(row, matchWrap());
+        return expanded;
+    }
+
+    private void drawerItem(@NonNull LinearLayout drawer, int iconRes, @NonNull String label, @Nullable String detail, @NonNull Runnable action) {
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(dp(48));
+        row.setPadding(dp(50), 0, dp(8), 0);
+        row.setBackground(ripple());
+        ImageView icon = new ImageView(mActivity);
+        icon.setImageResource(iconRes);
+        icon.setImageTintList(ColorStateList.valueOf(mPalette.secondary));
+        row.addView(icon, new LinearLayout.LayoutParams(dp(18), dp(18)));
+        LinearLayout texts = vertical();
+        texts.setPadding(dp(12), dp(4), 0, dp(4));
+        TextView labelView = text(label, 14, mPalette.text);
+        labelView.setSingleLine(true);
+        labelView.setEllipsize(TextUtils.TruncateAt.END);
+        texts.addView(labelView, matchWrap());
+        if (detail != null) texts.addView(text(detail, 11, mPalette.secondary), matchWrap());
+        row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        row.setOnClickListener(v -> {
+            mDrawerOpen = false;
+            action.run();
+        });
+        drawer.addView(row, matchWrap());
+    }
+
+    private void drawerNote(@NonNull LinearLayout drawer, int textRes) {
+        TextView note = text(mActivity.getString(textRes), 12, mPalette.secondary);
+        note.setPadding(dp(50), dp(4), dp(8), dp(8));
+        drawer.addView(note, matchWrap());
+    }
+
+    @NonNull
+    private String themeLabel() {
+        String theme = mStore.getExplorer().optString("theme", "system");
+        return mActivity.getString(theme.equals("light") ? R.string.terminow_explorer_theme_light :
+            theme.equals("dark") ? R.string.terminow_explorer_theme_dark : R.string.terminow_explorer_theme_system);
+    }
+
+    private void showThemeDialog() {
+        String[] values = {"system", "light", "dark"};
+        CharSequence[] labels = {mActivity.getString(R.string.terminow_explorer_theme_system),
+            mActivity.getString(R.string.terminow_explorer_theme_light), mActivity.getString(R.string.terminow_explorer_theme_dark)};
+        String current = mStore.getExplorer().optString("theme", "system");
+        int checked = current.equals("light") ? 1 : current.equals("dark") ? 2 : 0;
+        dialog().setTitle(R.string.terminow_explorer_theme)
+            .setSingleChoiceItems(labels, checked, (d, which) -> {
+                d.dismiss();
+                setView("theme", values[which]);
+            }).show();
+    }
+
+    /** The progress of the running transfer, at the bottom of every screen. */
+    @Nullable
+    private View transferStrip() {
+        TerminowTransferQueue.Job running = null;
+        int active = 0;
+        for (TerminowTransferQueue.Job job : mQueue.getJobs()) {
+            if (job.isFinished()) continue;
+            active++;
+            if (job.status == TerminowTransferQueue.Status.RUNNING) running = job;
+        }
+        if (active == 0) return null;
+        LinearLayout strip = new LinearLayout(mActivity);
+        strip.setGravity(Gravity.CENTER_VERTICAL);
+        strip.setPadding(dp(14), dp(6), dp(6), dp(6));
+        strip.setBackground(rounded(mPalette.card, 14));
+        strip.setOnClickListener(v -> go(Screen.QUEUE));
+        LinearLayout texts = vertical();
+        String title = running != null ? jobTitle(running) : mActivity.getString(R.string.terminow_explorer_queue_waiting);
+        TextView titleView = text(title + (active > 1 ? "  (+" + (active - 1) + ")" : ""), 13, mPalette.text);
+        titleView.setSingleLine(true);
+        titleView.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+        texts.addView(titleView, matchWrap());
+        texts.addView(progressBar(running), matchWrap());
+        strip.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        if (running != null) {
+            TerminowTransferQueue.Job job = running;
+            TextView cancel = chip(mActivity.getString(android.R.string.cancel), false);
+            cancel.setOnClickListener(v -> mQueue.cancel(job));
+            strip.addView(cancel, chipParams());
+        }
+        LinearLayout wrapper = vertical();
+        wrapper.setPadding(0, dp(6), dp(4), dp(8));
+        wrapper.addView(strip, matchWrap());
+        return wrapper;
+    }
+
+    @NonNull
+    private ProgressBar progressBar(@Nullable TerminowTransferQueue.Job job) {
+        ProgressBar bar = new ProgressBar(mActivity, null, android.R.attr.progressBarStyleHorizontal);
+        bar.setProgressTintList(ColorStateList.valueOf(mPalette.accent));
+        bar.setIndeterminateTintList(ColorStateList.valueOf(mPalette.accent));
+        if (job == null || job.bytesTotal <= 0) {
+            bar.setIndeterminate(job != null && job.status == TerminowTransferQueue.Status.RUNNING);
+            bar.setMax(1);
+            bar.setProgress(job != null && job.status == TerminowTransferQueue.Status.DONE ? 1 : 0);
+        } else {
+            bar.setMax(1000);
+            bar.setProgress((int) Math.min(1000, job.bytesDone * 1000 / job.bytesTotal));
+        }
+        return bar;
+    }
+
+    @NonNull
+    private String jobTitle(@NonNull TerminowTransferQueue.Job job) {
+        return mActivity.getString(job.move ? R.string.terminow_explorer_job_move : R.string.terminow_explorer_job_copy,
+            mActivity.getResources().getQuantityString(R.plurals.terminow_explorer_items, job.itemCount, job.itemCount),
+            job.sourceTitle, job.destinationTitle);
+    }
+
+    private void onJobChanged(@NonNull TerminowTransferQueue.Job job) {
+        if (job.isFinished()) {
+            TerminowTransfer.Result result = job.result;
+            if (result != null && mVisible) {
+                String summary = TerminowTransfer.describe(result);
+                if (job.status == TerminowTransferQueue.Status.DONE && result.skippedLinks.isEmpty()) toast(summary);
+                else showMessage(jobTitle(job), summary);
+            }
+            reloadShowing(job.target);
+            reloadShowing(job.source);
+        }
+        if (mVisible) postRender();
     }
 
     // ---------------------------------------------------------------------------------------
     // Free users and Premium states
     // ---------------------------------------------------------------------------------------
 
-    private void renderLocked(@NonNull TerminowEntitlement.State state) {
+    @NonNull
+    private View locked(@NonNull TerminowEntitlement.State state) {
         ScrollView scroll = new ScrollView(mActivity);
         LinearLayout page = vertical();
-        page.setPadding(0, dp(18), 0, dp(24));
+        page.setPadding(0, dp(10), dp(4), dp(24));
         scroll.addView(page);
         LinearLayout card = card();
         card.setGravity(Gravity.CENTER_HORIZONTAL);
         ImageView crown = new ImageView(mActivity);
         crown.setImageResource(R.drawable.ic_terminow_crown);
         card.addView(crown, new LinearLayout.LayoutParams(dp(44), dp(44)));
-        TextView title = text(mActivity.getString(R.string.terminow_explorer_premium_title), 18, R.color.terminow_text);
+        TextView title = text(mActivity.getString(R.string.terminow_explorer_premium_title), 18, mPalette.text);
         title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setGravity(Gravity.CENTER);
         title.setPadding(0, dp(10), 0, dp(10));
-        card.addView(title);
-        TextView features = text(mActivity.getString(R.string.terminow_explorer_premium_features), 14, R.color.terminow_text);
-        card.addView(features, matchWrap());
+        card.addView(title, matchWrap());
+        card.addView(text(mActivity.getString(R.string.terminow_explorer_premium_features), 14, mPalette.text), matchWrap());
 
         String status;
         boolean hadPremium = state == TerminowEntitlement.State.EXPIRED || state == TerminowEntitlement.State.NEEDS_CHECK;
@@ -294,7 +818,7 @@ public class TerminowExplorer {
         else if (state == TerminowEntitlement.State.EXPIRED) status = mActivity.getString(R.string.terminow_explorer_state_expired);
         else status = mActivity.getString(R.string.terminow_explorer_state_free);
         if (mAccountUi.getPremiumError() != null) status += "\n" + mAccountUi.getPremiumError();
-        TextView statusView = text(status, 14, R.color.terminow_text_secondary);
+        TextView statusView = text(status, 14, mPalette.secondary);
         statusView.setPadding(0, dp(14), 0, 0);
         statusView.setGravity(Gravity.CENTER);
         card.addView(statusView, matchWrap());
@@ -313,17 +837,15 @@ public class TerminowExplorer {
         card.addView(buttons);
 
         if (hadPremium || state == TerminowEntitlement.State.FREE) {
-            TextView keep = text(mActivity.getString(R.string.terminow_explorer_data_kept), 13, R.color.terminow_text_secondary);
+            TextView keep = text(mActivity.getString(R.string.terminow_explorer_data_kept), 13, mPalette.secondary);
             keep.setPadding(0, dp(16), 0, dp(6));
             card.addView(keep, matchWrap());
             TextView export = button(mActivity.getString(R.string.terminow_explorer_export), false);
             export.setOnClickListener(v -> mHost.exportFile());
             card.addView(export, buttonParams());
         }
-        LinearLayout.LayoutParams params = matchWrap();
-        params.setMargins(0, 0, dp(4), 0);
-        page.addView(card, params);
-        mContainer.addView(scroll, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        page.addView(card, matchWrap());
+        return scroll;
     }
 
     // ---------------------------------------------------------------------------------------
@@ -334,119 +856,680 @@ public class TerminowExplorer {
     private View dashboard() {
         ScrollView scroll = new ScrollView(mActivity);
         LinearLayout page = vertical();
-        page.setPadding(0, dp(14), dp(4), dp(24));
+        page.setPadding(0, dp(6), dp(4), dp(24));
         scroll.addView(page);
-        TextView title = text(mActivity.getString(R.string.terminow_explorer_title), 20, R.color.terminow_text);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        page.addView(title);
-        if (!isWide()) addLocations(page, false);
-        else {
-            TextView hint = text(mActivity.getString(R.string.terminow_explorer_pick_location), 14, R.color.terminow_text_secondary);
-            hint.setPadding(0, dp(8), 0, 0);
-            page.addView(hint);
+        int width = isLarge() && !mSidebarCollapsed ? widthDp() - 264 - 96 : widthDp() - 96;
+
+        // Storage and Space Analyzer
+        LinearLayout storage = new LinearLayout(mActivity);
+        storage.setOrientation(width >= 520 ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        View homeCard = storageCard();
+        View analyzerCard = analyzerCard();
+        if (width >= 520) {
+            LinearLayout.LayoutParams left = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1);
+            left.setMarginEnd(dp(10));
+            storage.addView(homeCard, left);
+            storage.addView(analyzerCard, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1));
+        } else {
+            storage.addView(homeCard, cardParams());
+            storage.addView(analyzerCard, matchWrap());
         }
-        addBookmarksAndRecents(page);
+        page.addView(storage, cardParams());
+
+        // Categories
+        LinearLayout categories = card();
+        categories.addView(sectionTitle(R.string.terminow_explorer_section_categories), matchWrap());
+        int columns = width >= 820 ? 6 : 3;
+        TerminowFileScan.Category[] all = TerminowFileScan.Category.values();
+        for (int start = 0; start < all.length; start += columns) {
+            LinearLayout row = new LinearLayout(mActivity);
+            for (int i = start; i < start + columns; i++) {
+                if (i < all.length) row.addView(categoryTile(all[i]), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+                else row.addView(new View(mActivity), new LinearLayout.LayoutParams(0, 1, 1));
+            }
+            categories.addView(row, matchWrap());
+        }
+        page.addView(categories, cardParams());
+
+        // Device folders
+        LinearLayout folders = card();
+        folders.addView(sectionTitle(R.string.terminow_explorer_section_device), matchWrap());
+        JSONArray saved = mStore.getExplorer().optJSONArray("folders");
+        for (int i = 0; saved != null && i < saved.length(); i++) {
+            JSONObject folder = saved.optJSONObject(i);
+            if (folder == null) continue;
+            int index = i;
+            Uri uri = Uri.parse(folder.optString("uri"));
+            boolean access = new TerminowSafFs(mActivity, uri, folder.optString("name")).hasAccess();
+            View row = listRow(R.drawable.ic_terminow_folder, access ? 0xFF3D8BFD : mPalette.secondary, folder.optString("name"),
+                mActivity.getString(access ? R.string.terminow_explorer_device_folder : R.string.terminow_explorer_access_lost), null,
+                v -> {
+                    if (access) openSaf(uri, folder.optString("name"), null);
+                    else repickFolder(index);
+                });
+            row.setOnLongClickListener(v -> {
+                removeFolder(index);
+                return true;
+            });
+            folders.addView(row, matchWrap());
+        }
+        folders.addView(listRow(R.drawable.ic_terminow_add, mPalette.secondary, mActivity.getString(R.string.terminow_explorer_add_folder),
+            mActivity.getString(R.string.terminow_explorer_add_folder_summary), null, v -> addFolder()), matchWrap());
+        page.addView(folders, cardParams());
+
+        // SFTP
+        LinearLayout sftp = card();
+        sftp.addView(sectionTitle(R.string.terminow_explorer_section_sftp), matchWrap());
+        List<TerminowStore.Host> hosts = mStore.getHosts();
+        if (hosts.isEmpty()) sftp.addView(text(mActivity.getString(R.string.terminow_explorer_no_hosts), 13, mPalette.secondary), matchWrap());
+        for (TerminowStore.Host host : hosts) {
+            boolean connected = isConnected(host);
+            TextView connect = button(mActivity.getString(connected ? R.string.terminow_explorer_open : R.string.terminow_explorer_connect), !connected);
+            connect.setOnClickListener(v -> openSftp(host, null));
+            String detail = (host.username.isEmpty() ? "" : host.username + "@") + host.address + ":" + host.port + "  ·  " +
+                mActivity.getString(connected ? R.string.terminow_explorer_connected : R.string.terminow_explorer_not_connected);
+            sftp.addView(listRow(R.drawable.ic_terminow_hosts, connected ? mPalette.accent : mPalette.danger, host.getTitle(), detail,
+                connect, v -> openSftp(host, null)), matchWrap());
+        }
+        page.addView(sftp, cardParams());
+
+        // Tools
+        LinearLayout tools = card();
+        tools.addView(sectionTitle(R.string.terminow_explorer_section_tools), matchWrap());
+        LinearLayout toolRow = new LinearLayout(mActivity);
+        toolRow.addView(tile(R.drawable.ic_terminow_logs, 0xFF5B8DEF, mActivity.getString(R.string.terminow_explorer_recent), () -> go(Screen.RECENTS)),
+            new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        toolRow.addView(tile(R.drawable.ic_terminow_bookmark, 0xFFB57BEE, mActivity.getString(R.string.terminow_explorer_bookmarks), () -> go(Screen.BOOKMARKS)),
+            new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        int active = mQueue.getActiveCount();
+        toolRow.addView(tile(R.drawable.ic_terminow_queue, 0xFF2BB5A6, mActivity.getString(R.string.terminow_explorer_queue) +
+            (active > 0 ? " (" + active + ")" : ""), () -> go(Screen.QUEUE)), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        toolRow.addView(tile(R.drawable.ic_terminow_terminal, 0xFF3C4258, mActivity.getString(R.string.terminow_explorer_open_terminal),
+            () -> mHost.openTerminalAt(new File(TermuxConstants.TERMUX_HOME_DIR_PATH))), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        tools.addView(toolRow, matchWrap());
+        page.addView(tools, cardParams());
         return scroll;
     }
 
-    /** TermiNow Home, the device folders and the SFTP hosts. */
-    private void addLocations(@NonNull LinearLayout parent, boolean compact) {
-        section(parent, R.string.terminow_explorer_section_local);
-        String homeStats = getHomeStorage();
-        parent.addView(locationCard(R.drawable.ic_terminow_folder, R.color.terminow_panel_accent,
-            mActivity.getString(R.string.terminow_explorer_home), compact ? null : homeStats, v -> openHome(null), null), cardParams());
+    /** The capacity of the device storage that holds HOME, and the size of HOME itself. */
+    @NonNull
+    private View storageCard() {
+        LinearLayout card = card();
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        long total = -1, free = -1;
+        try {
+            StatFs stat = new StatFs(TermuxConstants.TERMUX_HOME_DIR_PATH);
+            total = stat.getTotalBytes();
+            free = stat.getAvailableBytes();
+        } catch (IllegalArgumentException e) {
+            // Shown as not known
+        }
+        float used = total > 0 ? (float) (total - free) / total : 0f;
+        row.addView(new UsageRing(mActivity, used, mPalette), new LinearLayout.LayoutParams(dp(64), dp(64)));
+        LinearLayout texts = vertical();
+        texts.setPadding(dp(14), 0, 0, 0);
+        TextView title = text(mActivity.getString(R.string.terminow_explorer_home) + "  ›", 16, mPalette.text);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        texts.addView(title);
+        if (total > 0) {
+            texts.addView(text(mActivity.getString(R.string.terminow_explorer_capacity_label), 11, mPalette.secondary));
+            texts.addView(text(mActivity.getString(R.string.terminow_explorer_capacity, size(total - free), size(free), size(total)), 13, mPalette.text));
+        }
+        if (mHomeBytes < 0 || System.currentTimeMillis() - mHomeBytesTime > 10 * 60 * 1000) computeHomeSize();
+        texts.addView(text(mHomeBytes >= 0 ? mActivity.getString(R.string.terminow_explorer_home_size, size(mHomeBytes)) :
+            mActivity.getString(R.string.terminow_explorer_home_size_calculating), 12, mPalette.accent));
+        row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        card.addView(row, matchWrap());
+        card.setOnClickListener(v -> openHome(null));
+        return card;
+    }
 
-        section(parent, R.string.terminow_explorer_section_device);
+    private void computeHomeSize() {
+        if (mHomeBytesRunning) return;
+        mHomeBytesRunning = true;
+        mExecutor.execute(() -> {
+            long bytes = -1;
+            try {
+                TerminowLocalFs home = getHomeFs();
+                bytes = TerminowFileScan.analyze(home, home.getRoot(), new TerminowFs.Cancel(), null).totalBytes;
+            } catch (IOException | RuntimeException e) {
+                // Stays unknown
+            }
+            long result = bytes;
+            mHandler.post(() -> {
+                mHomeBytesRunning = false;
+                mHomeBytes = result;
+                mHomeBytesTime = System.currentTimeMillis();
+                if (mVisible && mScreen == Screen.DASHBOARD) render();
+            });
+        });
+    }
+
+    @NonNull
+    private View analyzerCard() {
+        LinearLayout card = card();
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.addView(round(R.drawable.ic_terminow_analyzer, 0xFF3D8BFD, 52), new LinearLayout.LayoutParams(dp(52), dp(52)));
+        LinearLayout texts = vertical();
+        texts.setPadding(dp(14), 0, 0, 0);
+        TextView title = text(mActivity.getString(R.string.terminow_explorer_analyzer) + "  ›", 16, mPalette.text);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        texts.addView(title);
+        String summary;
+        if (mAnalyzing) summary = mActivity.getString(R.string.terminow_explorer_analyzing);
+        else if (!mSpaces.isEmpty()) {
+            long total = 0;
+            for (LocationSpace space : mSpaces) if (space.space != null) total += space.space.totalBytes;
+            summary = mActivity.getString(R.string.terminow_explorer_analyzer_result, size(total), mSpaces.size());
+        } else summary = mActivity.getString(R.string.terminow_explorer_analyzer_summary);
+        texts.addView(text(summary, 12, mPalette.secondary));
+        row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        card.addView(row, matchWrap());
+        card.setOnClickListener(v -> startAnalyzer());
+        return card;
+    }
+
+    @NonNull
+    private View categoryTile(@NonNull TerminowFileScan.Category category) {
+        return tile(categoryIcon(category), categoryColor(category), categoryLabel(category), () -> startCategory(category));
+    }
+
+    @NonNull
+    private View tile(int iconRes, int circleColor, @NonNull String label, @NonNull Runnable action) {
+        LinearLayout tile = vertical();
+        tile.setGravity(Gravity.CENTER_HORIZONTAL);
+        tile.setPadding(dp(4), dp(10), dp(4), dp(10));
+        tile.setBackground(ripple());
+        tile.addView(round(iconRes, circleColor, 52), new LinearLayout.LayoutParams(dp(52), dp(52)));
+        TextView labelView = text(label, 13, mPalette.text);
+        labelView.setGravity(Gravity.CENTER);
+        labelView.setMaxLines(2);
+        labelView.setPadding(0, dp(6), 0, 0);
+        tile.addView(labelView, matchWrap());
+        tile.setContentDescription(label);
+        tile.setOnClickListener(v -> action.run());
+        return tile;
+    }
+
+    @NonNull
+    private String categoryLabel(@Nullable TerminowFileScan.Category category) {
+        if (category == null) return "";
+        switch (category) {
+            case IMAGES: return mActivity.getString(R.string.terminow_explorer_cat_images);
+            case VIDEOS: return mActivity.getString(R.string.terminow_explorer_cat_videos);
+            case AUDIO: return mActivity.getString(R.string.terminow_explorer_cat_audio);
+            case DOCUMENTS: return mActivity.getString(R.string.terminow_explorer_cat_documents);
+            case APK: return mActivity.getString(R.string.terminow_explorer_cat_apk);
+            default: return mActivity.getString(R.string.terminow_explorer_cat_archives);
+        }
+    }
+
+    private static int categoryIcon(@NonNull TerminowFileScan.Category category) {
+        switch (category) {
+            case IMAGES: return R.drawable.ic_terminow_image;
+            case VIDEOS: return R.drawable.ic_terminow_video;
+            case AUDIO: return R.drawable.ic_terminow_audio;
+            case DOCUMENTS: return R.drawable.ic_terminow_document;
+            case APK: return R.drawable.ic_terminow_apk;
+            default: return R.drawable.ic_terminow_archive;
+        }
+    }
+
+    private static int categoryColor(@NonNull TerminowFileScan.Category category) {
+        switch (category) {
+            case IMAGES: return 0xFFFF9A3D;
+            case VIDEOS: return 0xFF1BC9C0;
+            case AUDIO: return 0xFF8E5BEA;
+            case DOCUMENTS: return 0xFFF4B400;
+            case APK: return 0xFF21C17A;
+            default: return 0xFF3D8BFD;
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Categories, search and the space analyzer
+    // ---------------------------------------------------------------------------------------
+
+    /** The locations that the app can read: HOME and the device folders it has access to. */
+    @NonNull
+    private List<TerminowFs> accessibleLocations() {
+        List<TerminowFs> locations = new ArrayList<>();
+        try {
+            locations.add(getHomeFs());
+        } catch (IOException e) {
+            // Without HOME
+        }
         JSONArray folders = mStore.getExplorer().optJSONArray("folders");
         for (int i = 0; folders != null && i < folders.length(); i++) {
             JSONObject folder = folders.optJSONObject(i);
             if (folder == null) continue;
             Uri uri = Uri.parse(folder.optString("uri"));
-            TerminowSafFs fs = new TerminowSafFs(mActivity, uri, folder.optString("name"));
-            boolean access = fs.hasAccess();
-            int index = i;
-            View card = locationCard(R.drawable.ic_terminow_folder, access ? R.color.terminow_accent : R.color.terminow_text_secondary,
-                folder.optString("name"), access ? mActivity.getString(R.string.terminow_explorer_device_folder) :
-                    mActivity.getString(R.string.terminow_explorer_access_lost),
-                v -> {
-                    if (access) openSaf(uri, folder.optString("name"), null);
-                    else repickFolder(index);
-                }, v -> {
-                    removeFolder(index);
-                    return true;
-                });
-            parent.addView(card, cardParams());
+            TerminowFs fs = findFs(TerminowSafFs.idFor(uri), folder.optString("name"));
+            if (fs instanceof TerminowSafFs && ((TerminowSafFs) fs).hasAccess()) locations.add(fs);
         }
-        parent.addView(locationCard(R.drawable.ic_terminow_add, R.color.terminow_text_secondary,
-            mActivity.getString(R.string.terminow_explorer_add_folder), compact ? null : mActivity.getString(R.string.terminow_explorer_add_folder_summary),
-            v -> addFolder(), null), cardParams());
-
-        section(parent, R.string.terminow_explorer_section_sftp);
-        List<TerminowStore.Host> hosts = mStore.getHosts();
-        if (hosts.isEmpty()) {
-            TextView none = text(mActivity.getString(R.string.terminow_explorer_no_hosts), 13, R.color.terminow_text_secondary);
-            none.setPadding(0, 0, 0, dp(8));
-            parent.addView(none);
-        }
-        for (TerminowStore.Host host : hosts) {
-            parent.addView(locationCard(R.drawable.ic_terminow_hosts, R.color.terminow_host_ssh, host.getTitle(),
-                (host.username.isEmpty() ? "" : host.username + "@") + host.address + (host.port == 22 ? "" : ":" + host.port),
-                v -> openSftp(host, null), null), cardParams());
-        }
+        return locations;
     }
 
-    @Nullable
-    private String getHomeStorage() {
-        try {
-            StatFs stat = new StatFs(TermuxConstants.TERMUX_HOME_DIR_PATH);
-            return mActivity.getString(R.string.terminow_explorer_home_storage,
-                Formatter.formatShortFileSize(mActivity, stat.getAvailableBytes()),
-                Formatter.formatShortFileSize(mActivity, stat.getTotalBytes()));
-        } catch (IllegalArgumentException e) {
-            return null;
-        }
+    private void startCategory(@NonNull TerminowFileScan.Category category) {
+        mScan.category = category;
+        mScan.query = "";
+        mScreen = Screen.CATEGORY;
+        mDrawerOpen = false;
+        runScan(node -> category.matches(node.name));
     }
 
-    private void addBookmarksAndRecents(@NonNull LinearLayout page) {
-        JSONObject explorer = mStore.getExplorer();
-        JSONArray bookmarks = explorer.optJSONArray("bookmarks");
-        section(page, R.string.terminow_explorer_section_bookmarks);
-        if (bookmarks == null || bookmarks.length() == 0) {
-            page.addView(text(mActivity.getString(R.string.terminow_explorer_no_bookmarks), 13, R.color.terminow_text_secondary));
-        }
-        for (int i = 0; bookmarks != null && i < bookmarks.length(); i++) {
-            JSONObject bookmark = bookmarks.optJSONObject(i);
-            if (bookmark == null) continue;
-            int index = i;
-            page.addView(locationCard(R.drawable.ic_terminow_bookmark, R.color.terminow_host_group, bookmark.optString("name"),
-                bookmark.optString("fsTitle") + " · " + bookmark.optString("path"), v -> openBookmark(bookmark), v -> {
-                    confirm(mActivity.getString(R.string.terminow_explorer_remove_bookmark, bookmark.optString("name")), () -> removeAt("bookmarks", index));
-                    return true;
-                }), cardParams());
-        }
+    private void startNameSearch() {
+        if (mScan.cancel != null) mScan.cancel.cancel();
+        mScan.category = null;
+        mScan.query = "";
+        mScan.results.clear();
+        mScan.running = false;
+        mScan.status = "";
+        mScreen = Screen.SEARCH;
+        mDrawerOpen = false;
+        render();
+    }
 
-        JSONArray recents = explorer.optJSONArray("recents");
-        section(page, R.string.terminow_explorer_section_recent);
-        if (recents == null || recents.length() == 0) {
-            page.addView(text(mActivity.getString(R.string.terminow_explorer_no_recents), 13, R.color.terminow_text_secondary));
+    private void runScan(@NonNull TerminowFileScan.Filter filter) {
+        if (mScan.cancel != null) mScan.cancel.cancel();
+        TerminowFs.Cancel cancel = new TerminowFs.Cancel();
+        mScan.cancel = cancel;
+        mScan.results.clear();
+        mScan.running = true;
+        mScan.status = mActivity.getString(R.string.terminow_explorer_searching, 0);
+        int generation = ++mScan.generation;
+        boolean hidden = mStore.getExplorer().optBoolean("showHidden");
+        List<TerminowFs> locations = accessibleLocations();
+        render();
+        mExecutor.execute(() -> {
+            List<TerminowFileScan.Match> results = Collections.synchronizedList(new ArrayList<>());
+            for (TerminowFs fs : locations) {
+                try {
+                    TerminowFileScan.find(fs, Collections.singletonList(fs.getRoot()), filter, hidden, results, cancel, (name, found) -> {
+                        String status = mActivity.getString(R.string.terminow_explorer_searching, found);
+                        mHandler.post(() -> {
+                            if (mScan.generation == generation) mScan.status = status;
+                        });
+                    });
+                } catch (TerminowFs.CancelledException e) {
+                    break;
+                } catch (IOException | RuntimeException e) {
+                    // A location that can not be read is skipped
+                }
+            }
+            mHandler.post(() -> {
+                if (mScan.generation != generation) return;
+                mScan.running = false;
+                mScan.results.clear();
+                synchronized (results) {
+                    mScan.results.addAll(results);
+                }
+                Collections.sort(mScan.results, (a, b) -> Long.compare(b.node.modified, a.node.modified));
+                mScan.status = cancel.isCancelled() ? mActivity.getString(R.string.terminow_explorer_search_cancelled) :
+                    mActivity.getResources().getQuantityString(R.plurals.terminow_explorer_found, mScan.results.size(), mScan.results.size());
+                if (mScan.results.size() >= TerminowFileScan.MAX_RESULTS)
+                    mScan.status += " · " + mActivity.getString(R.string.terminow_explorer_search_limit, TerminowFileScan.MAX_RESULTS);
+                render();
+            });
+        });
+    }
+
+    @NonNull
+    private View scanScreen() {
+        LinearLayout page = vertical();
+        page.setPadding(0, dp(6), dp(4), 0);
+        if (mScreen == Screen.SEARCH) {
+            EditText field = new EditText(mActivity);
+            field.setHint(R.string.terminow_explorer_search_all_hint);
+            field.setSingleLine(true);
+            field.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
+            field.setTextColor(mPalette.text);
+            field.setHintTextColor(mPalette.secondary);
+            field.setText(mScan.query);
+            field.setSelection(mScan.query.length());
+            field.setBackground(rounded(mPalette.field, 22));
+            field.setPadding(dp(18), dp(10), dp(18), dp(10));
+            field.setOnEditorActionListener((v, actionId, event) -> {
+                String query = field.getText().toString().trim();
+                if (query.length() < 2) {
+                    field.setError(mActivity.getString(R.string.terminow_explorer_search_short));
+                    return true;
+                }
+                mScan.query = query;
+                String lower = query.toLowerCase(Locale.ROOT);
+                runScan(node -> node.name.toLowerCase(Locale.ROOT).contains(lower));
+                return true;
+            });
+            page.addView(field, matchWrap());
+            if (mScan.query.isEmpty()) field.requestFocus();
+        }
+        LinearLayout status = new LinearLayout(mActivity);
+        status.setGravity(Gravity.CENTER_VERTICAL);
+        status.setPadding(dp(4), dp(10), 0, dp(6));
+        if (mScan.running) {
+            ProgressBar spinner = new ProgressBar(mActivity);
+            spinner.setIndeterminateTintList(ColorStateList.valueOf(mPalette.accent));
+            status.addView(spinner, new LinearLayout.LayoutParams(dp(20), dp(20)));
+        }
+        TextView statusText = text(mScan.status, 13, mPalette.secondary);
+        statusText.setPadding(dp(8), 0, 0, 0);
+        status.addView(statusText, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        if (mScan.running) {
+            TextView cancel = chip(mActivity.getString(android.R.string.cancel), false);
+            cancel.setOnClickListener(v -> {
+                if (mScan.cancel != null) mScan.cancel.cancel();
+            });
+            status.addView(cancel, chipParams());
+        }
+        page.addView(status, matchWrap());
+
+        if (!mScan.running && mScan.results.isEmpty() && (mScreen == Screen.CATEGORY || !mScan.query.isEmpty())) {
+            page.addView(emptyText(R.string.terminow_explorer_nothing_found), matchWrap());
+            return page;
+        }
+        List<TerminowFileScan.Match> matches = new ArrayList<>(mScan.results);
+        boolean grid = mStore.getExplorer().optBoolean("grid");
+        GridView list = gridView(grid);
+        BaseAdapter adapter = new BaseAdapter() {
+            @Override public int getCount() { return matches.size(); }
+            @Override public Object getItem(int position) { return matches.get(position); }
+            @Override public long getItemId(int position) { return position; }
+            @Override public View getView(int position, View convertView, ViewGroup parent) {
+                TerminowFileScan.Match match = matches.get(position);
+                return entryView(match.fs, match.node, false, grid, match.fs.getTitle() + " · " + match.fs.getDisplayPath(match.parents));
+            }
+        };
+        mListAdapter = adapter;
+        list.setAdapter(adapter);
+        list.setOnItemClickListener((parent, v, position, id) -> {
+            TerminowFileScan.Match match = matches.get(position);
+            openFile(match.fs, match.node, match.fs.getDisplayPath(match.parents));
+        });
+        list.setOnItemLongClickListener((parent, v, position, id) -> {
+            showMatchActions(matches.get(position));
+            return true;
+        });
+        page.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        return page;
+    }
+
+    private void showMatchActions(@NonNull TerminowFileScan.Match match) {
+        CharSequence[] labels = {mActivity.getString(R.string.terminow_explorer_open_folder), mActivity.getString(R.string.terminow_explorer_share),
+            mActivity.getString(R.string.terminow_explorer_copy), mActivity.getString(R.string.terminow_explorer_properties)};
+        String path = match.fs.getDisplayPath(match.parents);
+        dialog().setTitle(match.node.name).setItems(labels, (d, which) -> {
+            TerminowFs.Node parent = match.parents.get(match.parents.size() - 1);
+            if (which == 0) open(match.fs, match.parents);
+            else if (which == 1) share(match.fs, Collections.singletonList(match.node), path);
+            else if (which == 2) {
+                mClip = new Clip(match.fs, parent, Collections.singletonList(match.node), false, match.fs.getTitle());
+                toast(mActivity.getString(R.string.terminow_explorer_copied_hint));
+            } else showProperties(match.fs, match.node, path);
+        }).show();
+    }
+
+    private void startAnalyzer() {
+        mScreen = Screen.ANALYZER;
+        mDrawerOpen = false;
+        if (mAnalyzing) {
+            render();
             return;
         }
-        for (int i = 0; i < Math.min(10, recents.length()); i++) {
+        if (mAnalyzeCancel != null) mAnalyzeCancel.cancel();
+        TerminowFs.Cancel cancel = new TerminowFs.Cancel();
+        mAnalyzeCancel = cancel;
+        mAnalyzing = true;
+        mAnalyzeStatus = mActivity.getString(R.string.terminow_explorer_analyzing);
+        mSpaces.clear();
+        for (TerminowFs fs : accessibleLocations()) mSpaces.add(new LocationSpace(fs));
+        List<LocationSpace> spaces = new ArrayList<>(mSpaces);
+        render();
+        mExecutor.execute(() -> {
+            for (LocationSpace location : spaces) {
+                try {
+                    TerminowFileScan.Space space = TerminowFileScan.analyze(location.fs, location.fs.getRoot(), cancel, (name, files) -> {
+                        String status = mActivity.getString(R.string.terminow_explorer_analyzing_in, location.fs.getTitle(), files);
+                        mHandler.post(() -> mAnalyzeStatus = status);
+                    });
+                    mHandler.post(() -> {
+                        location.space = space;
+                        if (mVisible && mScreen == Screen.ANALYZER) render();
+                    });
+                } catch (TerminowFs.CancelledException e) {
+                    break;
+                } catch (IOException | RuntimeException e) {
+                    String error = String.valueOf(e.getMessage());
+                    mHandler.post(() -> location.error = error);
+                }
+            }
+            mHandler.post(() -> {
+                mAnalyzing = false;
+                if (cancel.isCancelled()) mAnalyzeStatus = mActivity.getString(R.string.terminow_explorer_search_cancelled);
+                render();
+            });
+        });
+    }
+
+    @NonNull
+    private View analyzerScreen() {
+        ScrollView scroll = new ScrollView(mActivity);
+        LinearLayout page = vertical();
+        page.setPadding(0, dp(6), dp(4), dp(24));
+        scroll.addView(page);
+        LinearLayout head = new LinearLayout(mActivity);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        head.setPadding(dp(4), 0, 0, dp(8));
+        TextView status = text(mAnalyzing ? mAnalyzeStatus : mActivity.getString(R.string.terminow_explorer_analyzer_note), 13, mPalette.secondary);
+        head.addView(status, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        TextView action = chip(mActivity.getString(mAnalyzing ? android.R.string.cancel : R.string.terminow_explorer_analyze_again), false);
+        action.setOnClickListener(v -> {
+            if (mAnalyzing && mAnalyzeCancel != null) mAnalyzeCancel.cancel();
+            else startAnalyzer();
+        });
+        head.addView(action, chipParams());
+        page.addView(head, matchWrap());
+
+        for (LocationSpace location : mSpaces) {
+            LinearLayout card = card();
+            TextView title = text(location.fs.getTitle(), 16, mPalette.text);
+            title.setTypeface(Typeface.DEFAULT_BOLD);
+            card.addView(title);
+            if (location.error != null) {
+                card.addView(text(location.error, 13, mPalette.danger));
+            } else if (location.space == null) {
+                card.addView(text(mActivity.getString(mAnalyzing ? R.string.terminow_explorer_analyzing : R.string.terminow_explorer_search_cancelled),
+                    13, mPalette.secondary));
+            } else {
+                TerminowFileScan.Space space = location.space;
+                card.addView(text(mActivity.getString(R.string.terminow_explorer_space_total, size(space.totalBytes), space.files, space.folders) +
+                    (space.incomplete ? " · " + mActivity.getString(R.string.terminow_explorer_space_incomplete) : ""), 13, mPalette.secondary));
+                long max = space.top.isEmpty() ? 1 : Math.max(1, space.top.get(0).bytes);
+                for (int i = 0; i < Math.min(10, space.top.size()); i++) {
+                    TerminowFileScan.Entry entry = space.top.get(i);
+                    card.addView(spaceRow(entry.node.name, entry.bytes, max, entry.node.directory, v -> {
+                        try {
+                            TerminowFs.Node root = location.fs.getRoot();
+                            if (entry.node.directory) {
+                                List<TerminowFs.Node> crumbs = new ArrayList<>();
+                                crumbs.add(root);
+                                crumbs.add(entry.node);
+                                open(location.fs, crumbs);
+                            } else {
+                                openFile(location.fs, entry.node, location.fs.getTitle());
+                            }
+                        } catch (IOException e) {
+                            toast(e.getMessage());
+                        }
+                    }), matchWrap());
+                }
+                if (!space.largest.isEmpty()) {
+                    TextView largest = text(mActivity.getString(R.string.terminow_explorer_largest_files), 13, mPalette.text);
+                    largest.setTypeface(Typeface.DEFAULT_BOLD);
+                    largest.setPadding(0, dp(12), 0, dp(2));
+                    card.addView(largest);
+                    for (int i = 0; i < Math.min(5, space.largest.size()); i++) {
+                        TerminowFileScan.Match match = space.largest.get(i);
+                        card.addView(spaceRow(match.node.name + "  ·  " + match.fs.getDisplayPath(match.parents), Math.max(0, match.node.size),
+                            Math.max(1, space.largest.get(0).node.size), false, v -> showMatchActions(match)), matchWrap());
+                    }
+                }
+            }
+            page.addView(card, cardParams());
+        }
+        return scroll;
+    }
+
+    @NonNull
+    private View spaceRow(@NonNull String name, long bytes, long max, boolean directory, @NonNull View.OnClickListener onClick) {
+        LinearLayout row = vertical();
+        row.setPadding(0, dp(8), 0, dp(4));
+        row.setMinimumHeight(dp(48));
+        row.setBackground(ripple());
+        LinearLayout line = new LinearLayout(mActivity);
+        ImageView icon = new ImageView(mActivity);
+        icon.setImageResource(directory ? R.drawable.ic_terminow_folder : R.drawable.ic_terminow_file);
+        icon.setImageTintList(ColorStateList.valueOf(directory ? mPalette.accent : mPalette.secondary));
+        line.addView(icon, new LinearLayout.LayoutParams(dp(18), dp(18)));
+        TextView label = text(name, 13, mPalette.text);
+        label.setSingleLine(true);
+        label.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+        label.setPadding(dp(8), 0, dp(8), 0);
+        line.addView(label, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        line.addView(text(size(bytes), 13, mPalette.secondary));
+        row.addView(line, matchWrap());
+        ProgressBar bar = new ProgressBar(mActivity, null, android.R.attr.progressBarStyleHorizontal);
+        bar.setMax(1000);
+        bar.setProgress((int) Math.min(1000, bytes * 1000 / Math.max(1, max)));
+        bar.setProgressTintList(ColorStateList.valueOf(mPalette.accent));
+        row.addView(bar, matchWrap());
+        row.setOnClickListener(onClick);
+        return row;
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Queue, recent files and bookmarks
+    // ---------------------------------------------------------------------------------------
+
+    @NonNull
+    private View queueScreen() {
+        ScrollView scroll = new ScrollView(mActivity);
+        LinearLayout page = vertical();
+        page.setPadding(0, dp(6), dp(4), dp(24));
+        scroll.addView(page);
+        List<TerminowTransferQueue.Job> jobs = mQueue.getJobs();
+        if (jobs.isEmpty()) {
+            page.addView(emptyText(R.string.terminow_explorer_queue_empty), matchWrap());
+            return scroll;
+        }
+        TextView clear = chip(mActivity.getString(R.string.terminow_explorer_queue_clear), false);
+        clear.setOnClickListener(v -> {
+            mQueue.clearFinished();
+            render();
+        });
+        LinearLayout head = new LinearLayout(mActivity);
+        head.setGravity(Gravity.END);
+        head.setPadding(0, 0, 0, dp(8));
+        head.addView(clear, chipParams());
+        page.addView(head, matchWrap());
+        for (int i = jobs.size() - 1; i >= 0; i--) {
+            TerminowTransferQueue.Job job = jobs.get(i);
+            LinearLayout card = card();
+            TextView title = text(jobTitle(job), 14, mPalette.text);
+            title.setTypeface(Typeface.DEFAULT_BOLD);
+            card.addView(title, matchWrap());
+            String detail;
+            switch (job.status) {
+                case QUEUED: detail = mActivity.getString(R.string.terminow_explorer_queue_waiting); break;
+                case RUNNING: detail = job.currentName + (job.bytesTotal > 0 ? "  ·  " + size(job.bytesDone) + " / " + size(job.bytesTotal) : "") +
+                    (job.filesTotal > 0 ? "  ·  " + job.filesDone + "/" + job.filesTotal : ""); break;
+                case CANCELLED: detail = mActivity.getString(R.string.terminow_explorer_queue_cancelled); break;
+                default: detail = job.result != null ? TerminowTransfer.describe(job.result) : "";
+            }
+            card.addView(text(detail, 12, job.status == TerminowTransferQueue.Status.FAILED ? mPalette.danger : mPalette.secondary), matchWrap());
+            if (!job.isFinished() || job.status == TerminowTransferQueue.Status.DONE) card.addView(progressBar(job), matchWrap());
+            if (!job.isFinished()) {
+                TextView cancel = chip(mActivity.getString(android.R.string.cancel), false);
+                cancel.setOnClickListener(v -> mQueue.cancel(job));
+                LinearLayout buttons = new LinearLayout(mActivity);
+                buttons.setPadding(0, dp(8), 0, 0);
+                buttons.addView(cancel, chipParams());
+                card.addView(buttons);
+            }
+            page.addView(card, cardParams());
+        }
+        return scroll;
+    }
+
+    @NonNull
+    private View recentsScreen() {
+        ScrollView scroll = new ScrollView(mActivity);
+        LinearLayout page = vertical();
+        page.setPadding(0, dp(6), dp(4), dp(24));
+        scroll.addView(page);
+        JSONArray recents = mStore.getExplorer().optJSONArray("recents");
+        if (recents == null || recents.length() == 0) {
+            page.addView(emptyText(R.string.terminow_explorer_no_recents), matchWrap());
+            return scroll;
+        }
+        LinearLayout card = card();
+        for (int i = 0; i < recents.length(); i++) {
             JSONObject recent = recents.optJSONObject(i);
             if (recent == null) continue;
             String when = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(new Date(recent.optLong("time")));
-            page.addView(locationCard(R.drawable.ic_terminow_file, R.color.terminow_text_secondary, recent.optString("name"),
-                recent.optString("fsTitle") + " · " + recent.optString("path") + " · " + when, v -> openRecent(recent), null), cardParams());
+            TerminowFileScan.Category category = TerminowFileScan.Category.of(recent.optString("name"));
+            card.addView(listRow(category != null ? categoryIcon(category) : R.drawable.ic_terminow_file,
+                category != null ? categoryColor(category) : mPalette.secondary, recent.optString("name"),
+                recent.optString("fsTitle") + " · " + recent.optString("path") + " · " + when, null, v -> openRecent(recent)), matchWrap());
         }
-        TextView clear = text(mActivity.getString(R.string.terminow_explorer_clear_recents), 14, R.color.terminow_panel_accent);
-        clear.setPadding(0, dp(6), 0, dp(6));
+        page.addView(card, cardParams());
+        TextView clear = chip(mActivity.getString(R.string.terminow_explorer_clear_recents), false);
         clear.setOnClickListener(v -> {
             JSONObject state = mStore.getExplorer();
             state.remove("recents");
             mStore.setExplorer(state);
             render();
         });
-        page.addView(clear);
+        page.addView(clear, chipParams());
+        return scroll;
+    }
+
+    @NonNull
+    private View bookmarksScreen() {
+        ScrollView scroll = new ScrollView(mActivity);
+        LinearLayout page = vertical();
+        page.setPadding(0, dp(6), dp(4), dp(24));
+        scroll.addView(page);
+        JSONArray bookmarks = mStore.getExplorer().optJSONArray("bookmarks");
+        if (bookmarks == null || bookmarks.length() == 0) {
+            page.addView(emptyText(R.string.terminow_explorer_no_bookmarks), matchWrap());
+            return scroll;
+        }
+        LinearLayout card = card();
+        for (int i = 0; i < bookmarks.length(); i++) {
+            JSONObject bookmark = bookmarks.optJSONObject(i);
+            if (bookmark == null) continue;
+            int index = i;
+            View row = listRow(R.drawable.ic_terminow_bookmark, 0xFFB57BEE, bookmark.optString("name"),
+                bookmark.optString("fsTitle") + " · " + bookmark.optString("path"), null, v -> openBookmark(bookmark));
+            row.setOnLongClickListener(v -> {
+                confirm(mActivity.getString(R.string.terminow_explorer_remove_bookmark, bookmark.optString("name")), () -> removeAt("bookmarks", index));
+                return true;
+            });
+            card.addView(row, matchWrap());
+        }
+        page.addView(card, cardParams());
+        page.addView(text(mActivity.getString(R.string.terminow_explorer_bookmark_hint), 12, mPalette.secondary), matchWrap());
+        return scroll;
+    }
+
+    @NonNull
+    private TextView emptyText(int textRes) {
+        TextView empty = text(mActivity.getString(textRes), 14, mPalette.secondary);
+        empty.setGravity(Gravity.CENTER);
+        empty.setPadding(dp(16), dp(30), dp(16), 0);
+        return empty;
     }
 
     private void removeAt(@NonNull String key, int index) {
@@ -478,6 +1561,11 @@ public class TerminowExplorer {
         return (TerminowLocalFs) fs;
     }
 
+    private boolean isConnected(@NonNull TerminowStore.Host host) {
+        TerminowFs fs = mFileSystems.get("sftp:" + host.getKey());
+        return fs instanceof TerminowSftpFs && ((TerminowSftpFs) fs).isConnected();
+    }
+
     private void openHome(@Nullable List<TerminowFs.Node> crumbs) {
         try {
             TerminowLocalFs fs = getHomeFs();
@@ -488,26 +1576,41 @@ public class TerminowExplorer {
     }
 
     private void openSaf(@NonNull Uri uri, @NonNull String name, @Nullable List<TerminowFs.Node> crumbs) {
-        String id = TerminowSafFs.idFor(uri);
-        TerminowFs fs = mFileSystems.get(id);
-        if (fs == null) {
-            fs = new TerminowSafFs(mActivity, uri, name);
-            mFileSystems.put(id, fs);
-        }
-        TerminowFs finalFs = fs;
-        background(() -> crumbs != null ? crumbs : Collections.singletonList(finalFs.getRoot()), result -> open(finalFs, result));
+        TerminowFs fs = findFs(TerminowSafFs.idFor(uri), name);
+        if (fs == null) return;
+        background(() -> crumbs != null ? crumbs : Collections.singletonList(fs.getRoot()), result -> open(fs, result));
+    }
+
+    @NonNull
+    private TerminowSftpFs sftpFor(@NonNull TerminowStore.Host host) {
+        String id = "sftp:" + host.getKey();
+        TerminowFs existing = mFileSystems.get(id);
+        if (existing instanceof TerminowSftpFs) return (TerminowSftpFs) existing;
+        TerminowSftpFs fs = new TerminowSftpFs(new File(TermuxConstants.TERMUX_HOME_DIR_PATH), id, host.getTitle(), host.address,
+            host.port, host.username, host.password, host.keyPath, new Prompts());
+        mFileSystems.put(id, fs);
+        return fs;
     }
 
     private void openSftp(@NonNull TerminowStore.Host host, @Nullable List<TerminowFs.Node> crumbs) {
-        String id = "sftp:" + host.getKey();
-        TerminowFs existing = mFileSystems.get(id);
-        TerminowFs fs = existing != null ? existing : new TerminowSftpFs(new File(TermuxConstants.TERMUX_HOME_DIR_PATH), id, host.getTitle(),
-            host.address, host.port, host.username, host.password, host.keyPath, new Prompts());
-        mFileSystems.put(id, fs);
+        TerminowSftpFs fs = sftpFor(host);
         background(() -> {
-            ((TerminowSftpFs) fs).connect();
+            fs.connect();
             return crumbs != null ? crumbs : Collections.singletonList(fs.getRoot());
         }, result -> open(fs, result));
+    }
+
+    private void disconnect(@NonNull TerminowFs fs) {
+        mExecutor.execute(fs::close);
+        for (Pane pane : mPanes) {
+            if (pane.fs == fs) {
+                pane.fs = null;
+                pane.crumbs.clear();
+                pane.entries.clear();
+            }
+        }
+        if (mPanes[mActivePane].fs == null) mScreen = Screen.DASHBOARD;
+        render();
     }
 
     private void open(@NonNull TerminowFs fs, @NonNull List<TerminowFs.Node> crumbs) {
@@ -519,7 +1622,7 @@ public class TerminowExplorer {
         pane.selection.clear();
         pane.query = "";
         pane.searching = false;
-        mDashboard = false;
+        mScreen = Screen.BROWSER;
         mDrawerOpen = false;
         load(pane);
     }
@@ -535,15 +1638,14 @@ public class TerminowExplorer {
         }
         if (id.startsWith("saf:")) {
             fs = new TerminowSafFs(mActivity, Uri.parse(id.substring(4)), title);
-        } else if (id.startsWith("sftp:")) {
-            for (TerminowStore.Host host : mStore.getHosts()) {
-                if (("sftp:" + host.getKey()).equals(id))
-                    fs = new TerminowSftpFs(new File(TermuxConstants.TERMUX_HOME_DIR_PATH), id, host.getTitle(), host.address,
-                        host.port, host.username, host.password, host.keyPath, new Prompts());
-            }
+            mFileSystems.put(id, fs);
+            return fs;
         }
-        if (fs != null) mFileSystems.put(id, fs);
-        return fs;
+        if (id.startsWith("sftp:")) {
+            for (TerminowStore.Host host : mStore.getHosts())
+                if (("sftp:" + host.getKey()).equals(id)) return sftpFor(host);
+        }
+        return null;
     }
 
     private void openBookmark(@NonNull JSONObject bookmark) {
@@ -604,7 +1706,7 @@ public class TerminowExplorer {
     private void repickFolder(int index) {
         JSONArray folders = mStore.getExplorer().optJSONArray("folders");
         JSONObject folder = folders != null ? folders.optJSONObject(index) : null;
-        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+        dialog()
             .setTitle(folder != null ? folder.optString("name") : "")
             .setMessage(R.string.terminow_explorer_access_lost_message)
             .setPositiveButton(R.string.terminow_explorer_choose_again, (d, w) -> {
@@ -620,7 +1722,7 @@ public class TerminowExplorer {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION |
             Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
-        if (initial != null && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O)
+        if (initial != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
             intent.putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI, initial);
         try {
             mActivity.startActivityForResult(intent, requestCode);
@@ -646,7 +1748,7 @@ public class TerminowExplorer {
         });
     }
 
-    /** Handle the folder picker. Returns {@code true} if it was for the explorer. */
+    /** Handle the folder picker. Returns {@code true} if it was for the File Manager. */
     public boolean onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         if (requestCode != REQUEST_ADD_FOLDER && requestCode != REQUEST_REPICK_FOLDER) return false;
         if (resultCode != Activity.RESULT_OK || data == null || data.getData() == null) return true;
@@ -655,18 +1757,13 @@ public class TerminowExplorer {
         try {
             mActivity.getContentResolver().takePersistableUriPermission(uri, flags);
         } catch (SecurityException e) {
-            // Some providers do not keep a permission, the folder then works until the app restarts
             toast(mActivity.getString(R.string.terminow_explorer_not_kept));
         }
         String name = uri.getLastPathSegment();
-        try {
-            android.database.Cursor cursor = mActivity.getContentResolver().query(
-                android.provider.DocumentsContract.buildDocumentUriUsingTree(uri, android.provider.DocumentsContract.getTreeDocumentId(uri)),
-                new String[]{android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME}, null, null, null);
-            if (cursor != null) {
-                if (cursor.moveToFirst() && !cursor.isNull(0)) name = cursor.getString(0);
-                cursor.close();
-            }
+        try (android.database.Cursor cursor = mActivity.getContentResolver().query(
+            android.provider.DocumentsContract.buildDocumentUriUsingTree(uri, android.provider.DocumentsContract.getTreeDocumentId(uri)),
+            new String[]{android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME}, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst() && !cursor.isNull(0)) name = cursor.getString(0);
         } catch (RuntimeException e) {
             // Keep the name from the URI
         }
@@ -690,6 +1787,7 @@ public class TerminowExplorer {
             return true;
         }
         mStore.setExplorer(state);
+        mFileSystems.remove(TerminowSafFs.idFor(uri));
         mRepickIndex = -1;
         render();
         return true;
@@ -750,93 +1848,102 @@ public class TerminowExplorer {
         switch (sort) {
             case "size": comparator = (a, b) -> Long.compare(a.size, b.size); break;
             case "modified": comparator = (a, b) -> Long.compare(a.modified, b.modified); break;
-            case "type": comparator = (a, b) -> extension(a.name).compareTo(extension(b.name)); break;
+            case "type": comparator = (a, b) -> TerminowFileScan.extension(a.name).compareTo(TerminowFileScan.extension(b.name)); break;
             default: comparator = (a, b) -> 0;
         }
-        Comparator<TerminowFs.Node> byName = (a, b) -> a.name.compareToIgnoreCase(b.name);
-        Comparator<TerminowFs.Node> order = comparator.thenComparing(byName);
+        Comparator<TerminowFs.Node> order = comparator.thenComparing((a, b) -> a.name.compareToIgnoreCase(b.name));
         if (descending) order = order.reversed();
         Comparator<TerminowFs.Node> foldersFirst = (a, b) -> a.directory == b.directory ? 0 : a.directory ? -1 : 1;
         Collections.sort(list, foldersFirst.thenComparing(order));
         return list;
     }
 
-    @NonNull
-    private static String extension(@NonNull String name) {
-        int dot = name.lastIndexOf('.');
-        return dot > 0 ? name.substring(dot + 1).toLowerCase(Locale.ROOT) : "";
+    private void toggleTwoPanes() {
+        mTwoPanes = !mTwoPanes;
+        Pane pane = mPanes[mActivePane];
+        Pane other = mPanes[1 - mActivePane];
+        if (mTwoPanes && other.fs == null && pane.fs != null) {
+            other.fs = pane.fs;
+            other.crumbs.clear();
+            other.crumbs.addAll(pane.crumbs);
+            load(other);
+        }
+        render();
     }
 
     @NonNull
     private View browsers() {
-        boolean canTwoPanes = mActivity.getResources().getConfiguration().screenWidthDp >= 900;
-        if (!canTwoPanes) mTwoPanes = false;
-        if (!mTwoPanes || mPanes[1].fs == null && mPanes[0].fs == null) return paneView(mActivePane, canTwoPanes);
-        LinearLayout row = new LinearLayout(mActivity);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        for (int i = 0; i < 2; i++) {
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1);
-            if (i == 0) params.setMarginEnd(dp(8));
-            row.addView(paneView(i, true), params);
+        if (widthDp() < 900) mTwoPanes = false;
+        Pane active = mPanes[mActivePane];
+        LinearLayout content = vertical();
+        if (!mTwoPanes) {
+            content.addView(paneView(mActivePane), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        } else {
+            // Where a transfer goes from and to, always in view
+            Pane other = mPanes[1 - mActivePane];
+            TextView route = text(mActivity.getString(R.string.terminow_explorer_route,
+                active.fs != null ? active.fs.getDisplayPath(active.crumbs) : "—",
+                other.fs != null ? other.fs.getDisplayPath(other.crumbs) : "—"), 12, mPalette.secondary);
+            route.setSingleLine(true);
+            route.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+            route.setPadding(dp(4), 0, 0, dp(6));
+            content.addView(route, matchWrap());
+            LinearLayout row = new LinearLayout(mActivity);
+            for (int i = 0; i < 2; i++) {
+                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1);
+                if (i == 0) params.setMarginEnd(dp(8));
+                row.addView(paneView(i), params);
+            }
+            content.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
         }
-        return row;
+        if (!active.selection.isEmpty() && active.fs != null) content.addView(actionBar(mActivePane, active), matchWrap());
+        return content;
     }
 
     @NonNull
-    private View paneView(int index, boolean canTwoPanes) {
+    private View paneView(int index) {
         Pane pane = mPanes[index];
         LinearLayout view = vertical();
         boolean active = index == mActivePane;
         if (mTwoPanes) {
             GradientDrawable border = new GradientDrawable();
             border.setCornerRadius(dp(14));
-            border.setStroke(dp(active ? 2 : 1), color(active ? R.color.terminow_panel_accent : R.color.terminow_surface));
+            border.setStroke(dp(active ? 2 : 1), active ? mPalette.accent : mPalette.divider);
             view.setBackground(border);
             view.setPadding(dp(6), dp(6), dp(6), dp(6));
+            TextView role = text(mActivity.getString(active ? R.string.terminow_explorer_pane_source : R.string.terminow_explorer_pane_destination),
+                11, active ? mPalette.accent : mPalette.secondary);
+            role.setTypeface(Typeface.DEFAULT_BOLD);
+            view.addView(role);
         }
         view.setOnClickListener(v -> setActive(index));
-
         if (pane.fs == null) {
-            TextView empty = text(mActivity.getString(R.string.terminow_explorer_pick_location), 14, R.color.terminow_text_secondary);
+            TextView empty = text(mActivity.getString(R.string.terminow_explorer_pick_location), 14, mPalette.secondary);
             empty.setGravity(Gravity.CENTER);
             empty.setPadding(dp(16), dp(40), dp(16), dp(16));
-            empty.setOnClickListener(v -> setActive(index));
+            empty.setOnClickListener(v -> {
+                setActive(index);
+                if (isLarge()) mSidebarCollapsed = false;
+                else mDrawerOpen = true;
+                render();
+            });
             view.addView(empty, matchWrap());
             return view;
         }
         TerminowFs fs = pane.fs;
 
-        // Top bar: locations, up, breadcrumbs
-        LinearLayout top = new LinearLayout(mActivity);
-        top.setGravity(Gravity.CENTER_VERTICAL);
-        top.setPadding(0, dp(10), 0, dp(4));
-        if (!isWide()) {
-            TextView menu = chip("☰", false);
-            menu.setContentDescription(mActivity.getString(R.string.terminow_explorer_locations));
-            menu.setOnClickListener(v -> {
-                mDrawerOpen = true;
-                render();
-            });
-            top.addView(menu, chipParams());
-        }
-        TextView up = chip("‹", false);
-        up.setContentDescription(mActivity.getString(R.string.terminow_explorer_up));
-        up.setOnClickListener(v -> {
-            setActive(index);
-            onBackPressed();
-        });
-        top.addView(up, chipParams());
+        // Breadcrumbs
         HorizontalScrollView crumbScroll = new HorizontalScrollView(mActivity);
         crumbScroll.setHorizontalScrollBarEnabled(false);
         LinearLayout crumbs = new LinearLayout(mActivity);
         crumbs.setGravity(Gravity.CENTER_VERTICAL);
-        TextView fsName = text(fs.getTitle(), 15, R.color.terminow_text);
-        fsName.setTypeface(Typeface.DEFAULT_BOLD);
-        crumbs.addView(fsName);
-        for (int i = 1; i < pane.crumbs.size(); i++) {
+        crumbs.setPadding(dp(4), dp(4), dp(4), dp(4));
+        for (int i = 0; i < pane.crumbs.size(); i++) {
             int depth = i;
-            crumbs.addView(text("  ›  ", 15, R.color.terminow_text_secondary));
-            TextView crumb = text(pane.crumbs.get(i).name, 15, i == pane.crumbs.size() - 1 ? R.color.terminow_text : R.color.terminow_text_secondary);
+            if (i > 0) crumbs.addView(text("  ›  ", 14, mPalette.secondary));
+            TextView crumb = text(i == 0 ? fs.getTitle() : pane.crumbs.get(i).name, 14, i == pane.crumbs.size() - 1 ? mPalette.text : mPalette.secondary);
+            if (i == pane.crumbs.size() - 1) crumb.setTypeface(Typeface.DEFAULT_BOLD);
+            crumb.setPadding(dp(4), dp(10), dp(4), dp(10));
             crumb.setOnClickListener(v -> {
                 setActive(index);
                 while (pane.crumbs.size() > depth + 1) pane.crumbs.remove(pane.crumbs.size() - 1);
@@ -844,24 +1951,51 @@ public class TerminowExplorer {
             });
             crumbs.addView(crumb);
         }
-        fsName.setOnClickListener(v -> {
-            setActive(index);
-            while (pane.crumbs.size() > 1) pane.crumbs.remove(pane.crumbs.size() - 1);
-            load(pane);
-        });
         crumbScroll.addView(crumbs);
         crumbScroll.post(() -> crumbScroll.fullScroll(View.FOCUS_RIGHT));
-        top.addView(crumbScroll, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        view.addView(top, matchWrap());
+        view.addView(crumbScroll, matchWrap());
 
-        // Tools or selection actions
-        view.addView(pane.selection.isEmpty() ? toolRow(index, pane, canTwoPanes) : selectionRow(index, pane), matchWrap());
-        if (pane.searching) {
+        // Up, sort and view
+        JSONObject prefs = mStore.getExplorer();
+        LinearLayout tools = new LinearLayout(mActivity);
+        tools.setGravity(Gravity.CENTER_VERTICAL);
+        tools.setPadding(0, 0, 0, dp(4));
+        TextView up = chip("↑ " + mActivity.getString(R.string.terminow_explorer_up), false);
+        up.setOnClickListener(v -> {
+            setActive(index);
+            if (pane.crumbs.size() > 1) {
+                pane.crumbs.remove(pane.crumbs.size() - 1);
+                load(pane);
+            }
+        });
+        up.setAlpha(pane.crumbs.size() > 1 ? 1f : 0.4f);
+        tools.addView(up, chipParams());
+        TextView sort = chip(mActivity.getString(R.string.terminow_explorer_sort, sortLabel(prefs.optString("sort", "name"))) +
+            (prefs.optBoolean("descending") ? " ↓" : " ↑"), false);
+        sort.setOnClickListener(v -> showSortDialog());
+        tools.addView(sort, chipParams());
+        boolean grid = prefs.optBoolean("grid");
+        TextView viewMode = chip(mActivity.getString(grid ? R.string.terminow_explorer_view_list : R.string.terminow_explorer_view_grid), false);
+        viewMode.setOnClickListener(v -> setView("grid", !grid));
+        tools.addView(viewMode, chipParams());
+        if (!fs.getCapabilities().write) {
+            TextView readOnly = chip(mActivity.getString(R.string.terminow_explorer_read_only), false);
+            readOnly.setOnClickListener(v -> toast(fs.getCapabilities().readOnlyReason));
+            tools.addView(readOnly, chipParams());
+        }
+        HorizontalScrollView toolScroll = new HorizontalScrollView(mActivity);
+        toolScroll.setHorizontalScrollBarEnabled(false);
+        toolScroll.addView(tools);
+        view.addView(toolScroll, matchWrap());
+
+        if (pane.searching && active) {
             EditText search = new EditText(mActivity);
             search.setHint(R.string.terminow_explorer_search_hint);
             search.setSingleLine(true);
-            search.setTextColor(color(R.color.terminow_text));
-            search.setHintTextColor(color(R.color.terminow_text_secondary));
+            search.setTextColor(mPalette.text);
+            search.setHintTextColor(mPalette.secondary);
+            search.setBackground(rounded(mPalette.field, 20));
+            search.setPadding(dp(16), dp(8), dp(16), dp(8));
             search.setText(pane.query);
             search.setSelection(pane.query.length());
             search.addTextChangedListener(new TextWatcher() {
@@ -869,18 +2003,17 @@ public class TerminowExplorer {
                 @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
                 @Override public void afterTextChanged(Editable s) {
                     pane.query = s.toString();
-                    GridView grid = view.findViewWithTag("grid");
-                    if (grid != null) ((BaseAdapter) grid.getAdapter()).notifyDataSetChanged();
+                    if (mListAdapter != null) mListAdapter.notifyDataSetChanged();
                 }
             });
             view.addView(search, matchWrap());
             search.requestFocus();
         }
-        if (mClip != null && fs.getCapabilities().write) view.addView(clipRow(pane), matchWrap());
+        if (mClip != null) view.addView(clipRow(pane), matchWrap());
 
         if (pane.loading) {
             ProgressBar progress = new ProgressBar(mActivity);
-            progress.setIndeterminateTintList(ColorStateList.valueOf(color(R.color.terminow_panel_accent)));
+            progress.setIndeterminateTintList(ColorStateList.valueOf(mPalette.accent));
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(40), dp(40));
             params.gravity = Gravity.CENTER_HORIZONTAL;
             params.topMargin = dp(40);
@@ -888,46 +2021,32 @@ public class TerminowExplorer {
             return view;
         }
         if (pane.error != null) {
-            LinearLayout card = card();
-            card.addView(text(pane.error, 14, R.color.terminow_text));
-            LinearLayout buttons = new LinearLayout(mActivity);
-            buttons.setPadding(0, dp(12), 0, 0);
-            TextView retry = button(mActivity.getString(R.string.terminow_retry), true);
-            retry.setOnClickListener(v -> load(pane));
-            buttons.addView(retry, buttonParams());
-            if (fs instanceof TerminowSafFs && !((TerminowSafFs) fs).hasAccess()) {
-                TextView again = button(mActivity.getString(R.string.terminow_explorer_choose_again), false);
-                again.setOnClickListener(v -> {
-                    JSONArray folders = mStore.getExplorer().optJSONArray("folders");
-                    for (int i = 0; folders != null && i < folders.length(); i++)
-                        if (TerminowSafFs.idFor(Uri.parse(folders.optJSONObject(i).optString("uri"))).equals(fs.getId())) repickFolder(i);
-                });
-                buttons.addView(again, buttonParams());
-            }
-            card.addView(buttons);
-            LinearLayout.LayoutParams params = matchWrap();
-            params.topMargin = dp(12);
-            view.addView(card, params);
+            view.addView(errorCard(pane), matchWrap());
             return view;
         }
 
-        List<TerminowFs.Node> shown = visibleEntries(pane);
-        boolean grid = mStore.getExplorer().optBoolean("grid");
-        GridView list = new GridView(mActivity);
-        list.setTag("grid");
-        list.setNumColumns(grid ? GridView.AUTO_FIT : 1);
-        list.setColumnWidth(dp(112));
-        list.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
-        list.setVerticalSpacing(dp(6));
-        list.setHorizontalSpacing(dp(6));
-        list.setSelector(android.R.color.transparent);
-        list.setClipToPadding(false);
-        list.setPadding(0, dp(6), 0, dp(24));
-        EntryAdapter adapter = new EntryAdapter(pane, grid);
+        if (visibleEntries(pane).isEmpty()) {
+            view.addView(emptyText(pane.query.isEmpty() ? R.string.terminow_explorer_empty_folder : R.string.terminow_no_results), matchWrap());
+            return view;
+        }
+        GridView list = gridView(grid);
+        BaseAdapter adapter = new BaseAdapter() {
+            @Override public int getCount() { return visibleEntries(pane).size(); }
+            @Override public Object getItem(int position) { return visibleEntries(pane).get(position); }
+            @Override public long getItemId(int position) { return position; }
+            @Override public View getView(int position, View convertView, ViewGroup parent) {
+                TerminowFs.Node node = visibleEntries(pane).get(position);
+                return entryView(fs, node, pane.selection.contains(node.id), grid, null);
+            }
+        };
+        if (active) mListAdapter = adapter;
         list.setAdapter(adapter);
         list.setOnItemClickListener((parent, v, position, id) -> {
-            setActive(index);
-            TerminowFs.Node node = adapter.items().get(position);
+            TerminowFs.Node node = visibleEntries(pane).get(position);
+            if (index != mActivePane) {
+                setActive(index);
+                return;
+            }
             if (!pane.selection.isEmpty()) {
                 toggle(pane, node);
             } else if (node.directory) {
@@ -940,19 +2059,73 @@ public class TerminowExplorer {
             }
         });
         list.setOnItemLongClickListener((parent, v, position, id) -> {
-            setActive(index);
-            toggle(pane, adapter.items().get(position));
+            mActivePane = index;
+            toggle(pane, visibleEntries(pane).get(position));
             return true;
         });
         view.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
-        if (shown.isEmpty()) {
-            TextView empty = text(mActivity.getString(pane.query.isEmpty() ? R.string.terminow_explorer_empty_folder : R.string.terminow_no_results),
-                14, R.color.terminow_text_secondary);
-            empty.setGravity(Gravity.CENTER);
-            empty.setPadding(0, dp(30), 0, 0);
-            view.addView(empty, 2 + (pane.searching ? 1 : 0) + (mClip != null && fs.getCapabilities().write ? 1 : 0), matchWrap());
-        }
         return view;
+    }
+
+    /** What went wrong, and the action that can fix it. */
+    @NonNull
+    private View errorCard(@NonNull Pane pane) {
+        TerminowFs fs = pane.fs;
+        LinearLayout card = card();
+        String title;
+        String message = pane.error;
+        TextView action;
+        if (fs instanceof TerminowSafFs && !((TerminowSafFs) fs).hasAccess()) {
+            title = mActivity.getString(R.string.terminow_explorer_error_access);
+            message = mActivity.getString(R.string.terminow_explorer_access_lost_message);
+            action = button(mActivity.getString(R.string.terminow_explorer_choose_again), true);
+            action.setOnClickListener(v -> {
+                JSONArray folders = mStore.getExplorer().optJSONArray("folders");
+                for (int i = 0; folders != null && i < folders.length(); i++)
+                    if (TerminowSafFs.idFor(Uri.parse(folders.optJSONObject(i).optString("uri"))).equals(fs.getId())) repickFolder(i);
+            });
+        } else if (fs instanceof TerminowSftpFs && !((TerminowSftpFs) fs).isConnected()) {
+            title = mActivity.getString(R.string.terminow_explorer_error_disconnected, fs.getTitle());
+            action = button(mActivity.getString(R.string.terminow_explorer_reconnect), true);
+            action.setOnClickListener(v -> background(() -> {
+                ((TerminowSftpFs) fs).connect();
+                return true;
+            }, ok -> load(pane)));
+        } else if (pane.error != null && pane.error.toLowerCase(Locale.ROOT).contains("permission")) {
+            title = mActivity.getString(R.string.terminow_explorer_error_permission);
+            action = button(mActivity.getString(R.string.terminow_retry), true);
+            action.setOnClickListener(v -> load(pane));
+        } else {
+            title = mActivity.getString(R.string.terminow_explorer_error_title);
+            action = button(mActivity.getString(R.string.terminow_retry), true);
+            action.setOnClickListener(v -> load(pane));
+        }
+        TextView titleView = text(title, 15, mPalette.text);
+        titleView.setTypeface(Typeface.DEFAULT_BOLD);
+        card.addView(titleView, matchWrap());
+        if (message != null) card.addView(text(message, 13, mPalette.secondary), matchWrap());
+        LinearLayout buttons = new LinearLayout(mActivity);
+        buttons.setPadding(0, dp(12), 0, 0);
+        buttons.addView(action, buttonParams());
+        TextView home = button(mActivity.getString(R.string.terminow_explorer_dashboard), false);
+        home.setOnClickListener(v -> go(Screen.DASHBOARD));
+        buttons.addView(home, buttonParams());
+        card.addView(buttons);
+        return card;
+    }
+
+    @NonNull
+    private GridView gridView(boolean grid) {
+        GridView list = new GridView(mActivity);
+        list.setNumColumns(grid ? GridView.AUTO_FIT : 1);
+        list.setColumnWidth(dp(116));
+        list.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
+        list.setVerticalSpacing(dp(6));
+        list.setHorizontalSpacing(dp(6));
+        list.setSelector(android.R.color.transparent);
+        list.setClipToPadding(false);
+        list.setPadding(0, dp(4), 0, dp(24));
+        return list;
     }
 
     private void setActive(int index) {
@@ -973,121 +2146,109 @@ public class TerminowExplorer {
         return nodes;
     }
 
+    /** Copy, Move, Rename, Delete, Share and More, for the selected items. */
     @NonNull
-    private View toolRow(int index, @NonNull Pane pane, boolean canTwoPanes) {
-        JSONObject view = mStore.getExplorer();
-        LinearLayout row = new LinearLayout(mActivity);
-        row.setPadding(0, dp(4), 0, dp(4));
-        TextView search = chip(mActivity.getString(R.string.terminow_explorer_search), pane.searching);
-        search.setOnClickListener(v -> {
-            setActive(index);
-            pane.searching = !pane.searching;
-            if (!pane.searching) pane.query = "";
-            render();
-        });
-        row.addView(search, chipParams());
-        String sort = view.optString("sort", "name");
-        TextView sortChip = chip(mActivity.getString(R.string.terminow_explorer_sort, sortLabel(sort)) + (view.optBoolean("descending") ? " ↓" : " ↑"), false);
-        sortChip.setOnClickListener(v -> showSortDialog());
-        row.addView(sortChip, chipParams());
-        TextView grid = chip(mActivity.getString(view.optBoolean("grid") ? R.string.terminow_explorer_view_grid : R.string.terminow_explorer_view_list), false);
-        grid.setOnClickListener(v -> setView("grid", !view.optBoolean("grid")));
-        row.addView(grid, chipParams());
-        TextView hidden = chip(mActivity.getString(R.string.terminow_explorer_hidden), view.optBoolean("showHidden"));
-        hidden.setOnClickListener(v -> setView("showHidden", !view.optBoolean("showHidden")));
-        row.addView(hidden, chipParams());
-        if (canTwoPanes) {
-            TextView two = chip(mActivity.getString(R.string.terminow_explorer_two_panes), mTwoPanes);
-            two.setOnClickListener(v -> {
-                mTwoPanes = !mTwoPanes;
-                if (mTwoPanes && mPanes[1 - mActivePane].fs == null && pane.fs != null) {
-                    Pane other = mPanes[1 - mActivePane];
-                    other.fs = pane.fs;
-                    other.crumbs.clear();
-                    other.crumbs.addAll(pane.crumbs);
-                    load(other);
-                }
-                render();
-            });
-            row.addView(two, chipParams());
-        }
-        TextView more = chip("⋯", false);
-        more.setContentDescription(mActivity.getString(R.string.terminow_explorer_more));
-        more.setOnClickListener(v -> {
-            setActive(index);
-            showFolderActions(pane);
-        });
-        row.addView(more, chipParams());
-        HorizontalScrollView scroll = new HorizontalScrollView(mActivity);
-        scroll.setHorizontalScrollBarEnabled(false);
-        scroll.addView(row);
-        return scroll;
-    }
-
-    @NonNull
-    private View selectionRow(int index, @NonNull Pane pane) {
+    private View actionBar(int index, @NonNull Pane pane) {
         TerminowFs fs = pane.fs;
         TerminowFs.Capabilities capabilities = fs.getCapabilities();
         List<TerminowFs.Node> nodes = selected(pane);
-        LinearLayout row = new LinearLayout(mActivity);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(0, dp(4), 0, dp(4));
-        TextView count = chip("✕  " + mActivity.getString(R.string.terminow_explorer_selected, nodes.size()), true);
-        count.setOnClickListener(v -> {
-            pane.selection.clear();
-            render();
-        });
-        row.addView(count, chipParams());
+        LinearLayout bar = vertical();
+        bar.setBackground(rounded(mPalette.card, 16));
+        bar.setPadding(dp(6), dp(4), dp(6), dp(4));
+        LinearLayout head = new LinearLayout(mActivity);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        head.setPadding(dp(8), dp(2), 0, 0);
+        TextView count = text(mActivity.getString(R.string.terminow_explorer_selected, nodes.size()), 13, mPalette.text);
+        count.setTypeface(Typeface.DEFAULT_BOLD);
+        head.addView(count, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         TextView all = chip(mActivity.getString(R.string.terminow_explorer_select_all), false);
         all.setOnClickListener(v -> {
             for (TerminowFs.Node node : visibleEntries(pane)) pane.selection.add(node.id);
             render();
         });
-        row.addView(all, chipParams());
-        addAction(row, R.string.terminow_explorer_copy, true, null, () -> {
-            mClip = new Clip(fs, pane.current(), nodes, false);
+        head.addView(all, chipParams());
+        TextView close = chip("✕", false);
+        close.setContentDescription(mActivity.getString(android.R.string.cancel));
+        close.setOnClickListener(v -> {
             pane.selection.clear();
-            toast(mActivity.getString(R.string.terminow_explorer_copied_hint));
             render();
         });
-        addAction(row, R.string.terminow_explorer_move, capabilities.delete, capabilities.readOnlyReason, () -> {
-            mClip = new Clip(fs, pane.current(), nodes, true);
-            pane.selection.clear();
-            toast(mActivity.getString(R.string.terminow_explorer_moved_hint));
-            render();
+        head.addView(close, chipParams());
+        bar.addView(head, matchWrap());
+
+        LinearLayout actions = new LinearLayout(mActivity);
+        String path = fs.getDisplayPath(pane.crumbs);
+        Pane other = mPanes[1 - index];
+        boolean toOther = mTwoPanes && other.fs != null;
+        action(actions, R.string.terminow_explorer_copy, true, null, () -> {
+            if (toOther) queueTransfer(fs, pane.current(), nodes, path, other.fs, other.current(), other.fs.getDisplayPath(other.crumbs), false);
+            else {
+                mClip = new Clip(fs, pane.current(), nodes, false, path);
+                pane.selection.clear();
+                toast(mActivity.getString(R.string.terminow_explorer_copied_hint));
+                render();
+            }
         });
-        if (mTwoPanes && mPanes[1 - index].fs != null) {
-            Pane other = mPanes[1 - index];
-            boolean otherWritable = other.fs.getCapabilities().write;
-            addAction(row, R.string.terminow_explorer_copy_other, otherWritable, other.fs.getCapabilities().readOnlyReason,
-                () -> transfer(fs, pane.current(), nodes, other.fs, other.current(), false));
-            addAction(row, R.string.terminow_explorer_move_other, otherWritable && capabilities.delete, capabilities.readOnlyReason,
-                () -> transfer(fs, pane.current(), nodes, other.fs, other.current(), true));
-        }
-        if (!(fs instanceof TerminowLocalFs))
-            addAction(row, R.string.terminow_explorer_to_home, true, null, () -> copyToHome(fs, pane.current(), nodes));
-        addAction(row, R.string.terminow_explorer_rename, capabilities.rename && nodes.size() == 1,
+        action(actions, R.string.terminow_explorer_move, capabilities.delete, capabilities.readOnlyReason, () -> {
+            if (toOther) queueTransfer(fs, pane.current(), nodes, path, other.fs, other.current(), other.fs.getDisplayPath(other.crumbs), true);
+            else {
+                mClip = new Clip(fs, pane.current(), nodes, true, path);
+                pane.selection.clear();
+                toast(mActivity.getString(R.string.terminow_explorer_moved_hint));
+                render();
+            }
+        });
+        action(actions, R.string.terminow_explorer_rename, capabilities.rename && nodes.size() == 1,
             nodes.size() != 1 ? mActivity.getString(R.string.terminow_explorer_one_only) : capabilities.readOnlyReason,
             () -> rename(pane, nodes.get(0)));
-        addAction(row, R.string.terminow_explorer_share, true, null, () -> share(fs, nodes, fs.getDisplayPath(pane.crumbs)));
-        addAction(row, R.string.terminow_explorer_properties, nodes.size() == 1, mActivity.getString(R.string.terminow_explorer_one_only),
-            () -> showProperties(fs, nodes.get(0), fs.getDisplayPath(pane.crumbs)));
-        addAction(row, R.string.terminow_delete, capabilities.delete, capabilities.readOnlyReason, () -> delete(pane, nodes));
-        HorizontalScrollView scroll = new HorizontalScrollView(mActivity);
-        scroll.setHorizontalScrollBarEnabled(false);
-        scroll.addView(row);
-        return scroll;
+        action(actions, R.string.terminow_delete, capabilities.delete, capabilities.readOnlyReason, () -> delete(pane, nodes));
+        action(actions, R.string.terminow_explorer_share, true, null, () -> share(fs, nodes, path));
+        action(actions, R.string.terminow_explorer_more, true, null, () -> {
+            List<CharSequence> labels = new ArrayList<>();
+            List<Runnable> handlers = new ArrayList<>();
+            labels.add(mActivity.getString(R.string.terminow_explorer_properties));
+            handlers.add(() -> {
+                if (nodes.size() == 1) showProperties(fs, nodes.get(0), path);
+                else toast(mActivity.getString(R.string.terminow_explorer_one_only));
+            });
+            if (!(fs instanceof TerminowLocalFs)) {
+                labels.add(mActivity.getString(R.string.terminow_explorer_to_home));
+                handlers.add(() -> copyToHome(fs, pane.current(), nodes));
+            }
+            if (nodes.size() == 1 && nodes.get(0).directory && fs instanceof TerminowLocalFs) {
+                labels.add(mActivity.getString(R.string.terminow_explorer_open_terminal));
+                handlers.add(() -> openInTerminal(fs, nodes.get(0)));
+            }
+            if (toOther) {
+                labels.add(mActivity.getString(R.string.terminow_explorer_copy_clipboard));
+                handlers.add(() -> {
+                    mClip = new Clip(fs, pane.current(), nodes, false, path);
+                    pane.selection.clear();
+                    render();
+                });
+            }
+            dialog().setTitle(mActivity.getString(R.string.terminow_explorer_selected, nodes.size()))
+                .setItems(labels.toArray(new CharSequence[0]), (d, which) -> handlers.get(which).run()).show();
+        });
+        bar.addView(actions, matchWrap());
+        LinearLayout wrapper = vertical();
+        wrapper.setPadding(0, dp(6), dp(4), dp(6));
+        wrapper.addView(bar, matchWrap());
+        return wrapper;
     }
 
-    /** An action chip, which explains why when it can not be used. */
-    private void addAction(@NonNull LinearLayout row, int labelRes, boolean enabled, @Nullable String reason, @NonNull Runnable action) {
-        TextView chip = chip(mActivity.getString(labelRes), false);
-        chip.setAlpha(enabled ? 1f : 0.45f);
-        chip.setOnClickListener(v -> {
-            if (enabled) action.run();
+    /** An action of the action bar, which explains why when it can not be used. */
+    private void action(@NonNull LinearLayout bar, int labelRes, boolean enabled, @Nullable String reason, @NonNull Runnable run) {
+        TextView button = text(mActivity.getString(labelRes), 13, enabled ? mPalette.text : mPalette.secondary);
+        button.setGravity(Gravity.CENTER);
+        button.setMinHeight(dp(48));
+        button.setBackground(ripple());
+        button.setAlpha(enabled ? 1f : 0.5f);
+        button.setOnClickListener(v -> {
+            if (enabled) run.run();
             else toast(reason != null ? reason : mActivity.getString(R.string.terminow_explorer_not_supported));
         });
-        row.addView(chip, chipParams());
+        bar.addView(button, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
     }
 
     @NonNull
@@ -1095,21 +2256,27 @@ public class TerminowExplorer {
         LinearLayout row = new LinearLayout(mActivity);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(12), dp(6), dp(6), dp(6));
-        GradientDrawable background = new GradientDrawable();
-        background.setCornerRadius(dp(12));
-        background.setColor(color(R.color.terminow_surface));
-        row.setBackground(background);
-        TextView label = text(mActivity.getResources().getQuantityString(mClip.move ? R.plurals.terminow_explorer_clip_move :
-            R.plurals.terminow_explorer_clip_copy, mClip.nodes.size(), mClip.nodes.size(), mClip.fs.getTitle()), 13, R.color.terminow_text);
-        row.addView(label, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        TextView paste = button(mActivity.getString(R.string.terminow_explorer_paste), true);
+        row.setBackground(rounded(mPalette.card, 12));
         Clip clip = mClip;
+        TextView label = text(mActivity.getResources().getQuantityString(clip.move ? R.plurals.terminow_explorer_clip_move :
+            R.plurals.terminow_explorer_clip_copy, clip.nodes.size(), clip.nodes.size(), clip.from), 13, mPalette.text);
+        label.setMaxLines(2);
+        label.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+        row.addView(label, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        boolean writable = pane.fs != null && pane.fs.getCapabilities().write;
+        TextView paste = button(mActivity.getString(R.string.terminow_explorer_paste), writable);
+        paste.setAlpha(writable ? 1f : 0.5f);
         paste.setOnClickListener(v -> {
+            if (!writable) {
+                toast(pane.fs != null ? pane.fs.getCapabilities().readOnlyReason : null);
+                return;
+            }
             mClip = null;
-            transfer(clip.fs, clip.parent, clip.nodes, pane.fs, pane.current(), clip.move);
+            queueTransfer(clip.fs, clip.parent, clip.nodes, clip.from, pane.fs, pane.current(), pane.fs.getDisplayPath(pane.crumbs), clip.move);
         });
         row.addView(paste, buttonParams());
         TextView cancel = chip("✕", false);
+        cancel.setContentDescription(mActivity.getString(android.R.string.cancel));
         cancel.setOnClickListener(v -> {
             mClip = null;
             render();
@@ -1136,8 +2303,7 @@ public class TerminowExplorer {
         CharSequence[] labels = new CharSequence[sorts.length + 1];
         for (int i = 0; i < sorts.length; i++) labels[i] = sortLabel(sorts[i]);
         labels[sorts.length] = mActivity.getString(R.string.terminow_explorer_sort_reverse);
-        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
-            .setTitle(R.string.terminow_explorer_sort_title)
+        dialog().setTitle(R.string.terminow_explorer_sort_title)
             .setItems(labels, (d, which) -> {
                 if (which == sorts.length) setView("descending", !mStore.getExplorer().optBoolean("descending"));
                 else setView("sort", sorts[which]);
@@ -1153,56 +2319,6 @@ public class TerminowExplorer {
         }
         mStore.setExplorer(state);
         render();
-    }
-
-    private void showFolderActions(@NonNull Pane pane) {
-        TerminowFs fs = pane.fs;
-        TerminowFs.Node current = pane.current();
-        if (fs == null || current == null) return;
-        TerminowFs.Capabilities capabilities = fs.getCapabilities();
-        List<CharSequence> labels = new ArrayList<>();
-        List<Runnable> actions = new ArrayList<>();
-        labels.add(mActivity.getString(R.string.terminow_explorer_new_folder));
-        actions.add(() -> {
-            if (capabilities.write) createFolder(pane);
-            else toast(capabilities.readOnlyReason);
-        });
-        labels.add(mActivity.getString(R.string.terminow_explorer_open_terminal));
-        actions.add(() -> openInTerminal(fs, current));
-        if (!(fs instanceof TerminowLocalFs)) {
-            labels.add(mActivity.getString(R.string.terminow_explorer_folder_to_home));
-            actions.add(() -> copyToHome(fs, pane.crumbs.size() > 1 ? pane.crumbs.get(pane.crumbs.size() - 2) : current,
-                Collections.singletonList(current)));
-        }
-        labels.add(mActivity.getString(R.string.terminow_explorer_bookmark));
-        actions.add(() -> bookmark(pane));
-        labels.add(mActivity.getString(R.string.terminow_explorer_properties));
-        actions.add(() -> showProperties(fs, current, fs.getDisplayPath(pane.crumbs)));
-        labels.add(mActivity.getString(R.string.terminow_explorer_refresh));
-        actions.add(() -> load(pane));
-        if (fs instanceof TerminowSftpFs) {
-            labels.add(mActivity.getString(R.string.terminow_explorer_disconnect));
-            actions.add(() -> {
-                mFileSystems.remove(fs.getId());
-                mExecutor.execute(fs::close);
-                for (Pane p : mPanes) if (p.fs == fs) {
-                    p.fs = null;
-                    p.crumbs.clear();
-                    p.entries.clear();
-                }
-                mDashboard = mPanes[mActivePane].fs == null;
-                render();
-            });
-        }
-        labels.add(mActivity.getString(R.string.terminow_explorer_dashboard));
-        actions.add(() -> {
-            mDashboard = true;
-            render();
-        });
-        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
-            .setTitle(fs.getDisplayPath(pane.crumbs))
-            .setItems(labels.toArray(new CharSequence[0]), (d, which) -> actions.get(which).run())
-            .show();
     }
 
     // ---------------------------------------------------------------------------------------
@@ -1223,10 +2339,9 @@ public class TerminowExplorer {
     private void delete(@NonNull Pane pane, @NonNull List<TerminowFs.Node> nodes) {
         String what = nodes.size() == 1 ? "\"" + nodes.get(0).name + "\"" :
             mActivity.getResources().getQuantityString(R.plurals.terminow_explorer_items, nodes.size(), nodes.size());
-        String message = mActivity.getString(R.string.terminow_explorer_delete_confirm, what, pane.fs.getTitle());
-        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+        dialog()
             .setTitle(R.string.terminow_explorer_delete_title)
-            .setMessage(message)
+            .setMessage(mActivity.getString(R.string.terminow_explorer_delete_confirm, what, pane.fs.getTitle()))
             .setPositiveButton(R.string.terminow_explorer_delete_permanently, (d, w) -> {
                 TerminowFs fs = pane.fs;
                 TerminowFs.Node parent = pane.current();
@@ -1235,7 +2350,7 @@ public class TerminowExplorer {
                     String error = null;
                     for (TerminowFs.Node node : nodes) {
                         try {
-                            progress.update(node.name, -1, -1, 0, 0);
+                            progress.update(node.name);
                             fs.delete(node, parent, progress.cancel);
                         } catch (TerminowFs.CancelledException e) {
                             break;
@@ -1263,64 +2378,47 @@ public class TerminowExplorer {
             return imports;
         }, imports -> {
             try {
-                transfer(fs, parent, nodes, getHomeFs(), imports, false);
+                queueTransfer(fs, parent, nodes, fs.getTitle(), getHomeFs(), imports, "~/" + IMPORTS_DIR, false);
             } catch (IOException e) {
                 toast(e.getMessage());
             }
         });
     }
 
-    /** Copy or move with progress, cancellation and conflict questions. */
-    private void transfer(@NonNull TerminowFs source, @NonNull TerminowFs.Node sourceParent, @NonNull List<TerminowFs.Node> nodes,
-                          @NonNull TerminowFs target, @NonNull TerminowFs.Node targetDirectory, boolean move) {
+    /** Add a copy or move to the transfer queue, which asks about conflicts when they happen. */
+    private void queueTransfer(@NonNull TerminowFs source, @NonNull TerminowFs.Node sourceParent, @NonNull List<TerminowFs.Node> nodes,
+                               @NonNull String sourceTitle, @NonNull TerminowFs target, @NonNull TerminowFs.Node targetDirectory,
+                               @NonNull String targetTitle, boolean move) {
         if (!target.getCapabilities().write) {
             toast(target.getCapabilities().readOnlyReason);
             return;
         }
-        Progress progress = new Progress(mActivity.getString(move ? R.string.terminow_explorer_moving : R.string.terminow_explorer_copying));
-        mExecutor.execute(() -> {
-            TerminowTransfer.Result result = new TerminowTransfer(source, target, move, new TerminowTransfer.Listener() {
-                TerminowTransfer.Resolution mAll;
-
-                @Override
-                public void onProgress(@NonNull String name, long bytesDone, long bytesTotal, int filesDone, int filesTotal) {
-                    progress.update(name, bytesDone, bytesTotal, filesDone, filesTotal);
-                }
-
-                @NonNull
-                @Override
-                public TerminowTransfer.Resolution onConflict(@NonNull String name) {
-                    if (mAll != null) return mAll;
-                    AtomicReference<TerminowTransfer.Resolution> answer = new AtomicReference<>(TerminowTransfer.Resolution.SKIP);
-                    AtomicReference<Boolean> all = new AtomicReference<>(false);
-                    waitForUi(latch -> askConflict(name, answer, all, latch));
-                    if (all.get()) mAll = answer.get();
-                    return answer.get();
-                }
-            }, progress.cancel).run(sourceParent, nodes, targetDirectory);
-            mHandler.post(() -> {
-                progress.dismiss();
-                String summary = TerminowTransfer.describe(result);
-                if (result.errors.isEmpty() && result.skippedLinks.isEmpty()) toast(summary);
-                else showMessage(mActivity.getString(move ? R.string.terminow_explorer_moving : R.string.terminow_explorer_copying), summary);
-                reloadShowing(source);
-                reloadShowing(target);
-            });
+        for (Pane pane : mPanes) pane.selection.clear();
+        final TerminowTransfer.Resolution[] all = {null};
+        mQueue.add(source, sourceParent, nodes, sourceTitle, target, targetDirectory, targetTitle, move, (job, name) -> {
+            if (all[0] != null) return all[0];
+            AtomicReference<TerminowTransfer.Resolution> answer = new AtomicReference<>(TerminowTransfer.Resolution.SKIP);
+            AtomicReference<Boolean> applyAll = new AtomicReference<>(false);
+            waitForUi(latch -> askConflict(name, job, answer, applyAll, latch));
+            if (applyAll.get()) all[0] = answer.get();
+            return answer.get();
         });
+        toast(mActivity.getString(R.string.terminow_explorer_queued));
+        render();
     }
 
-    private void askConflict(@NonNull String name, @NonNull AtomicReference<TerminowTransfer.Resolution> answer,
+    private void askConflict(@NonNull String name, @NonNull TerminowTransferQueue.Job job, @NonNull AtomicReference<TerminowTransfer.Resolution> answer,
                              @NonNull AtomicReference<Boolean> all, @NonNull CountDownLatch latch) {
         CheckBox applyAll = new CheckBox(mActivity);
         applyAll.setText(R.string.terminow_explorer_apply_all);
-        applyAll.setTextColor(color(R.color.terminow_text));
-        applyAll.setButtonTintList(ColorStateList.valueOf(color(R.color.terminow_panel_accent)));
+        applyAll.setTextColor(mPalette.text);
+        applyAll.setButtonTintList(ColorStateList.valueOf(mPalette.accent));
         LinearLayout box = vertical();
         box.setPadding(dp(20), dp(4), dp(20), 0);
         box.addView(applyAll);
-        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+        dialog()
             .setTitle(R.string.terminow_explorer_conflict_title)
-            .setMessage(mActivity.getString(R.string.terminow_explorer_conflict_message, name))
+            .setMessage(mActivity.getString(R.string.terminow_explorer_conflict_message, name, job.destinationTitle))
             .setView(box)
             .setCancelable(false)
             .setPositiveButton(R.string.terminow_explorer_keep_both, (d, w) -> {
@@ -1342,7 +2440,7 @@ public class TerminowExplorer {
     }
 
     private void reloadShowing(@NonNull TerminowFs fs) {
-        for (Pane pane : mPanes) if (pane.fs == fs && !mDashboard) load(pane);
+        for (Pane pane : mPanes) if (pane.fs == fs && mScreen == Screen.BROWSER) load(pane);
     }
 
     private void bookmark(@NonNull Pane pane) {
@@ -1364,7 +2462,8 @@ public class TerminowExplorer {
     }
 
     /** Open a real folder of HOME in a new terminal. Other folders can not be a working directory. */
-    private void openInTerminal(@NonNull TerminowFs fs, @NonNull TerminowFs.Node directory) {
+    private void openInTerminal(@Nullable TerminowFs fs, @Nullable TerminowFs.Node directory) {
+        if (fs == null || directory == null) return;
         if (!(fs instanceof TerminowLocalFs)) {
             showMessage(mActivity.getString(R.string.terminow_explorer_open_terminal),
                 mActivity.getString(fs instanceof TerminowSafFs ? R.string.terminow_explorer_terminal_saf : R.string.terminow_explorer_terminal_sftp));
@@ -1452,7 +2551,6 @@ public class TerminowExplorer {
             if (!((TerminowLocalFs) fs).isInsideHome(local)) throw new IOException(mActivity.getString(R.string.terminow_explorer_link_outside));
             return FileProvider.getUriForFile(mActivity, authority, local);
         }
-        // Each download in its own folder, so that names never collide
         File dir = new File(mActivity.getCacheDir(), "explorer/" + UUID.randomUUID());
         if (!dir.mkdirs()) throw new IOException("Failed to prepare the download");
         TerminowLocalFs cache = new TerminowLocalFs(dir, "cache");
@@ -1475,7 +2573,7 @@ public class TerminowExplorer {
     @NonNull
     private static String mimeType(@NonNull TerminowFs.Node node) {
         if (node.mimeType != null && !node.mimeType.isEmpty()) return node.mimeType;
-        String type = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension(node.name));
+        String type = MimeTypeMap.getSingleton().getMimeTypeFromExtension(TerminowFileScan.extension(node.name));
         return type != null ? type : "*/*";
     }
 
@@ -1488,7 +2586,8 @@ public class TerminowExplorer {
         }
     }
 
-    private void showProperties(@NonNull TerminowFs fs, @NonNull TerminowFs.Node node, @NonNull String path) {
+    private void showProperties(@NonNull TerminowFs fs, @Nullable TerminowFs.Node node, @NonNull String path) {
+        if (node == null) return;
         StringBuilder text = new StringBuilder();
         text.append(mActivity.getString(R.string.terminow_explorer_prop_name, node.name)).append('\n');
         text.append(mActivity.getString(R.string.terminow_explorer_prop_type, node.link ? mActivity.getString(R.string.terminow_explorer_type_link) :
@@ -1501,45 +2600,29 @@ public class TerminowExplorer {
         text.append(mActivity.getString(R.string.terminow_explorer_prop_location, fs.getTitle(), path)).append('\n');
         if (fs instanceof TerminowSafFs) text.append(mActivity.getString(R.string.terminow_explorer_prop_saf));
         if (fs instanceof TerminowLocalFs) text.append(mActivity.getString(R.string.terminow_explorer_prop_home));
-        AlertDialog dialog = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+        AlertDialog dialog = dialog()
             .setTitle(R.string.terminow_explorer_properties)
             .setMessage(text.toString().trim())
             .setPositiveButton(android.R.string.ok, null)
             .show();
         if (!node.directory || node.link) return;
-        // The size of a folder is counted in the background, without following links
         TerminowFs.Cancel cancel = new TerminowFs.Cancel();
         dialog.setOnDismissListener(d -> cancel.cancel());
         mExecutor.execute(() -> {
-            long[] totals = new long[2];
-            String error = null;
+            String result;
             try {
-                count(fs, node, totals, cancel, 0);
+                TerminowFileScan.Space space = TerminowFileScan.analyze(fs, node, cancel, null);
+                result = mActivity.getString(R.string.terminow_explorer_prop_contents, space.files, Formatter.formatFileSize(mActivity, space.totalBytes));
             } catch (TerminowFs.CancelledException e) {
                 return;
             } catch (IOException | RuntimeException e) {
-                error = e.getMessage();
+                result = String.valueOf(e.getMessage());
             }
-            String finalError = error;
+            String finalResult = result;
             mHandler.post(() -> {
-                if (!dialog.isShowing()) return;
-                dialog.setMessage(text.toString().trim() + "\n\n" + (finalError != null ? finalError :
-                    mActivity.getString(R.string.terminow_explorer_prop_contents, totals[0], Formatter.formatFileSize(mActivity, totals[1]))));
+                if (dialog.isShowing()) dialog.setMessage(text.toString().trim() + "\n\n" + finalResult);
             });
         });
-    }
-
-    private void count(@NonNull TerminowFs fs, @NonNull TerminowFs.Node directory, @NonNull long[] totals,
-                       @NonNull TerminowFs.Cancel cancel, int depth) throws IOException {
-        if (depth > 64) return;
-        for (TerminowFs.Node child : fs.list(directory, cancel)) {
-            if (child.link) continue;
-            if (child.directory) count(fs, child, totals, cancel, depth + 1);
-            else {
-                totals[0]++;
-                if (child.size > 0) totals[1] += child.size;
-            }
-        }
     }
 
     // ---------------------------------------------------------------------------------------
@@ -1560,21 +2643,24 @@ public class TerminowExplorer {
         mExecutor.execute(() -> {
             T result = null;
             String error = null;
+            boolean hostKeyChanged = false;
             try {
                 result = work.run();
             } catch (TerminowSftpFs.HostKeyChangedException e) {
-                error = "!" + e.getMessage();
+                error = e.getMessage();
+                hostKeyChanged = true;
             } catch (IOException | RuntimeException e) {
                 error = String.valueOf(e.getMessage());
             }
             T finalResult = result;
             String finalError = error;
+            boolean finalHostKey = hostKeyChanged;
             mHandler.post(() -> {
                 progress.dismiss();
                 if (progress.cancel.isCancelled()) return;
                 if (finalError != null) {
-                    if (finalError.startsWith("!")) showMessage(mActivity.getString(R.string.terminow_explorer_host_key_changed), finalError.substring(1));
-                    else showMessage(mActivity.getString(R.string.terminow_explorer_failed_title), finalError);
+                    showMessage(mActivity.getString(finalHostKey ? R.string.terminow_explorer_host_key_changed : R.string.terminow_explorer_failed_title), finalError);
+                    if (mVisible) render();
                 } else {
                     done.accept(finalResult);
                 }
@@ -1602,7 +2688,7 @@ public class TerminowExplorer {
         @Override
         public boolean confirmHostKey(@NonNull String host, @NonNull String keyType, @NonNull String fingerprint) {
             AtomicReference<Boolean> answer = new AtomicReference<>(false);
-            waitForUi(latch -> new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            waitForUi(latch -> dialog()
                 .setTitle(R.string.terminow_explorer_host_key_title)
                 .setMessage(mActivity.getString(R.string.terminow_explorer_host_key_message, host, keyType, fingerprint))
                 .setCancelable(false)
@@ -1633,11 +2719,11 @@ public class TerminowExplorer {
             waitForUi(latch -> {
                 EditText field = new EditText(mActivity);
                 field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-                field.setTextColor(color(R.color.terminow_text));
+                field.setTextColor(mPalette.text);
                 LinearLayout box = vertical();
                 box.setPadding(dp(20), dp(4), dp(20), 0);
                 box.addView(field, matchWrap());
-                new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                dialog()
                     .setTitle(prompt)
                     .setView(box)
                     .setCancelable(false)
@@ -1656,21 +2742,21 @@ public class TerminowExplorer {
     private class Progress {
         final TerminowFs.Cancel cancel = new TerminowFs.Cancel();
         private final AlertDialog mDialog;
-        private final ProgressBar mBar;
         private final TextView mText;
+        private boolean mDismissed;
         private long mLastUpdate;
 
         Progress(@NonNull String title) {
             LinearLayout box = vertical();
             box.setPadding(dp(22), dp(10), dp(22), 0);
-            mBar = new ProgressBar(mActivity, null, android.R.attr.progressBarStyleHorizontal);
-            mBar.setIndeterminate(true);
-            mBar.setProgressTintList(ColorStateList.valueOf(color(R.color.terminow_panel_accent)));
-            box.addView(mBar, matchWrap());
-            mText = text("", 13, R.color.terminow_text_secondary);
+            ProgressBar bar = new ProgressBar(mActivity, null, android.R.attr.progressBarStyleHorizontal);
+            bar.setIndeterminate(true);
+            bar.setIndeterminateTintList(ColorStateList.valueOf(mPalette.accent));
+            box.addView(bar, matchWrap());
+            mText = text("", 13, mPalette.secondary);
             mText.setPadding(0, dp(8), 0, 0);
             box.addView(mText, matchWrap());
-            mDialog = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            mDialog = dialog()
                 .setTitle(title)
                 .setView(box)
                 .setCancelable(false)
@@ -1682,21 +2768,11 @@ public class TerminowExplorer {
             }, 300);
         }
 
-        private boolean mDismissed;
-
-        void update(@NonNull String name, long done, long total, int filesDone, int filesTotal) {
+        void update(@NonNull String name) {
             long now = System.currentTimeMillis();
             if (now - mLastUpdate < 150) return;
             mLastUpdate = now;
-            mHandler.post(() -> {
-                if (total > 0) {
-                    mBar.setIndeterminate(false);
-                    mBar.setMax(1000);
-                    mBar.setProgress((int) Math.min(1000, done * 1000 / total));
-                }
-                mText.setText(name + (total > 0 ? "\n" + Formatter.formatShortFileSize(mActivity, done) + " / " +
-                    Formatter.formatShortFileSize(mActivity, total) : "") + (filesTotal > 0 ? "  ·  " + filesDone + "/" + filesTotal : ""));
-            });
+            mHandler.post(() -> mText.setText(name));
         }
 
         void dismiss() {
@@ -1713,13 +2789,13 @@ public class TerminowExplorer {
         EditText field = new EditText(mActivity);
         field.setSingleLine(true);
         field.setText(initial);
-        field.setTextColor(color(R.color.terminow_text));
+        field.setTextColor(mPalette.text);
         int dot = initial.lastIndexOf('.');
         field.setSelection(0, dot > 0 ? dot : initial.length());
         LinearLayout box = vertical();
         box.setPadding(dp(20), dp(4), dp(20), 0);
         box.addView(field, matchWrap());
-        AlertDialog dialog = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+        AlertDialog dialog = dialog()
             .setTitle(titleRes)
             .setView(box)
             .setPositiveButton(android.R.string.ok, null)
@@ -1738,135 +2814,250 @@ public class TerminowExplorer {
     }
 
     // ---------------------------------------------------------------------------------------
-    // List items
+    // List items and thumbnails
     // ---------------------------------------------------------------------------------------
 
-    private class EntryAdapter extends BaseAdapter {
-        private final Pane mPane;
-        private final boolean mGrid;
+    @NonNull
+    private View entryView(@NonNull TerminowFs fs, @NonNull TerminowFs.Node node, boolean selected, boolean grid, @Nullable String location) {
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setOrientation(grid ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
+        row.setGravity(grid ? Gravity.CENTER_HORIZONTAL : Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(dp(grid ? 120 : 60));
+        row.setPadding(dp(10), dp(grid ? 12 : 8), dp(10), dp(grid ? 10 : 8));
+        row.setBackground(rounded(selected ? mPalette.selected : mPalette.card, 12));
 
-        EntryAdapter(@NonNull Pane pane, boolean grid) {
-            mPane = pane;
-            mGrid = grid;
+        ImageView icon = new ImageView(mActivity);
+        Bitmap thumbnail = selected ? null : thumbnail(fs, node);
+        int iconSize = grid ? 48 : 40;
+        if (selected) {
+            icon.setImageResource(R.drawable.ic_terminow_check);
+            icon.setImageTintList(ColorStateList.valueOf(0xFFFFFFFF));
+            icon.setBackground(round(mPalette.accent));
+            icon.setPadding(dp(8), dp(8), dp(8), dp(8));
+        } else if (thumbnail != null) {
+            icon.setImageBitmap(thumbnail);
+            icon.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            icon.setClipToOutline(true);
+            icon.setBackground(rounded(mPalette.field, 8));
+        } else {
+            TerminowFileScan.Category category = node.directory ? null : TerminowFileScan.Category.of(node.name);
+            int iconRes = node.directory ? R.drawable.ic_terminow_folder : category != null ? categoryIcon(category) : R.drawable.ic_terminow_file;
+            int tint = node.link ? 0xFFB57BEE : node.directory ? mPalette.accent : category != null ? categoryColor(category) : mPalette.secondary;
+            icon.setImageResource(iconRes);
+            icon.setImageTintList(ColorStateList.valueOf(tint));
+            icon.setPadding(dp(6), dp(6), dp(6), dp(6));
         }
+        row.addView(icon, new LinearLayout.LayoutParams(dp(iconSize), dp(iconSize)));
 
-        @NonNull
-        List<TerminowFs.Node> items() {
-            return visibleEntries(mPane);
+        LinearLayout texts = vertical();
+        if (!grid) texts.setPadding(dp(12), 0, 0, 0);
+        TextView name = text(node.name + (node.link ? "  ⤷" : ""), 14, mPalette.text);
+        name.setSingleLine(!grid);
+        name.setMaxLines(grid ? 2 : 1);
+        name.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+        if (grid) {
+            name.setGravity(Gravity.CENTER);
+            name.setPadding(0, dp(6), 0, 0);
         }
-
-        @Override
-        public int getCount() {
-            return items().size();
+        texts.addView(name, matchWrap());
+        StringBuilder details = new StringBuilder();
+        if (!node.directory && node.size >= 0) details.append(size(node.size));
+        if (node.modified > 0 && !grid) {
+            if (details.length() > 0) details.append("  ·  ");
+            details.append(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(new Date(node.modified)));
         }
-
-        @Override
-        public Object getItem(int position) {
-            return items().get(position);
+        if (location != null && !grid) {
+            if (details.length() > 0) details.append("\n");
+            details.append(location);
         }
-
-        @Override
-        public long getItemId(int position) {
-            return position;
+        if (details.length() > 0) {
+            TextView detailView = text(details.toString(), 12, mPalette.secondary);
+            detailView.setMaxLines(2);
+            detailView.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+            if (grid) detailView.setGravity(Gravity.CENTER);
+            texts.addView(detailView, matchWrap());
         }
+        row.addView(texts, grid ? matchWrap() : new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        return row;
+    }
 
-        @Override
-        public View getView(int position, View convertView, ViewGroup parent) {
-            TerminowFs.Node node = items().get(position);
-            LinearLayout row = new LinearLayout(mActivity);
-            row.setOrientation(mGrid ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
-            row.setGravity(mGrid ? Gravity.CENTER_HORIZONTAL : Gravity.CENTER_VERTICAL);
-            row.setPadding(dp(10), dp(mGrid ? 12 : 8), dp(10), dp(mGrid ? 10 : 8));
-            GradientDrawable background = new GradientDrawable();
-            background.setCornerRadius(dp(12));
-            boolean selected = mPane.selection.contains(node.id);
-            background.setColor(color(selected ? R.color.terminow_rail_selected : R.color.terminow_surface));
-            row.setBackground(background);
-
-            ImageView icon = new ImageView(mActivity);
-            icon.setImageResource(node.directory ? R.drawable.ic_terminow_folder : R.drawable.ic_terminow_file);
-            icon.setImageTintList(ColorStateList.valueOf(color(node.link ? R.color.terminow_host_group :
-                node.directory ? R.color.terminow_panel_accent : R.color.terminow_text_secondary)));
-            row.addView(icon, new LinearLayout.LayoutParams(dp(mGrid ? 40 : 30), dp(mGrid ? 40 : 30)));
-
-            LinearLayout texts = vertical();
-            if (!mGrid) texts.setPadding(dp(12), 0, 0, 0);
-            TextView name = text(node.name + (node.link ? "  ⤷" : ""), 14, R.color.terminow_text);
-            name.setSingleLine(!mGrid);
-            name.setMaxLines(mGrid ? 2 : 1);
-            name.setEllipsize(TextUtils.TruncateAt.MIDDLE);
-            if (mGrid) name.setGravity(Gravity.CENTER);
-            texts.addView(name, matchWrap());
-            StringBuilder details = new StringBuilder();
-            if (!node.directory && node.size >= 0) details.append(Formatter.formatShortFileSize(mActivity, node.size));
-            if (node.modified > 0 && !mGrid) {
-                if (details.length() > 0) details.append("  ·  ");
-                details.append(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(new Date(node.modified)));
+    /** A thumbnail of an image of HOME or a device folder, loaded in the background. Never of SFTP files. */
+    @Nullable
+    private Bitmap thumbnail(@NonNull TerminowFs fs, @NonNull TerminowFs.Node node) {
+        if (node.directory || node.link || fs instanceof TerminowSftpFs || isSensitive(fs, node)) return null;
+        if (!TerminowFileScan.Category.IMAGES.matches(node.name) || TerminowFileScan.extension(node.name).equals("svg")) return null;
+        String key = fs.getId() + "|" + node.id + "|" + node.modified;
+        Bitmap cached = mThumbnails.get(key);
+        if (cached != null || mThumbnailsLoading.contains(key)) return cached;
+        mThumbnailsLoading.add(key);
+        int target = dp(96);
+        mExecutor.execute(() -> {
+            Bitmap bitmap = null;
+            try {
+                if (fs instanceof TerminowSafFs && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    bitmap = mActivity.getContentResolver().loadThumbnail(Uri.parse(node.id), new Size(target, target), null);
+                } else {
+                    BitmapFactory.Options bounds = new BitmapFactory.Options();
+                    bounds.inJustDecodeBounds = true;
+                    try (InputStream in = fs.openInput(node)) {
+                        BitmapFactory.decodeStream(in, null, bounds);
+                    }
+                    BitmapFactory.Options options = new BitmapFactory.Options();
+                    options.inSampleSize = 1;
+                    while (bounds.outWidth / (options.inSampleSize * 2) >= target && bounds.outHeight / (options.inSampleSize * 2) >= target)
+                        options.inSampleSize *= 2;
+                    try (InputStream in = fs.openInput(node)) {
+                        bitmap = BitmapFactory.decodeStream(in, null, options);
+                    }
+                }
+            } catch (IOException | RuntimeException | OutOfMemoryError e) {
+                // The icon stays
             }
-            if (details.length() > 0) {
-                TextView detailView = text(details.toString(), 12, R.color.terminow_text_secondary);
-                if (mGrid) detailView.setGravity(Gravity.CENTER);
-                texts.addView(detailView, matchWrap());
-            }
-            row.addView(texts, mGrid ? matchWrap() : new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-            return row;
-        }
+            Bitmap result = bitmap;
+            mHandler.post(() -> {
+                mThumbnailsLoading.remove(key);
+                if (result != null) {
+                    mThumbnails.put(key, result);
+                    if (mListAdapter != null) mListAdapter.notifyDataSetChanged();
+                }
+            });
+        });
+        return null;
     }
 
     // ---------------------------------------------------------------------------------------
     // Views
     // ---------------------------------------------------------------------------------------
 
+    /** The ring of the storage card: how much of the device storage is used. */
+    private static class UsageRing extends View {
+        private final float mUsed;
+        private final Palette mPalette;
+        private final Paint mPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF mBounds = new RectF();
+
+        UsageRing(@NonNull Context context, float used, @NonNull Palette palette) {
+            super(context);
+            mUsed = used;
+            mPalette = palette;
+            setContentDescription(Math.round(used * 100) + "%");
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            float stroke = getWidth() * 0.11f;
+            mBounds.set(stroke / 2, stroke / 2, getWidth() - stroke / 2, getHeight() - stroke / 2);
+            mPaint.setStyle(Paint.Style.STROKE);
+            mPaint.setStrokeWidth(stroke);
+            mPaint.setStrokeCap(Paint.Cap.ROUND);
+            mPaint.setColor(mPalette.field);
+            canvas.drawArc(mBounds, 0, 360, false, mPaint);
+            mPaint.setColor(mUsed > 0.9f ? mPalette.danger : mUsed > 0.75f ? mPalette.warning : mPalette.accent);
+            canvas.drawArc(mBounds, -90, 360 * mUsed, false, mPaint);
+            mPaint.setStyle(Paint.Style.FILL);
+            mPaint.setColor(mPalette.text);
+            mPaint.setTextSize(getWidth() * 0.24f);
+            mPaint.setTextAlign(Paint.Align.CENTER);
+            canvas.drawText(Math.round(mUsed * 100) + "%", getWidth() / 2f, getHeight() / 2f - (mPaint.descent() + mPaint.ascent()) / 2, mPaint);
+        }
+    }
+
     @NonNull
-    private View locationCard(int iconRes, int colorRes, @NonNull String title, @Nullable String subtitle,
-                              @NonNull View.OnClickListener onClick, @Nullable View.OnLongClickListener onLongClick) {
-        LinearLayout card = new LinearLayout(mActivity);
-        card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setBackgroundResource(R.drawable.terminow_card);
-        card.setPadding(dp(12), dp(10), dp(12), dp(10));
-        ImageView icon = new ImageView(mActivity);
-        icon.setImageResource(iconRes);
-        icon.setBackgroundResource(R.drawable.terminow_host_icon);
-        icon.getBackground().mutate().setTint(color(colorRes));
-        icon.setPadding(dp(7), dp(7), dp(7), dp(7));
-        card.addView(icon, new LinearLayout.LayoutParams(dp(36), dp(36)));
+    private View listRow(int iconRes, int iconColor, @NonNull String title, @Nullable String subtitle, @Nullable View trailing,
+                         @NonNull View.OnClickListener onClick) {
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(dp(56));
+        row.setPadding(dp(4), dp(6), dp(4), dp(6));
+        row.setBackground(ripple());
+        row.addView(round(iconRes, iconColor, 40), new LinearLayout.LayoutParams(dp(40), dp(40)));
         LinearLayout texts = vertical();
-        texts.setPadding(dp(12), 0, 0, 0);
-        TextView titleView = text(title, 15, R.color.terminow_text);
+        texts.setPadding(dp(12), 0, dp(8), 0);
+        TextView titleView = text(title, 15, mPalette.text);
         titleView.setSingleLine(true);
         titleView.setEllipsize(TextUtils.TruncateAt.END);
         texts.addView(titleView, matchWrap());
         if (subtitle != null) {
-            TextView subtitleView = text(subtitle, 12, R.color.terminow_text_secondary);
+            TextView subtitleView = text(subtitle, 12, mPalette.secondary);
             subtitleView.setMaxLines(2);
             subtitleView.setEllipsize(TextUtils.TruncateAt.END);
             texts.addView(subtitleView, matchWrap());
         }
-        card.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        card.setOnClickListener(onClick);
-        if (onLongClick != null) card.setOnLongClickListener(onLongClick);
-        return card;
+        row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        if (trailing != null) row.addView(trailing, buttonParams());
+        row.setOnClickListener(onClick);
+        return row;
     }
 
-    private void section(@NonNull LinearLayout parent, int titleRes) {
-        TextView title = text(mActivity.getString(titleRes), 13, R.color.terminow_text_secondary);
+    @NonNull
+    private TextView sectionTitle(int titleRes) {
+        TextView title = text(mActivity.getString(titleRes), 14, mPalette.accent);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setPadding(dp(2), dp(16), 0, dp(6));
-        parent.addView(title);
+        title.setPadding(dp(2), 0, 0, dp(6));
+        return title;
+    }
+
+    /** A colored circle with a white icon. */
+    @NonNull
+    private ImageView round(int iconRes, int circleColor, int sizeDp) {
+        ImageView icon = new ImageView(mActivity);
+        icon.setImageResource(iconRes);
+        icon.setImageTintList(ColorStateList.valueOf(0xFFFFFFFF));
+        icon.setBackground(round(circleColor));
+        int padding = Math.round(sizeDp * 0.24f);
+        icon.setPadding(dp(padding), dp(padding), dp(padding), dp(padding));
+        return icon;
+    }
+
+    @NonNull
+    private static GradientDrawable round(int color) {
+        GradientDrawable shape = new GradientDrawable();
+        shape.setShape(GradientDrawable.OVAL);
+        shape.setColor(color);
+        return shape;
+    }
+
+    @NonNull
+    private GradientDrawable rounded(int color, int radiusDp) {
+        GradientDrawable shape = new GradientDrawable();
+        shape.setCornerRadius(dp(radiusDp));
+        shape.setColor(color);
+        return shape;
+    }
+
+    @Nullable
+    private android.graphics.drawable.Drawable ripple() {
+        TypedValue value = new TypedValue();
+        mActivity.getTheme().resolveAttribute(android.R.attr.selectableItemBackground, value, true);
+        return ContextCompat.getDrawable(mActivity, value.resourceId);
+    }
+
+    @NonNull
+    private ImageView iconButton(int iconRes, int descriptionRes) {
+        ImageView button = new ImageView(mActivity);
+        button.setImageResource(iconRes);
+        button.setImageTintList(ColorStateList.valueOf(mPalette.text));
+        button.setContentDescription(mActivity.getString(descriptionRes));
+        button.setPadding(dp(12), dp(12), dp(12), dp(12));
+        TypedValue value = new TypedValue();
+        mActivity.getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, value, true);
+        button.setBackgroundResource(value.resourceId);
+        button.setLayoutParams(new LinearLayout.LayoutParams(dp(48), dp(48)));
+        return button;
     }
 
     @NonNull
     private LinearLayout.LayoutParams cardParams() {
         LinearLayout.LayoutParams params = matchWrap();
-        params.bottomMargin = dp(8);
+        params.bottomMargin = dp(10);
         return params;
     }
 
     @NonNull
     private LinearLayout card() {
         LinearLayout card = vertical();
-        card.setBackgroundResource(R.drawable.terminow_card);
-        card.setPadding(dp(18), dp(18), dp(18), dp(18));
+        card.setBackground(rounded(mPalette.card, 16));
+        card.setPadding(dp(14), dp(14), dp(14), dp(14));
         return card;
     }
 
@@ -1879,20 +3070,17 @@ public class TerminowExplorer {
 
     @NonNull
     private TextView chip(@NonNull String label, boolean selected) {
-        TextView chip = text(label, 13, selected ? R.color.terminow_bar_home : R.color.terminow_text);
+        TextView chip = text(label, 13, selected ? 0xFFFFFFFF : mPalette.text);
         chip.setGravity(Gravity.CENTER);
         chip.setPadding(dp(12), 0, dp(12), 0);
         chip.setMinWidth(dp(40));
-        GradientDrawable shape = new GradientDrawable();
-        shape.setCornerRadius(dp(16));
-        shape.setColor(color(selected ? R.color.terminow_panel_accent : R.color.terminow_surface));
-        chip.setBackground(shape);
+        chip.setBackground(rounded(selected ? mPalette.accent : mPalette.field, 16));
         return chip;
     }
 
     @NonNull
     private LinearLayout.LayoutParams chipParams() {
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(34));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(36));
         params.setMarginEnd(dp(6));
         return params;
     }
@@ -1907,18 +3095,23 @@ public class TerminowExplorer {
 
     @NonNull
     private LinearLayout.LayoutParams buttonParams() {
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(38));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(40));
         params.setMarginEnd(dp(8));
         return params;
     }
 
     @NonNull
-    private TextView text(@NonNull String text, int sp, int colorRes) {
+    private TextView text(@NonNull String text, int sp, int color) {
         TextView view = new TextView(mActivity);
         view.setText(text);
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
-        view.setTextColor(color(colorRes));
+        view.setTextColor(color);
         return view;
+    }
+
+    @NonNull
+    private String size(long bytes) {
+        return Formatter.formatShortFileSize(mActivity, bytes);
     }
 
     @NonNull
@@ -1926,8 +3119,13 @@ public class TerminowExplorer {
         return new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
     }
 
+    @NonNull
+    private static FrameLayout.LayoutParams matchMatch() {
+        return new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+    }
+
     private void confirm(@NonNull String message, @NonNull Runnable action) {
-        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+        dialog()
             .setMessage(message)
             .setPositiveButton(android.R.string.ok, (d, w) -> action.run())
             .setNegativeButton(android.R.string.cancel, null)
@@ -1936,7 +3134,7 @@ public class TerminowExplorer {
 
     private void showMessage(@NonNull String title, @NonNull String message) {
         if (mActivity.isFinishing()) return;
-        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+        dialog()
             .setTitle(title)
             .setMessage(message)
             .setPositiveButton(android.R.string.ok, null)

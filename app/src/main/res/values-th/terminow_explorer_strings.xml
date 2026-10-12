@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_explorer_rail">จัดการไฟล์</string>
+    <string name="terminow_explorer_title">จัดการไฟล์</string>
+    <string name="terminow_explorer_drawer">เมนูจัดการไฟล์</string>
+    <string name="terminow_explorer_premium_active">Premium</string>
+    <string name="terminow_explorer_premium_title">จัดการไฟล์เป็นฟีเจอร์ Premium</string>
+    <string name="terminow_explorer_premium_features">• เปิดดู TermiNow Home, โฟลเดอร์ในเครื่องที่คุณเลือก และโฮสต์ SFTP ที่บันทึกไว้\n• คัดลอกและย้ายไฟล์ระหว่างกันผ่านคิวการโอน พร้อมตัวเลือกข้าม / แทนที่ / เก็บทั้งสอง\n• หมวดหมู่ไฟล์ ค้นหา วิเคราะห์พื้นที่ บุ๊กมาร์ก และไฟล์ล่าสุด\n• เปิดโฟลเดอร์ใน Home ในเทอร์มินัลใหม่</string>
+    <string name="terminow_explorer_state_signed_out">ลงชื่อเข้าใช้ด้วยอีเมลบัญชี accmove.com ของคุณเพื่อตรวจสอบ Premium</string>
+    <string name="terminow_explorer_state_unknown">ยังไม่ได้ตรวจสอบ Premium ยืนยันอีเมลก่อนหากยังไม่ได้ทำ แล้วกดตรวจสอบ</string>
+    <string name="terminow_explorer_state_needs_check">ตรวจสอบ Premium ครั้งล่าสุดนานกว่า %1$d วันแล้ว เชื่อมต่ออินเทอร์เน็ตแล้วตรวจสอบอีกครั้ง</string>
+    <string name="terminow_explorer_state_expired">บริการ Premium ของคุณเลยวันครบกำหนดแล้ว ตรวจสอบอีกครั้งหลังต่ออายุ</string>
+    <string name="terminow_explorer_state_free">บัญชีนี้ยังไม่มี Premium โดย Premium จัดการได้ในบัญชี accmove.com ที่ใช้อีเมลเดียวกัน</string>
+    <string name="terminow_explorer_check_premium">ตรวจสอบ Premium</string>
+    <string name="terminow_explorer_account">บัญชี</string>
+    <string name="terminow_explorer_data_kept">ไม่มีข้อมูลใดถูกลบเมื่อไม่มี Premium ไฟล์ของคุณยังอยู่ใน TermiNow Home และยังใช้เทอร์มินัลและ “ส่งออกไฟล์” เพื่อบันทึกไว้ที่อื่นได้</string>
+    <string name="terminow_explorer_export">ส่งออกไฟล์</string>
+
+    <string name="terminow_explorer_section_storage">พื้นที่จัดเก็บ</string>
+    <string name="terminow_explorer_section_categories">หมวดหมู่</string>
+    <string name="terminow_explorer_section_device">โฟลเดอร์ในเครื่อง</string>
+    <string name="terminow_explorer_section_sftp">SFTP</string>
+    <string name="terminow_explorer_section_tools">เครื่องมือ</string>
+    <string name="terminow_explorer_home">TermiNow Home</string>
+    <string name="terminow_explorer_capacity_label">พื้นที่ของเครื่อง ใช้ร่วมกันทุกแอป</string>
+    <string name="terminow_explorer_capacity">ใช้แล้ว %1$s · ว่าง %2$s · ทั้งหมด %3$s</string>
+    <string name="terminow_explorer_home_size">โฟลเดอร์ TermiNow Home: %1$s</string>
+    <string name="terminow_explorer_home_size_calculating">โฟลเดอร์ TermiNow Home: กำลังคำนวณ…</string>
+    <string name="terminow_explorer_analyzer">วิเคราะห์พื้นที่</string>
+    <string name="terminow_explorer_analyzer_summary">ดูว่าอะไรใช้พื้นที่ใน Home และโฟลเดอร์ในเครื่องของคุณ</string>
+    <string name="terminow_explorer_analyzer_result">%1$s ใน %2$d ตำแหน่ง</string>
+    <string name="terminow_explorer_analyzer_note">ขนาดของ TermiNow Home และโฟลเดอร์ในเครื่องที่คุณเลือก ไม่ติดตามลิงก์</string>
+    <string name="terminow_explorer_analyzing">กำลังวิเคราะห์…</string>
+    <string name="terminow_explorer_analyzing_in">กำลังวิเคราะห์ %1$s… %2$d ไฟล์</string>
+    <string name="terminow_explorer_analyze_again">วิเคราะห์อีกครั้ง</string>
+    <string name="terminow_explorer_space_total">%1$s · %2$d ไฟล์ · %3$d โฟลเดอร์</string>
+    <string name="terminow_explorer_space_incomplete">อ่านบางโฟลเดอร์ไม่ได้</string>
+    <string name="terminow_explorer_largest_files">ไฟล์ที่ใหญ่ที่สุด</string>
+    <string name="terminow_explorer_cat_images">รูปภาพ</string>
+    <string name="terminow_explorer_cat_videos">วิดีโอ</string>
+    <string name="terminow_explorer_cat_audio">เสียง</string>
+    <string name="terminow_explorer_cat_documents">เอกสาร</string>
+    <string name="terminow_explorer_cat_apk">ไฟล์ APK</string>
+    <string name="terminow_explorer_cat_archives">ไฟล์บีบอัด</string>
+    <string name="terminow_explorer_accessible_only">ใน TermiNow Home และโฟลเดอร์ในเครื่องที่คุณเลือก</string>
+
+    <string name="terminow_explorer_device_folder">โฟลเดอร์พื้นที่ส่วนกลาง เลือกผ่านตัวเลือกของ Android</string>
+    <string name="terminow_explorer_access_lost">สิทธิ์เข้าถึงหายไป แตะเพื่อเลือกโฟลเดอร์อีกครั้ง</string>
+    <string name="terminow_explorer_access_lost_short">สิทธิ์เข้าถึงหายไป</string>
+    <string name="terminow_explorer_access_lost_message">TermiNow ไม่มีสิทธิ์เข้าถึงโฟลเดอร์นี้แล้ว เช่น โฟลเดอร์ถูกย้ายหรือสิทธิ์ถูกยกเลิก เลือกโฟลเดอร์อีกครั้งเพื่อใช้งานต่อ</string>
+    <string name="terminow_explorer_choose_again">เลือกโฟลเดอร์อีกครั้ง</string>
+    <string name="terminow_explorer_remove_folder">นำออก</string>
+    <string name="terminow_explorer_remove_folder_confirm">นำ %1$s ออกจากจัดการไฟล์หรือไม่ โฟลเดอร์และไฟล์ยังอยู่ในเครื่อง จะนำออกเฉพาะสิทธิ์ของ TermiNow</string>
+    <string name="terminow_explorer_add_folder">เพิ่มโฟลเดอร์</string>
+    <string name="terminow_explorer_add_folder_summary">เลือกโฟลเดอร์ เช่น Download หรือ Documents โดย TermiNow เห็นเฉพาะโฟลเดอร์ที่คุณเลือก</string>
+    <string name="terminow_explorer_no_picker">เครื่องนี้ไม่มีตัวเลือกโฟลเดอร์</string>
+    <string name="terminow_explorer_not_kept">Android ไม่อนุญาตให้ TermiNow เก็บสิทธิ์นี้ไว้ โฟลเดอร์จะใช้ได้จนกว่า TermiNow จะเริ่มใหม่</string>
+
+    <string name="terminow_explorer_no_hosts">ยังไม่มีโฮสต์ที่บันทึกไว้ เพิ่มโฮสต์ในหน้าโฮสต์เพื่อเปิดดูด้วย SFTP</string>
+    <string name="terminow_explorer_connected">เชื่อมต่อแล้ว</string>
+    <string name="terminow_explorer_not_connected">ยังไม่ได้เชื่อมต่อ</string>
+    <string name="terminow_explorer_connect">เชื่อมต่อ</string>
+    <string name="terminow_explorer_open">เปิด</string>
+    <string name="terminow_explorer_reconnect">เชื่อมต่อใหม่</string>
+    <string name="terminow_explorer_disconnect">ตัดการเชื่อมต่อ</string>
+
+    <string name="terminow_explorer_recent">ไฟล์ล่าสุด</string>
+    <string name="terminow_explorer_bookmarks">บุ๊กมาร์ก</string>
+    <string name="terminow_explorer_no_bookmarks">ยังไม่มีบุ๊กมาร์ก</string>
+    <string name="terminow_explorer_bookmark_hint">บุ๊กมาร์กโฟลเดอร์ได้จาก ⋮ › บุ๊กมาร์ก กดค้างที่บุ๊กมาร์กเพื่อลบ</string>
+    <string name="terminow_explorer_no_recents">ยังไม่มีไฟล์ล่าสุด</string>
+    <string name="terminow_explorer_clear_recents">ล้างไฟล์ล่าสุด</string>
+    <string name="terminow_explorer_remove_bookmark">ลบบุ๊กมาร์ก %1$s หรือไม่</string>
+    <string name="terminow_explorer_location_gone">ตำแหน่งนี้ไม่พร้อมใช้งานแล้ว</string>
+    <string name="terminow_explorer_open_terminal">เปิดในเทอร์มินัล</string>
+    <string name="terminow_explorer_open_terminal_home">เปิด Home ในเทอร์มินัล</string>
+
+    <string name="terminow_explorer_queue">คิวการโอนไฟล์</string>
+    <string name="terminow_explorer_queue_active">ทำงานอยู่ %1$d รายการ</string>
+    <string name="terminow_explorer_queue_empty">ยังไม่มีการโอนไฟล์ คัดลอกหรือย้ายไฟล์แล้วจะแสดงที่นี่</string>
+    <string name="terminow_explorer_queue_waiting">กำลังรอ…</string>
+    <string name="terminow_explorer_queue_cancelled">ยกเลิกแล้ว ไม่มีไฟล์ที่ค้างครึ่งทาง</string>
+    <string name="terminow_explorer_queue_clear">ล้างรายการที่เสร็จแล้ว</string>
+    <string name="terminow_explorer_queued">เพิ่มในคิวการโอนแล้ว</string>
+    <string name="terminow_explorer_job_copy">คัดลอก %1$s: %2$s → %3$s</string>
+    <string name="terminow_explorer_job_move">ย้าย %1$s: %2$s → %3$s</string>
+
+    <string name="terminow_explorer_pick_location">เลือกตำแหน่งจากเมนู</string>
+    <string name="terminow_explorer_hidden">แสดงไฟล์ที่ซ่อนอยู่</string>
+    <string name="terminow_explorer_show_hidden">แสดงไฟล์ที่ซ่อนอยู่</string>
+    <string name="terminow_explorer_hide_hidden">ซ่อนไฟล์ที่ซ่อนอยู่</string>
+    <string name="terminow_explorer_view">มุมมอง</string>
+    <string name="terminow_explorer_view_list">รายการ</string>
+    <string name="terminow_explorer_view_grid">ตาราง</string>
+    <string name="terminow_explorer_theme">ธีม</string>
+    <string name="terminow_explorer_theme_system">ตามระบบ</string>
+    <string name="terminow_explorer_theme_light">สว่าง</string>
+    <string name="terminow_explorer_theme_dark">มืด</string>
+    <string name="terminow_explorer_dashboard">หน้าแรกจัดการไฟล์</string>
+    <string name="terminow_explorer_two_panes">สองหน้าต่าง</string>
+    <string name="terminow_explorer_one_pane">หน้าต่างเดียว</string>
+    <string name="terminow_explorer_pane_source">ต้นทาง</string>
+    <string name="terminow_explorer_pane_destination">ปลายทาง</string>
+    <string name="terminow_explorer_route">จาก %1$s  →  ไป %2$s</string>
+
+    <string name="terminow_explorer_up">ขึ้น</string>
+    <string name="terminow_explorer_more">เพิ่มเติม</string>
+    <string name="terminow_explorer_search">ค้นหา</string>
+    <string name="terminow_explorer_search_hint">ค้นหาในโฟลเดอร์นี้</string>
+    <string name="terminow_explorer_search_all_hint">ชื่อไฟล์ อย่างน้อย 2 ตัวอักษร</string>
+    <string name="terminow_explorer_search_short">พิมพ์อย่างน้อย 2 ตัวอักษร</string>
+    <string name="terminow_explorer_searching">กำลังค้นหา… พบ %1$d</string>
+    <string name="terminow_explorer_search_cancelled">ยกเลิกแล้ว</string>
+    <string name="terminow_explorer_search_limit">แสดง %1$d รายการแรก</string>
+    <string name="terminow_explorer_nothing_found">ไม่พบในตำแหน่งที่ TermiNow เข้าถึงได้</string>
+    <plurals name="terminow_explorer_found">
+        <item quantity="other">พบ %d ไฟล์</item>
+    </plurals>
+    <string name="terminow_explorer_open_folder">เปิดโฟลเดอร์ที่เก็บไฟล์</string>
+    <string name="terminow_explorer_sort">เรียง: %1$s</string>
+    <string name="terminow_explorer_sort_title">เรียงตาม</string>
+    <string name="terminow_explorer_sort_name">ชื่อ</string>
+    <string name="terminow_explorer_sort_size">ขนาด</string>
+    <string name="terminow_explorer_sort_modified">วันที่แก้ไข</string>
+    <string name="terminow_explorer_sort_type">ประเภท</string>
+    <string name="terminow_explorer_sort_reverse">กลับลำดับ</string>
+    <string name="terminow_explorer_read_only">อ่านอย่างเดียว</string>
+    <string name="terminow_explorer_empty_folder">โฟลเดอร์นี้ว่างเปล่า</string>
+    <string name="terminow_explorer_link_outside">นี่คือลิงก์ไปยังตำแหน่งนอก TermiNow Home จึงไม่เปิด</string>
+    <string name="terminow_explorer_working">กำลังดำเนินการ…</string>
+    <string name="terminow_explorer_failed_title">ดำเนินการไม่สำเร็จ</string>
+    <string name="terminow_explorer_error_title">เปิดโฟลเดอร์นี้ไม่ได้</string>
+    <string name="terminow_explorer_error_access">TermiNow ไม่มีสิทธิ์เข้าถึงโฟลเดอร์นี้แล้ว</string>
+    <string name="terminow_explorer_error_disconnected">ขาดการเชื่อมต่อจาก %1$s</string>
+    <string name="terminow_explorer_error_permission">ไม่มีสิทธิ์เข้าถึง</string>
+
+    <string name="terminow_explorer_selected">เลือก %1$d รายการ</string>
+    <string name="terminow_explorer_select_all">เลือกทั้งหมด</string>
+    <string name="terminow_explorer_copy">คัดลอก</string>
+    <string name="terminow_explorer_move">ย้าย</string>
+    <string name="terminow_explorer_copy_clipboard">คัดลอก เพื่อวางที่อื่น</string>
+    <string name="terminow_explorer_to_home">คัดลอกไปที่ Home</string>
+    <string name="terminow_explorer_rename">เปลี่ยนชื่อ</string>
+    <string name="terminow_explorer_share">แชร์</string>
+    <string name="terminow_explorer_properties">คุณสมบัติ</string>
+    <string name="terminow_explorer_one_only">เลือกรายการเดียวสำหรับคำสั่งนี้</string>
+    <string name="terminow_explorer_not_supported">ตำแหน่งนี้ไม่รองรับคำสั่งนี้</string>
+    <string name="terminow_explorer_copied_hint">เปิดโฟลเดอร์ปลายทาง แล้วแตะ “วางที่นี่”</string>
+    <string name="terminow_explorer_moved_hint">เปิดโฟลเดอร์ปลายทาง แล้วแตะ “วางที่นี่”</string>
+    <string name="terminow_explorer_paste">วางที่นี่</string>
+    <plurals name="terminow_explorer_clip_copy">
+        <item quantity="other">คัดลอก %1$d รายการจาก %2$s</item>
+    </plurals>
+    <plurals name="terminow_explorer_clip_move">
+        <item quantity="other">ย้าย %1$d รายการจาก %2$s</item>
+    </plurals>
+    <plurals name="terminow_explorer_items">
+        <item quantity="other">%d รายการ</item>
+    </plurals>
+
+    <string name="terminow_explorer_new_folder">โฟลเดอร์ใหม่</string>
+    <string name="terminow_explorer_invalid_name">ใส่ชื่อที่ไม่มีเครื่องหมาย /</string>
+    <string name="terminow_explorer_terminal_saf">โฟลเดอร์ที่เลือกผ่านตัวเลือกของ Android ไม่ใช่พาธจริงที่เทอร์มินัลเริ่มทำงานได้ ใช้ “คัดลอกไปที่ Home” เพื่อทำงานกับไฟล์ในเทอร์มินัล แล้วคัดลอกกลับ</string>
+    <string name="terminow_explorer_terminal_sftp">โฟลเดอร์นี้อยู่บนโฮสต์อื่น เชื่อมต่อโฮสต์จากหน้าโฮสต์เพื่อใช้เทอร์มินัลที่นั่น</string>
+    <string name="terminow_explorer_folder_to_home">คัดลอกโฟลเดอร์นี้ไปที่ Home</string>
+    <string name="terminow_explorer_bookmark">บุ๊กมาร์ก</string>
+    <string name="terminow_explorer_bookmarked">บุ๊กมาร์กแล้ว</string>
+    <string name="terminow_explorer_refresh">รีเฟรช</string>
+
+    <string name="terminow_explorer_delete_title">ลบถาวรหรือไม่</string>
+    <string name="terminow_explorer_delete_confirm">%1$s จะถูกลบถาวรจาก %2$s รวมทุกอย่างที่อยู่ข้างใน ไม่มีถังขยะ และย้อนกลับไม่ได้</string>
+    <string name="terminow_explorer_delete_permanently">ลบถาวร</string>
+    <string name="terminow_explorer_deleting">กำลังลบ</string>
+    <string name="terminow_explorer_conflict_title">มีรายการนี้อยู่แล้ว</string>
+    <string name="terminow_explorer_conflict_message">มี %1$s อยู่แล้วใน %2$s</string>
+    <string name="terminow_explorer_skip">ข้าม</string>
+    <string name="terminow_explorer_replace">แทนที่</string>
+    <string name="terminow_explorer_keep_both">เก็บทั้งสอง</string>
+    <string name="terminow_explorer_apply_all">ใช้กับทุกรายการที่ซ้ำ</string>
+
+    <string name="terminow_explorer_share_folders">แชร์โฟลเดอร์ไม่ได้ โปรดเลือกไฟล์</string>
+    <string name="terminow_explorer_sensitive">ไฟล์ใน ~/.ssh คือคีย์ส่วนตัวและข้อมูลรับรอง TermiNow จะไม่เปิดหรือแชร์ให้แอปอื่น</string>
+    <string name="terminow_explorer_no_app">ไม่มีแอปที่เปิดไฟล์นี้ได้</string>
+
+    <string name="terminow_explorer_prop_name">ชื่อ: %1$s</string>
+    <string name="terminow_explorer_prop_type">ประเภท: %1$s</string>
+    <string name="terminow_explorer_prop_size">ขนาด: %1$s (%2$d ไบต์)</string>
+    <string name="terminow_explorer_prop_modified">แก้ไขล่าสุด: %1$s</string>
+    <string name="terminow_explorer_prop_location">ตำแหน่ง: %1$s, %2$s</string>
+    <string name="terminow_explorer_prop_saf">โฟลเดอร์ที่เลือกผ่านตัวเลือกของ Android แสดงตำแหน่งด้วยชื่อ ไม่ใช่พาธของไฟล์</string>
+    <string name="terminow_explorer_prop_home">อยู่ใน TermiNow Home ซึ่งเป็นโฟลเดอร์จริงของแอป</string>
+    <string name="terminow_explorer_prop_contents">มี %1$d ไฟล์ ขนาด %2$s (ไม่นับลิงก์)</string>
+    <string name="terminow_explorer_type_folder">โฟลเดอร์</string>
+    <string name="terminow_explorer_type_link">ลิงก์สัญลักษณ์</string>
+
+    <string name="terminow_explorer_host_key_title">โฮสต์ที่ไม่รู้จัก</string>
+    <string name="terminow_explorer_host_key_message">TermiNow ยังไม่เคยเชื่อมต่อกับ %1$s\n\nลายนิ้วมือคีย์ %2$s:\n%3$s\n\nเปรียบเทียบกับลายนิ้วมือของเซิร์ฟเวอร์ก่อนยอมรับ จากนั้นจะบันทึกไว้ใน ~/.ssh/known_hosts ซึ่ง ssh ใช้ด้วย</string>
+    <string name="terminow_explorer_host_key_accept">ยอมรับและเชื่อมต่อ</string>
+    <string name="terminow_explorer_host_key_changed">คีย์ของโฮสต์เปลี่ยนไป</string>
+    <string name="terminow_explorer_passphrase">รหัสผ่านของคีย์ %1$s</string>
+</resources>

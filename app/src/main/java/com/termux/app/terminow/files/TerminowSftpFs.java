@@ -302,6 +302,11 @@ public class TerminowSftpFs implements TerminowFs {
         }
     }
 
+    /** Whether the connection is open now, for the status in the File Manager. */
+    public synchronized boolean isConnected() {
+        return mSession != null && mSession.isConnected() && mChannel != null && mChannel.isConnected();
+    }
+
     @NonNull
     private synchronized ChannelSftp channel() throws IOException {
         connect();
