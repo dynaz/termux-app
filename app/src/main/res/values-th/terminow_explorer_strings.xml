@@ -213,4 +213,16 @@
     <string name="terminow_explorer_space_unreadable">ไม่ได้สแกน (ถูกป้องกันหรือถูกปฏิเสธ): %1$s</string>
     <string name="terminow_explorer_error_protected">Android ป้องกันไว้</string>
     <string name="terminow_explorer_error_no_access">สิทธิ์เข้าถึงไฟล์ทั้งหมดปิดอยู่</string>
+    <string name="terminow_explorer_view_compact">กะทัดรัด</string>
+    <string name="terminow_explorer_size_big">ใหญ่ขึ้น</string>
+    <string name="terminow_explorer_size_medium">กลาง</string>
+    <string name="terminow_explorer_size_small">เล็กลง</string>
+    <string name="terminow_explorer_show_hidden_files">แสดงไฟล์ที่ซ่อน</string>
+    <string name="terminow_explorer_storage">ที่เก็บข้อมูล</string>
+    <string name="terminow_explorer_storage_used">ใช้ไป %1$d%% · ว่าง %2$s จาก %3$s</string>
+    <string name="terminow_explorer_analyze">วิเคราะห์</string>
+    <string name="terminow_explorer_history">ประวัติ</string>
+    <string name="terminow_explorer_new">ใหม่</string>
+    <string name="terminow_explorer_new_file">ไฟล์ใหม่</string>
+    <string name="terminow_explorer_apply_all_folders">ใช้กับทุกโฟลเดอร์</string>
 </resources>

@@ -13,6 +13,8 @@ import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
@@ -526,18 +528,18 @@ public class TerminowExplorer {
         List<Runnable> actions = new ArrayList<>();
         Pane pane = mPanes[mActivePane];
         if (mScreen == Screen.BROWSER && pane.fs != null) {
-            addMenu(menu, actions, R.string.terminow_explorer_new_folder, () -> {
-                if (pane.fs.getCapabilities().write) createFolder(pane);
-                else toast(pane.fs.getCapabilities().readOnlyReason);
-            });
+            addMenu(menu, actions, R.string.terminow_explorer_new, () -> createNew(pane));
             addMenu(menu, actions, R.string.terminow_explorer_refresh, () -> load(pane));
+            addMenu(menu, actions, R.string.terminow_explorer_view, () -> showViewPanel(pane, anchor));
+            if (widthDp() >= 600)
+                addMenu(menu, actions, mTwoPanes ? R.string.terminow_explorer_one_pane : R.string.terminow_explorer_two_panes, this::toggleTwoPanes);
+            addMenu(menu, actions, R.string.terminow_explorer_analyze, this::startAnalyzer);
+            addMenu(menu, actions, R.string.terminow_explorer_history, () -> go(Screen.RECENTS));
             addMenu(menu, actions, R.string.terminow_explorer_bookmark, () -> bookmark(pane));
             addMenu(menu, actions, R.string.terminow_explorer_open_terminal, () -> openInTerminal(pane.fs, pane.current()));
             if (!(pane.fs instanceof TerminowLocalFs))
                 addMenu(menu, actions, R.string.terminow_explorer_folder_to_home, () -> copyToHome(pane.fs,
                     pane.crumbs.size() > 1 ? pane.crumbs.get(pane.crumbs.size() - 2) : pane.current(), Collections.singletonList(pane.current())));
-            if (widthDp() >= 900)
-                addMenu(menu, actions, mTwoPanes ? R.string.terminow_explorer_one_pane : R.string.terminow_explorer_two_panes, this::toggleTwoPanes);
             addMenu(menu, actions, R.string.terminow_explorer_properties, () -> showProperties(pane.fs, pane.current(), pane.fs.getDisplayPath(pane.crumbs)));
             if (pane.fs instanceof TerminowSftpFs) addMenu(menu, actions, R.string.terminow_explorer_disconnect, () -> disconnect(pane.fs));
         } else {
@@ -547,8 +549,8 @@ public class TerminowExplorer {
             });
         }
         addMenu(menu, actions, R.string.terminow_explorer_queue, () -> go(Screen.QUEUE));
-        addMenu(menu, actions, mStore.getExplorer().optBoolean("showHidden") ? R.string.terminow_explorer_hide_hidden :
-            R.string.terminow_explorer_show_hidden, () -> setView("showHidden", !mStore.getExplorer().optBoolean("showHidden")));
+        if (mScreen != Screen.BROWSER)
+            addMenu(menu, actions, R.string.terminow_explorer_view, () -> showViewPanel(null, anchor));
         addMenu(menu, actions, R.string.terminow_explorer_theme, this::showThemeDialog);
         if (mScreen != Screen.DASHBOARD) addMenu(menu, actions, R.string.terminow_explorer_dashboard, () -> go(Screen.DASHBOARD));
         menu.setOnMenuItemClickListener(item -> {
@@ -1548,15 +1550,15 @@ public class TerminowExplorer {
             return page;
         }
         List<TerminowFileScan.Match> matches = new ArrayList<>(mScan.results);
-        boolean grid = mStore.getExplorer().optBoolean("grid");
-        GridView list = gridView(grid);
+        ViewPrefs resultsView = viewOf(null);
+        GridView list = gridView(resultsView);
         BaseAdapter adapter = new BaseAdapter() {
             @Override public int getCount() { return matches.size(); }
             @Override public Object getItem(int position) { return matches.get(position); }
             @Override public long getItemId(int position) { return position; }
             @Override public View getView(int position, View convertView, ViewGroup parent) {
                 TerminowFileScan.Match match = matches.get(position);
-                return entryView(match.fs, match.node, false, grid, match.fs.getTitle() + " · " + match.fs.getDisplayPath(match.parents));
+                return entryView(match.fs, match.node, false, resultsView, match.fs.getTitle() + " · " + match.fs.getDisplayPath(match.parents));
             }
         };
         mListAdapter = adapter;
@@ -2167,12 +2169,75 @@ public class TerminowExplorer {
         });
     }
 
+    /** How a folder is shown: Grid, Compact or List, the icon size, and the order. */
+    private static class ViewPrefs {
+        String mode = "list";
+        String size = "medium";
+        String sort = "name";
+        boolean descending;
+        /** The folder has its own view, not the one of all folders. */
+        boolean own;
+    }
+
+    @NonNull
+    private static String folderKey(@NonNull Pane pane) {
+        return pane.fs.getId() + "|" + pane.current().id;
+    }
+
+    /** The view of the folder of a pane: its own if it has one, else the one of all folders. */
+    @NonNull
+    private ViewPrefs viewOf(@Nullable Pane pane) {
+        JSONObject state = mStore.getExplorer();
+        ViewPrefs view = new ViewPrefs();
+        view.mode = state.optString("viewMode", state.optBoolean("grid") ? "grid" : "list");
+        view.size = state.optString("iconSize", "medium");
+        view.sort = state.optString("sort", "name");
+        view.descending = state.optBoolean("descending");
+        if (pane != null && pane.fs != null && !pane.crumbs.isEmpty()) {
+            JSONObject folders = state.optJSONObject("folderViews");
+            JSONObject own = folders != null ? folders.optJSONObject(folderKey(pane)) : null;
+            if (own != null) {
+                view.own = true;
+                view.mode = own.optString("mode", view.mode);
+                view.size = own.optString("size", view.size);
+                view.sort = own.optString("sort", view.sort);
+                view.descending = own.optBoolean("descending", view.descending);
+            }
+        }
+        return view;
+    }
+
+    /** Keep a view for the folder only, or for all folders, which then drops the folder's own. */
+    private void saveView(@Nullable Pane pane, @NonNull ViewPrefs view, boolean allFolders) {
+        JSONObject state = mStore.getExplorer();
+        try {
+            JSONObject folders = state.optJSONObject("folderViews");
+            if (folders == null) folders = new JSONObject();
+            if (allFolders || pane == null || pane.fs == null || pane.crumbs.isEmpty()) {
+                state.put("viewMode", view.mode).put("grid", view.mode.equals("grid")).put("iconSize", view.size)
+                    .put("sort", view.sort).put("descending", view.descending);
+                if (pane != null && pane.fs != null && !pane.crumbs.isEmpty()) folders.remove(folderKey(pane));
+            } else {
+                folders.put(folderKey(pane), new JSONObject().put("mode", view.mode).put("size", view.size)
+                    .put("sort", view.sort).put("descending", view.descending));
+                // A few hundred folders at most, the oldest go
+                while (folders.length() > 300) folders.remove(folders.keys().next());
+            }
+            state.put("folderViews", folders);
+        } catch (JSONException e) {
+            return;
+        }
+        mStore.setExplorer(state);
+        render();
+    }
+
     @NonNull
     private List<TerminowFs.Node> visibleEntries(@NonNull Pane pane) {
-        JSONObject view = mStore.getExplorer();
-        boolean hidden = view.optBoolean("showHidden");
-        String sort = view.optString("sort", "name");
-        boolean descending = view.optBoolean("descending");
+        JSONObject state = mStore.getExplorer();
+        ViewPrefs view = viewOf(pane);
+        boolean hidden = state.optBoolean("showHidden");
+        String sort = view.sort;
+        boolean descending = view.descending;
         String query = pane.query.toLowerCase(Locale.ROOT);
         List<TerminowFs.Node> list = new ArrayList<>();
         for (TerminowFs.Node node : pane.entries) {
@@ -2289,7 +2354,12 @@ public class TerminowExplorer {
         }
         crumbScroll.addView(crumbs);
         crumbScroll.post(() -> crumbScroll.fullScroll(View.FOCUS_RIGHT));
-        view.addView(crumbScroll, matchWrap());
+        LinearLayout crumbRow = new LinearLayout(mActivity);
+        crumbRow.setGravity(Gravity.CENTER_VERTICAL);
+        crumbRow.addView(crumbScroll, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        View usage = storageChip(fs, pane);
+        if (usage != null) crumbRow.addView(usage);
+        view.addView(crumbRow, matchWrap());
 
         // Up, sort and view
         JSONObject prefs = mStore.getExplorer();
@@ -2307,14 +2377,14 @@ public class TerminowExplorer {
         });
         up.setAlpha(pane.crumbs.size() > 1 ? 1f : 0.4f);
         tools.addView(up, chipParams());
-        TextView sort = chip(mActivity.getString(R.string.terminow_explorer_sort, sortLabel(prefs.optString("sort", "name"))) +
-            (prefs.optBoolean("descending") ? " ↓" : " ↑"), false);
-        sort.setOnClickListener(v -> showSortDialog());
-        tools.addView(sort, chipParams());
-        boolean grid = prefs.optBoolean("grid");
-        TextView viewMode = chip(mActivity.getString(grid ? R.string.terminow_explorer_view_list : R.string.terminow_explorer_view_grid), false);
-        viewMode.setOnClickListener(v -> setView("grid", !grid));
-        tools.addView(viewMode, chipParams());
+        ViewPrefs paneView = viewOf(pane);
+        TextView viewChip = chip("☷ " + mActivity.getString(R.string.terminow_explorer_view) + " · " + sortLabel(paneView.sort) +
+            (paneView.descending ? " ↓" : " ↑"), false);
+        viewChip.setOnClickListener(v -> {
+            setActive(index);
+            showViewPanel(pane, v);
+        });
+        tools.addView(viewChip, chipParams());
         if (!fs.getCapabilities().write) {
             TextView readOnly = chip(mActivity.getString(R.string.terminow_explorer_read_only), false);
             readOnly.setOnClickListener(v -> toast(fs.getCapabilities().readOnlyReason));
@@ -2366,14 +2436,14 @@ public class TerminowExplorer {
             view.addView(emptyText(pane.query.isEmpty() ? R.string.terminow_explorer_empty_folder : R.string.terminow_no_results), matchWrap());
             return view;
         }
-        GridView list = gridView(grid);
+        GridView list = gridView(paneView);
         BaseAdapter adapter = new BaseAdapter() {
             @Override public int getCount() { return visibleEntries(pane).size(); }
             @Override public Object getItem(int position) { return visibleEntries(pane).get(position); }
             @Override public long getItemId(int position) { return position; }
             @Override public View getView(int position, View convertView, ViewGroup parent) {
                 TerminowFs.Node node = visibleEntries(pane).get(position);
-                return entryView(fs, node, pane.selection.contains(node.id), grid, null);
+                return entryView(fs, node, pane.selection.contains(node.id), paneView, null);
             }
         };
         if (active) mListAdapter = adapter;
@@ -2464,10 +2534,11 @@ public class TerminowExplorer {
     }
 
     @NonNull
-    private GridView gridView(boolean grid) {
+    private GridView gridView(@NonNull ViewPrefs view) {
+        boolean grid = view.mode.equals("grid");
         GridView list = new GridView(mActivity);
         list.setNumColumns(grid ? GridView.AUTO_FIT : 1);
-        list.setColumnWidth(dp(116));
+        list.setColumnWidth(dp(view.size.equals("big") ? 132 : view.size.equals("small") ? 84 : 106));
         list.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
         list.setVerticalSpacing(dp(6));
         list.setHorizontalSpacing(dp(6));
@@ -3175,21 +3246,208 @@ public class TerminowExplorer {
     }
 
     // ---------------------------------------------------------------------------------------
+    /**
+     * How full the storage of the folder is, like "55%", for real folders of the device and of
+     * Linux environments; a tap analyzes the space.
+     */
+    @Nullable
+    private View storageChip(@NonNull TerminowFs fs, @NonNull Pane pane) {
+        File file = pane.crumbs.isEmpty() ? null : hostFileOf(fs, pane.current());
+        if (file == null || !file.isDirectory()) return null;
+        long total, free;
+        try {
+            android.os.StatFs stat = new android.os.StatFs(file.getPath());
+            total = stat.getTotalBytes();
+            free = stat.getAvailableBytes();
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+        if (total <= 0) return null;
+        float used = (float) (total - free) / total;
+        LinearLayout chip = new LinearLayout(mActivity);
+        chip.setGravity(Gravity.CENTER_VERTICAL);
+        chip.setPadding(dp(8), dp(4), dp(12), dp(4));
+        chip.setBackground(rounded(mPalette.field, 16));
+        chip.addView(new UsageRing(mActivity, used, mPalette), new LinearLayout.LayoutParams(dp(20), dp(20)));
+        TextView percent = text(Math.round(used * 100) + "%", 13, mPalette.text);
+        percent.setTypeface(Typeface.DEFAULT_BOLD);
+        percent.setPadding(dp(6), 0, 0, 0);
+        chip.addView(percent);
+        chip.setContentDescription(mActivity.getString(R.string.terminow_explorer_storage_used, Math.round(used * 100), size(free), size(total)));
+        chip.setOnClickListener(v -> new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_explorer_storage)
+            .setMessage(mActivity.getString(R.string.terminow_explorer_storage_used, Math.round(used * 100), size(free), size(total)))
+            .setPositiveButton(R.string.terminow_explorer_analyze, (d, w) -> startAnalyzer())
+            .setNegativeButton(android.R.string.ok, null)
+            .show());
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(34));
+        params.setMarginStart(dp(6));
+        chip.setLayoutParams(params);
+        return chip;
+    }
+
+    /** The View panel: Grid, Compact or List, the icon size, the order, for this folder or all, and hidden files. */
+    private void showViewPanel(@Nullable Pane pane, @NonNull View anchor) {
+        ViewPrefs view = viewOf(pane);
+        LinearLayout panel = vertical();
+        panel.setBackground(rounded(mPalette.card, 16));
+        panel.setPadding(dp(16), dp(12), dp(16), dp(12));
+        android.widget.PopupWindow popup = new android.widget.PopupWindow(panel, dp(340), ViewGroup.LayoutParams.WRAP_CONTENT, true);
+        popup.setElevation(dp(10));
+        popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        boolean[] allFolders = {!view.own};
+        Runnable apply = () -> {
+            popup.dismiss();
+            saveView(pane, view, allFolders[0]);
+        };
+
+        panel.addView(panelTitle(R.string.terminow_explorer_view), matchWrap());
+        String[][] modes = {{"grid", "▦"}, {"compact", "≡"}, {"list", "☰"}};
+        int[] modeLabels = {R.string.terminow_explorer_view_grid, R.string.terminow_explorer_view_compact, R.string.terminow_explorer_view_list};
+        LinearLayout modeRow = new LinearLayout(mActivity);
+        for (int i = 0; i < modes.length; i++) {
+            String mode = modes[i][0];
+            modeRow.addView(panelOption(modes[i][1], mActivity.getString(modeLabels[i]), view.mode.equals(mode), () -> {
+                view.mode = mode;
+                apply.run();
+            }), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        }
+        panel.addView(modeRow, matchWrap());
+        String[][] sizes = {{"big", "▣"}, {"medium", "▤"}, {"small", "▪"}};
+        int[] sizeLabels = {R.string.terminow_explorer_size_big, R.string.terminow_explorer_size_medium, R.string.terminow_explorer_size_small};
+        LinearLayout sizeRow = new LinearLayout(mActivity);
+        for (int i = 0; i < sizes.length; i++) {
+            String size = sizes[i][0];
+            sizeRow.addView(panelOption(sizes[i][1], mActivity.getString(sizeLabels[i]), view.size.equals(size), () -> {
+                view.size = size;
+                apply.run();
+            }), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        }
+        panel.addView(sizeRow, matchWrap());
+
+        panel.addView(divider(), dividerParams());
+        panel.addView(panelTitle(R.string.terminow_explorer_sort_title), matchWrap());
+        String[][] sorts = {{"name", "Az"}, {"type", "T"}, {"size", "≣"}, {"modified", "◷"}};
+        LinearLayout sortRow = new LinearLayout(mActivity);
+        for (String[] sort : sorts) {
+            boolean selected = view.sort.equals(sort[0]);
+            // Tapping the order that is chosen turns it around
+            sortRow.addView(panelOption(sort[1], sortLabel(sort[0]) + (selected ? (view.descending ? " ↓" : " ↑") : ""), selected, () -> {
+                if (view.sort.equals(sort[0])) view.descending = !view.descending;
+                else {
+                    view.sort = sort[0];
+                    view.descending = false;
+                }
+                apply.run();
+            }), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        }
+        panel.addView(sortRow, matchWrap());
+
+        panel.addView(divider(), dividerParams());
+        android.widget.CheckBox all = new android.widget.CheckBox(mActivity);
+        all.setText(R.string.terminow_explorer_apply_all_folders);
+        all.setTextColor(mPalette.text);
+        all.setButtonTintList(ColorStateList.valueOf(mPalette.accent));
+        all.setChecked(allFolders[0]);
+        all.setEnabled(pane != null && pane.fs != null);
+        all.setOnCheckedChangeListener((b, checked) -> {
+            allFolders[0] = checked;
+            // Turned on: this folder follows all folders again, with what it shows now
+            saveView(pane, view, checked);
+        });
+        panel.addView(all, matchWrap());
+        android.widget.CheckBox hidden = new android.widget.CheckBox(mActivity);
+        hidden.setText(R.string.terminow_explorer_show_hidden_files);
+        hidden.setTextColor(mPalette.text);
+        hidden.setButtonTintList(ColorStateList.valueOf(mPalette.accent));
+        hidden.setChecked(mStore.getExplorer().optBoolean("showHidden"));
+        hidden.setOnCheckedChangeListener((b, checked) -> setView("showHidden", checked));
+        panel.addView(hidden, matchWrap());
+        popup.showAsDropDown(anchor, 0, dp(4));
+    }
+
+    @NonNull
+    private TextView panelTitle(int titleRes) {
+        TextView title = text(mActivity.getString(titleRes), 15, mPalette.text);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setGravity(Gravity.CENTER);
+        title.setPadding(0, dp(4), 0, dp(8));
+        return title;
+    }
+
+    @NonNull
+    private View panelOption(@NonNull String symbol, @NonNull String label, boolean selected, @NonNull Runnable onClick) {
+        LinearLayout option = vertical();
+        option.setGravity(Gravity.CENTER_HORIZONTAL);
+        option.setPadding(dp(4), dp(6), dp(4), dp(6));
+        TextView icon = text(symbol, 22, selected ? mPalette.accent : mPalette.secondary);
+        icon.setGravity(Gravity.CENTER);
+        icon.setTypeface(Typeface.DEFAULT_BOLD);
+        option.addView(icon, matchWrap());
+        View bar = new View(mActivity);
+        bar.setBackgroundColor(selected ? mPalette.accent : Color.TRANSPARENT);
+        LinearLayout.LayoutParams barParams = new LinearLayout.LayoutParams(dp(44), dp(3));
+        barParams.gravity = Gravity.CENTER_HORIZONTAL;
+        barParams.topMargin = dp(4);
+        option.addView(bar, barParams);
+        TextView text = text(label, 12, selected ? mPalette.text : mPalette.secondary);
+        text.setGravity(Gravity.CENTER);
+        text.setPadding(0, dp(4), 0, 0);
+        option.addView(text, matchWrap());
+        option.setOnClickListener(v -> onClick.run());
+        return option;
+    }
+
+    @NonNull
+    private View divider() {
+        View line = new View(mActivity);
+        line.setBackgroundColor(mPalette.divider);
+        return line;
+    }
+
+    @NonNull
+    private LinearLayout.LayoutParams dividerParams() {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
+        params.setMargins(0, dp(10), 0, dp(10));
+        return params;
+    }
+
+    /** New folder or new empty file in the folder of the pane. */
+    private void createNew(@NonNull Pane pane) {
+        if (!pane.fs.getCapabilities().write) {
+            toast(pane.fs.getCapabilities().readOnlyReason);
+            return;
+        }
+        CharSequence[] items = {mActivity.getString(R.string.terminow_explorer_new_folder), mActivity.getString(R.string.terminow_explorer_new_file)};
+        dialog().setTitle(R.string.terminow_explorer_new)
+            .setItems(items, (d, which) -> {
+                if (which == 0) createFolder(pane);
+                else askName(R.string.terminow_explorer_new_file, "", name -> background(() -> {
+                    pane.fs.openOutput(pane.current(), name, false).close();
+                    return true;
+                }, done -> load(pane)));
+            })
+            .show();
+    }
+
     // List items and thumbnails
     // ---------------------------------------------------------------------------------------
 
     @NonNull
-    private View entryView(@NonNull TerminowFs fs, @NonNull TerminowFs.Node node, boolean selected, boolean grid, @Nullable String location) {
+    private View entryView(@NonNull TerminowFs fs, @NonNull TerminowFs.Node node, boolean selected, @NonNull ViewPrefs view, @Nullable String location) {
+        boolean grid = view.mode.equals("grid");
+        boolean compact = view.mode.equals("compact");
+        float scale = view.size.equals("big") ? 1.3f : view.size.equals("small") ? 0.75f : 1f;
         LinearLayout row = new LinearLayout(mActivity);
         row.setOrientation(grid ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
         row.setGravity(grid ? Gravity.CENTER_HORIZONTAL : Gravity.CENTER_VERTICAL);
-        row.setMinimumHeight(dp(grid ? 120 : 60));
-        row.setPadding(dp(10), dp(grid ? 12 : 8), dp(10), dp(grid ? 10 : 8));
+        row.setMinimumHeight(dp(grid ? 120 * scale : compact ? 40 * scale : 60 * scale));
+        row.setPadding(dp(10), dp(grid ? 12 : compact ? 4 : 8), dp(10), dp(grid ? 10 : compact ? 4 : 8));
         row.setBackground(rounded(selected ? mPalette.selected : mPalette.card, 12));
 
         ImageView icon = new ImageView(mActivity);
         Bitmap thumbnail = selected ? null : thumbnail(fs, node);
-        int iconSize = grid ? 48 : 40;
+        int iconSize = Math.round((grid ? 56 : compact ? 26 : 40) * scale);
         if (selected) {
             icon.setImageResource(R.drawable.ic_terminow_check);
             icon.setImageTintList(ColorStateList.valueOf(0xFFFFFFFF));
@@ -3212,7 +3470,7 @@ public class TerminowExplorer {
 
         LinearLayout texts = vertical();
         if (!grid) texts.setPadding(dp(12), 0, 0, 0);
-        TextView name = text(node.name + (node.link ? "  ⤷" : ""), 14, mPalette.text);
+        TextView name = text(node.name + (node.link ? "  ⤷" : ""), compact ? 14 : grid && scale < 1 ? 12 : 14, mPalette.text);
         name.setSingleLine(!grid);
         name.setMaxLines(grid ? 2 : 1);
         name.setEllipsize(TextUtils.TruncateAt.MIDDLE);
@@ -3222,6 +3480,19 @@ public class TerminowExplorer {
         }
         texts.addView(name, matchWrap());
         StringBuilder details = new StringBuilder();
+        String duration = mDurations.get(thumbnailKey(fs, node));
+        if (duration != null) details.append("♪ ").append(duration).append("  ");
+        if (compact) {
+            // One line: the name, and the size at the end
+            if (!node.directory && node.size >= 0) {
+                TextView sizeView = text(size(node.size), 12, mPalette.secondary);
+                row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+                row.addView(sizeView);
+                return row;
+            }
+            row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+            return row;
+        }
         if (!node.directory && node.size >= 0) details.append(size(node.size));
         if (node.modified > 0 && !grid) {
             if (details.length() > 0) details.append("  ·  ");
@@ -3242,12 +3513,99 @@ public class TerminowExplorer {
         return row;
     }
 
-    /** A thumbnail of an image of HOME or a device folder, loaded in the background. Never of SFTP files. */
+    /** The length of audio and video files, like "04:00", by thumbnail key. */
+    private final Map<String, String> mDurations = new HashMap<>();
+
+    @NonNull
+    private static String thumbnailKey(@NonNull TerminowFs fs, @NonNull TerminowFs.Node node) {
+        return fs.getId() + "|" + node.id + "|" + node.modified;
+    }
+
+    /** The real file of a node, for the thumbnails of videos, audio and apps, {@code null} for SAF and SFTP. */
+    @Nullable
+    private static File hostFileOf(@NonNull TerminowFs fs, @NonNull TerminowFs.Node node) {
+        try {
+            if (fs instanceof TerminowLocalFs) return ((TerminowLocalFs) fs).toFile(node.id);
+            if (fs instanceof TerminowLinuxFs) return ((TerminowLinuxFs) fs).hostFileOf(node.id);
+        } catch (IOException e) {
+            return null;
+        }
+        return null;
+    }
+
+    /** A video frame, the art of audio and its length, or the icon of an app, from a real file. */
+    @Nullable
+    private Bitmap mediaThumbnail(@NonNull File file, @NonNull TerminowFileScan.Category category, @NonNull String key, int target) {
+        try {
+            if (category == TerminowFileScan.Category.APK) {
+                android.content.pm.PackageManager pm = mActivity.getPackageManager();
+                android.content.pm.PackageInfo info = pm.getPackageArchiveInfo(file.getPath(), 0);
+                if (info == null || info.applicationInfo == null) return null;
+                info.applicationInfo.sourceDir = file.getPath();
+                info.applicationInfo.publicSourceDir = file.getPath();
+                android.graphics.drawable.Drawable drawable = info.applicationInfo.loadIcon(pm);
+                Bitmap bitmap = Bitmap.createBitmap(target, target, Bitmap.Config.ARGB_8888);
+                android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap);
+                drawable.setBounds(0, 0, target, target);
+                drawable.draw(canvas);
+                return bitmap;
+            }
+            android.media.MediaMetadataRetriever retriever = new android.media.MediaMetadataRetriever();
+            try {
+                retriever.setDataSource(file.getPath());
+                String millis = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION);
+                if (millis != null) {
+                    long seconds = Long.parseLong(millis) / 1000;
+                    String length = seconds >= 3600 ? String.format(Locale.ROOT, "%d:%02d:%02d", seconds / 3600, seconds / 60 % 60, seconds % 60) :
+                        String.format(Locale.ROOT, "%02d:%02d", seconds / 60, seconds % 60);
+                    mHandler.post(() -> mDurations.put(key, length));
+                }
+                Bitmap frame;
+                if (category == TerminowFileScan.Category.VIDEOS) {
+                    frame = retriever.getFrameAtTime(1000000);
+                } else {
+                    byte[] art = retriever.getEmbeddedPicture();
+                    frame = art != null ? BitmapFactory.decodeByteArray(art, 0, art.length) : null;
+                }
+                if (frame == null) return null;
+                Bitmap scaled = Bitmap.createScaledBitmap(frame, target, Math.max(1, target * frame.getHeight() / Math.max(1, frame.getWidth())), true);
+                if (scaled != frame) frame.recycle();
+                return scaled;
+            } finally {
+                retriever.release();
+            }
+        } catch (RuntimeException | IOException | OutOfMemoryError e) {
+            return null;
+        }
+    }
+
+    /** A thumbnail of an image, a video, audio or an app, loaded in the background. Never of SFTP files. */
     @Nullable
     private Bitmap thumbnail(@NonNull TerminowFs fs, @NonNull TerminowFs.Node node) {
         if (node.directory || node.link || fs instanceof TerminowSftpFs || isSensitive(fs, node)) return null;
+        TerminowFileScan.Category category = TerminowFileScan.Category.of(node.name);
+        boolean media = category == TerminowFileScan.Category.VIDEOS || category == TerminowFileScan.Category.AUDIO ||
+            (category == TerminowFileScan.Category.APK && TerminowFileScan.extension(node.name).equals("apk"));
+        if (media) {
+            File file = hostFileOf(fs, node);
+            if (file == null) return null;
+            String key = thumbnailKey(fs, node);
+            Bitmap cached = mThumbnails.get(key);
+            if (cached != null || mThumbnailsLoading.contains(key)) return cached;
+            mThumbnailsLoading.add(key);
+            int target = dp(96);
+            mExecutor.execute(() -> {
+                Bitmap result = mediaThumbnail(file, category, key, target);
+                mHandler.post(() -> {
+                    if (result != null) mThumbnails.put(key, result);
+                    // Loading stays marked when there is none, so it is not tried again
+                    if (mListAdapter != null) mListAdapter.notifyDataSetChanged();
+                });
+            });
+            return null;
+        }
         if (!TerminowFileScan.Category.IMAGES.matches(node.name) || TerminowFileScan.extension(node.name).equals("svg")) return null;
-        String key = fs.getId() + "|" + node.id + "|" + node.modified;
+        String key = thumbnailKey(fs, node);
         Bitmap cached = mThumbnails.get(key);
         if (cached != null || mThumbnailsLoading.contains(key)) return cached;
         mThumbnailsLoading.add(key);

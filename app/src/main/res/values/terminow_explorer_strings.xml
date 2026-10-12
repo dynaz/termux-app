@@ -217,4 +217,16 @@
     <string name="terminow_explorer_space_unreadable">Not scanned, protected or denied: %1$s</string>
     <string name="terminow_explorer_error_protected">Protected by Android</string>
     <string name="terminow_explorer_error_no_access">All files access is off</string>
+    <string name="terminow_explorer_view_compact">Compact</string>
+    <string name="terminow_explorer_size_big">Bigger</string>
+    <string name="terminow_explorer_size_medium">Medium</string>
+    <string name="terminow_explorer_size_small">Smaller</string>
+    <string name="terminow_explorer_show_hidden_files">Show hidden files</string>
+    <string name="terminow_explorer_storage">Storage</string>
+    <string name="terminow_explorer_storage_used">%1$d%% used · %2$s free of %3$s</string>
+    <string name="terminow_explorer_analyze">Analyze</string>
+    <string name="terminow_explorer_history">History</string>
+    <string name="terminow_explorer_new">New</string>
+    <string name="terminow_explorer_new_file">New file</string>
+    <string name="terminow_explorer_apply_all_folders">Apply to all folders</string>
 </resources>
