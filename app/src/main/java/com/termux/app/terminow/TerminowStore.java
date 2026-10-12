@@ -7,6 +7,7 @@ import android.security.keystore.KeyProperties;
 import android.util.Base64;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.termux.shared.logger.Logger;
 
@@ -49,6 +50,8 @@ public class TerminowStore {
         public String keyPath = "";
         /** The name of the group that the host is in, empty if it is not in a group. */
         public String group = "";
+        /** The name of the snippet to run once the connection is made, empty for none. */
+        public String startupSnippet = "";
 
         /** An identifier of the host that does not change with its label, for the recent connections. */
         @NonNull
@@ -186,6 +189,7 @@ public class TerminowStore {
     private static final String KEY_HOSTS = "hosts";
     private static final String KEY_SNIPPETS = "snippets";
     private static final String KEY_GROUPS = "groups";
+    private static final String KEY_KEY_LABELS = "key_labels";
     private static final String KEY_FORWARDS = "forwards";
     private static final String KEY_LOGS = "logs";
     private static final String KEY_NOTIFICATIONS = "notifications";
@@ -248,6 +252,7 @@ public class TerminowStore {
                 host.mosh = object.optBoolean("mosh");
                 host.keyPath = object.optString("keyPath");
                 host.group = object.optString("group");
+                host.startupSnippet = object.optString("startupSnippet");
                 host.password = decryptPassword(object.optString("password"));
                 // Never run anything from storage that would not have passed validation when saved
                 if (isValidAddress(host.address) && isValidUsername(host.username) && isValidPort(host.port) &&
@@ -272,6 +277,7 @@ public class TerminowStore {
                 object.put("mosh", host.mosh);
                 object.put("keyPath", host.keyPath);
                 object.put("group", host.group);
+                object.put("startupSnippet", host.startupSnippet);
                 object.put("password", encryptPassword(host.password));
                 array.put(object);
             }
@@ -713,6 +719,36 @@ public class TerminowStore {
             Logger.logStackTraceWithMessage(LOG_TAG, "Failed to load snippets", e);
         }
         return snippets;
+    }
+
+    /** The snippet with the name, {@code null} if there is none. */
+    @Nullable
+    public Snippet getSnippet(@NonNull String name) {
+        if (name.isEmpty()) return null;
+        for (Snippet snippet : getSnippets())
+            if (snippet.name.equals(name)) return snippet;
+        return null;
+    }
+
+    /** The label that the user gave a key file of `~/.ssh`, empty if none. */
+    @NonNull
+    public String getKeyLabel(@NonNull String fileName) {
+        try {
+            return new JSONObject(mPreferences.getString(KEY_KEY_LABELS, "{}")).optString(fileName);
+        } catch (JSONException e) {
+            return "";
+        }
+    }
+
+    public void setKeyLabel(@NonNull String fileName, @NonNull String label) {
+        try {
+            JSONObject labels = new JSONObject(mPreferences.getString(KEY_KEY_LABELS, "{}"));
+            if (label.isEmpty()) labels.remove(fileName);
+            else labels.put(fileName, label);
+            mPreferences.edit().putString(KEY_KEY_LABELS, labels.toString()).apply();
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to save key label", e);
+        }
     }
 
     public void setSnippets(@NonNull List<Snippet> snippets) {

@@ -232,6 +232,20 @@
                     </LinearLayout>
 
                     <TextView
+                        style="@style/TerminowPanelLabel"
+                        android:labelFor="@+id/terminow_host_snippet"
+                        android:text="@string/terminow_host_snippet" />
+
+                    <!-- Not editable, tapping it shows the snippets to pick from -->
+                    <EditText
+                        android:id="@+id/terminow_host_snippet"
+                        style="@style/TerminowPanelField"
+                        android:cursorVisible="false"
+                        android:focusable="false"
+                        android:hint="@string/terminow_host_snippet_none"
+                        android:inputType="none" />
+
+                    <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="14dp"

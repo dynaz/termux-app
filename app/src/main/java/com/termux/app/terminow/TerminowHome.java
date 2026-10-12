@@ -66,6 +66,7 @@ import com.termux.terminal.TerminalSession;
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.lang.ref.WeakReference;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -119,6 +120,9 @@ public class TerminowHome {
 
     private final TermuxActivity mActivity;
     private final TerminowFiles mFiles;
+    /** The key field of the host form to fill with the key that is added next, if any. */
+    @Nullable
+    private WeakReference<EditText> mKeyTarget;
     private final TerminowStore mStore;
     private final Handler mHandler = new Handler(Looper.getMainLooper());
 
@@ -509,7 +513,8 @@ public class TerminowHome {
             }
         } else if (mPage == PAGE_KEYCHAIN) {
             for (KeyItem key : getKeys()) {
-                if (query.isEmpty() || key.name.toLowerCase(Locale.ROOT).contains(query))
+                if (query.isEmpty() || key.name.toLowerCase(Locale.ROOT).contains(query) ||
+                    key.label.toLowerCase(Locale.ROOT).contains(query))
                     mItems.add(key);
             }
         } else if (mPage == PAGE_FORWARDING) {
@@ -764,7 +769,8 @@ public class TerminowHome {
     /**
      * Watch the output of a new connection, to show that it is being made in its tab, to show
      * why it failed with an option to retry, and to add it to the recent connections once it is
-     * made. Nothing is written to the session.
+     * made. The startup snippet of the host is written to the session once it is made, and
+     * never while the host asks for a password or to accept its key.
      */
     private void watchConnection(@NonNull TerminalSession session, @NonNull TerminowStore.Host host, boolean sftp,
                                  @NonNull String title, int check) {
@@ -806,6 +812,9 @@ public class TerminowHome {
             boolean waitingAtPrompt = CONNECTION_PROMPT_PATTERN.matcher(lastLine).find();
             if ((sftp && transcript.contains("sftp>")) || (!waitingAtPrompt && check >= CONNECTION_MADE_AFTER_CHECKS)) {
                 mStore.addRecentConnection(host, sftp);
+                TerminowStore.Snippet snippet = sftp ? null : mStore.getSnippet(host.startupSnippet);
+                if (snippet != null && session.isRunning())
+                    session.write(snippet.command + "\r");
                 finish.run();
                 return;
             }
@@ -1061,6 +1070,7 @@ public class TerminowHome {
         EditText passwordView = dialog.findViewById(R.id.terminow_host_password);
         EditText keyView = dialog.findViewById(R.id.terminow_host_key);
         EditText groupView = dialog.findViewById(R.id.terminow_host_group);
+        EditText snippetView = dialog.findViewById(R.id.terminow_host_snippet);
         Switch moshView = dialog.findViewById(R.id.terminow_host_mosh);
 
         titleView.setText(existingHost == null ? R.string.terminow_new_host : R.string.terminow_edit_host);
@@ -1075,6 +1085,8 @@ public class TerminowHome {
             usernameView.setText(existingHost.username);
             passwordView.setText(existingHost.password);
             keyView.setText(existingHost.keyPath);
+            if (mStore.getSnippet(existingHost.startupSnippet) != null)
+                snippetView.setText(existingHost.startupSnippet);
             moshView.setChecked(existingHost.mosh);
             // The default port is shown as the hint of the empty field
             if (existingHost.port != 22)
@@ -1089,6 +1101,7 @@ public class TerminowHome {
 
         dialog.findViewById(R.id.terminow_host_keys).setOnClickListener(v -> showKeyPicker(keyView));
         dialog.findViewById(R.id.terminow_host_key_remove).setOnClickListener(v -> keyView.setText(""));
+        snippetView.setOnClickListener(v -> showStartupSnippetPicker(snippetView));
 
         dialog.findViewById(R.id.terminow_host_close).setOnClickListener(v -> dialog.dismiss());
         dialog.findViewById(R.id.terminow_host_save).setOnClickListener(v -> {
@@ -1132,6 +1145,7 @@ public class TerminowHome {
             host.password = passwordView.getText().toString();
             host.keyPath = keyPath;
             host.group = groupView.getText().toString();
+            host.startupSnippet = snippetView.getText().toString();
             host.mosh = moshView.isChecked();
             if (existingHost == null)
                 mHosts.add(host);
@@ -1147,35 +1161,49 @@ public class TerminowHome {
             addressView.requestFocus();
     }
 
-    /** Show the private keys in `~/.ssh` to pick the key of a host from. */
+    /**
+     * Show the keys of the keychain to pick the key of a host from, with the options to add a key,
+     * which is then picked.
+     */
     private void showKeyPicker(@NonNull EditText keyView) {
-        List<String> keys = new ArrayList<>();
-        File[] files = new File(TermuxConstants.TERMUX_HOME_DIR_PATH, ".ssh").listFiles();
-        if (files != null) {
-            for (File file : files) {
-                String name = file.getName();
-                // Skip public keys and the other files that ssh keeps in the directory
-                if (!file.isFile() || name.endsWith(".pub") || name.startsWith("known_hosts") ||
-                    name.equals("config") || name.equals("authorized_keys") || name.equals("environment"))
-                    continue;
-                if (TerminowStore.isValidKeyPath("~/.ssh/" + name))
-                    keys.add("~/.ssh/" + name);
-            }
+        List<KeyItem> keys = new ArrayList<>();
+        for (KeyItem key : getKeys()) {
+            if (TerminowStore.isValidKeyPath(key.getPath()))
+                keys.add(key);
         }
-        Collections.sort(keys);
 
-        if (keys.isEmpty()) {
-            new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
-                .setMessage(R.string.terminow_host_no_keys)
-                .setPositiveButton(android.R.string.ok, null)
-                .show();
-            return;
+        List<CharSequence> names = new ArrayList<>();
+        for (KeyItem key : keys) {
+            String type = getKeyType(key);
+            names.add(key.getTitle() + (type != null ? " (" + type + ")" : ""));
         }
+        names.add(mActivity.getString(R.string.terminow_key_import));
+        names.add(mActivity.getString(R.string.terminow_key_paste));
+        names.add(mActivity.getString(R.string.terminow_key_generate));
 
         new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
-            .setTitle(R.string.terminow_host_keys_title)
-            .setItems(keys.toArray(new CharSequence[0]), (dialog, which) -> keyView.setText(keys.get(which)))
+            .setTitle(keys.isEmpty() ? R.string.terminow_host_no_keys : R.string.terminow_host_keys_title)
+            .setItems(names.toArray(new CharSequence[0]), (dialog, which) -> {
+                if (which < keys.size()) {
+                    keyView.setText(keys.get(which).getPath());
+                    return;
+                }
+                mKeyTarget = new WeakReference<>(keyView);
+                int action = which - keys.size();
+                if (action == 0) pickKeyFile();
+                else if (action == 1) showPasteKeyDialog();
+                else showNewKeyDialog();
+            })
+            .setNegativeButton(android.R.string.cancel, null)
             .show();
+    }
+
+    /** Fill the key field of the host form that asked for a new key, if there is one. */
+    private void setKeyTarget(@NonNull String name) {
+        EditText keyView = mKeyTarget != null ? mKeyTarget.get() : null;
+        mKeyTarget = null;
+        if (keyView != null && keyView.isAttachedToWindow())
+            keyView.setText("~/.ssh/" + name);
     }
 
     /** An item of the hosts page for a group of hosts. */
@@ -1217,6 +1245,30 @@ public class TerminowHome {
     }
 
     /** Show the groups to pick the group of a host from in the host form. */
+    private void showStartupSnippetPicker(@NonNull EditText snippetView) {
+        List<TerminowStore.Snippet> snippets = new ArrayList<>();
+        for (TerminowStore.Snippet snippet : mStore.getSnippets()) {
+            // A snippet is found again by its name when the host connects
+            if (!snippet.name.isEmpty()) snippets.add(snippet);
+        }
+        if (snippets.isEmpty()) {
+            new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setMessage(R.string.terminow_host_snippet_none_yet)
+                .setPositiveButton(android.R.string.ok, null)
+                .show();
+            return;
+        }
+        List<CharSequence> names = new ArrayList<>();
+        names.add(mActivity.getString(R.string.terminow_host_snippet_none));
+        for (TerminowStore.Snippet snippet : snippets)
+            names.add(snippet.name + "\n" + snippet.command);
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_host_snippet)
+            .setItems(names.toArray(new CharSequence[0]), (dialog, which) ->
+                snippetView.setText(which == 0 ? "" : snippets.get(which - 1).name))
+            .show();
+    }
+
     private void showGroupPicker(@NonNull EditText groupView) {
         List<String> names = new ArrayList<>();
         names.add(mActivity.getString(R.string.terminow_host_group_none));
@@ -1289,11 +1341,25 @@ public class TerminowHome {
         final String name;
         final File file;
         final File publicFile;
+        /** The name that the user gave the key, empty if none. */
+        final String label;
 
-        KeyItem(@NonNull File file) {
+        KeyItem(@NonNull File file, @NonNull String label) {
             this.name = file.getName();
             this.file = file;
             this.publicFile = new File(file.getPath() + ".pub");
+            this.label = label;
+        }
+
+        @NonNull
+        String getTitle() {
+            return label.isEmpty() ? name : label;
+        }
+
+        /** The path of the key as it is entered for a host. */
+        @NonNull
+        String getPath() {
+            return "~/.ssh/" + name;
         }
     }
 
@@ -1328,9 +1394,9 @@ public class TerminowHome {
             if (!file.isFile() || name.endsWith(".pub") || name.startsWith("known_hosts") ||
                 name.equals("config") || name.equals("authorized_keys") || name.equals("environment"))
                 continue;
-            keys.add(new KeyItem(file));
+            keys.add(new KeyItem(file, mStore.getKeyLabel(name)));
         }
-        Collections.sort(keys, (a, b) -> a.name.compareTo(b.name));
+        Collections.sort(keys, (a, b) -> a.getTitle().compareToIgnoreCase(b.getTitle()));
         return keys;
     }
 
@@ -1356,10 +1422,35 @@ public class TerminowHome {
         }
     }
 
+    /** The hosts that log in with the key. */
+    @NonNull
+    private List<TerminowStore.Host> getHostsUsingKey(@NonNull KeyItem key) {
+        List<TerminowStore.Host> hosts = new ArrayList<>();
+        for (TerminowStore.Host host : mHosts) {
+            if (host.keyPath.equals(key.getPath()) || host.keyPath.equals(key.file.getAbsolutePath()))
+                hosts.add(host);
+        }
+        return hosts;
+    }
+
     private void showKeyActions(@NonNull KeyItem key) {
-        CharSequence[] actions = {mActivity.getString(R.string.terminow_key_copy_public), mActivity.getString(R.string.terminow_delete)};
-        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog).setTitle(key.name).setItems(actions, (dialog, which) -> {
+        List<TerminowStore.Host> hosts = getHostsUsingKey(key);
+        CharSequence[] actions = {
+            mActivity.getString(R.string.terminow_key_rename),
+            mActivity.getString(R.string.terminow_key_copy_public),
+            mActivity.getResources().getQuantityString(R.plurals.terminow_key_used_by, hosts.size(), hosts.size()),
+            mActivity.getString(R.string.terminow_delete)};
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog).setTitle(key.getTitle()).setItems(actions, (dialog, which) -> {
             if (which == 0) {
+                LinearLayout form = createForm();
+                EditText labelView = addField(form, R.string.terminow_key_label, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+                labelView.setText(key.label);
+                showFormDialog(R.string.terminow_key_rename, form, () -> {
+                    mStore.setKeyLabel(key.name, labelView.getText().toString().trim());
+                    updateItems();
+                    return true;
+                });
+            } else if (which == 1) {
                 String publicKey = key.publicFile.isFile() ? readFirstLine(key.publicFile) : null;
                 if (publicKey == null || publicKey.isEmpty()) {
                     mActivity.showToast(mActivity.getString(R.string.terminow_key_no_public), true);
@@ -1370,20 +1461,44 @@ public class TerminowHome {
                     clipboardManager.setPrimaryClip(ClipData.newPlainText(key.publicFile.getName(), publicKey));
                     mActivity.showToast(mActivity.getString(R.string.terminow_key_copied), false);
                 }
+            } else if (which == 2) {
+                showKeyHosts(key, hosts);
             } else {
+                String message = mActivity.getString(R.string.terminow_key_delete_confirm, key.getTitle());
+                if (!hosts.isEmpty())
+                    message += "\n\n" + mActivity.getResources().getQuantityString(R.plurals.terminow_key_delete_hosts, hosts.size(), hosts.size());
                 new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
-                    .setMessage(mActivity.getString(R.string.terminow_key_delete_confirm, key.name))
+                    .setMessage(message)
                     .setPositiveButton(R.string.terminow_delete, (confirmDialog, confirmWhich) -> {
                         if (!key.file.delete())
                             Logger.logError(LOG_TAG, "Failed to delete \"" + key.file + "\"");
                         if (key.publicFile.isFile() && !key.publicFile.delete())
                             Logger.logError(LOG_TAG, "Failed to delete \"" + key.publicFile + "\"");
+                        mStore.setKeyLabel(key.name, "");
+                        // The hosts would fail to log in with a key that does not exist anymore
+                        for (TerminowStore.Host host : hosts)
+                            host.keyPath = "";
+                        if (!hosts.isEmpty()) mStore.setHosts(mHosts);
                         updateItems();
                     })
                     .setNegativeButton(android.R.string.cancel, null)
                     .show();
             }
         }).show();
+    }
+
+    /** Show the hosts that use a key, tapping one opens it to edit. */
+    private void showKeyHosts(@NonNull KeyItem key, @NonNull List<TerminowStore.Host> hosts) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog).setTitle(key.getTitle());
+        if (hosts.isEmpty()) {
+            builder.setMessage(R.string.terminow_key_no_hosts);
+        } else {
+            CharSequence[] names = new CharSequence[hosts.size()];
+            for (int i = 0; i < hosts.size(); i++)
+                names[i] = hosts.get(i).getTitle();
+            builder.setItems(names, (dialog, which) -> showHostDialog(hosts.get(which)));
+        }
+        builder.setPositiveButton(android.R.string.ok, null).show();
     }
 
     /** Get the type of a key to show, like `ED25519` or `RSA`, {@code null} if it is not known. */
@@ -1488,7 +1603,7 @@ public class TerminowHome {
     @NonNull
     private String getNewKeyName(@NonNull String name) {
         // Make a name that is allowed from a file name, like for an imported file
-        name = name.replaceAll("\\.(pem|key|txt)$", "").replaceAll("[^A-Za-z0-9._-]", "_").replaceAll("^[^A-Za-z0-9_]+", "");
+        name = name.replaceAll("\\.(pem|key|txt|ppk)$", "").replaceAll("[^A-Za-z0-9._-]", "_").replaceAll("^[^A-Za-z0-9_]+", "");
         if (name.isEmpty() || name.endsWith(".pub")) name = "id_key";
         String newName = name;
         for (int i = 2; new File(getSshDir(), newName).exists(); i++)
@@ -1503,17 +1618,81 @@ public class TerminowHome {
     private boolean saveKey(@NonNull String name, @NonNull String content) {
         // Windows line endings and a missing line end make ssh fail to load a key
         content = content.replace("\r\n", "\n").replace('\r', '\n').trim() + "\n";
-        if (content.startsWith("PuTTY-User-Key-File-")) {
-            mActivity.showToast(mActivity.getString(R.string.terminow_key_ppk), true);
-            return false;
+        if (TerminowPpk.isPpk(content)) {
+            String ppk = content;
+            boolean encrypted;
+            try {
+                encrypted = TerminowPpk.isEncrypted(ppk);
+            } catch (TerminowPpk.PpkException e) {
+                mActivity.showToast(mActivity.getString(R.string.terminow_key_import_failed, e.getMessage()), true);
+                return false;
+            }
+            if (encrypted)
+                askPpkPassphrase(name, ppk, null);
+            else
+                convertPpk(name, ppk, null);
+            return true;
         }
         if (!content.startsWith("-----BEGIN ") || !content.contains("PRIVATE KEY-----")) {
             mActivity.showToast(mActivity.getString(R.string.terminow_key_content_invalid), true);
             return false;
         }
+        return writeKey(name, content, null);
+    }
 
+    /** Ask for the passphrase of an encrypted PuTTY key, which is only kept to convert it. */
+    private void askPpkPassphrase(@NonNull String name, @NonNull String ppk, @Nullable String error) {
+        LinearLayout form = createForm();
+        EditText passphraseView = addField(form, R.string.terminow_key_passphrase,
+            InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        if (error != null) passphraseView.setError(error);
+        showFormDialog(R.string.terminow_key_ppk_title, form, () -> {
+            String passphrase = passphraseView.getText().toString();
+            if (passphrase.isEmpty()) {
+                passphraseView.setError(mActivity.getString(R.string.terminow_key_passphrase_needed));
+                return false;
+            }
+            convertPpk(name, ppk, passphrase);
+            return true;
+        });
+    }
+
+    /**
+     * Convert a PuTTY key to an OpenSSH key in the background, since deriving the key from the
+     * passphrase takes a while. The converted key is saved without a passphrase, in the private
+     * directory of the app, readable only by it.
+     */
+    private void convertPpk(@NonNull String name, @NonNull String ppk, @Nullable String passphrase) {
+        mActivity.showToast(mActivity.getString(R.string.terminow_key_converting), false);
+        new Thread(() -> {
+            TerminowPpk.Result result = null;
+            TerminowPpk.PpkException failure = null;
+            try {
+                result = TerminowPpk.convert(ppk, passphrase);
+            } catch (TerminowPpk.PpkException e) {
+                failure = e;
+            } catch (RuntimeException | OutOfMemoryError e) {
+                Logger.logStackTraceWithMessage(LOG_TAG, "Failed to convert PuTTY key", e);
+                failure = new TerminowPpk.PpkException(String.valueOf(e.getMessage()));
+            }
+            TerminowPpk.Result finalResult = result;
+            TerminowPpk.PpkException finalFailure = failure;
+            mActivity.runOnUiThread(() -> {
+                if (finalResult != null) {
+                    writeKey(name, finalResult.privateKey, finalResult.publicKey + "\n");
+                } else if (finalFailure instanceof TerminowPpk.PassphraseException && passphrase != null) {
+                    askPpkPassphrase(name, ppk, finalFailure.getMessage());
+                } else if (finalFailure != null) {
+                    mActivity.showToast(mActivity.getString(R.string.terminow_key_import_failed, finalFailure.getMessage()), true);
+                }
+            });
+        }).start();
+    }
+
+    private boolean writeKey(@NonNull String name, @NonNull String content, @Nullable String publicContent) {
         File directory = getSshDir();
         File file = new File(directory, name);
+        File publicFile = new File(directory, name + ".pub");
         try {
             if (!directory.isDirectory() && !directory.mkdirs())
                 throw new IOException("Failed to create \"" + directory + "\"");
@@ -1523,6 +1702,11 @@ public class TerminowHome {
                 Os.chmod(file.getPath(), 0600);
                 out.write(content.getBytes(StandardCharsets.UTF_8));
             }
+            if (publicContent != null && !publicFile.exists()) {
+                try (FileOutputStream out = new FileOutputStream(publicFile)) {
+                    out.write(publicContent.getBytes(StandardCharsets.UTF_8));
+                }
+            }
         } catch (IOException | ErrnoException e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Failed to save key \"" + file + "\"", e);
             mActivity.showToast(mActivity.getString(R.string.terminow_key_import_failed, e.getMessage()), true);
@@ -1530,6 +1714,7 @@ public class TerminowHome {
         }
 
         mActivity.showToast(mActivity.getString(R.string.terminow_key_saved, name), false);
+        setKeyTarget(name);
         updateItems();
         return true;
     }
@@ -1549,7 +1734,8 @@ public class TerminowHome {
         ClipData clip = clipboardManager != null ? clipboardManager.getPrimaryClip() : null;
         if (clip != null && clip.getItemCount() > 0) {
             CharSequence text = clip.getItemAt(0).coerceToText(mActivity);
-            if (text != null && text.toString().trim().startsWith("-----BEGIN ") && text.toString().contains("PRIVATE KEY-----"))
+            if (text != null && ((text.toString().trim().startsWith("-----BEGIN ") && text.toString().contains("PRIVATE KEY-----")) ||
+                TerminowPpk.isPpk(text.toString().trim())))
                 contentView.setText(text.toString().trim());
         }
 
@@ -1629,6 +1815,8 @@ public class TerminowHome {
             TerminalSession session = addSession(null);
             if (session != null)
                 writeWhenStarted(session, "mkdir -p ~/.ssh && chmod 700 ~/.ssh && ssh-keygen -t ed25519 -f ~/.ssh/" + name + "\r", 0);
+            // The key is created in the terminal, with the path that the host will use
+            setKeyTarget(name);
             return true;
         });
     }
@@ -1850,10 +2038,14 @@ public class TerminowHome {
                 KeyItem key = (KeyItem) item;
                 iconRes = R.drawable.ic_terminow_key;
                 iconColorRes = R.color.terminow_host_mosh;
-                titleView.setText(key.name);
+                titleView.setText(key.getTitle());
                 String keyType = getKeyType(key);
-                subtitleView.setText(mActivity.getString(R.string.terminow_key_type,
-                    keyType != null ? keyType : mActivity.getString(R.string.terminow_key_type_unknown)));
+                String subtitle = mActivity.getString(R.string.terminow_key_type,
+                    keyType != null ? keyType : mActivity.getString(R.string.terminow_key_type_unknown));
+                int hostCount = getHostsUsingKey(key).size();
+                if (hostCount > 0)
+                    subtitle += " · " + mActivity.getResources().getQuantityString(R.plurals.terminow_key_hosts, hostCount, hostCount);
+                subtitleView.setText(subtitle);
             } else if (item instanceof TerminowStore.Forward) {
                 TerminowStore.Forward forward = (TerminowStore.Forward) item;
                 iconRes = R.drawable.ic_terminow_forward;

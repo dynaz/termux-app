@@ -261,8 +261,11 @@
     <string name="terminow_host_key">Key</string>
     <string name="terminow_host_key_hint">None</string>
     <string name="terminow_host_key_remove">Remove</string>
-    <string name="terminow_host_keys_title">Keys in ~/.ssh</string>
-    <string name="terminow_host_no_keys">There are no private keys in ~/.ssh. Create one in a local terminal with ssh-keygen, or enter the path of a key file.</string>
+    <string name="terminow_host_keys_title">Keychain</string>
+    <string name="terminow_host_no_keys">No keys yet. Import, paste or generate one</string>
+    <string name="terminow_host_snippet">Startup snippet</string>
+    <string name="terminow_host_snippet_none">None</string>
+    <string name="terminow_host_snippet_none_yet">There are no snippets with a name yet. Add one on the Snippets page, then pick it here to run it when the host connects.</string>
     <string name="terminow_host_invalid_key">Enter a valid key file path, without spaces or special characters</string>
     <string name="terminow_host_credentials_note">The password is stored encrypted on this device and typed in for you when the host asks for it. Leave it empty to be asked in the terminal. Keys in ~/.ssh are also tried automatically.</string>
     <string name="terminow_host_invalid_address">Enter a valid address, without spaces or special characters</string>
@@ -384,7 +387,25 @@
     <string name="terminow_key_generate">Generate new SSH key</string>
     <string name="terminow_key_content">Private key</string>
     <string name="terminow_key_content_invalid">This is not a private key. It must start with a line like -----BEGIN OPENSSH PRIVATE KEY-----</string>
-    <string name="terminow_key_ppk">This is a PuTTY key, which ssh can not use. Convert it with: puttygen key.ppk -O private-openssh -o key</string>
+    <string name="terminow_key_ppk_title">PuTTY key passphrase</string>
+    <string name="terminow_key_passphrase">Passphrase</string>
+    <string name="terminow_key_passphrase_needed">Enter the passphrase of the key</string>
+    <string name="terminow_key_converting">Converting the PuTTY key…</string>
+    <string name="terminow_key_rename">Rename</string>
+    <string name="terminow_key_label">Name</string>
+    <string name="terminow_key_no_hosts">No hosts use this key yet. Pick it in the Key field of a host.</string>
+    <plurals name="terminow_key_hosts">
+        <item quantity="one">%d host</item>
+        <item quantity="other">%d hosts</item>
+    </plurals>
+    <plurals name="terminow_key_used_by">
+        <item quantity="one">Used by %d host</item>
+        <item quantity="other">Used by %d hosts</item>
+    </plurals>
+    <plurals name="terminow_key_delete_hosts">
+        <item quantity="one">%d host uses it and will be set to no key.</item>
+        <item quantity="other">%d hosts use it and will be set to no key.</item>
+    </plurals>
     <string name="terminow_key_saved">Saved the key %s</string>
     <string name="terminow_key_import_failed">Failed to import the key: %s</string>
     <string name="terminow_forward_title">Port Forwarding</string>

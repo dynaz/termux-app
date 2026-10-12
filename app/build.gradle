@@ -47,6 +47,8 @@ android {
         implementation "io.noties.markwon:linkify:$markwonVersion"
         implementation "io.noties.markwon:recycler:$markwonVersion"
         implementation 'com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava'
+        // Argon2 for the passphrases of PuTTY v3 keys
+        implementation "org.bouncycastle:bcprov-jdk18on:1.78.1"
 
         implementation project(":terminal-view")
         implementation project(":termux-shared")
@@ -59,7 +61,7 @@ android {
         applicationId "com.terminow"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 137
+        versionCode 138
         versionName "0.118.0"
 
         if (appVersionName) versionName = appVersionName
