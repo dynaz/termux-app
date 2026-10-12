@@ -278,6 +278,15 @@ public class TerminowHome {
 
     /** Update the tab bar and the home screen after the sessions or the current session changed. */
     public void refresh() {
+        // With no terminal session the terminal area is empty, so the home screen is shown
+        // instead, whatever closed the last session or started the app (the service may have been
+        // started by a RUN_COMMAND of another app before the activity was opened)
+        TermuxService termuxService = mActivity.getTermuxService();
+        if (termuxService != null && termuxService.isTermuxSessionsEmpty() && !isVisible()) {
+            show();
+            return;
+        }
+
         boolean homeVisible = isVisible();
         mTabBar.setBackgroundColor(ContextCompat.getColor(mActivity,
             homeVisible ? R.color.terminow_bar_home : R.color.terminow_bar_terminal));
