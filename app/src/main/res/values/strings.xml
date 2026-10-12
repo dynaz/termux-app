@@ -452,5 +452,16 @@
     <string name="terminow_connection_timeout">The connection timed out. Check the address, port and network.</string>
     <string name="terminow_retry">Retry</string>
     <string name="terminow_close_dialog">Close</string>
+    <string name="terminow_files_import">Import files</string>
+    <string name="terminow_files_export">Export a file</string>
+    <string name="terminow_files_upload">Upload in this SFTP session</string>
+    <plurals name="terminow_files_imported">
+        <item quantity="one">Imported %d file</item>
+        <item quantity="other">Imported %d files</item>
+    </plurals>
+    <string name="terminow_files_exported">Saved %s</string>
+    <string name="terminow_files_failed">Failed: %s</string>
+    <string name="terminow_storage_title">Shared storage</string>
+    <string name="terminow_storage_message">On Android %s TermiNow can not open your phone storage, like Download or DCIM, from the terminal by path, since it does not ask for access to all files.\n\nImport files to copy them into ~/Imports, where terminal programs and SFTP can use them, and export a file from TermiNow to save it to your storage. Your files app can also open TermiNow\'s home folder.</string>
     <string name="terminow_close_session">Close this session?</string>
 </resources>

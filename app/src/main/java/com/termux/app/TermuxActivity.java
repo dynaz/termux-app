@@ -812,6 +812,15 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
      * if targeting targetSdkVersion 30 (android 11) and running on sdk 30 (android 11) and higher.
      */
     public void requestStoragePermission(boolean isPermissionCallback) {
+        // TermiNow does not declare the all files access permission, and Android 10 and higher
+        // do not let apps that target them reach shared storage by path without it, so the
+        // system file picker is offered instead, which needs no permission
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (!isPermissionCallback && mTerminowHome != null)
+                runOnUiThread(() -> mTerminowHome.getFiles().showStorageAccessInfo());
+            return;
+        }
+
         new Thread() {
             @Override
             public void run() {

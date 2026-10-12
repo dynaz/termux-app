@@ -118,6 +118,7 @@ public class TerminowHome {
     private static final String LOG_TAG = "TerminowHome";
 
     private final TermuxActivity mActivity;
+    private final TerminowFiles mFiles;
     private final TerminowStore mStore;
     private final Handler mHandler = new Handler(Looper.getMainLooper());
 
@@ -159,6 +160,7 @@ public class TerminowHome {
     public TerminowHome(@NonNull TermuxActivity activity) {
         mActivity = activity;
         mStore = new TerminowStore(activity);
+        mFiles = new TerminowFiles(activity);
 
         mHomeView = activity.findViewById(R.id.terminow_home);
         mTabBar = activity.findViewById(R.id.terminow_tab_bar);
@@ -667,6 +669,9 @@ public class TerminowHome {
         addMenuItem(menu, popup, R.drawable.ic_terminow_hosts, R.string.terminow_connect, () -> showConnectDialog(false));
         addMenuItem(menu, popup, R.drawable.ic_terminow_group, R.string.terminow_connect_sftp, () -> showConnectDialog(true));
         addMenuItem(menu, popup, R.drawable.ic_terminow_terminal, R.string.terminow_local_terminal, this::openLocalTerminal);
+        // Shared storage is reached with the system file picker, the app has no storage permission
+        addMenuItem(menu, popup, R.drawable.ic_terminow_import, R.string.terminow_files_import, () -> mFiles.importFiles(getCurrentSftpSession()));
+        addMenuItem(menu, popup, R.drawable.ic_terminow_group, R.string.terminow_files_export, mFiles::exportFile);
 
         popup.showAsDropDown(anchor, 0, dp(4));
     }
@@ -697,6 +702,22 @@ public class TerminowHome {
         }).show();
     }
 
+    @NonNull
+    public TerminowFiles getFiles() {
+        return mFiles;
+    }
+
+    /** The sessions that were started for sftp, to upload imported files in. */
+    private final java.util.Set<TerminalSession> mSftpSessions =
+        java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+
+    /** The session that is shown if it is an sftp session that is still running, otherwise {@code null}. */
+    @Nullable
+    private TerminalSession getCurrentSftpSession() {
+        TerminalSession session = mActivity.getCurrentSession();
+        return session != null && session.isRunning() && mSftpSessions.contains(session) ? session : null;
+    }
+
     /** Start a session to transfer files to and from a host with sftp. */
     private void connectSftp(@NonNull TerminowStore.Host host) {
         String title = mActivity.getString(R.string.terminow_sftp_session, host.getTitle());
@@ -707,6 +728,7 @@ public class TerminowHome {
             return;
         }
 
+        mSftpSessions.add(session);
         String command = host.getSftpCommand(mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
         mStore.addLog(title, command);
         writeWhenStarted(session, command + "\r", 0);
@@ -1555,6 +1577,7 @@ public class TerminowHome {
 
     /** Handle the result of an activity that was started for the home screen. Returns {@code true} if it was for it. */
     public boolean onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
+        if (mFiles.onActivityResult(requestCode, resultCode, data)) return true;
         if (requestCode != REQUEST_IMPORT_KEY) return false;
         if (resultCode != Activity.RESULT_OK || data == null || data.getData() == null) return true;
 
