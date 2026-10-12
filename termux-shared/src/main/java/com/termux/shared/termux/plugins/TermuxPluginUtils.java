@@ -479,8 +479,9 @@ public class TermuxPluginUtils {
         // MobiClaude runs Ubuntu, Claude Code and its bridge in TermiNow
         "com.xcdev.mobiclaude", new HashSet<>(Arrays.asList(
             // Debug builds
-            "c7f4794d3665d908519e361e5a206d0721aa48c905beab42e62692d3f1985072"
-            // Add the app signing key of Google Play builds here, from Play Console > App integrity
+            "c7f4794d3665d908519e361e5a206d0721aa48c905beab42e62692d3f1985072",
+            // Google Play builds, the app signing key from Play Console
+            "ce7e5c153c6cf38ec8037815c71d7e7589c3827ede5a2ccf78c2e57a03e21a0b"
         )));
 
     /**
