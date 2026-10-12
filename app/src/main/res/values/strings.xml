@@ -418,9 +418,8 @@
     <string name="terminow_connect_sftp">Connect via SFTP</string>
     <string name="terminow_connect_sftp_title">Connect via SFTP to</string>
     <string name="terminow_sftp_session">%s SFTP</string>
-    <string name="terminow_settings_start_directory">Local terminal start folder</string>
-    <string name="terminow_settings_start_directory_root">Root folder (/)</string>
-    <string name="terminow_settings_start_directory_home">Home folder (~)</string>
+    <string name="terminow_settings_show_folder">Show folder on startup</string>
+    <string name="terminow_settings_show_folder_summary">Run pwd and ls when a new local terminal starts</string>
     <string name="terminow_theme_title">Terminal theme &amp; font</string>
     <string name="terminow_theme_font_default">Default (monospace)</string>
     <string name="terminow_settings_font_and_colours">Font &amp; colours</string>
@@ -434,5 +433,24 @@
     <string name="terminow_settings_build">Build</string>
     <string name="terminow_settings_runtime_repair">Runtime repair</string>
     <string name="terminow_settings_runtime_repair_none">Not run yet</string>
+    <string name="terminow_new_connection">New connection</string>
+    <string name="terminow_new_sftp_connection">New SFTP connection</string>
+    <string name="terminow_connect_search_hint">Search or "ssh user@hostname -p port"</string>
+    <string name="terminow_connect_search_hint_sftp">Search or "sftp user@hostname -P port"</string>
+    <string name="terminow_quick_local">Local</string>
+    <string name="terminow_quick_new_ssh">New SSH connection</string>
+    <string name="terminow_quick_new_sftp">New SFTP connection</string>
+    <string name="terminow_recent_connections">Recent connections</string>
+    <string name="terminow_groups">Groups</string>
+    <string name="terminow_connect_no_hosts">No saved hosts yet. Add one, or type a host above to connect.</string>
+    <string name="terminow_sort">Sort</string>
+    <string name="terminow_sort_name">Name A–Z</string>
+    <string name="terminow_sort_recent">Most recently used</string>
+    <string name="terminow_connecting_session">%s · connecting…</string>
+    <string name="terminow_connection_failed">Couldn\'t connect to %s</string>
+    <string name="terminow_connection_auth_failed">Authentication failed. Check the user name, password or key.</string>
+    <string name="terminow_connection_timeout">The connection timed out. Check the address, port and network.</string>
+    <string name="terminow_retry">Retry</string>
+    <string name="terminow_close_dialog">Close</string>
     <string name="terminow_close_session">Close this session?</string>
 </resources>

@@ -98,13 +98,8 @@ public class TerminowSettings {
                 (font.isEmpty() ? mActivity.getString(R.string.terminow_theme_font_default) : font),
             () -> new TerminowThemeDialog(mActivity, mStore, this::update).show());
 
-        final String[] startDirectoryLabels = {mActivity.getString(R.string.terminow_settings_start_directory_root),
-            mActivity.getString(R.string.terminow_settings_start_directory_home)};
-        addRow(R.string.terminow_settings_start_directory, startDirectoryLabels[mStore.shouldStartInHome() ? 1 : 0], () ->
-            pick(R.string.terminow_settings_start_directory, startDirectoryLabels, which -> {
-                mStore.setStartInHome(which == 1);
-                update();
-            }));
+        addSwitchRow(R.string.terminow_settings_show_folder, R.string.terminow_settings_show_folder_summary,
+            mStore.shouldShowFolderOnStartup(), mStore::setShowFolderOnStartup);
 
         addSwitchRow(R.string.terminow_settings_start_in_tmux, R.string.terminow_settings_start_in_tmux_summary,
             mStore.shouldStartInTmux(), mStore::setStartInTmux);

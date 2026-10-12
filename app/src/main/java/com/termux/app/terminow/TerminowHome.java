@@ -655,73 +655,221 @@ public class TerminowHome {
         popup.setElevation(dp(8));
         popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
 
-        addMenuItem(menu, popup, R.drawable.ic_terminow_hosts, R.string.terminow_connect, () -> {
-            // Pick the host to connect to on the hosts page
-            show();
-            setPage(PAGE_HOSTS);
-        });
-        addMenuItem(menu, popup, R.drawable.ic_terminow_group, R.string.terminow_connect_sftp, this::showSftpHostPicker);
+        addMenuItem(menu, popup, R.drawable.ic_terminow_hosts, R.string.terminow_connect, () -> showConnectDialog(false));
+        addMenuItem(menu, popup, R.drawable.ic_terminow_group, R.string.terminow_connect_sftp, () -> showConnectDialog(true));
         addMenuItem(menu, popup, R.drawable.ic_terminow_terminal, R.string.terminow_local_terminal, this::openLocalTerminal);
 
         popup.showAsDropDown(anchor, 0, dp(4));
     }
 
-    private void showSftpHostPicker() {
-        final List<TerminowStore.Host> hosts = mStore.getHosts();
-        if (hosts.isEmpty()) {
-            // There is no host to pick yet, so show where to add one
-            show();
-            setPage(PAGE_HOSTS);
-            return;
-        }
+    /** Show the new connection picker, in SSH or SFTP mode. The sessions are kept as they are while it is shown. */
+    private void showConnectDialog(boolean sftp) {
+        new TerminowConnectDialog(mActivity, mStore, sftp, new TerminowConnectDialog.Actions() {
+            @Override
+            public void connect(@NonNull TerminowStore.Host host, boolean sftp) {
+                if (sftp)
+                    connectSftp(host);
+                else
+                    TerminowHome.this.connect(host);
+            }
 
-        CharSequence[] titles = new CharSequence[hosts.size()];
-        for (int i = 0; i < titles.length; i++)
-            titles[i] = hosts.get(i).getTitle();
-        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
-            .setTitle(R.string.terminow_connect_sftp_title)
-            .setItems(titles, (dialog, which) -> connectSftp(hosts.get(which)))
-            .show();
+            @Override
+            public void openLocalTerminal() {
+                TerminowHome.this.openLocalTerminal();
+            }
+
+            @Override
+            public void addHostAndConnect(@Nullable TerminowStore.Host host, boolean sftp) {
+                // The form saves to the lists of the home screen, which may not be loaded yet
+                mHosts = mStore.getHosts();
+                mGroups = mStore.getGroups();
+                showHostDialog(null, host, savedHost -> connect(savedHost, sftp));
+            }
+        }).show();
     }
 
     /** Start a session to transfer files to and from a host with sftp. */
     private void connectSftp(@NonNull TerminowStore.Host host) {
-        TerminalSession session = addSession(mActivity.getString(R.string.terminow_sftp_session, host.getTitle()));
-        if (session == null) return;
+        String title = mActivity.getString(R.string.terminow_sftp_session, host.getTitle());
+        if (!startConnecting(host, true)) return;
+        TerminalSession session = addSession(title);
+        if (session == null) {
+            mConnectingHosts.remove(host.getKey() + ":sftp");
+            return;
+        }
 
         String command = host.getSftpCommand(mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
-        mStore.addLog(mActivity.getString(R.string.terminow_sftp_session, host.getTitle()), command);
+        mStore.addLog(title, command);
         writeWhenStarted(session, command + "\r", 0);
         if (!host.password.isEmpty())
             writePasswordWhenAsked(session, host.password, 0);
+        watchConnection(session, host, true, title, 0);
     }
 
-    /** Get the folder that a new session is started in. */
+    /** The hosts and modes that a connection is being started to, to not start another one at the same time. */
+    private final java.util.Set<String> mConnectingHosts = new java.util.HashSet<>();
+
+    /** How long a connection is watched for a failure or for being made. */
+    private static final int CONNECTION_CHECK_COUNT = 180;
+    private static final int CONNECTION_CHECK_DELAY_MS = 500;
+    /** A connection that did not fail for this long and does not wait at a prompt is taken as made. */
+    private static final int CONNECTION_MADE_AFTER_CHECKS = 16;
+    private static final Pattern CONNECTION_AUTH_FAILED_PATTERN = Pattern.compile(
+        "Permission denied \\(|Too many authentication failures|Authentication failed");
+    private static final Pattern CONNECTION_TIMEOUT_PATTERN = Pattern.compile(
+        "Connection timed out|Operation timed out|timed out during banner exchange", Pattern.CASE_INSENSITIVE);
+    private static final Pattern CONNECTION_FAILED_PATTERN = Pattern.compile(
+        "Could not resolve hostname|Connection refused|No route to host|Network is unreachable|" +
+            "Host key verification failed|Connection closed by|Connection reset by|kex_exchange_identification");
+    /** A prompt that a connection waits at for the user, like for a password or to accept the key of a new host. */
+    private static final Pattern CONNECTION_PROMPT_PATTERN = Pattern.compile(
+        "(password|passphrase|\\(yes/no[^)]*\\)\\?|Verification code)[^\\n]*:?\\s*$", Pattern.CASE_INSENSITIVE);
+
+    private boolean startConnecting(@NonNull TerminowStore.Host host, boolean sftp) {
+        // A repeated tap does not start another connection while one is being made
+        return mConnectingHosts.add(host.getKey() + (sftp ? ":sftp" : ":ssh"));
+    }
+
+    /**
+     * Watch the output of a new connection, to show that it is being made in its tab, to show
+     * why it failed with an option to retry, and to add it to the recent connections once it is
+     * made. Nothing is written to the session.
+     */
+    private void watchConnection(@NonNull TerminalSession session, @NonNull TerminowStore.Host host, boolean sftp,
+                                 @NonNull String title, int check) {
+        String connectingKey = host.getKey() + (sftp ? ":sftp" : ":ssh");
+        if (check == 0) {
+            session.mSessionName = mActivity.getString(R.string.terminow_connecting_session, title);
+            refresh();
+        }
+
+        Runnable finish = () -> {
+            mConnectingHosts.remove(connectingKey);
+            session.mSessionName = title;
+            refresh();
+        };
+
+        // The tab was closed or the session ended
+        if (session.getPid() > 0 && !session.isRunning()) {
+            finish.run();
+            return;
+        }
+
+        String transcript = session.getPid() > 0 ? ShellUtils.getTerminalSessionTranscriptText(session, false, true) : null;
+        if (transcript != null) {
+            String failure = null;
+            java.util.regex.Matcher matcher;
+            if ((matcher = CONNECTION_AUTH_FAILED_PATTERN.matcher(transcript)).find())
+                failure = mActivity.getString(R.string.terminow_connection_auth_failed);
+            else if ((matcher = CONNECTION_TIMEOUT_PATTERN.matcher(transcript)).find())
+                failure = mActivity.getString(R.string.terminow_connection_timeout);
+            else if ((matcher = CONNECTION_FAILED_PATTERN.matcher(transcript)).find())
+                failure = matcher.group();
+            if (failure != null) {
+                finish.run();
+                showConnectionFailed(session, host, sftp, failure);
+                return;
+            }
+
+            String lastLine = transcript.substring(transcript.lastIndexOf('\n') + 1);
+            boolean waitingAtPrompt = CONNECTION_PROMPT_PATTERN.matcher(lastLine).find();
+            if ((sftp && transcript.contains("sftp>")) || (!waitingAtPrompt && check >= CONNECTION_MADE_AFTER_CHECKS)) {
+                mStore.addRecentConnection(host, sftp);
+                finish.run();
+                return;
+            }
+        }
+
+        if (check >= CONNECTION_CHECK_COUNT) {
+            finish.run();
+            return;
+        }
+        mHandler.postDelayed(() -> watchConnection(session, host, sftp, title, check + 1), CONNECTION_CHECK_DELAY_MS);
+    }
+
+    private void showConnectionFailed(@NonNull TerminalSession session, @NonNull TerminowStore.Host host, boolean sftp,
+                                      @NonNull String reason) {
+        if (!mActivity.isVisible()) return;
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(mActivity.getString(R.string.terminow_connection_failed, host.getTitle()))
+            .setMessage(reason)
+            .setPositiveButton(R.string.terminow_retry, (dialog, which) -> {
+                // The tab of the failed attempt is replaced by the new one
+                mActivity.getTermuxTerminalSessionClient().closeSession(session);
+                if (sftp)
+                    connectSftp(host);
+                else
+                    connect(host);
+            })
+            .setNegativeButton(R.string.terminow_close_dialog, null)
+            .show();
+    }
+
+    /**
+     * Get the folder that a new session is started in, the home directory of the app, which is the
+     * HOME of the shell environment. The root folder `/` can not be read by apps, so a shell that
+     * starts in it can not list its folder.
+     */
     @NonNull
     public String getStartDirectory() {
-        return mStore.shouldStartInHome() ? TermuxConstants.TERMUX_HOME_DIR_PATH : "/";
+        File home = new File(TermuxConstants.TERMUX_HOME_DIR_PATH);
+        if (!home.isDirectory() && !home.mkdirs())
+            Logger.logError(LOG_TAG, "Failed to create the home directory \"" + home + "\"");
+        return home.getAbsolutePath();
     }
 
+    /**
+     * Open a local terminal in a new tab, which starts in {@link #getStartDirectory()}. The only
+     * input that is written to it is the first command of its fresh shell, before it can be used.
+     */
     private void openLocalTerminal() {
         TerminalSession session = addSession(null);
         TermuxService service = mActivity.getTermuxService();
-        if (session == null || service == null || !mStore.shouldStartInTmux()) return;
-        // Only if tmux is installed, it is not in the system shell that is started without the packages
-        if (!new File(TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH, "tmux").exists()) return;
+        if (session == null || service == null) return;
 
-        // A tmux session for each local terminal, which is attached to again if it is still running
-        writeWhenStarted(session, "tmux new-session -A -s local" + (service.getIndexOfSession(session) + 1) + "\r", 0);
+        String command = getLocalStartupCommand("local" + (service.getIndexOfSession(session) + 1));
+        if (command != null)
+            writeWhenStarted(session, command + "\r", 0);
+    }
+
+    /**
+     * Get the first command of the fresh shell of a new local terminal, {@code null} if there is
+     * none. Each local terminal has its own tmux session, which is attached to if it is still
+     * running, keeping its folders and programs, or else is created in the home directory. tmux
+     * is not started inside another tmux session.
+     */
+    @Nullable
+    private String getLocalStartupCommand(@NonNull String tmuxSessionName) {
+        boolean showFolder = mStore.shouldShowFolderOnStartup();
+        // Only if tmux is installed, it is not in the system shell that is started without the packages
+        boolean tmux = mStore.shouldStartInTmux() && new File(TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH, "tmux").exists();
+        if (!tmux)
+            return showFolder ? "pwd; ls" : null;
+
+        // The session name is made by the app and only has letters and digits, = matches it exactly
+        String target = "=" + tmuxSessionName;
+        // Sent to the shell of the new session before it is attached, so before the user types
+        // A pane target needs the colon after an exact session name
+        String showFolderKeys = showFolder ? " \\; send-keys -t " + target + ": 'pwd; ls' Enter" : "";
+        return "if [ -z \"$TMUX\" ]; then if tmux has-session -t " + target + " 2>/dev/null;" +
+            " then tmux attach-session -t " + target + ";" +
+            " else tmux new-session -s " + tmuxSessionName + " -c \"$HOME\"" + showFolderKeys + "; fi; fi";
     }
 
     private void connect(@NonNull TerminowStore.Host host) {
+        if (!startConnecting(host, false)) return;
         TerminalSession session = addSession(host.getTitle());
-        if (session == null) return;
+        if (session == null) {
+            mConnectingHosts.remove(host.getKey() + ":ssh");
+            return;
+        }
 
         String command = host.getCommand(mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
         mStore.addLog(host.getTitle(), command);
         writeWhenStarted(session, command + "\r", 0);
         if (!host.password.isEmpty())
             writePasswordWhenAsked(session, host.password, 0);
+        watchConnection(session, host, false, host.getTitle(), 0);
     }
 
     @Nullable
@@ -834,8 +982,21 @@ public class TerminowHome {
 
 
 
+    private interface OnHostSaved {
+        void onHostSaved(@NonNull TerminowStore.Host host);
+    }
+
     /** Show the form to add or edit a host in a panel at the side of the screen. */
     private void showHostDialog(@Nullable TerminowStore.Host existingHost) {
+        showHostDialog(existingHost, null, null);
+    }
+
+    /**
+     * Show the form to add or edit a host, for a new host with the fields of a host to start
+     * from if it is not {@code null}, and call a listener once the host is saved.
+     */
+    private void showHostDialog(@Nullable TerminowStore.Host existingHost, @Nullable TerminowStore.Host prefill,
+                                @Nullable OnHostSaved onSaved) {
         Dialog dialog = new Dialog(mActivity, R.style.TerminowPanelDialog);
         dialog.setContentView(R.layout.dialog_terminow_host);
         Window window = dialog.getWindow();
@@ -887,6 +1048,12 @@ public class TerminowHome {
             // The default port is shown as the hint of the empty field
             if (existingHost.port != 22)
                 portView.setText(String.valueOf(existingHost.port));
+        } else if (prefill != null) {
+            addressView.setText(prefill.address);
+            usernameView.setText(prefill.username);
+            keyView.setText(prefill.keyPath);
+            if (prefill.port != 22)
+                portView.setText(String.valueOf(prefill.port));
         }
 
         dialog.findViewById(R.id.terminow_host_keys).setOnClickListener(v -> showKeyPicker(keyView));
@@ -940,6 +1107,8 @@ public class TerminowHome {
             mStore.setHosts(mHosts);
             updateItems();
             dialog.dismiss();
+            if (onSaved != null)
+                onSaved.onHostSaved(host);
         });
 
         dialog.show();

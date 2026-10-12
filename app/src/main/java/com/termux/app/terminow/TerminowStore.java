@@ -50,6 +50,18 @@ public class TerminowStore {
         /** The name of the group that the host is in, empty if it is not in a group. */
         public String group = "";
 
+        /** An identifier of the host that does not change with its label, for the recent connections. */
+        @NonNull
+        public String getKey() {
+            return username + "@" + address + ":" + port;
+        }
+
+        /** The ssh or sftp command of the host without its options, like `ssh root@host -p 2222`, to show it. */
+        @NonNull
+        public String getSummary(boolean sftp) {
+            return (sftp ? "sftp " : "ssh ") + getTarget() + (port == 22 ? "" : (sftp ? " -P " : " -p ") + port);
+        }
+
         /** The name shown for the host and used as the name of its sessions. */
         @NonNull
         public String getTitle() {
@@ -188,7 +200,11 @@ public class TerminowStore {
     private static final String KEY_KEEP_ALIVE_INTERVAL = "keep_alive_interval";
     private static final String KEY_KEEP_ALIVE_COUNT_MAX = "keep_alive_count_max";
     private static final String KEY_SCREENSHOTS_BLOCKED = "screenshots_blocked";
-    private static final String KEY_START_IN_HOME = "start_in_home";
+    private static final String KEY_SHOW_FOLDER_ON_STARTUP = "show_folder_on_startup";
+    private static final String KEY_RECENT_CONNECTIONS = "recent_connections";
+
+    /** The number of recent connections that are kept. */
+    private static final int RECENT_CONNECTIONS_MAX = 30;
     private static final String KEY_START_IN_TMUX = "start_in_tmux";
     private static final String KEY_TERMINAL_THEME = "terminal_theme";
     private static final String KEY_TERMINAL_FONT = "terminal_font";
@@ -337,12 +353,67 @@ public class TerminowStore {
     }
 
     /** Whether local terminals are started in the home folder instead of the root folder. */
-    public boolean shouldStartInHome() {
-        return mPreferences.getBoolean(KEY_START_IN_HOME, false);
+    /** Whether a fresh local shell shows its folder and the files in it, with pwd and ls. */
+    public boolean shouldShowFolderOnStartup() {
+        return mPreferences.getBoolean(KEY_SHOW_FOLDER_ON_STARTUP, false);
     }
 
-    public void setStartInHome(boolean startInHome) {
-        mPreferences.edit().putBoolean(KEY_START_IN_HOME, startInHome).apply();
+    public void setShowFolderOnStartup(boolean showFolderOnStartup) {
+        mPreferences.edit().putBoolean(KEY_SHOW_FOLDER_ON_STARTUP, showFolderOnStartup).apply();
+    }
+
+    /** A connection to a host that was made, for the recent connections of the connection picker. */
+    public static class RecentConnection {
+        /** The {@link Host#getKey()} of the host. */
+        public String hostKey = "";
+        public boolean sftp;
+        public long time;
+    }
+
+    /** Get the recent connections, the newest first, at most one for each host and connection mode. */
+    @NonNull
+    public List<RecentConnection> getRecentConnections() {
+        List<RecentConnection> recents = new ArrayList<>();
+        try {
+            JSONArray array = new JSONArray(mPreferences.getString(KEY_RECENT_CONNECTIONS, "[]"));
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject object = array.getJSONObject(i);
+                RecentConnection recent = new RecentConnection();
+                recent.hostKey = object.optString("host");
+                recent.sftp = object.optBoolean("sftp");
+                recent.time = object.optLong("time");
+                if (!recent.hostKey.isEmpty())
+                    recents.add(recent);
+            }
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to load recent connections", e);
+        }
+        return recents;
+    }
+
+    /** Add a connection to a host to the recent connections, replacing the one of the same host and mode. */
+    public void addRecentConnection(@NonNull Host host, boolean sftp) {
+        String hostKey = host.getKey();
+        try {
+            JSONArray array = new JSONArray();
+            JSONObject object = new JSONObject();
+            object.put("host", hostKey);
+            object.put("sftp", sftp);
+            object.put("time", System.currentTimeMillis());
+            array.put(object);
+            for (RecentConnection recent : getRecentConnections()) {
+                if (array.length() >= RECENT_CONNECTIONS_MAX) break;
+                if (recent.hostKey.equals(hostKey) && recent.sftp == sftp) continue;
+                JSONObject old = new JSONObject();
+                old.put("host", recent.hostKey);
+                old.put("sftp", recent.sftp);
+                old.put("time", recent.time);
+                array.put(old);
+            }
+            mPreferences.edit().putString(KEY_RECENT_CONNECTIONS, array.toString()).apply();
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to save recent connection", e);
+        }
     }
 
     /** The name of the theme whose colors were set for the terminal, empty for the default colors. */
