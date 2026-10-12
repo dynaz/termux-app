@@ -17,7 +17,7 @@
     <string name="terminow_launcher_ubuntu">Ubuntu</string>
     <string name="terminow_launcher_ubuntu_choose">Choose it as the environment to open it or run Claude Code there</string>
     <string name="terminow_launcher_ubuntu_summary">proot-distro container %1$s, user %2$s</string>
-    <string name="terminow_launcher_ubuntu_missing">Ubuntu is not installed. TermiNow does not install it by itself: run these in a TermiNow Shell, it downloads about 50 MB.</string>
+    <string name="terminow_launcher_ubuntu_missing">Ubuntu is not installed. TermiNow only installs it when you ask: Set up Ubuntu shows the two steps first, or run them yourself in a TermiNow Shell.</string>
     <string name="terminow_launcher_ubuntu_install_command">pkg install proot-distro\nproot-distro install ubuntu</string>
     <string name="terminow_launcher_open_shell_to_install">Open TermiNow Shell</string>
     <string name="terminow_launcher_open_ubuntu_to_install">Open Ubuntu</string>

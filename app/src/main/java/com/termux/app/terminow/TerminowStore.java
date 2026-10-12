@@ -195,6 +195,8 @@ public class TerminowStore {
     private static final String KEY_ACCOUNT = "account";
     private static final String KEY_EXPLORER = "explorer";
     private static final String KEY_LAUNCHER = "launcher";
+    private static final String KEY_LAUNCH_PROFILES = "launch_profiles";
+    private static final String KEY_DEFAULT_LAUNCH_PROFILE = "default_launch_profile";
     private static final int EXPLORER_RECENTS_MAX = 30;
     private static final String KEY_PREMIUM = "premium";
     private static final String KEY_FORWARDS = "forwards";
@@ -472,6 +474,28 @@ public class TerminowStore {
 
     public void setExplorer(@NonNull JSONObject explorer) {
         mPreferences.edit().putString(KEY_EXPLORER, explorer.toString()).apply();
+    }
+
+    @NonNull
+    public List<TerminowLaunchProfile> getLaunchProfiles() {
+        return TerminowLaunchProfile.listFromJson(mPreferences.getString(KEY_LAUNCH_PROFILES, "[]"));
+    }
+
+    public void setLaunchProfiles(@NonNull List<TerminowLaunchProfile> profiles) {
+        mPreferences.edit().putString(KEY_LAUNCH_PROFILES, TerminowLaunchProfile.listToJson(profiles)).apply();
+    }
+
+    /**
+     * What a new Local Terminal opens: "local" for the TermiNow shell, "ubuntu:<container>" for a
+     * container, or the id of a saved launch profile.
+     */
+    @NonNull
+    public String getDefaultLaunchProfile() {
+        return mPreferences.getString(KEY_DEFAULT_LAUNCH_PROFILE, "local");
+    }
+
+    public void setDefaultLaunchProfile(@NonNull String value) {
+        mPreferences.edit().putString(KEY_DEFAULT_LAUNCH_PROFILE, value).apply();
     }
 
     /** The choices of the terminal launcher: environment, and user and folder per environment. */

@@ -130,6 +130,8 @@ public class TerminowHome {
 
     private final View mHomeView;
     private final View mTabBar;
+    private final View mTerminalToolbar;
+    private final View mLauncherButton;
     private final View mHomeButton;
     private final HorizontalScrollView mTabsScrollView;
     private final View mNotificationsBadge;
@@ -202,7 +204,10 @@ public class TerminowHome {
                 openTerminalAt(directory);
             }
         });
-        activity.findViewById(R.id.terminow_launcher_button).setOnClickListener(v -> mLauncher.show());
+        mLauncherButton = activity.findViewById(R.id.terminow_launcher_button);
+        mLauncherButton.setOnClickListener(v -> mLauncher.show());
+        mTerminalToolbar = activity.findViewById(R.id.terminow_terminal_toolbar);
+        mLauncher.bindToolbar(mTerminalToolbar);
         mRailHosts = activity.findViewById(R.id.terminow_rail_hosts);
         mRailSnippets = activity.findViewById(R.id.terminow_rail_snippets);
         mSearchView = activity.findViewById(R.id.terminow_search);
@@ -353,6 +358,11 @@ public class TerminowHome {
         mHomeButton.setBackgroundResource(homeVisible ? R.drawable.terminow_tab : R.drawable.terminow_tab_idle);
         updateNotificationsBadge();
         updateTabs();
+        // The toolbar belongs to the terminal, the launcher button to the home screen
+        boolean hasSessions = termuxService != null && !termuxService.isTermuxSessionsEmpty();
+        mTerminalToolbar.setVisibility(!homeVisible && hasSessions ? View.VISIBLE : View.GONE);
+        mLauncherButton.setVisibility(homeVisible || !hasSessions ? View.VISIBLE : View.GONE);
+        mLauncher.updateToolbar(null);
         if (homeVisible)
             updateItems();
     }
@@ -750,14 +760,29 @@ public class TerminowHome {
         menu.setOrientation(LinearLayout.VERTICAL);
         menu.setBackgroundResource(R.drawable.terminow_menu);
         menu.setPadding(0, dp(10), 0, dp(10));
+        // Scrolls when the profiles do not fit, like on a folded phone held sideways
+        android.widget.ScrollView menuScroll = new android.widget.ScrollView(mActivity);
+        menuScroll.addView(menu);
 
-        PopupWindow popup = new PopupWindow(menu, dp(280), ViewGroup.LayoutParams.WRAP_CONTENT, true);
+        PopupWindow popup = new PopupWindow(menuScroll, dp(300), ViewGroup.LayoutParams.WRAP_CONTENT, true);
         popup.setElevation(dp(8));
         popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
 
         addMenuItem(menu, popup, R.drawable.ic_terminow_hosts, R.string.terminow_connect, () -> showConnectDialog(false));
         addMenuItem(menu, popup, R.drawable.ic_terminow_group, R.string.terminow_connect_sftp, () -> showConnectDialog(true));
         addMenuItem(menu, popup, R.drawable.ic_terminow_terminal, R.string.terminow_local_terminal, this::openLocalTerminal);
+        // Launch profiles: Ubuntu, Claude Code in the chosen project, saved profiles and a new one
+        addMenuItem(menu, popup, R.drawable.ic_terminow_hosts, mActivity.getString(R.string.terminow_tools_ubuntu_terminal), mLauncher::openUbuntuTerminal);
+        addMenuItem(menu, popup, R.drawable.ic_terminow_launch, mLauncher.getClaudeMenuTitle(), mLauncher::openClaudeForProject);
+        List<TerminowLaunchProfile> profiles = mStore.getLaunchProfiles();
+        for (int i = 0; i < Math.min(4, profiles.size()); i++) {
+            TerminowLaunchProfile profile = profiles.get(i);
+            addMenuItem(menu, popup, R.drawable.ic_terminow_snippets, profile.icon + "  " + profile.name, () -> mLauncher.launchProfile(profile));
+        }
+        addMenuItem(menu, popup, R.drawable.ic_terminow_add, mActivity.getString(R.string.terminow_profiles_custom),
+            () -> mLauncher.getProfiles().edit(null, TerminowLaunchPlan.TOOL_CUSTOM));
+        if (!profiles.isEmpty())
+            addMenuItem(menu, popup, R.drawable.ic_terminow_more, mActivity.getString(R.string.terminow_profiles_manage), () -> mLauncher.getProfiles().showManager());
         // Shared storage is reached with the system file picker, the app has no storage permission
         addMenuItem(menu, popup, R.drawable.ic_terminow_import, R.string.terminow_files_import, () -> mFiles.importFiles(getCurrentSftpSession()));
         addMenuItem(menu, popup, R.drawable.ic_terminow_group, R.string.terminow_files_export, mFiles::exportFile);
@@ -818,6 +843,7 @@ public class TerminowHome {
         }
 
         mSftpSessions.add(session);
+        mLauncher.track(session, new TerminowLauncher.SessionInfo(null, host.getTitle(), "sftp", "", ""));
         String command = host.getSftpCommand(mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
         mStore.addLog(title, command);
         writeWhenStarted(session, command + "\r", 0);
@@ -984,18 +1010,32 @@ public class TerminowHome {
         if (service == null) return;
         TermuxSession session = service.createTermuxSession(null, null, null, directory.getAbsolutePath(), false, directory.getName());
         if (session == null) return;
+        mLauncher.track(session.getTerminalSession(), new TerminowLauncher.SessionInfo(TerminowMcpTargets.TARGET_TERMINOW, "Local", "bash",
+            directory.getAbsolutePath(), ""));
         mActivity.getTermuxTerminalSessionClient().setCurrentSession(session.getTerminalSession());
         hide();
     }
 
+    /**
+     * Open a new Local Terminal with the default launch profile of the settings. The TermiNow
+     * shell gets its startup command once, written to its own new shell before the user types;
+     * other profiles start their program directly. Nothing runs again when the tab is shown again
+     * or the activity is recreated.
+     */
     private void openLocalTerminal() {
-        TerminalSession session = addSession(null);
         TermuxService service = mActivity.getTermuxService();
-        if (session == null || service == null) return;
+        if (service == null) return;
+        if (mLauncher.launchDefault(service.getTermuxSessionsSize() + 1)) return;
 
-        String command = getLocalStartupCommand("local" + (service.getIndexOfSession(session) + 1));
+        TerminalSession session = addSession(null);
+        if (session == null) return;
+
+        String tmuxName = "local" + (service.getIndexOfSession(session) + 1);
+        String command = getLocalStartupCommand(tmuxName);
         if (command != null)
             writeWhenStarted(session, command + "\r", 0);
+        mLauncher.track(session, new TerminowLauncher.SessionInfo(TerminowMcpTargets.TARGET_TERMINOW, "Local", "bash",
+            TermuxConstants.TERMUX_HOME_DIR_PATH, command != null && command.contains("tmux") ? tmuxName : ""));
     }
 
     /**
@@ -1030,6 +1070,7 @@ public class TerminowHome {
             return;
         }
 
+        mLauncher.track(session, new TerminowLauncher.SessionInfo(null, host.getTitle(), "ssh", "", ""));
         String command = host.getCommand(mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
         mStore.addLog(host.getTitle(), command);
         writeWhenStarted(session, command + "\r", 0);
@@ -1693,6 +1734,10 @@ public class TerminowHome {
     }
 
     private void addMenuItem(@NonNull LinearLayout menu, @NonNull PopupWindow popup, int iconRes, int titleRes, @NonNull Runnable onClick) {
+        addMenuItem(menu, popup, iconRes, mActivity.getString(titleRes), onClick);
+    }
+
+    private void addMenuItem(@NonNull LinearLayout menu, @NonNull PopupWindow popup, int iconRes, @NonNull CharSequence title, @NonNull Runnable onClick) {
         LinearLayout item = new LinearLayout(mActivity);
         item.setOrientation(LinearLayout.HORIZONTAL);
         item.setGravity(Gravity.CENTER_VERTICAL);
@@ -1707,9 +1752,11 @@ public class TerminowHome {
         item.addView(iconView, new LinearLayout.LayoutParams(dp(22), dp(22)));
 
         TextView titleView = new TextView(mActivity);
-        titleView.setText(titleRes);
+        titleView.setText(title);
         titleView.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
         titleView.setTextSize(16);
+        titleView.setMaxLines(1);
+        titleView.setEllipsize(TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
         titleParams.setMarginStart(dp(18));
         item.addView(titleView, titleParams);

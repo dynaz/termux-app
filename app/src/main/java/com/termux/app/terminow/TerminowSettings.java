@@ -107,6 +107,9 @@ public class TerminowSettings {
         addSwitchRow(R.string.terminow_settings_show_folder, R.string.terminow_settings_show_folder_summary,
             mStore.shouldShowFolderOnStartup(), mStore::setShowFolderOnStartup);
 
+        addRow(R.string.terminow_settings_default_profile, TerminowLaunchProfilesUi.describeDefault(mActivity, mStore),
+            () -> TerminowLaunchProfilesUi.pickDefault(mActivity, mStore, this::update));
+
         addSwitchRow(R.string.terminow_settings_start_in_tmux, R.string.terminow_settings_start_in_tmux_summary,
             mStore.shouldStartInTmux(), mStore::setStartInTmux);
 

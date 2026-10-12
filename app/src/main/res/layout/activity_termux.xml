@@ -94,6 +94,73 @@
         </FrameLayout>
     </LinearLayout>
 
+    <!-- The terminal toolbar: environment and folder of the tab, tools and more. Only over a terminal. -->
+    <LinearLayout
+        android:id="@+id/terminow_terminal_toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:background="@color/terminow_bar_terminal"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="8dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/terminow_toolbar_environment"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:background="@drawable/terminow_tab_idle"
+            android:gravity="center_vertical"
+            android:maxLines="1"
+            android:paddingHorizontal="12dp"
+            android:textColor="@color/terminow_text"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/terminow_toolbar_folder"
+            android:layout_width="0dp"
+            android:layout_height="32dp"
+            android:layout_marginStart="6dp"
+            android:layout_weight="1"
+            android:background="@drawable/terminow_tab_idle"
+            android:drawableStart="@drawable/ic_terminow_folder"
+            android:drawablePadding="6dp"
+            android:drawableTint="@color/terminow_text_secondary"
+            android:ellipsize="start"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="10dp"
+            android:singleLine="true"
+            android:textColor="@color/terminow_text_secondary"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/terminow_toolbar_tools"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/terminow_tab_idle"
+            android:drawableStart="@drawable/ic_terminow_launch"
+            android:drawablePadding="6dp"
+            android:drawableTint="@color/terminow_text"
+            android:gravity="center_vertical"
+            android:maxLines="1"
+            android:paddingHorizontal="10dp"
+            android:text="@string/terminow_tools_title"
+            android:textColor="@color/terminow_text"
+            android:textSize="13sp" />
+
+        <ImageView
+            android:id="@+id/terminow_toolbar_more"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/terminow_toolbar_more"
+            android:padding="10dp"
+            android:src="@drawable/ic_terminow_more"
+            app:tint="@color/terminow_text" />
+    </LinearLayout>
+
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
