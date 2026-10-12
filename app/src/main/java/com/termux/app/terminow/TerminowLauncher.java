@@ -295,6 +295,13 @@ public class TerminowLauncher {
         float radius = dp(22);
         background.setCornerRadii(new float[]{radius, radius, radius, radius, 0, 0, 0, 0});
         scroll.setBackground(background);
+        // Keep the end of the sheet above the navigation bar and the taskbar of foldables
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(scroll, (v, insets) -> {
+            int bottom = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars() |
+                androidx.core.view.WindowInsetsCompat.Type.tappableElement()).bottom;
+            content.setPadding(dp(18), dp(16), dp(18), dp(24) + bottom);
+            return insets;
+        });
         dialog.setContentView(scroll);
         Window window = dialog.getWindow();
         if (window != null) {
