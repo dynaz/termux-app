@@ -878,14 +878,23 @@ public class TerminowExplorer {
         LinearLayout buttons = new LinearLayout(mActivity);
         buttons.setGravity(Gravity.CENTER);
         buttons.setPadding(0, dp(16), 0, 0);
+        // The Play build sells Premium with Google Play, once the account is known
+        boolean canBuy = TerminowBilling.isSupported() && (state == TerminowEntitlement.State.FREE || state == TerminowEntitlement.State.EXPIRED);
+        if (canBuy) {
+            TextView get = button(mActivity.getString(R.string.terminow_premium_get), true);
+            get.setOnClickListener(v -> mAccountUi.buyPremium());
+            buttons.addView(get, buttonParams());
+        }
         TextView check = button(mActivity.getString(state == TerminowEntitlement.State.SIGNED_OUT ?
-            R.string.terminow_account_sign_in : R.string.terminow_explorer_check_premium), true);
+            R.string.terminow_account_sign_in : R.string.terminow_explorer_check_premium), !canBuy);
         check.setEnabled(!mAccountUi.isCheckingPremium());
         check.setOnClickListener(v -> mAccountUi.checkPremiumNow());
         buttons.addView(check, buttonParams());
-        TextView account = button(mActivity.getString(R.string.terminow_explorer_account), false);
-        account.setOnClickListener(v -> mHost.showAccountSettings());
-        buttons.addView(account, buttonParams());
+        if (!canBuy) {
+            TextView account = button(mActivity.getString(R.string.terminow_explorer_account), false);
+            account.setOnClickListener(v -> mHost.showAccountSettings());
+            buttons.addView(account, buttonParams());
+        }
         card.addView(buttons);
 
         if (hadPremium || state == TerminowEntitlement.State.FREE) {

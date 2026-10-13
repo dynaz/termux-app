@@ -116,6 +116,13 @@ public class TerminowAccountTest {
                     } else {
                         response = premium ? "{\"premium\":true,\"plan\":\"TermiNow Premium Yearly\",\"nextDueDate\":\"2027-10-12\"}" : "{\"premium\":false}";
                     }
+                } else if (path.startsWith("/play.php")) {
+                    if (!new JSONObject(text).getString("purchaseToken").equals("good-token")) {
+                        status = 403;
+                        response = "{\"error\":\"This purchase belongs to another TermiNow account\"}";
+                    } else {
+                        response = "{\"premium\":true,\"plan\":\"TermiNow Premium (Google Play)\",\"nextDueDate\":null,\"source\":\"play\"}";
+                    }
                 } else {
                     status = 404;
                     response = "{}";
@@ -206,6 +213,27 @@ public class TerminowAccountTest {
             assertTrue(account.checkPremium(session).premium);
             expect(() -> account.signInWithGoogle("forged"), "INVALID_IDP_RESPONSE", "Failed (INVALID_IDP_RESPONSE)");
         }
+    }
+
+    @Test
+    public void playPurchaseIsGivenToTheServer() throws Exception {
+        try (FakeServer server = new FakeServer()) {
+            TerminowAccount account = account(server);
+            TerminowAccount.Session session = account.signInWithGoogle("google-id-token");
+            TerminowAccount.Premium premium = account.registerPlayPurchase(session, "good-token");
+            assertTrue(premium.premium);
+            assertEquals("play", premium.source);
+            assertNull(premium.nextDueDate);
+            expect(() -> account.registerPlayPurchase(session, "someone-elses"), "THIS",
+                "This purchase belongs to another TermiNow account");
+        }
+    }
+
+    @Test
+    public void playAccountIdIsTheHashTheServerExpects() {
+        // hash('sha256', 'terminow:alice') in play_lib.php
+        assertEquals("51a095186e84d968360b1725b7502d99a0364cfe794c20c09f64c723dd254c22", TerminowBilling.accountId("alice"));
+        assertEquals("https://cp.accmove.com/terminow/play.php", TerminowAccount.playUrl(TerminowAccount.PREMIUM_URL));
     }
 
     @Test

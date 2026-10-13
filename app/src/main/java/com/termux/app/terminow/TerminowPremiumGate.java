@@ -39,12 +39,18 @@ public final class TerminowPremiumGate {
             case MULTIPLE_ENVIRONMENTS: what = R.string.terminow_linux_premium_multiple; break;
             default: what = R.string.terminow_linux_premium_tmux; break;
         }
-        new android.app.AlertDialog.Builder(activity, R.style.TerminowAlertDialog)
+        TerminowAccountUi accountUi = new TerminowAccountUi(activity, store, () -> {});
+        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(activity, R.style.TerminowAlertDialog)
             .setTitle(R.string.terminow_vault_premium_title)
             .setMessage(activity.getString(R.string.terminow_linux_premium_message, activity.getString(what)))
-            .setPositiveButton(R.string.terminow_vault_check_premium, (d, w) -> new TerminowAccountUi(activity, store, () -> {}).checkPremiumNow())
-            .setNegativeButton(android.R.string.ok, null)
-            .show();
+            .setNegativeButton(android.R.string.ok, null);
+        if (TerminowBilling.isSupported()) {
+            builder.setPositiveButton(R.string.terminow_premium_get, (d, w) -> accountUi.buyPremium());
+            builder.setNeutralButton(R.string.terminow_vault_check_premium, (d, w) -> accountUi.checkPremiumNow());
+        } else {
+            builder.setPositiveButton(R.string.terminow_vault_check_premium, (d, w) -> accountUi.checkPremiumNow());
+        }
+        builder.show();
     }
 
 }

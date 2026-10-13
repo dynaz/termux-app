@@ -3,24 +3,19 @@
  * TermiNow Premium check, at https://cp.accmove.com/terminow/premium.php
  *
  * POST with `Authorization: Bearer <Firebase ID token>`. Answers
- * {"premium": true, "plan": "...", "nextDueDate": "YYYY-MM-DD"} or {"premium": false}.
+ * {"premium": true, "plan": "...", "nextDueDate": "YYYY-MM-DD" or null, "source": "accmove" or "play"}
+ * or {"premium": false}.
  *
  * It uses the internal API of WHMCS, so no API credentials exist anywhere. It answers nothing
  * else about the client, and never logs the token.
  */
 
 use function TermiNow\Premium\bearer_token;
-use function TermiNow\Premium\decide;
 use function TermiNow\Premium\fetch_certs;
 use function TermiNow\Premium\verify_id_token;
 
 require __DIR__ . '/lib.php';
-
-/**
- * WHMCS product ids that are TermiNow Premium, in addition to every product whose name or
- * group name contains "TermiNow". 90 is MobiClaude Premium, which includes TermiNow Premium.
- */
-const TERMINOW_PREMIUM_PRODUCT_IDS = [90];
+require __DIR__ . '/play_lib.php';
 
 header('Content-Type: application/json');
 header('Cache-Control: no-store');
@@ -46,14 +41,12 @@ try {
 }
 
 require dirname(__DIR__) . '/init.php';
+require __DIR__ . '/whmcs_glue.php';
 
-$client = localAPI('GetClientsDetails', ['email' => $claims['email'], 'stats' => false]);
-if (($client['result'] ?? '') !== 'success' || empty($client['client']['id'] ?? $client['userid'] ?? null)) {
-    // No client with this email: not Premium. The same answer as for a client without it.
-    respond(200, ['premium' => false]);
+try {
+    $db = terminow_db();
+    \TermiNow\Play\migrate($db);
+    respond(200, terminow_premium($db, $claims));
+} catch (\Throwable $e) {
+    respond(503, ['error' => 'Try again later']);
 }
-$clientId = (int)($client['client']['id'] ?? $client['userid']);
-$products = localAPI('GetClientsProducts', ['clientid' => $clientId, 'limitnum' => 250]);
-if (($products['result'] ?? '') !== 'success') respond(503, ['error' => 'Try again later']);
-$list = $products['products']['product'] ?? [];
-respond(200, decide(is_array($list) ? $list : [], TERMINOW_PREMIUM_PRODUCT_IDS));

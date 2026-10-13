@@ -430,8 +430,17 @@ public class TerminowVaultsUi {
             return;
         }
         if (!TerminowAccountUi.isPremium(mStore)) {
-            message(R.string.terminow_vault_premium_title, mActivity.getString(R.string.terminow_vault_premium_message, session.email),
-                R.string.terminow_vault_check_premium, mAccountUi::checkPremiumNow);
+            if (TerminowBilling.isSupported())
+                new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                    .setTitle(R.string.terminow_vault_premium_title)
+                    .setMessage(mActivity.getString(R.string.terminow_vault_premium_message, session.email))
+                    .setPositiveButton(R.string.terminow_premium_get, (d, w) -> mAccountUi.buyPremium())
+                    .setNeutralButton(R.string.terminow_vault_check_premium, (d, w) -> mAccountUi.checkPremiumNow())
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
+            else
+                message(R.string.terminow_vault_premium_title, mActivity.getString(R.string.terminow_vault_premium_message, session.email),
+                    R.string.terminow_vault_check_premium, mAccountUi::checkPremiumNow);
             return;
         }
         if (mVaults.isUnlocked()) {

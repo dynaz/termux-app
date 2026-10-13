@@ -32,14 +32,18 @@ import com.termux.app.TermuxActivity;
 import org.json.JSONObject;
 
 import java.text.DateFormat;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Date;
 
 /**
  * The account rows of the settings and their dialogs: sign in, create an account, verify the
  * email, check Premium, sign out and delete the account.
  *
- * Premium is bought and managed in the accmove.com client area. The app only shows the status
- * and never links to buying it, as Google Play requires for apps distributed on Play.
+ * Premium comes from the accmove.com client area or, in the Play build, from a Google Play
+ * subscription bought here (see {@link TerminowBilling}). The app never links to buying it
+ * elsewhere, as Google Play requires for apps distributed on Play.
  */
 public class TerminowAccountUi {
 
@@ -80,6 +84,13 @@ public class TerminowAccountUi {
         rows.addRow(R.string.terminow_account_email, session.email + "\n" + mActivity.getString(session.emailVerified ?
             R.string.terminow_account_verified : R.string.terminow_account_not_verified), session.emailVerified ? null : () -> showVerify(session));
         rows.addRow(R.string.terminow_account_premium, getPremiumSummary(session), () -> checkPremium(session, true));
+        JSONObject known = mStore.getPremium();
+        if (TerminowBilling.isSupported()) {
+            if (known != null && known.optBoolean("premium") && "play".equals(known.optString("source")))
+                rows.addRow(R.string.terminow_premium_manage, mActivity.getString(R.string.terminow_premium_manage_summary), this::openManage);
+            else if (!isPremium(mStore))
+                rows.addRow(R.string.terminow_premium_get, mActivity.getString(R.string.terminow_premium_get_summary), this::buyPremium);
+        }
         rows.addRow(R.string.terminow_account_sign_out, null, this::confirmSignOut);
         rows.addRow(R.string.terminow_account_delete, mActivity.getString(R.string.terminow_account_delete_summary), () -> confirmDelete(session));
 
@@ -288,11 +299,42 @@ public class TerminowAccountUi {
         mBusy = true;
         mPremiumError = null;
         mOnChanged.run();
+        TerminowBilling billing = TerminowBilling.create(mActivity, new IgnoringListener());
+        if (billing == null) {
+            checkPremiumWith(session, Collections.emptyList());
+            return;
+        }
+        // A purchase whose registration failed before is given to the server again first
+        billing.queryOwned((owned, error) -> {
+            billing.end();
+            checkPremiumWith(session, owned == null ? Collections.emptyList() : unregistered(session, owned));
+        });
+    }
+
+    /** Purchases of this account that the server has not acknowledged yet. */
+    @NonNull
+    private static List<String> unregistered(@NonNull TerminowAccount.Session session, @NonNull List<TerminowBilling.Owned> owned) {
+        List<String> tokens = new ArrayList<>();
+        String accountId = TerminowBilling.accountId(session.uid);
+        for (TerminowBilling.Owned purchase : owned)
+            if (!purchase.pending && !purchase.acknowledged && accountId.equals(purchase.accountId)) tokens.add(purchase.token);
+        return tokens;
+    }
+
+    private void checkPremiumWith(@NonNull TerminowAccount.Session session, @NonNull List<String> purchaseTokens) {
         new Thread(() -> {
             TerminowAccount.Premium premium = null;
             String error = null;
             try {
+                for (String token : purchaseTokens) {
+                    try {
+                        mAccount.registerPlayPurchase(session, token);
+                    } catch (TerminowAccount.AccountException e) {
+                        error = e.getMessage();
+                    }
+                }
                 premium = mAccount.checkPremium(session);
+                error = null;
             } catch (TerminowAccount.AccountException e) {
                 error = e.getMessage();
             }
@@ -308,6 +350,161 @@ public class TerminowAccountUi {
             });
         }).start();
     }
+
+    // -----------------------------------------------------------------------------------------
+    // Buying Premium with Google Play, in the Play build
+
+    /** Show the plans of Premium and buy one with Google Play. Needs a verified account. */
+    public void buyPremium() {
+        TerminowAccount.Session session = mStore.getAccount();
+        if (session == null) {
+            showSignIn();
+            return;
+        }
+        if (!session.emailVerified) {
+            showVerify(session);
+            return;
+        }
+        final TerminowBilling[] holder = new TerminowBilling[1];
+        holder[0] = TerminowBilling.create(mActivity, new TerminowBilling.Listener() {
+            @Override
+            public void onPurchases(@NonNull List<TerminowBilling.Owned> purchases) {
+                holder[0].end();
+                onPurchased(session, purchases);
+            }
+
+            @Override
+            public void onCancelled() {
+                holder[0].end();
+            }
+
+            @Override
+            public void onError(@NonNull String message) {
+                holder[0].end();
+                mActivity.showToast(message, true);
+            }
+        });
+        if (holder[0] == null) return;
+        AlertDialog progress = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setMessage(R.string.terminow_account_working)
+            .show();
+        holder[0].queryPlans((plans, error) -> {
+            progress.dismiss();
+            if (plans == null || plans.isEmpty()) {
+                holder[0].end();
+                mActivity.showToast(error != null ? error : mActivity.getString(R.string.terminow_premium_unavailable), true);
+                return;
+            }
+            LinearLayout form = form();
+            TextView message = new TextView(mActivity);
+            message.setText(R.string.terminow_premium_choose_message);
+            message.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+            message.setPadding(0, 0, 0, dp(8));
+            form.addView(message);
+            AlertDialog dialog = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setTitle(R.string.terminow_premium_choose_title)
+                .setView(form)
+                .setNegativeButton(android.R.string.cancel, null)
+                .create();
+            final boolean[] buying = new boolean[1];
+            dialog.setOnDismissListener(d -> {
+                if (!buying[0]) holder[0].end();
+            });
+            for (TerminowBilling.Plan plan : plans) {
+                TextView button = new TextView(mActivity);
+                button.setText(planLabel(plan));
+                button.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
+                button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+                button.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+                button.setGravity(android.view.Gravity.CENTER);
+                button.setBackgroundResource(R.drawable.terminow_action);
+                button.setOnClickListener(v -> {
+                    buying[0] = true;
+                    dialog.dismiss();
+                    holder[0].buy(mActivity, plan, TerminowBilling.accountId(session.uid), (none, buyError) -> {
+                        if (buyError == null) return;
+                        holder[0].end();
+                        mActivity.showToast(buyError, true);
+                    });
+                });
+                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48));
+                params.topMargin = dp(8);
+                form.addView(button, params);
+            }
+            dialog.show();
+        });
+    }
+
+    @NonNull
+    private String planLabel(@NonNull TerminowBilling.Plan plan) {
+        switch (plan.period) {
+            case "P1M": return mActivity.getString(R.string.terminow_premium_plan_monthly, plan.price);
+            case "P1Y": return mActivity.getString(R.string.terminow_premium_plan_yearly, plan.price);
+            default: return plan.price + " / " + plan.period;
+        }
+    }
+
+    /** Google Play finished a purchase: give it to the server, which turns Premium on. */
+    private void onPurchased(@NonNull TerminowAccount.Session session, @NonNull List<TerminowBilling.Owned> purchases) {
+        String accountId = TerminowBilling.accountId(session.uid);
+        List<String> tokens = new ArrayList<>();
+        boolean pending = false;
+        boolean otherAccount = false;
+        for (TerminowBilling.Owned purchase : purchases) {
+            if (!accountId.equals(purchase.accountId)) otherAccount = true;
+            else if (purchase.pending) pending = true;
+            else tokens.add(purchase.token);
+        }
+        if (tokens.isEmpty()) {
+            if (pending) showMessage(R.string.terminow_premium_choose_title, mActivity.getString(R.string.terminow_premium_pending));
+            else if (otherAccount) showMessage(R.string.terminow_premium_choose_title, mActivity.getString(R.string.terminow_premium_not_yours));
+            return;
+        }
+        final TerminowAccount.Premium[] result = new TerminowAccount.Premium[1];
+        AlertDialog progress = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setMessage(R.string.terminow_account_working)
+            .setCancelable(false)
+            .show();
+        new Thread(() -> {
+            String error = null;
+            for (String token : tokens) {
+                try {
+                    result[0] = mAccount.registerPlayPurchase(session, token);
+                } catch (TerminowAccount.AccountException e) {
+                    error = e.getMessage();
+                }
+            }
+            String finalError = result[0] != null ? null : error;
+            mHandler.post(() -> {
+                progress.dismiss();
+                if (mStore.getAccount() != null) mStore.setAccount(session);
+                if (result[0] != null) mStore.setPremium(result[0]);
+                if (finalError != null)
+                    showMessage(R.string.terminow_premium_choose_title, mActivity.getString(R.string.terminow_premium_register_failed, finalError));
+                else if (result[0] != null && result[0].premium)
+                    mActivity.showToast(mActivity.getString(R.string.terminow_premium_thanks), true);
+                mOnChanged.run();
+            });
+        }).start();
+    }
+
+    private void openManage() {
+        try {
+            mActivity.startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW,
+                android.net.Uri.parse(TerminowBilling.manageUrl(mActivity.getPackageName()))));
+        } catch (android.content.ActivityNotFoundException e) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_premium_unavailable), true);
+        }
+    }
+
+    /** For checking purchases only, outside a purchase. */
+    private static class IgnoringListener implements TerminowBilling.Listener {
+        @Override public void onPurchases(@NonNull List<TerminowBilling.Owned> purchases) {}
+        @Override public void onCancelled() {}
+        @Override public void onError(@NonNull String message) {}
+    }
+
+    // -----------------------------------------------------------------------------------------
 
     private void confirmSignOut() {
         new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)

@@ -55,6 +55,8 @@ public class TerminowAccount {
         public boolean premium;
         public String plan = "";
         @Nullable public String nextDueDate;
+        /** Where Premium comes from: "accmove", "play", or empty. */
+        public String source = "";
     }
 
     private final String mApiKey;
@@ -62,6 +64,7 @@ public class TerminowAccount {
     private String mAuthUrl = AUTH_URL;
     private String mTokenUrl = TOKEN_URL;
     private String mPremiumUrl = PREMIUM_URL;
+    private String mPlayUrl = playUrl(PREMIUM_URL);
 
     public TerminowAccount(@NonNull String apiKey, @NonNull String packageName) {
         mApiKey = apiKey;
@@ -73,6 +76,13 @@ public class TerminowAccount {
         mAuthUrl = authUrl;
         mTokenUrl = tokenUrl;
         mPremiumUrl = premiumUrl;
+        mPlayUrl = playUrl(premiumUrl);
+    }
+
+    /** play.php next to premium.php. */
+    @NonNull
+    static String playUrl(@NonNull String premiumUrl) {
+        return premiumUrl.substring(0, premiumUrl.lastIndexOf('/') + 1) + "play.php";
     }
 
     public boolean isConfigured() {
@@ -165,11 +175,27 @@ public class TerminowAccount {
     @NonNull
     public Premium checkPremium(@NonNull Session session) throws AccountException {
         if (!session.emailVerified) throw new AccountException("EMAIL_NOT_VERIFIED", "Verify your email first");
-        JSONObject result = request(mPremiumUrl, "application/json", "{}", getIdToken(session));
+        return toPremium(request(mPremiumUrl, "application/json", "{}", getIdToken(session)));
+    }
+
+    /**
+     * Give a Google Play purchase to the server, which checks it with Google, keeps it for this
+     * account and acknowledges it. Answers the Premium status after it.
+     */
+    @NonNull
+    public Premium registerPlayPurchase(@NonNull Session session, @NonNull String purchaseToken) throws AccountException {
+        if (!session.emailVerified) throw new AccountException("EMAIL_NOT_VERIFIED", "Verify your email first");
+        JSONObject body = object("purchaseToken", purchaseToken);
+        return toPremium(request(mPlayUrl, "application/json", body.toString(), getIdToken(session)));
+    }
+
+    @NonNull
+    private static Premium toPremium(@NonNull JSONObject result) {
         Premium premium = new Premium();
         premium.premium = result.optBoolean("premium");
         premium.plan = result.optString("plan");
         premium.nextDueDate = result.isNull("nextDueDate") ? null : result.optString("nextDueDate", null);
+        premium.source = result.isNull("source") ? "" : result.optString("source");
         return premium;
     }
 
@@ -279,7 +305,7 @@ public class TerminowAccount {
             case "CONFIGURATION_NOT_FOUND": message = "Sign in with email is not turned on for TermiNow yet"; break;
             default:
                 // The Premium endpoint answers {"error": "..."} with plain words
-                message = status == 401 || status == 503 || status == 405 ? code : "Failed (" + code + ")";
+                message = status == 401 || status == 403 || status == 503 || status == 405 ? code : "Failed (" + code + ")";
         }
         return new AccountException(base, message);
     }

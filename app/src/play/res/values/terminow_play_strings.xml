@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The Play build sells Premium with Google Play, and does not point to buying it elsewhere -->
+    <string name="terminow_account_sign_in_note">Your TermiNow account keeps your Premium, also on a new phone. Your hosts, keys and passwords stay on this device.</string>
+    <string name="terminow_account_premium_inactive">Not active for %1$s.</string>
+    <string name="terminow_account_delete_summary">Deletes your TermiNow sign-in</string>
+    <string name="terminow_account_delete_confirm">Delete the TermiNow account %1$s? This can not be undone. Your hosts and keys on this device are kept. A Google Play subscription is not cancelled by this, cancel it in Google Play.</string>
+    <string name="terminow_explorer_state_signed_out">Sign in to your TermiNow account to get or check Premium.</string>
+    <string name="terminow_explorer_state_free">This account does not have Premium.</string>
+</resources>

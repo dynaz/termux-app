@@ -7,15 +7,12 @@
  */
 
 use function TermiNow\Premium\bearer_token;
-use function TermiNow\Premium\decide;
 use function TermiNow\Premium\fetch_certs;
 use function TermiNow\Premium\verify_id_token;
 
 require __DIR__ . '/lib.php';
 require __DIR__ . '/vault_lib.php';
-
-/** The same Premium products as premium.php. */
-const TERMINOW_VAULT_PREMIUM_PRODUCT_IDS = [90];
+require __DIR__ . '/play_lib.php';
 
 header('Content-Type: application/json');
 header('Cache-Control: no-store');
@@ -45,20 +42,21 @@ $request = json_decode((string)$body, true);
 if (!is_array($request)) vault_respond(400, ['error' => 'Invalid JSON']);
 
 require dirname(__DIR__) . '/init.php';
+require __DIR__ . '/whmcs_glue.php';
 
-$isPremium = function (string $email): bool {
-    $client = localAPI('GetClientsDetails', ['email' => $email, 'stats' => false]);
-    if (($client['result'] ?? '') !== 'success' || empty($client['client']['id'] ?? $client['userid'] ?? null)) return false;
-    $products = localAPI('GetClientsProducts', ['clientid' => (int)($client['client']['id'] ?? $client['userid']), 'limitnum' => 250]);
-    if (($products['result'] ?? '') !== 'success') return false;
-    $list = $products['products']['product'] ?? [];
-    return decide(is_array($list) ? $list : [], TERMINOW_VAULT_PREMIUM_PRODUCT_IDS)['premium'];
+// Only ever asked for the signed-in user, whose uid finds their Play subscriptions
+$isPremium = function (string $email) use (&$db, $claims): bool {
+    try {
+        return (bool)terminow_premium($db, $claims)['premium'];
+    } catch (\TermiNow\Play\Failure $e) {
+        return false;
+    }
 };
 
 try {
-    $db = \Illuminate\Database\Capsule\Manager::connection()->getPdo();
-    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $db = terminow_db();
     \TermiNow\Vault\migrate($db);
+    \TermiNow\Play\migrate($db);
     vault_respond(200, \TermiNow\Vault\handle($db, $claims, $request, $isPremium, time()));
 } catch (\TermiNow\Vault\Failure $e) {
     if (isset($db) && $db->inTransaction()) $db->rollBack();

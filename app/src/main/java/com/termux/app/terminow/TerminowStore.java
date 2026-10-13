@@ -480,6 +480,7 @@ public class TerminowStore {
                 .put("premium", premium.premium)
                 .put("plan", premium.plan)
                 .put("nextDueDate", premium.nextDueDate == null ? JSONObject.NULL : premium.nextDueDate)
+                .put("source", premium.source)
                 .put("checked", System.currentTimeMillis());
             mPreferences.edit().putString(KEY_PREMIUM, object.toString()).apply();
         } catch (JSONException e) {
