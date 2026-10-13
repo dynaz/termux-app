@@ -1,16 +1,8 @@
 package com.termux.shared.android;
 
-import android.annotation.SuppressLint;
 import android.content.Context;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
-
-import com.termux.shared.logger.Logger;
-import com.termux.shared.reflection.ReflectionUtils;
-
-import java.lang.reflect.Method;
-import java.util.Map;
 
 /**
  * Utils for Developer Options -> Feature Flags. The page won't show in user/production builds and
@@ -46,9 +38,9 @@ import java.util.Map;
  * The feature flag values can be modified in user builds with settings global list, but since the
  * developer options feature flags page is not shown and considering that getprop values for features
  * will be unset by default and settings global list will not be set either and there is no shell API,
- * it will require an android app process to check if feature is supported on a device and what its
- * default value is with reflection after bypassing hidden api restrictions since {@link #FEATURE_FLAGS_CLASS}
- * is annotated as `@hide`.
+ * it would require an android app process to read the hidden {@code android.util.FeatureFlagUtils}
+ * class, which is a non-SDK interface. TermiNow does not use non-SDK interfaces, so the values are
+ * reported as unknown.
  */
 public class FeatureFlagUtils {
 
@@ -78,92 +70,20 @@ public class FeatureFlagUtils {
 
     }
 
-    public static final String FEATURE_FLAGS_CLASS = "android.util.FeatureFlagUtils";
-
-    private static final String LOG_TAG = "FeatureFlagUtils";
-
-    /**
-     * Get all feature flags in their raw form.
-     */
-    @SuppressWarnings("unchecked")
-    public static Map<String, String> getAllFeatureFlags() {
-        ReflectionUtils.bypassHiddenAPIReflectionRestrictions();
-        try {
-            @SuppressLint("PrivateApi") Class<?> clazz = Class.forName(FEATURE_FLAGS_CLASS);
-            Method getAllFeatureFlagsMethod = ReflectionUtils.getDeclaredMethod(clazz, "getAllFeatureFlags");
-            if (getAllFeatureFlagsMethod == null) return null;
-            return (Map<String, String>) ReflectionUtils.invokeMethod(getAllFeatureFlagsMethod, null).value;
-        } catch (Exception e) {
-            // ClassCastException may be thrown
-            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to get all feature flags", e);
-            return null;
-        }
-    }
-
-    /**
-     * Check if a feature flag exists.
-     *
-     * @return Returns {@code true} if flag exists, otherwise {@code false}. This will be
-     * {@code null} if an exception is raised.
-     */
-    @Nullable
-    public static Boolean featureFlagExists(@NonNull String feature) {
-        Map<String, String> featureFlags = getAllFeatureFlags();
-        if (featureFlags == null) return null;
-        return featureFlags.containsKey(feature);
-    }
-
     /**
      * Get {@link FeatureFlagValue} for a feature.
      *
-     * @param context The {@link Context} for operations.
-     * @param feature The {@link String} name for feature.
-     * @return Returns {@link FeatureFlagValue}.
-     */
-    @NonNull
-    public static FeatureFlagValue getFeatureFlagValueString(@NonNull Context context, @NonNull String feature) {
-        Boolean featureFlagExists = featureFlagExists(feature);
-        if (featureFlagExists == null) {
-            Logger.logError(LOG_TAG, "Failed to get feature flags \"" + feature + "\" value");
-            return FeatureFlagValue.UNKNOWN;
-        } else if (!featureFlagExists) {
-            return FeatureFlagValue.UNSUPPORTED;
-        }
-
-        Boolean featureFlagValue = isFeatureEnabled(context, feature);
-        if (featureFlagValue == null) {
-            Logger.logError(LOG_TAG, "Failed to get feature flags \"" + feature + "\" value");
-            return FeatureFlagValue.UNKNOWN;
-        } else {
-            return featureFlagValue ? FeatureFlagValue.TRUE : FeatureFlagValue.FALSE;
-        }
-    }
-
-    /**
-     * Check if a feature flag exists.
+     * Android has no public API to read its feature flags ({@code android.util.FeatureFlagUtils}
+     * is not part of the SDK), and TermiNow does not use non-SDK interfaces, so the value is
+     * always {@link FeatureFlagValue#UNKNOWN}. It was only shown in the debug info of reports.
      *
      * @param context The {@link Context} for operations.
      * @param feature The {@link String} name for feature.
-     * @return Returns {@code true} if flag exists, otherwise {@code false}. This will be
-     * {@code null} if an exception is raised.
+     * @return Returns {@link FeatureFlagValue#UNKNOWN}.
      */
-    @Nullable
-    public static Boolean isFeatureEnabled(@NonNull Context context, @NonNull String feature) {
-        ReflectionUtils.bypassHiddenAPIReflectionRestrictions();
-        try {
-            @SuppressLint("PrivateApi") Class<?> clazz = Class.forName(FEATURE_FLAGS_CLASS);
-            Method isFeatureEnabledMethod = ReflectionUtils.getDeclaredMethod(clazz, "isEnabled", Context.class, String.class);
-            if (isFeatureEnabledMethod == null) {
-                Logger.logError(LOG_TAG, "Failed to check if feature flag \"" + feature + "\" is enabled");
-                return null;
-            }
-
-            return (boolean) ReflectionUtils.invokeMethod(isFeatureEnabledMethod, null, context, feature).value;
-        } catch (Exception e) {
-            // ClassCastException may be thrown
-            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to check if feature flag \"" + feature + "\" is enabled", e);
-            return null;
-        }
+    @NonNull
+    public static FeatureFlagValue getFeatureFlagValueString(@NonNull Context context, @NonNull String feature) {
+        return FeatureFlagValue.UNKNOWN;
     }
 
 }

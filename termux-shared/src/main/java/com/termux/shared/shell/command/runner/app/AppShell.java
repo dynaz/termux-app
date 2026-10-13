@@ -1,9 +1,6 @@
 package com.termux.shared.shell.command.runner.app;
 
 import android.content.Context;
-import android.system.ErrnoException;
-import android.system.Os;
-import android.system.OsConstants;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -275,15 +272,13 @@ public final class AppShell {
     }
 
     /**
-     * Kill this {@link AppShell} by sending a {@link OsConstants#SIGILL} to its {@link #mProcess}.
+     * Kill this {@link AppShell}: {@link Process#destroyForcibly()} sends SIGKILL to its {@link #mProcess}.
      */
     public void kill() {
-        int pid = ShellUtils.getPid(mProcess);
         try {
-            // Send SIGKILL to process
-            Os.kill(pid, OsConstants.SIGKILL);
-        } catch (ErrnoException e) {
-            Logger.logWarn(LOG_TAG, "Failed to send SIGKILL to \"" + mExecutionCommand.getCommandIdAndLabelLogString() + "\" AppShell with pid " + pid + ": " + e.getMessage());
+            mProcess.destroyForcibly();
+        } catch (RuntimeException e) {
+            Logger.logWarn(LOG_TAG, "Failed to kill \"" + mExecutionCommand.getCommandIdAndLabelLogString() + "\" AppShell: " + e.getMessage());
         }
     }
 

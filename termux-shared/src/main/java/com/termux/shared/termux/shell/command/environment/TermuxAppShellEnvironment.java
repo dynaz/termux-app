@@ -10,7 +10,6 @@ import androidx.annotation.Nullable;
 
 import com.termux.shared.android.PackageUtils;
 import com.termux.shared.android.SELinuxUtils;
-import com.termux.shared.data.DataUtils;
 import com.termux.shared.shell.command.environment.ShellEnvironmentUtils;
 import com.termux.shared.termux.TermuxBootstrap;
 import com.termux.shared.termux.TermuxConstants;
@@ -137,10 +136,7 @@ public class TermuxAppShellEnvironment {
 
             ShellEnvironmentUtils.putToEnvIfSet(environment, ENV_TERMUX_APP__SE_PROCESS_CONTEXT, SELinuxUtils.getContext());
             ShellEnvironmentUtils.putToEnvIfSet(environment, ENV_TERMUX_APP__SE_FILE_CONTEXT, SELinuxUtils.getFileContext(filesDirPath));
-
-            String seInfoUser = PackageUtils.getApplicationInfoSeInfoUserForPackage(applicationInfo);
-            ShellEnvironmentUtils.putToEnvIfSet(environment, ENV_TERMUX_APP__SE_INFO, PackageUtils.getApplicationInfoSeInfoForPackage(applicationInfo) +
-                (DataUtils.isNullOrEmpty(seInfoUser) ? "" : seInfoUser));
+            // ENV_TERMUX_APP__SE_INFO is not set: the seinfo of the app is only in a non-SDK field
 
             if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
                 ShellEnvironmentUtils.putToEnvIfSet(environment, ENV_TERMUX_APP__USER_ID, String.valueOf(PackageUtils.getUserIdForPackage(currentPackageContext)));

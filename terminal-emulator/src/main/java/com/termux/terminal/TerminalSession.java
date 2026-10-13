@@ -3,6 +3,7 @@ package com.termux.terminal;
 import android.annotation.SuppressLint;
 import android.os.Handler;
 import android.os.Message;
+import android.os.ParcelFileDescriptor;
 import android.system.ErrnoException;
 import android.system.Os;
 import android.system.OsConstants;
@@ -13,7 +14,6 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
@@ -314,23 +314,19 @@ public final class TerminalSession extends TerminalOutput {
         return null;
     }
 
+    /**
+     * A {@link FileDescriptor} for the pty master, for the reader and writer streams. It is a
+     * duplicate made with the public {@link ParcelFileDescriptor#fromFd(int)}, so the streams close
+     * their own copy and {@link #cleanupResources(int)} closes the original with {@link JNI#close(int)}.
+     */
     private static FileDescriptor wrapFileDescriptor(int fileDescriptor, TerminalSessionClient client) {
-        FileDescriptor result = new FileDescriptor();
         try {
-            Field descriptorField;
-            try {
-                descriptorField = FileDescriptor.class.getDeclaredField("descriptor");
-            } catch (NoSuchFieldException e) {
-                // For desktop java:
-                descriptorField = FileDescriptor.class.getDeclaredField("fd");
-            }
-            descriptorField.setAccessible(true);
-            descriptorField.set(result, fileDescriptor);
-        } catch (NoSuchFieldException | IllegalAccessException | IllegalArgumentException e) {
-            Logger.logStackTraceWithMessage(client, LOG_TAG, "Error accessing FileDescriptor#descriptor private field", e);
+            return ParcelFileDescriptor.fromFd(fileDescriptor).getFileDescriptor();
+        } catch (IOException e) {
+            Logger.logStackTraceWithMessage(client, LOG_TAG, "Error duplicating the terminal file descriptor", e);
             System.exit(1);
+            return null;
         }
-        return result;
     }
 
     @SuppressLint("HandlerLeak")
