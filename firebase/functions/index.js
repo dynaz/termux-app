@@ -35,9 +35,9 @@ defineString('PLAY_PACKAGE_NAME', { description: 'The Android package, com.termi
 defineString('PLAY_PRODUCT_MAP', { description: 'JSON: {"<product>": {"<base plan>": {"tier": "premium", "whmcsProductId": N}}}' });
 defineString('WHMCS_SYNC_URL', { default: '', description: 'https URL of whmcs/terminow/play_sync.php, empty to not sync' });
 const WHMCS_SYNC_SECRET = defineSecret('WHMCS_SYNC_SECRET');
-const RTDN_TOPIC = process.env.PLAY_RTDN_TOPIC;
-if (!RTDN_TOPIC && process.env.FUNCTIONS_CONTROL_API !== 'true')
-  logger.warn('PLAY_RTDN_TOPIC is not set; set it in functions/.env.<project> before deploying');
+// The topic of Real-time Developer Notifications, the same as in Play Console. It names the
+// trigger, so it is read when the deploy loads this file, before .env values are there.
+const RTDN_TOPIC = process.env.PLAY_RTDN_TOPIC || 'play-rtdn';
 
 setGlobalOptions({ region: FUNCTIONS_REGION, maxInstances: 10 });
 initializeApp();
@@ -85,7 +85,7 @@ exports.linkWhmcsAccount = onCall({ secrets: [WHMCS_SYNC_SECRET] }, async (reque
   }
 });
 
-if (RTDN_TOPIC) {
+{
   exports.onPlayNotification = onMessagePublished({ topic: RTDN_TOPIC, secrets: [WHMCS_SYNC_SECRET], retry: true }, async (event) => {
     let message;
     try {
@@ -113,7 +113,9 @@ exports.reconcilePlayPurchases = onSchedule({ schedule: 'every 30 minutes', secr
   logger.info('Reconciliation: ' + JSON.stringify(done));
 });
 
-exports.syncWhmcs = onDocumentWritten({ document: 'whmcsOutbox/{uid}', secrets: [WHMCS_SYNC_SECRET] }, async (event) => {
+// A Firestore trigger runs where the database is: nam5, so a US region, whatever FUNCTIONS_REGION is
+exports.syncWhmcs = onDocumentWritten({ document: 'whmcsOutbox/{uid}', region: process.env.FIRESTORE_TRIGGER_REGION || 'us-central1',
+  secrets: [WHMCS_SYNC_SECRET] }, async (event) => {
   const after = event.data && event.data.after && event.data.after.data();
   if (!after || after.status !== 'queued' || after.syncedVersion >= after.version) return;
   await service().syncWhmcs(event.params.uid);

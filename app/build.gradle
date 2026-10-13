@@ -68,7 +68,7 @@ android {
         applicationId "com.terminow"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 159
+        versionCode 160
         versionName "0.118.0"
 
         if (appVersionName) versionName = appVersionName
