@@ -94,178 +94,337 @@ public class TerminowMcpPage {
         render();
     }
 
+    /** The filters above the list. */
+    private enum Filter { ALL, REMOTE, LOCAL, PASSED, NEEDS_LOGIN }
+
+    private Filter mFilter = Filter.ALL;
+
+    /** Whether MCP server management may be used: it is part of TermiNow Premium. */
+    private boolean isPremium() {
+        return TerminowAccountUi.isPremium(mStore);
+    }
+
+    /**
+     * Run a management action if the user has Premium, otherwise say that it is part of
+     * Premium. Checked at every action, not only when the page is shown, since Premium can end
+     * while the page is open.
+     */
+    private void requirePremium(@NonNull Runnable action) {
+        TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.MCP, 0, action);
+    }
+
     private void render() {
         mContainer.removeAllViews();
-        List<TerminowMcpProfile> shown = new ArrayList<>();
-        for (TerminowMcpProfile profile : mProfiles) {
-            if (mQuery.isEmpty() || profile.name.toLowerCase(Locale.ROOT).contains(mQuery) ||
-                profile.url.toLowerCase(Locale.ROOT).contains(mQuery))
-                shown.add(profile);
+        if (!isPremium()) {
+            addLockedState();
+            return;
         }
-
         if (mProfiles.isEmpty()) {
             addEmptyState();
-        } else if (shown.isEmpty()) {
+            addFooter();
+            return;
+        }
+
+        addAddedStrip();
+        addHeaderRow();
+        addFilterRow();
+
+        List<TerminowMcpProfile> shown = new ArrayList<>();
+        for (TerminowMcpProfile profile : mProfiles)
+            if (matchesQuery(profile) && matchesFilter(profile)) shown.add(profile);
+
+        if (shown.isEmpty()) {
             TextView none = text(mActivity.getString(R.string.terminow_no_results), 14, R.color.terminow_text_secondary);
             none.setPadding(0, dp(24), 0, dp(24));
             none.setGravity(Gravity.CENTER);
             mContainer.addView(none, matchWrap());
         } else {
-            // Two columns on wide screens, like an unfolded foldable
+            // Two columns of rows on wide screens, like an unfolded foldable or a tablet
             int widthDp = Math.round(mActivity.getResources().getConfiguration().screenWidthDp);
             int columns = widthDp >= 760 ? 2 : 1;
+            LinearLayout list = card();
+            list.setPadding(0, dp(4), 0, dp(4));
             LinearLayout row = null;
             for (int i = 0; i < shown.size(); i++) {
                 if (i % columns == 0) {
+                    if (i > 0) list.addView(divider(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
                     row = new LinearLayout(mActivity);
                     row.setOrientation(LinearLayout.HORIZONTAL);
-                    mContainer.addView(row, matchWrap());
+                    list.addView(row, matchWrap());
                 }
-                View card = createCard(shown.get(i));
-                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
-                params.setMarginEnd(columns > 1 && i % columns == 0 ? dp(10) : 0);
-                params.bottomMargin = dp(10);
-                row.addView(card, params);
+                row.addView(createRow(shown.get(i)), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
             }
-            // Keep the last card of an odd count at the width of a column
             if (columns > 1 && shown.size() % columns != 0 && row != null)
                 row.addView(new View(mActivity), new LinearLayout.LayoutParams(0, 1, 1));
+            LinearLayout.LayoutParams listParams = matchWrap();
+            listParams.bottomMargin = dp(10);
+            mContainer.addView(list, listParams);
         }
-        addSettingsCard();
+        addFooter();
+    }
+
+    private boolean matchesQuery(@NonNull TerminowMcpProfile profile) {
+        return mQuery.isEmpty() || profile.name.toLowerCase(Locale.ROOT).contains(mQuery) ||
+            getEndpointLabel(profile).toLowerCase(Locale.ROOT).contains(mQuery);
+    }
+
+    private boolean matchesFilter(@NonNull TerminowMcpProfile profile) {
+        switch (mFilter) {
+            case REMOTE: return profile.isSupported();
+            case LOCAL: return TerminowMcpProfile.TRANSPORT_STDIO.equals(profile.transport);
+            case PASSED: return profile.testTime != 0 && profile.testOk && !mTests.containsKey(profile.id);
+            case NEEDS_LOGIN: return needsLogin(profile);
+            default: return true;
+        }
+    }
+
+    private static boolean needsLogin(@NonNull TerminowMcpProfile profile) {
+        return profile.testTime != 0 && !profile.testOk && (TerminowMcpClient.Failure.OAUTH_REQUIRED.name().equals(profile.testFailure) ||
+            TerminowMcpClient.Failure.AUTH_FAILED.name().equals(profile.testFailure));
+    }
+
+    /** For free users: what Premium gives, and that nothing saved is lost. */
+    private void addLockedState() {
+        LinearLayout card = card();
+        card.setGravity(Gravity.CENTER_HORIZONTAL);
+        ImageView crown = new ImageView(mActivity);
+        crown.setImageResource(R.drawable.ic_terminow_crown);
+        card.addView(crown, new LinearLayout.LayoutParams(dp(40), dp(40)));
+        TextView title = text(mActivity.getString(R.string.terminow_mcp_premium_title), 17, R.color.terminow_text);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setGravity(Gravity.CENTER);
+        title.setPadding(0, dp(10), 0, dp(8));
+        card.addView(title, matchWrap());
+        card.addView(text(mActivity.getString(R.string.terminow_mcp_premium_features), 14, R.color.terminow_text), matchWrap());
+        String kept = mProfiles.isEmpty() ? mActivity.getString(R.string.terminow_mcp_premium_kept_none) :
+            mActivity.getResources().getQuantityString(R.plurals.terminow_mcp_premium_kept, mProfiles.size(), mProfiles.size());
+        TextView keptView = text(kept, 13, R.color.terminow_text_secondary);
+        keptView.setGravity(Gravity.CENTER);
+        keptView.setPadding(0, dp(12), 0, 0);
+        card.addView(keptView, matchWrap());
+
+        LinearLayout buttons = new LinearLayout(mActivity);
+        buttons.setGravity(Gravity.CENTER);
+        buttons.setPadding(0, dp(16), 0, 0);
+        TerminowAccountUi accountUi = new TerminowAccountUi(mActivity, mStore, () -> update(mQuery));
+        if (TerminowBilling.isSupported()) {
+            TextView get = actionButton(mActivity.getString(R.string.terminow_premium_get), true);
+            get.setOnClickListener(v -> accountUi.buyPremium());
+            buttons.addView(get, actionParams());
+        }
+        TextView check = actionButton(mActivity.getString(R.string.terminow_vault_check_premium), !TerminowBilling.isSupported());
+        check.setOnClickListener(v -> accountUi.checkPremiumNow());
+        buttons.addView(check, actionParams());
+        card.addView(buttons);
+        mContainer.addView(card, matchWrap());
+    }
+
+    /** Like the icons of added plugins: one avatar per server, tap for its details. */
+    private void addAddedStrip() {
+        TextView title = sectionTitle(mActivity.getString(R.string.terminow_mcp_added));
+        mContainer.addView(title, matchWrap());
+        LinearLayout strip = new LinearLayout(mActivity);
+        strip.setOrientation(LinearLayout.HORIZONTAL);
+        strip.setPadding(0, dp(2), 0, dp(10));
+        for (TerminowMcpProfile profile : mProfiles) {
+            View avatar = avatar(profile, 44);
+            avatar.setContentDescription(profile.name);
+            avatar.setOnClickListener(v -> showDetails(profile));
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(44), dp(44));
+            params.setMarginEnd(dp(10));
+            strip.addView(avatar, params);
+        }
+        android.widget.HorizontalScrollView scroll = new android.widget.HorizontalScrollView(mActivity);
+        scroll.setHorizontalScrollBarEnabled(false);
+        scroll.addView(strip);
+        mContainer.addView(scroll, matchWrap());
+    }
+
+    private void addHeaderRow() {
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, 0, 0, dp(8));
+        TextView count = text(mActivity.getResources().getQuantityString(R.plurals.terminow_mcp_count, mProfiles.size(), mProfiles.size()),
+            15, R.color.terminow_text);
+        count.setTypeface(Typeface.DEFAULT_BOLD);
+        row.addView(count, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        TextView add = actionButton(mActivity.getString(R.string.terminow_mcp_add_short), true);
+        add.setOnClickListener(v -> showProfileDialog(null));
+        row.addView(add, actionParams());
+        ImageView more = new ImageView(mActivity);
+        more.setImageResource(R.drawable.ic_terminow_more);
+        more.setImageTintList(ColorStateList.valueOf(color(R.color.terminow_text)));
+        more.setPadding(dp(8), dp(8), dp(8), dp(8));
+        more.setContentDescription(mActivity.getString(R.string.terminow_mcp_page_options));
+        more.setBackgroundResource(R.drawable.terminow_action);
+        more.setOnClickListener(v -> showPageOptions());
+        row.addView(more, new LinearLayout.LayoutParams(dp(36), dp(36)));
+        mContainer.addView(row, matchWrap());
+    }
+
+    private void addFilterRow() {
+        LinearLayout chips = new LinearLayout(mActivity);
+        chips.setOrientation(LinearLayout.HORIZONTAL);
+        chips.setPadding(0, 0, 0, dp(10));
+        addFilterChip(chips, Filter.ALL, R.string.terminow_mcp_filter_all);
+        addFilterChip(chips, Filter.REMOTE, R.string.terminow_mcp_filter_remote);
+        addFilterChip(chips, Filter.LOCAL, R.string.terminow_mcp_filter_local);
+        addFilterChip(chips, Filter.PASSED, R.string.terminow_mcp_filter_passed);
+        addFilterChip(chips, Filter.NEEDS_LOGIN, R.string.terminow_mcp_filter_needs_login);
+        android.widget.HorizontalScrollView scroll = new android.widget.HorizontalScrollView(mActivity);
+        scroll.setHorizontalScrollBarEnabled(false);
+        scroll.addView(chips);
+        mContainer.addView(scroll, matchWrap());
+    }
+
+    private void addFilterChip(@NonNull LinearLayout chips, @NonNull Filter filter, int labelRes) {
+        int count = 0;
+        for (TerminowMcpProfile profile : mProfiles) {
+            Filter saved = mFilter;
+            mFilter = filter;
+            if (matchesFilter(profile)) count++;
+            mFilter = saved;
+        }
+        boolean selected = mFilter == filter;
+        TextView chip = text(mActivity.getString(labelRes) + (filter == Filter.ALL ? "" : " " + count), 13,
+            selected ? R.color.terminow_bar_home : R.color.terminow_text);
+        chip.setTypeface(selected ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+        chip.setGravity(Gravity.CENTER);
+        chip.setPadding(dp(14), 0, dp(14), 0);
+        GradientDrawable shape = new GradientDrawable();
+        shape.setCornerRadius(dp(16));
+        shape.setColor(color(selected ? R.color.terminow_panel_accent : R.color.terminow_field));
+        chip.setBackground(shape);
+        chip.setOnClickListener(v -> {
+            mFilter = filter;
+            render();
+        });
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(32));
+        params.setMarginEnd(dp(8));
+        chips.addView(chip, params);
     }
 
     private void addEmptyState() {
         LinearLayout card = card();
-        card.setGravity(Gravity.CENTER_HORIZONTAL);
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
         ImageView icon = new ImageView(mActivity);
         icon.setImageResource(R.drawable.ic_terminow_mcp);
         icon.setImageTintList(ColorStateList.valueOf(color(R.color.terminow_panel_accent)));
-        card.addView(icon, new LinearLayout.LayoutParams(dp(40), dp(40)));
-        TextView title = text(mActivity.getString(R.string.terminow_mcp_empty_title), 16, R.color.terminow_text);
+        row.addView(icon, new LinearLayout.LayoutParams(dp(32), dp(32)));
+        LinearLayout texts = new LinearLayout(mActivity);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        texts.setPadding(dp(12), 0, dp(8), 0);
+        TextView title = text(mActivity.getString(R.string.terminow_mcp_empty_title), 15, R.color.terminow_text);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setPadding(0, dp(10), 0, dp(6));
-        card.addView(title);
-        TextView body = text(mActivity.getString(R.string.terminow_mcp_empty_body), 14, R.color.terminow_text_secondary);
-        body.setGravity(Gravity.CENTER);
-        card.addView(body, matchWrap());
-        TextView add = actionButton(mActivity.getString(R.string.terminow_mcp_add), true);
+        texts.addView(title);
+        texts.addView(text(mActivity.getString(R.string.terminow_mcp_empty_short), 13, R.color.terminow_text_secondary));
+        row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        TextView add = actionButton(mActivity.getString(R.string.terminow_mcp_add_short), true);
         add.setOnClickListener(v -> showProfileDialog(null));
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(40));
-        params.topMargin = dp(14);
-        card.addView(add, params);
+        row.addView(add, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(36)));
+        card.addView(row, matchWrap());
         LinearLayout.LayoutParams cardParams = matchWrap();
         cardParams.bottomMargin = dp(10);
         mContainer.addView(card, cardParams);
     }
 
+    /**
+     * A compact row: avatar, name, transport and host, the state of the app test and of Claude
+     * Code, a Test button and the other actions under ⋯. Tap the row for its details.
+     */
     @NonNull
-    private View createCard(@NonNull TerminowMcpProfile profile) {
-        LinearLayout card = card();
+    private View createRow(@NonNull TerminowMcpProfile profile) {
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(14), dp(12), dp(8), dp(12));
+        row.setBackgroundResource(R.drawable.terminow_action);
+        row.addView(avatar(profile, 40), new LinearLayout.LayoutParams(dp(40), dp(40)));
 
-        LinearLayout titleRow = new LinearLayout(mActivity);
-        titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        ImageView icon = new ImageView(mActivity);
-        icon.setImageResource(R.drawable.ic_terminow_mcp);
-        icon.setBackgroundResource(R.drawable.terminow_host_icon);
-        icon.getBackground().mutate().setTint(color(R.color.terminow_host_group));
-        icon.setPadding(dp(8), dp(8), dp(8), dp(8));
-        titleRow.addView(icon, new LinearLayout.LayoutParams(dp(38), dp(38)));
-        TextView name = text(profile.name, 16, R.color.terminow_text);
+        LinearLayout texts = new LinearLayout(mActivity);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        texts.setPadding(dp(12), 0, dp(8), 0);
+        TextView name = text(profile.name, 15, R.color.terminow_text);
         name.setTypeface(Typeface.DEFAULT_BOLD);
         name.setSingleLine(true);
         name.setEllipsize(TextUtils.TruncateAt.END);
-        LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
-        nameParams.setMarginStart(dp(12));
-        titleRow.addView(name, nameParams);
-        titleRow.addView(chip(profile.isSupported() ? "HTTP" : profile.transport.toUpperCase(Locale.ROOT)));
-        card.addView(titleRow);
-
-        TextView endpoint = text(profile.isSupported() ? profile.url : mActivity.getString(R.string.terminow_mcp_stdio_unsupported),
-            13, R.color.terminow_text_secondary);
+        texts.addView(name, matchWrap());
+        TextView endpoint = text(getTransportLabel(profile) + " · " + getEndpointLabel(profile), 13, R.color.terminow_text_secondary);
         endpoint.setSingleLine(true);
         endpoint.setEllipsize(TextUtils.TruncateAt.MIDDLE);
-        endpoint.setPadding(0, dp(10), 0, 0);
-        card.addView(endpoint, matchWrap());
-        TextView target = text(getTargetLabel(profile) + " · " + getScopeLabel(profile), 13, R.color.terminow_text_secondary);
-        target.setSingleLine(true);
-        target.setEllipsize(TextUtils.TruncateAt.END);
-        card.addView(target, matchWrap());
+        texts.addView(endpoint, matchWrap());
+        addStatusLine(texts, profile);
+        row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
-        // The four states, each on its own line
-        boolean secretsMissing = (TerminowMcpProfile.AUTH_BEARER.equals(profile.authType) && profile.bearerToken.isEmpty()) ||
-            (TerminowMcpProfile.AUTH_HEADERS.equals(profile.authType) && hasEmptyHeader(profile));
-        addStatus(card, secretsMissing ? Status.WARN : Status.OK, secretsMissing ?
-            mActivity.getString(R.string.terminow_mcp_state_saved_no_secret) : mActivity.getString(R.string.terminow_mcp_state_saved));
-
-        if (mTests.containsKey(profile.id)) {
-            addStatus(card, Status.BUSY, mActivity.getString(R.string.terminow_mcp_state_testing));
-        } else if (profile.testTime == 0) {
-            addStatus(card, Status.NONE, mActivity.getString(R.string.terminow_mcp_state_not_tested));
-        } else if (profile.testOk) {
-            addStatus(card, Status.OK, mActivity.getString(R.string.terminow_mcp_state_test_passed,
-                profile.testTools.size(), formatTime(profile.testTime)));
-        } else if (TerminowMcpClient.Failure.OAUTH_REQUIRED.name().equals(profile.testFailure) ||
-            TerminowMcpClient.Failure.AUTH_FAILED.name().equals(profile.testFailure)) {
-            addStatus(card, Status.WARN, mActivity.getString(R.string.terminow_mcp_state_auth_required, formatTime(profile.testTime)));
-        } else {
-            addStatus(card, Status.ERROR, mActivity.getString(R.string.terminow_mcp_state_test_failed, formatTime(profile.testTime)));
-        }
-
-        TerminowMcpProfile.Applied applied = profile.getApplied();
-        if (mBusy.contains(profile.id)) {
-            addStatus(card, Status.BUSY, mActivity.getString(R.string.terminow_mcp_state_checking_claude));
-        } else if (applied == null) {
-            addStatus(card, Status.NONE, mActivity.getString(R.string.terminow_mcp_state_not_configured));
-        } else {
-            addStatus(card, applied.verified || !applied.enabled ? Status.OK : Status.WARN,
-                mActivity.getString(applied.verified || !applied.enabled ? R.string.terminow_mcp_state_configured : R.string.terminow_mcp_state_configured_unverified,
-                    applied.destination, formatTime(applied.time)));
-        }
-        if (applied != null && !mBusy.contains(profile.id))
-            addStatus(card, applied.enabled ? Status.OK : Status.NONE, mActivity.getString(applied.enabled ?
-                R.string.terminow_mcp_state_enabled : R.string.terminow_mcp_state_disabled));
-
-        TextView note = text(mActivity.getString(R.string.terminow_mcp_test_note), 12, R.color.terminow_text_secondary);
-        note.setPadding(0, dp(8), 0, 0);
-        card.addView(note, matchWrap());
-
-        // Actions
-        LinearLayout actions = new LinearLayout(mActivity);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.setPadding(0, dp(12), 0, 0);
         boolean testing = mTests.containsKey(profile.id);
-        TextView test = actionButton(mActivity.getString(testing ? R.string.terminow_mcp_cancel_test : R.string.terminow_mcp_test), false);
+        TextView test = actionButton(mActivity.getString(testing ? R.string.terminow_mcp_cancel_short : R.string.terminow_mcp_test), false);
+        test.setEnabled(profile.isSupported());
+        test.setAlpha(test.isEnabled() ? 1f : 0.5f);
         test.setOnClickListener(v -> {
             if (mTests.containsKey(profile.id)) cancelTest(profile);
             else runTest(profile);
         });
-        test.setEnabled(profile.isSupported());
-        TextView configure = actionButton(mActivity.getString(R.string.terminow_mcp_configure), true);
-        configure.setOnClickListener(v -> startConfigure(profile));
-        configure.setEnabled(profile.isSupported() && !mBusy.contains(profile.id));
-        configure.setAlpha(configure.isEnabled() ? 1f : 0.5f);
-        TextView more = actionButton("⋯", false);
+        row.addView(test, actionParams());
+        ImageView more = new ImageView(mActivity);
+        more.setImageResource(R.drawable.ic_terminow_more);
+        more.setImageTintList(ColorStateList.valueOf(color(R.color.terminow_text_secondary)));
+        more.setPadding(dp(8), dp(8), dp(8), dp(8));
+        more.setContentDescription(mActivity.getString(R.string.terminow_mcp_actions_of, profile.name));
         more.setOnClickListener(v -> showMoreActions(profile));
-        actions.addView(test, actionParams());
-        actions.addView(configure, actionParams());
-        actions.addView(more, actionParams());
-        android.widget.HorizontalScrollView scroll = new android.widget.HorizontalScrollView(mActivity);
-        scroll.setHorizontalScrollBarEnabled(false);
-        scroll.addView(actions);
-        card.addView(scroll, matchWrap());
+        row.addView(more, new LinearLayout.LayoutParams(dp(36), dp(36)));
 
-        card.setOnClickListener(v -> showDetails(profile));
-        return card;
+        row.setOnClickListener(v -> showDetails(profile));
+        return row;
     }
 
-    private static boolean hasEmptyHeader(@NonNull TerminowMcpProfile profile) {
-        if (profile.headers.isEmpty()) return true;
-        for (TerminowMcpProfile.Header header : profile.headers) if (header.value.isEmpty()) return true;
-        return false;
+    /** One line with the app test, and with Claude Code if it was configured. */
+    private void addStatusLine(@NonNull LinearLayout parent, @NonNull TerminowMcpProfile profile) {
+        Status status;
+        String text;
+        boolean secretsMissing = (TerminowMcpProfile.AUTH_BEARER.equals(profile.authType) && profile.bearerToken.isEmpty()) ||
+            (TerminowMcpProfile.AUTH_HEADERS.equals(profile.authType) && hasEmptyHeader(profile));
+        if (!profile.isSupported()) {
+            status = Status.NONE;
+            text = mActivity.getString(R.string.terminow_mcp_stdio_unsupported);
+        } else if (mTests.containsKey(profile.id)) {
+            status = Status.BUSY;
+            text = mActivity.getString(R.string.terminow_mcp_state_testing);
+        } else if (secretsMissing) {
+            status = Status.WARN;
+            text = mActivity.getString(R.string.terminow_mcp_row_secret_missing);
+        } else if (profile.testTime == 0) {
+            status = Status.NONE;
+            text = mActivity.getString(R.string.terminow_mcp_row_not_tested);
+        } else if (profile.testOk) {
+            status = Status.OK;
+            text = mActivity.getResources().getQuantityString(R.plurals.terminow_mcp_row_passed, profile.testTools.size(), profile.testTools.size());
+        } else if (needsLogin(profile)) {
+            status = Status.WARN;
+            text = mActivity.getString(R.string.terminow_mcp_row_needs_login);
+        } else {
+            status = Status.ERROR;
+            text = mActivity.getString(R.string.terminow_mcp_row_failed);
+        }
+        TerminowMcpProfile.Applied applied = profile.getApplied();
+        if (mBusy.contains(profile.id))
+            text += " · " + mActivity.getString(R.string.terminow_mcp_state_checking_claude);
+        else if (applied != null && applied.enabled)
+            text += " · " + mActivity.getString(applied.verified ? R.string.terminow_mcp_row_in_claude : R.string.terminow_mcp_row_in_claude_unverified,
+                getTargetLabel(profile));
+        addStatus(parent, status, text);
     }
 
-    private void addSettingsCard() {
-        LinearLayout card = card();
+    private void addFooter() {
+        TextView note = text(mActivity.getString(R.string.terminow_mcp_footer), 12, R.color.terminow_text_secondary);
+        note.setPadding(dp(4), dp(4), dp(4), dp(16));
+        mContainer.addView(note, matchWrap());
+    }
+
+    /** The options of the page: plain HTTP to servers on this device. */
+    private void showPageOptions() {
+        LinearLayout form = new LinearLayout(mActivity);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(dp(22), dp(8), dp(22), dp(4));
         LinearLayout row = new LinearLayout(mActivity);
         row.setGravity(Gravity.CENTER_VERTICAL);
         TextView title = text(mActivity.getString(R.string.terminow_mcp_local_http), 15, R.color.terminow_text);
@@ -276,13 +435,73 @@ public class TerminowMcpPage {
         toggle.setTrackTintList(ContextCompat.getColorStateList(mActivity, R.color.terminow_panel_switch_track));
         toggle.setOnCheckedChangeListener((button, checked) -> mStore.setMcpLocalHttpAllowed(checked));
         row.addView(toggle);
-        card.addView(row, matchWrap());
-        card.addView(text(mActivity.getString(R.string.terminow_mcp_local_http_summary), 12, R.color.terminow_text_secondary), matchWrap());
-
+        form.addView(row, matchWrap());
+        form.addView(text(mActivity.getString(R.string.terminow_mcp_local_http_summary), 12, R.color.terminow_text_secondary), matchWrap());
         TextView unsupported = text(mActivity.getString(R.string.terminow_mcp_not_in_release), 12, R.color.terminow_text_secondary);
         unsupported.setPadding(0, dp(12), 0, 0);
-        card.addView(unsupported, matchWrap());
-        mContainer.addView(card, matchWrap());
+        form.addView(unsupported, matchWrap());
+        ScrollView scroll = new ScrollView(mActivity);
+        scroll.addView(form);
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_mcp_page_options)
+            .setView(scroll)
+            .setPositiveButton(android.R.string.ok, null)
+            .show();
+    }
+
+    @NonNull
+    private String getTransportLabel(@NonNull TerminowMcpProfile profile) {
+        return profile.isSupported() ? "HTTP" : profile.transport.toUpperCase(Locale.ROOT);
+    }
+
+    /** The host of the URL, never its path or query, which can carry a key. */
+    @NonNull
+    private static String getEndpointLabel(@NonNull TerminowMcpProfile profile) {
+        if (!profile.isSupported()) return profile.command;
+        try {
+            URL url = new URL(profile.url);
+            return url.getHost() + (url.getPort() == -1 ? "" : ":" + url.getPort());
+        } catch (MalformedURLException e) {
+            return "";
+        }
+    }
+
+    /** A round avatar with the first letter of the name, in a color that stays the same for it. */
+    @NonNull
+    private View avatar(@NonNull TerminowMcpProfile profile, int sizeDp) {
+        int[] colors = {0xFF5B6CFF, 0xFF21C17A, 0xFFF5A623, 0xFFE5484D, 0xFF8E4EC6, 0xFF0091FF, 0xFF12A594, 0xFFD6409F};
+        TextView avatar = new TextView(mActivity);
+        String letter = profile.name.isEmpty() ? "?" : profile.name.substring(0, 1).toUpperCase(Locale.ROOT);
+        avatar.setText(letter);
+        avatar.setTextColor(0xFFFFFFFF);
+        avatar.setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeDp * 0.42f);
+        avatar.setTypeface(Typeface.DEFAULT_BOLD);
+        avatar.setGravity(Gravity.CENTER);
+        GradientDrawable shape = new GradientDrawable();
+        shape.setCornerRadius(dp(sizeDp * 0.28f));
+        shape.setColor(colors[Math.abs(profile.id.hashCode()) % colors.length]);
+        avatar.setBackground(shape);
+        return avatar;
+    }
+
+    @NonNull
+    private TextView sectionTitle(@NonNull String title) {
+        TextView view = text(title, 14, R.color.terminow_text_secondary);
+        view.setPadding(dp(2), dp(4), 0, dp(8));
+        return view;
+    }
+
+    @NonNull
+    private View divider() {
+        View view = new View(mActivity);
+        view.setBackgroundColor(color(R.color.terminow_field));
+        return view;
+    }
+
+    private static boolean hasEmptyHeader(@NonNull TerminowMcpProfile profile) {
+        if (profile.headers.isEmpty()) return true;
+        for (TerminowMcpProfile.Header header : profile.headers) if (header.value.isEmpty()) return true;
+        return false;
     }
 
     // ---------------------------------------------------------------------------------------
@@ -291,6 +510,10 @@ public class TerminowMcpPage {
 
     /** Show the form to add a profile, or to edit {@code existing}. */
     public void showProfileDialog(@Nullable TerminowMcpProfile existing) {
+        if (!isPremium()) {
+            requirePremium(() -> render());
+            return;
+        }
         mProfiles = mStore.getMcpProfiles();
         TerminowMcpProfile profile = existing != null ? findProfile(existing.id) : null;
 
@@ -573,13 +796,21 @@ public class TerminowMcpPage {
     // ---------------------------------------------------------------------------------------
 
     private void showMoreActions(@NonNull TerminowMcpProfile profile) {
+        if (!isPremium()) {
+            requirePremium(() -> render());
+            return;
+        }
         TerminowMcpProfile.Applied applied = profile.getApplied();
         List<CharSequence> actions = new ArrayList<>();
         List<Runnable> handlers = new ArrayList<>();
-        actions.add(mActivity.getString(R.string.terminow_edit));
-        handlers.add(() -> showProfileDialog(profile));
         actions.add(mActivity.getString(R.string.terminow_mcp_details));
         handlers.add(() -> showDetails(profile));
+        if (profile.isSupported() && !mBusy.contains(profile.id)) {
+            actions.add(mActivity.getString(R.string.terminow_mcp_configure));
+            handlers.add(() -> startConfigure(profile));
+        }
+        actions.add(mActivity.getString(R.string.terminow_edit));
+        handlers.add(() -> showProfileDialog(profile));
         if (applied != null && applied.enabled && !mBusy.contains(profile.id)) {
             actions.add(mActivity.getString(R.string.terminow_mcp_disable));
             handlers.add(() -> startDisable(profile));
@@ -595,6 +826,10 @@ public class TerminowMcpPage {
     }
 
     private void showDetails(@NonNull TerminowMcpProfile profile) {
+        if (!isPremium()) {
+            requirePremium(() -> render());
+            return;
+        }
         StringBuilder text = new StringBuilder();
         text.append(mActivity.getString(R.string.terminow_mcp_url)).append(": ").append(profile.url).append('\n');
         text.append(mActivity.getString(R.string.terminow_mcp_auth)).append(": ").append(getAuthLabel(profile)).append('\n');
@@ -629,6 +864,10 @@ public class TerminowMcpPage {
     }
 
     private void confirmDelete(@NonNull TerminowMcpProfile profile) {
+        if (!isPremium()) {
+            requirePremium(() -> render());
+            return;
+        }
         boolean stillConfigured = false;
         for (TerminowMcpProfile.Applied applied : profile.applied.values()) stillConfigured |= applied.enabled;
         new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
@@ -649,6 +888,10 @@ public class TerminowMcpPage {
     // ---------------------------------------------------------------------------------------
 
     private void runTest(@NonNull TerminowMcpProfile profile) {
+        if (!isPremium()) {
+            requirePremium(() -> render());
+            return;
+        }
         String urlError = TerminowMcpClient.validateUrl(profile.url, mStore.isMcpLocalHttpAllowed());
         if (urlError != null) {
             showMessage(profile.name, urlError);
@@ -756,10 +999,18 @@ public class TerminowMcpPage {
     }
 
     private void startConfigure(@NonNull TerminowMcpProfile profile) {
+        if (!isPremium()) {
+            requirePremium(() -> render());
+            return;
+        }
         prepare(profile, false);
     }
 
     private void startDisable(@NonNull TerminowMcpProfile profile) {
+        if (!isPremium()) {
+            requirePremium(() -> render());
+            return;
+        }
         prepare(profile, true);
     }
 
@@ -1041,6 +1292,10 @@ public class TerminowMcpPage {
      * contain the secrets: the token is read into a variable without echo or history.
      */
     private void showManualSetup(@NonNull TerminowMcpProfile profile, @Nullable ConfigureContext context) {
+        if (!isPremium()) {
+            requirePremium(() -> render());
+            return;
+        }
         StringBuilder commands = new StringBuilder();
         if (!TerminowMcpTargets.TARGET_TERMINOW.equals(profile.target))
             commands.append("proot-distro login ").append(profile.target).append(" --user ").append(profile.containerUser).append('\n');

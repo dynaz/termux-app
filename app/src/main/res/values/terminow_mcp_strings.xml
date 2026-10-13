@@ -150,4 +150,41 @@
         <item quantity="one">%d tool</item>
         <item quantity="other">%d tools</item>
     </plurals>
+    <!-- The redesigned page -->
+    <string name="terminow_mcp_added">Added</string>
+    <plurals name="terminow_mcp_count">
+        <item quantity="one">%1$d MCP server</item>
+        <item quantity="other">%1$d MCP servers</item>
+    </plurals>
+    <string name="terminow_mcp_add_short">+ Add</string>
+    <string name="terminow_mcp_page_options">MCP options</string>
+    <string name="terminow_mcp_filter_all">All</string>
+    <string name="terminow_mcp_filter_remote">Remote</string>
+    <string name="terminow_mcp_filter_local">Local</string>
+    <string name="terminow_mcp_filter_passed">Test passed</string>
+    <string name="terminow_mcp_filter_needs_login">Needs login</string>
+    <string name="terminow_mcp_empty_short">Add a remote MCP server, test it, then add it to Claude Code.</string>
+    <string name="terminow_mcp_cancel_short">Cancel</string>
+    <string name="terminow_mcp_actions_of">Actions for %1$s</string>
+    <string name="terminow_mcp_row_secret_missing">Credentials missing, edit to enter them</string>
+    <string name="terminow_mcp_row_not_tested">Not tested</string>
+    <plurals name="terminow_mcp_row_passed">
+        <item quantity="one">Test passed · %1$d tool</item>
+        <item quantity="other">Test passed · %1$d tools</item>
+    </plurals>
+    <string name="terminow_mcp_row_needs_login">Login required</string>
+    <string name="terminow_mcp_row_failed">Test failed, see details</string>
+    <string name="terminow_mcp_row_in_claude">In Claude Code (%1$s)</string>
+    <string name="terminow_mcp_row_in_claude_unverified">Written for Claude Code (%1$s), not confirmed</string>
+    <string name="terminow_mcp_footer">A test checks the connection from this app only, not from Claude Code. Tap a server for its details.</string>
+
+    <!-- Premium -->
+    <string name="terminow_mcp_premium_title">MCP Servers are a Premium feature</string>
+    <string name="terminow_mcp_premium_features">• Save remote MCP servers with their credentials encrypted\n• Test them and see their tools\n• Add them to Claude Code in TermiNow or Ubuntu, with a preview and a backup</string>
+    <string name="terminow_mcp_premium_kept_none">Servers already added to Claude Code keep working there.</string>
+    <plurals name="terminow_mcp_premium_kept">
+        <item quantity="one">Your %1$d saved server is kept, and servers already added to Claude Code keep working there.</item>
+        <item quantity="other">Your %1$d saved servers are kept, and servers already added to Claude Code keep working there.</item>
+    </plurals>
+    <string name="terminow_mcp_premium_message">Managing MCP servers is part of TermiNow Premium. Your saved servers are kept, and servers already added to Claude Code keep working there.</string>
 </resources>

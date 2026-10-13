@@ -6,14 +6,14 @@ import com.termux.R;
 import com.termux.app.TermuxActivity;
 
 /**
- * The features of TermiNow Premium for Linux environments, checked the same way wherever they
- * are entered: the Linux file explorer, managing more than one environment, and tmux sessions.
+ * The features of TermiNow Premium that are checked the same way wherever they are entered: the
+ * Linux file explorer, managing more than one environment, tmux sessions, and MCP servers.
  * Everything that was free stays free: opening Ubuntu, Claude Code, and installing the first
  * environment.
  */
 public final class TerminowPremiumGate {
 
-    public enum Feature { LINUX_FILES, MULTIPLE_ENVIRONMENTS, TMUX }
+    public enum Feature { LINUX_FILES, MULTIPLE_ENVIRONMENTS, TMUX, MCP }
 
     private TerminowPremiumGate() {}
 
@@ -37,12 +37,14 @@ public final class TerminowPremiumGate {
         switch (feature) {
             case LINUX_FILES: what = R.string.terminow_linux_premium_files; break;
             case MULTIPLE_ENVIRONMENTS: what = R.string.terminow_linux_premium_multiple; break;
+            case MCP: what = 0; break;
             default: what = R.string.terminow_linux_premium_tmux; break;
         }
         TerminowAccountUi accountUi = new TerminowAccountUi(activity, store, () -> {});
         android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(activity, R.style.TerminowAlertDialog)
             .setTitle(R.string.terminow_vault_premium_title)
-            .setMessage(activity.getString(R.string.terminow_linux_premium_message, activity.getString(what)))
+            .setMessage(feature == Feature.MCP ? activity.getString(R.string.terminow_mcp_premium_message) :
+                activity.getString(R.string.terminow_linux_premium_message, activity.getString(what)))
             .setNegativeButton(android.R.string.ok, null);
         if (TerminowBilling.isSupported()) {
             builder.setPositiveButton(R.string.terminow_premium_get, (d, w) -> accountUi.buyPremium());

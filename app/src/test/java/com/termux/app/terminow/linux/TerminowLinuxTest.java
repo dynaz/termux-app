@@ -734,6 +734,9 @@ public class TerminowLinuxTest {
         // The first environment is free, a second one is Premium
         assertTrue(TerminowPremiumGate.allows(TerminowPremiumGate.Feature.MULTIPLE_ENVIRONMENTS, false, 0));
         assertFalse(TerminowPremiumGate.allows(TerminowPremiumGate.Feature.MULTIPLE_ENVIRONMENTS, false, 1));
+        // MCP server management is Premium, also with no environment installed
+        assertFalse(TerminowPremiumGate.allows(TerminowPremiumGate.Feature.MCP, false, 0));
+        assertFalse(TerminowPremiumGate.allows(TerminowPremiumGate.Feature.MCP, false, 1));
         for (TerminowPremiumGate.Feature feature : TerminowPremiumGate.Feature.values())
             assertTrue(TerminowPremiumGate.allows(feature, true, 5));
     }
