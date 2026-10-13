@@ -669,7 +669,7 @@ public class TerminowStore {
 
     public void setAccount(@Nullable TerminowAccount.Session session) {
         if (session == null) {
-            mPreferences.edit().remove(KEY_ACCOUNT).remove(KEY_PREMIUM).apply();
+            mPreferences.edit().remove(KEY_ACCOUNT).remove(KEY_PREMIUM).remove(KEY_PLAY_ENTITLEMENT).remove(KEY_PLAY_PURCHASE_STATUS).apply();
             return;
         }
         try {
@@ -689,6 +689,70 @@ public class TerminowStore {
     public JSONObject getPremium() {
         try {
             String text = mPreferences.getString(KEY_PREMIUM, "");
+            return text.isEmpty() ? null : new JSONObject(text);
+        } catch (JSONException e) {
+            return null;
+        }
+    }
+
+    private static final String KEY_PLAY_ENTITLEMENT = "play_entitlement";
+    private static final String KEY_PLAY_PURCHASE_STATUS = "play_purchase_status";
+    private static final String KEY_PLAY_VERIFIED = "play_verified";
+
+    /**
+     * The Google Play entitlement that the server last gave, with "checked" the time it was
+     * read. Only a copy for offline use, see {@link TerminowEntitlement}: Firebase decides it.
+     */
+    @Nullable
+    public JSONObject getPlayEntitlement() {
+        return readJson(KEY_PLAY_ENTITLEMENT);
+    }
+
+    public void setPlayEntitlement(@Nullable JSONObject entitlement) {
+        try {
+            mPreferences.edit().putString(KEY_PLAY_ENTITLEMENT, entitlement == null ? "" :
+                new JSONObject(entitlement.toString()).put("checked", System.currentTimeMillis()).toString()).apply();
+        } catch (JSONException e) {
+            Logger.logError(LOG_TAG, "Failed to save the Play entitlement");
+        }
+    }
+
+    /** What happened to the last Google Play purchase, see {@link TerminowPlayPurchases.Status}. */
+    @Nullable
+    public JSONObject getPlayPurchaseStatus() {
+        return readJson(KEY_PLAY_PURCHASE_STATUS);
+    }
+
+    public void setPlayPurchaseStatus(@NonNull String status, @Nullable String code, boolean test) {
+        try {
+            mPreferences.edit().putString(KEY_PLAY_PURCHASE_STATUS, new JSONObject().put("status", status)
+                .put("code", code == null ? JSONObject.NULL : code).put("test", test).put("time", System.currentTimeMillis()).toString()).apply();
+        } catch (JSONException e) {
+            Logger.logError(LOG_TAG, "Failed to save the purchase status");
+        }
+    }
+
+    /** When the server last verified a purchase, by the hash of its token, 0 if never. */
+    public long getPlayVerifiedTime(@NonNull String tokenHash) {
+        JSONObject verified = readJson(KEY_PLAY_VERIFIED);
+        return verified != null ? verified.optLong(tokenHash) : 0;
+    }
+
+    public void setPlayVerifiedTime(@NonNull String tokenHash, long time) {
+        try {
+            JSONObject verified = readJson(KEY_PLAY_VERIFIED);
+            if (verified == null) verified = new JSONObject();
+            verified.put(tokenHash, time);
+            mPreferences.edit().putString(KEY_PLAY_VERIFIED, verified.toString()).apply();
+        } catch (JSONException e) {
+            Logger.logError(LOG_TAG, "Failed to save the verification time");
+        }
+    }
+
+    @Nullable
+    private JSONObject readJson(@NonNull String key) {
+        try {
+            String text = mPreferences.getString(key, "");
             return text.isEmpty() ? null : new JSONObject(text);
         } catch (JSONException e) {
             return null;

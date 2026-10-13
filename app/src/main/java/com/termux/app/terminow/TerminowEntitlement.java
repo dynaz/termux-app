@@ -11,8 +11,9 @@ import java.util.Locale;
 import java.util.TimeZone;
 
 /**
- * Whether Premium features may be used, decided from the Premium status that
- * {@link TerminowAccountUi} checks with WHMCS and keeps. There is no other Premium flag.
+ * Whether Premium features may be used, decided from the two sources that the server decides:
+ * an active service of WHMCS (accmove.com, checked with premium.php) and a Google Play
+ * subscription (verified by Firebase, read from Firestore). There is no other Premium flag.
  *
  * A Premium status that was checked stays valid offline for {@link #OFFLINE_DAYS} days, and
  * not past the due date of the service. After that the features wait for a new check, but
@@ -39,7 +40,38 @@ public class TerminowEntitlement {
     @NonNull
     public static State get(@NonNull TerminowStore store) {
         TerminowAccount.Session session = store.getAccount();
-        return decide(session != null, session != null && session.emailVerified, store.getPremium(), System.currentTimeMillis());
+        long now = System.currentTimeMillis();
+        State accmove = decide(session != null, session != null && session.emailVerified, store.getPremium(), now);
+        if (session == null) return accmove;
+        return combine(accmove, decidePlay(store.getPlayEntitlement(), now));
+    }
+
+    /**
+     * The Google Play entitlement that Firebase gave: Premium until its verified expiry, and
+     * offline for {@link #OFFLINE_DAYS} days after it was last read.
+     *
+     * @return {@code null} if there is none.
+     */
+    @Nullable
+    static State decidePlay(@Nullable JSONObject entitlement, long now) {
+        JSONObject play = entitlement != null ? entitlement.optJSONObject("google_play") : null;
+        if (play == null) return null;
+        long expires = play.optLong("expiresAt");
+        long checked = entitlement.optLong("checked");
+        if (!play.optBoolean("premium")) return "NONE".equals(play.optString("subscriptionState")) ? null : State.EXPIRED;
+        if (expires <= now) return State.EXPIRED;
+        if (checked > now + 60_000 || now - checked > OFFLINE_DAYS * 24L * 60 * 60 * 1000) return State.NEEDS_CHECK;
+        return State.ACTIVE;
+    }
+
+    /** Premium if either source says so. Otherwise what needs the user, a check before an expiry. */
+    @NonNull
+    static State combine(@NonNull State accmove, @Nullable State play) {
+        if (play == null || accmove == State.ACTIVE) return accmove;
+        if (play == State.ACTIVE) return State.ACTIVE;
+        if (play == State.NEEDS_CHECK || accmove == State.NEEDS_CHECK) return State.NEEDS_CHECK;
+        if (accmove == State.SIGNED_OUT) return accmove;
+        return play == State.EXPIRED && (accmove == State.FREE || accmove == State.UNKNOWN) ? State.EXPIRED : accmove;
     }
 
     @NonNull

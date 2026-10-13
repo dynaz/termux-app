@@ -1,0 +1,20 @@
+rules_version = '2';
+
+// TermiNow. Clients may only read their own entitlement summary. Everything that decides
+// Premium (purchase records, account mappings, the WHMCS outbox) is written by the Cloud
+// Functions with the Admin SDK, which these rules do not apply to.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /entitlements/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // playPurchases, playAccounts, whmcsOutbox, whmcsLinks, playNotifications and anything
+    // else: no client access at all.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

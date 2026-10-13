@@ -68,7 +68,7 @@ android {
         applicationId "com.terminow"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 158
+        versionCode 159
         versionName "0.118.0"
 
         if (appVersionName) versionName = appVersionName
@@ -105,6 +105,14 @@ android {
         buildConfigField "String", "TERMINOW_FIREBASE_API_KEY", "\"" + firebaseApiKey + "\""
         buildConfigField "String", "TERMINOW_FIREBASE_PROJECT_ID", "\"" + firebaseProjectId + "\""
         buildConfigField "String", "TERMINOW_GOOGLE_WEB_CLIENT_ID", "\"" + googleWebClientId + "\""
+        // The region of the Cloud Functions that verify Google Play purchases, see firebase/README.md
+        def billingProperties = new Properties()
+        def billingFile = file("terminow-billing.properties")
+        if (billingFile.isFile()) billingFile.withInputStream { billingProperties.load(it) }
+        def functionsRegion = billingProperties.getProperty("functionsRegion", "").trim()
+        if (!functionsRegion.isEmpty() && !(functionsRegion ==~ /[a-z]+-[a-z]+[0-9]/))
+            throw new GradleException("functionsRegion in app/terminow-billing.properties is not a region: " + functionsRegion)
+        buildConfigField "String", "TERMINOW_FUNCTIONS_REGION", "\"" + functionsRegion + "\""
         buildConfigField "String", "TERMUX_PACKAGE_VARIANT", "\"" + project.ext.packageVariant + "\"" // Used by TermuxApplication class
 
         manifestPlaceholders.TERMUX_PACKAGE_NAME = "com.terminow"

@@ -12,7 +12,7 @@ use function TermiNow\Premium\verify_id_token;
 
 require __DIR__ . '/lib.php';
 require __DIR__ . '/vault_lib.php';
-require __DIR__ . '/play_lib.php';
+require __DIR__ . '/play_sync_lib.php';
 
 header('Content-Type: application/json');
 header('Cache-Control: no-store');
@@ -44,19 +44,14 @@ if (!is_array($request)) vault_respond(400, ['error' => 'Invalid JSON']);
 require dirname(__DIR__) . '/init.php';
 require __DIR__ . '/whmcs_glue.php';
 
-// Only ever asked for the signed-in user, whose uid finds their Play subscriptions
-$isPremium = function (string $email) use (&$db, $claims): bool {
-    try {
-        return (bool)terminow_premium($db, $claims)['premium'];
-    } catch (\TermiNow\Play\Failure $e) {
-        return false;
-    }
+// Only ever asked for the signed-in user: Premium of WHMCS, or of Google Play in Firestore
+$isPremium = function (string $email) use (&$db, $claims, $token): bool {
+    return terminow_premium($db, $claims, $token);
 };
 
 try {
     $db = terminow_db();
     \TermiNow\Vault\migrate($db);
-    \TermiNow\Play\migrate($db);
     vault_respond(200, \TermiNow\Vault\handle($db, $claims, $request, $isPremium, time()));
 } catch (\TermiNow\Vault\Failure $e) {
     if (isset($db) && $db->inTransaction()) $db->rollBack();

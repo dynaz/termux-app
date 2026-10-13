@@ -116,13 +116,30 @@ public class TerminowAccountTest {
                     } else {
                         response = premium ? "{\"premium\":true,\"plan\":\"TermiNow Premium Yearly\",\"nextDueDate\":\"2027-10-12\"}" : "{\"premium\":false}";
                     }
-                } else if (path.startsWith("/play.php")) {
-                    if (!new JSONObject(text).getString("purchaseToken").equals("good-token")) {
+                } else if (path.startsWith("/functions/verifyPlayPurchase")) {
+                    String token = new JSONObject(text).getJSONObject("data").getString("purchaseToken");
+                    if (!authorization.startsWith("Bearer id-")) {
+                        status = 401;
+                        response = "{\"error\":{\"status\":\"UNAUTHENTICATED\",\"message\":\"Sign in to TermiNow first\",\"details\":{\"code\":\"SIGN_IN_REQUIRED\"}}}";
+                    } else if (token.equals("good-token")) {
+                        response = "{\"result\":{\"status\":\"ACTIVE\",\"test\":true,\"acknowledged\":true,\"entitlement\":{\"premium\":true," +
+                            "\"google_play\":{\"premium\":true,\"subscriptionState\":\"SUBSCRIPTION_STATE_ACTIVE\",\"expiresAt\":4102444800000,\"autoRenewEnabled\":true,\"test\":true}}}}";
+                    } else if (token.equals("someone-elses")) {
                         status = 403;
-                        response = "{\"error\":\"This purchase belongs to another TermiNow account\"}";
+                        response = "{\"error\":{\"status\":\"PERMISSION_DENIED\",\"message\":\"This Google Play purchase belongs to another TermiNow account\"," +
+                            "\"details\":{\"code\":\"PURCHASE_OF_ANOTHER_ACCOUNT\",\"transient\":false}}}";
                     } else {
-                        response = "{\"premium\":true,\"plan\":\"TermiNow Premium (Google Play)\",\"nextDueDate\":null,\"source\":\"play\"}";
+                        status = 503;
+                        response = "{\"error\":{\"status\":\"UNAVAILABLE\",\"message\":\"Google Play could not be reached\"," +
+                            "\"details\":{\"code\":\"PLAY_UNAVAILABLE\",\"transient\":true}}}";
                     }
+                } else if (path.startsWith("/firestore/entitlements/uid2")) {
+                    response = "{\"name\":\"x\",\"fields\":{\"premium\":{\"booleanValue\":true},\"sources\":{\"mapValue\":{\"fields\":{\"google_play\":" +
+                        "{\"mapValue\":{\"fields\":{\"premium\":{\"booleanValue\":true},\"expiresAt\":{\"integerValue\":\"4102444800000\"}," +
+                        "\"subscriptionState\":{\"stringValue\":\"SUBSCRIPTION_STATE_ACTIVE\"},\"tier\":{\"nullValue\":null}}}}}}}}}";
+                } else if (path.startsWith("/firestore/entitlements/")) {
+                    status = 404;
+                    response = "{\"error\":{\"code\":404}}";
                 } else {
                     status = 404;
                     response = "{}";
@@ -216,24 +233,64 @@ public class TerminowAccountTest {
     }
 
     @Test
-    public void playPurchaseIsGivenToTheServer() throws Exception {
+    public void playPurchasesAreVerifiedByTheFunctionOfTheAccount() throws Exception {
         try (FakeServer server = new FakeServer()) {
             TerminowAccount account = account(server);
             TerminowAccount.Session session = account.signInWithGoogle("google-id-token");
-            TerminowAccount.Premium premium = account.registerPlayPurchase(session, "good-token");
-            assertTrue(premium.premium);
-            assertEquals("play", premium.source);
-            assertNull(premium.nextDueDate);
-            expect(() -> account.registerPlayPurchase(session, "someone-elses"), "THIS",
-                "This purchase belongs to another TermiNow account");
+            // Without a functions region the app says so, it does not try
+            try {
+                account.verifyPlayPurchase(session, "good-token");
+                fail("verified without a backend");
+            } catch (TerminowAccount.FunctionException e) {
+                assertEquals("BACKEND_NOT_CONFIGURED", e.code);
+            }
+            account.setFirebaseUrls(server.url("/functions/"), server.url("/firestore/"));
+            JSONObject result = account.verifyPlayPurchase(session, "good-token");
+            assertEquals("ACTIVE", result.getString("status"));
+            assertTrue(result.getJSONObject("entitlement").getBoolean("premium"));
+            // The ID token of the account goes with it, the account is never a field of the request
+            String request = server.requests.get(server.requests.size() - 1);
+            assertTrue(request, request.endsWith("Bearer id-g"));
+            assertFalse(request, request.contains("uid2"));
+
+            try {
+                account.verifyPlayPurchase(session, "someone-elses");
+                fail("accepted the purchase of another account");
+            } catch (TerminowAccount.FunctionException e) {
+                assertEquals("PURCHASE_OF_ANOTHER_ACCOUNT", e.code);
+                assertFalse(e.transientFailure);
+            }
+            try {
+                account.verifyPlayPurchase(session, "flaky-token");
+                fail("no error");
+            } catch (TerminowAccount.FunctionException e) {
+                assertEquals("PLAY_UNAVAILABLE", e.code);
+                assertTrue(e.transientFailure);
+            }
+        }
+    }
+
+    @Test
+    public void theEntitlementIsReadFromFirestore() throws Exception {
+        try (FakeServer server = new FakeServer()) {
+            TerminowAccount account = account(server);
+            account.setFirebaseUrls(server.url("/functions/"), server.url("/firestore/"));
+            TerminowAccount.Session session = account.signInWithGoogle("google-id-token");
+            JSONObject entitlement = account.getPlayEntitlement(session);
+            assertTrue(entitlement.getBoolean("premium"));
+            JSONObject play = entitlement.getJSONObject("sources").getJSONObject("google_play");
+            assertEquals(4102444800000L, play.getLong("expiresAt"));
+            assertEquals("SUBSCRIPTION_STATE_ACTIVE", play.getString("subscriptionState"));
+            assertTrue(play.isNull("tier"));
+            session.uid = "nobody";
+            assertNull(account.getPlayEntitlement(session));
         }
     }
 
     @Test
     public void playAccountIdIsTheHashTheServerExpects() {
-        // hash('sha256', 'terminow:alice') in play_lib.php
+        // accountIdFor('alice') in firebase/functions/src/subscription.js
         assertEquals("51a095186e84d968360b1725b7502d99a0364cfe794c20c09f64c723dd254c22", TerminowBilling.accountId("alice"));
-        assertEquals("https://cp.accmove.com/terminow/play.php", TerminowAccount.playUrl(TerminowAccount.PREMIUM_URL));
     }
 
     @Test

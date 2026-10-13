@@ -394,4 +394,9 @@ public class TerminowSettings {
         return (int) ViewUtils.dpToPx(mActivity, dp);
     }
 
+    /** Check the Google Play purchases of this device, see {@link TerminowAccountUi#recoverPurchases()}. */
+    public void recoverPurchases() {
+        mAccountUi.recoverPurchases();
+    }
+
 }

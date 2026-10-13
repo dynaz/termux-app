@@ -5,13 +5,47 @@
     <string name="terminow_premium_get_summary">A monthly or yearly subscription with Google Play</string>
     <string name="terminow_premium_choose_title">TermiNow Premium</string>
     <string name="terminow_premium_choose_message">The File Manager, vault sync, the Linux file explorer, more than one Linux environment and tmux session management. Renews automatically until you cancel it in Google Play.</string>
-    <string name="terminow_premium_plan_monthly">%1$s per month</string>
-    <string name="terminow_premium_plan_yearly">%1$s per year</string>
     <string name="terminow_premium_unavailable">Premium is not available in Google Play right now</string>
     <string name="terminow_premium_pending">Your payment is pending. Premium starts when Google Play completes it.</string>
     <string name="terminow_premium_not_yours">This Google Play subscription was bought for another TermiNow account. Sign in with that account to use it, or manage it in Google Play.</string>
-    <string name="terminow_premium_register_failed">Google Play took the payment, but Premium could not be turned on yet: %1$s\n\nTermiNow tries again when you check Premium. If it is not turned on within three days, Google Play refunds the payment.</string>
     <string name="terminow_premium_thanks">Premium is active. Thank you!</string>
     <string name="terminow_premium_manage">Manage subscription</string>
     <string name="terminow_premium_manage_summary">Change the plan or cancel in Google Play</string>
+    <string name="terminow_premium_plan_price">%1$s %2$s</string>
+    <plurals name="terminow_premium_period_days">
+        <item quantity="one">per day</item>
+        <item quantity="other">every %1$d days</item>
+    </plurals>
+    <plurals name="terminow_premium_period_weeks">
+        <item quantity="one">per week</item>
+        <item quantity="other">every %1$d weeks</item>
+    </plurals>
+    <plurals name="terminow_premium_period_months">
+        <item quantity="one">per month</item>
+        <item quantity="other">every %1$d months</item>
+    </plurals>
+    <plurals name="terminow_premium_period_years">
+        <item quantity="one">per year</item>
+        <item quantity="other">every %1$d years</item>
+    </plurals>
+    <string name="terminow_premium_status_pending">Google Play: payment pending. Premium starts when Google Play completes the payment.</string>
+    <string name="terminow_premium_status_verifying">Google Play: verifying the purchase…</string>
+    <string name="terminow_premium_status_unavailable">Google Play: the purchase could not be verified yet (%1$s). TermiNow tries again when you open it.</string>
+    <string name="terminow_premium_status_rejected">Google Play: the purchase was not accepted (%1$s).</string>
+    <string name="terminow_premium_status_active_renews">Google Play: Premium active, renews %1$s</string>
+    <string name="terminow_premium_status_active_ends">Google Play: Premium active until %1$s, it does not renew</string>
+    <string name="terminow_premium_status_on_hold">Google Play: the subscription is on hold. Update the payment method in Google Play.</string>
+    <string name="terminow_premium_status_expired">Google Play: the subscription has ended</string>
+    <string name="terminow_premium_test_marker">(test purchase)</string>
+    <string name="terminow_premium_check_again">Check again</string>
+    <string name="terminow_premium_restore">Restore purchases</string>
+    <string name="terminow_premium_restore_summary">Check the Google Play subscriptions of this device again</string>
+    <string name="terminow_premium_restore_none">This device has no Google Play subscription of TermiNow for this account.</string>
+    <string name="terminow_account_link">Link existing account</string>
+    <string name="terminow_account_link_summary">Link a client account you already have, with a code from its client area</string>
+    <string name="terminow_account_link_note">Log in to your client area at cp.accmove.com, open cp.accmove.com/terminow/link.php and enter the code it shows. The code works once, for 10 minutes. Nothing is linked by email alone.</string>
+    <string name="terminow_account_link_code">Code</string>
+    <string name="terminow_account_link_button">Link</string>
+    <string name="terminow_account_link_code_invalid">Enter the 8 characters of the code</string>
+    <string name="terminow_account_linked">The client account is linked to this TermiNow account.</string>
 </resources>

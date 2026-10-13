@@ -64,7 +64,9 @@ public class TerminowAccount {
     private String mAuthUrl = AUTH_URL;
     private String mTokenUrl = TOKEN_URL;
     private String mPremiumUrl = PREMIUM_URL;
-    private String mPlayUrl = playUrl(PREMIUM_URL);
+    /** Like https://REGION-PROJECT.cloudfunctions.net/, empty if the build has no functions region. */
+    private String mFunctionsUrl = "";
+    private String mFirestoreUrl = "";
 
     public TerminowAccount(@NonNull String apiKey, @NonNull String packageName) {
         mApiKey = apiKey;
@@ -76,13 +78,26 @@ public class TerminowAccount {
         mAuthUrl = authUrl;
         mTokenUrl = tokenUrl;
         mPremiumUrl = premiumUrl;
-        mPlayUrl = playUrl(premiumUrl);
     }
 
-    /** play.php next to premium.php. */
-    @NonNull
-    static String playUrl(@NonNull String premiumUrl) {
-        return premiumUrl.substring(0, premiumUrl.lastIndexOf('/') + 1) + "play.php";
+    /**
+     * Where the Cloud Functions and Firestore of the Firebase project are, for Google Play
+     * purchases. Without them, purchases can not be verified and the app says so.
+     */
+    public void setFirebaseBackend(@NonNull String projectId, @NonNull String functionsRegion) {
+        if (projectId.isEmpty() || functionsRegion.isEmpty()) return;
+        mFunctionsUrl = "https://" + functionsRegion + "-" + projectId + ".cloudfunctions.net/";
+        mFirestoreUrl = "https://firestore.googleapis.com/v1/projects/" + projectId + "/databases/(default)/documents/";
+    }
+
+    /** For the tests, a local server. */
+    void setFirebaseUrls(@NonNull String functionsUrl, @NonNull String firestoreUrl) {
+        mFunctionsUrl = functionsUrl;
+        mFirestoreUrl = firestoreUrl;
+    }
+
+    public boolean hasFirebaseBackend() {
+        return !mFunctionsUrl.isEmpty();
     }
 
     public boolean isConfigured() {
@@ -178,15 +193,152 @@ public class TerminowAccount {
         return toPremium(request(mPremiumUrl, "application/json", "{}", getIdToken(session)));
     }
 
+    /** A failure of a Cloud Function, with its stable code and whether trying again later may work. */
+    public static class FunctionException extends AccountException {
+        public final boolean transientFailure;
+
+        FunctionException(@NonNull String code, @NonNull String message, boolean transientFailure) {
+            super(code, message);
+            this.transientFailure = transientFailure;
+        }
+    }
+
     /**
-     * Give a Google Play purchase to the server, which checks it with Google, keeps it for this
-     * account and acknowledges it. Answers the Premium status after it.
+     * Give a Google Play purchase token to the verification function of Firebase, which checks
+     * it with Google Play, records it for this account and acknowledges it. The account comes
+     * from the ID token, never from the request.
+     *
+     * @return The result of the function: status, test, acknowledged and the entitlement.
      */
     @NonNull
-    public Premium registerPlayPurchase(@NonNull Session session, @NonNull String purchaseToken) throws AccountException {
+    public JSONObject verifyPlayPurchase(@NonNull Session session, @NonNull String purchaseToken) throws AccountException {
+        return callFunction(session, "verifyPlayPurchase", object("purchaseToken", purchaseToken));
+    }
+
+    /** Link an existing WHMCS client to this account with a one-time code from the client area. */
+    public void linkWhmcsAccount(@NonNull Session session, @NonNull String code) throws AccountException {
+        callFunction(session, "linkWhmcsAccount", object("code", code));
+    }
+
+    /**
+     * Call a callable Cloud Function. Its answer is {"result": ...} or {"error": {"message",
+     * "details": {"code", "transient"}}}.
+     */
+    @NonNull
+    private JSONObject callFunction(@NonNull Session session, @NonNull String name, @NonNull JSONObject data) throws AccountException {
+        if (mFunctionsUrl.isEmpty())
+            throw new FunctionException("BACKEND_NOT_CONFIGURED", "Google Play purchases are not set up in this build", false);
         if (!session.emailVerified) throw new AccountException("EMAIL_NOT_VERIFIED", "Verify your email first");
-        JSONObject body = object("purchaseToken", purchaseToken);
-        return toPremium(request(mPlayUrl, "application/json", body.toString(), getIdToken(session)));
+        String idToken = getIdToken(session);
+        JSONObject body;
+        try {
+            body = new JSONObject().put("data", data);
+        } catch (JSONException e) {
+            throw new AccountException("", String.valueOf(e.getMessage()));
+        }
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(mFunctionsUrl + name).openConnection();
+            connection.setInstanceFollowRedirects(false);
+            connection.setConnectTimeout(TIMEOUT_MS);
+            connection.setReadTimeout(TIMEOUT_MS * 2);
+            connection.setRequestMethod("POST");
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setRequestProperty("Authorization", "Bearer " + idToken);
+            byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
+            connection.setFixedLengthStreamingMode(bytes.length);
+            try (OutputStream out = connection.getOutputStream()) {
+                out.write(bytes);
+            }
+            int status = connection.getResponseCode();
+            String text = read(status >= 400 ? connection.getErrorStream() : connection.getInputStream());
+            JSONObject answer;
+            try {
+                answer = text.trim().isEmpty() ? new JSONObject() : new JSONObject(text);
+            } catch (JSONException e) {
+                throw new FunctionException("BACKEND_UNAVAILABLE", "The server answered with HTTP " + status, true);
+            }
+            JSONObject error = answer.optJSONObject("error");
+            if (status >= 200 && status < 300 && error == null) {
+                JSONObject result = answer.optJSONObject("result");
+                return result != null ? result : new JSONObject();
+            }
+            JSONObject details = error != null ? error.optJSONObject("details") : null;
+            String code = details != null ? details.optString("code", "") : "";
+            if (code.isEmpty()) code = status == 404 ? "BACKEND_NOT_DEPLOYED" : "BACKEND_ERROR";
+            boolean transientFailure = details != null ? details.optBoolean("transient", status >= 500) : status >= 500 || status == 404;
+            String message = error != null ? error.optString("message", "") : "";
+            if (message.isEmpty()) message = "The server answered with HTTP " + status;
+            throw new FunctionException(code, message, transientFailure);
+        } catch (IOException e) {
+            throw new FunctionException("NETWORK", "No connection: " + e.getMessage(), true);
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
+    /**
+     * The Google Play entitlement of the account from Firestore (entitlements/{uid}), which only
+     * the account may read and only the server writes. {@code null} if there is none yet.
+     */
+    @Nullable
+    public JSONObject getPlayEntitlement(@NonNull Session session) throws AccountException {
+        if (mFirestoreUrl.isEmpty()) return null;
+        String idToken = getIdToken(session);
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(mFirestoreUrl + "entitlements/" + encode(session.uid)).openConnection();
+            connection.setInstanceFollowRedirects(false);
+            connection.setConnectTimeout(TIMEOUT_MS);
+            connection.setReadTimeout(TIMEOUT_MS);
+            connection.setRequestProperty("Authorization", "Bearer " + idToken);
+            int status = connection.getResponseCode();
+            if (status == 404) return null;
+            String text = read(status >= 400 ? connection.getErrorStream() : connection.getInputStream());
+            if (status != 200) throw new FunctionException("ENTITLEMENT_UNAVAILABLE", "Premium could not be read (HTTP " + status + ")", true);
+            Object value = fromFirestore(new JSONObject(text).optJSONObject("fields"));
+            return value instanceof JSONObject ? (JSONObject) value : null;
+        } catch (IOException e) {
+            throw new FunctionException("NETWORK", "No connection: " + e.getMessage(), true);
+        } catch (JSONException e) {
+            throw new FunctionException("ENTITLEMENT_UNAVAILABLE", "Premium could not be read", true);
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
+    /** The plain JSON of the fields of a Firestore REST document, or of one of its values. */
+    @Nullable
+    static Object fromFirestore(@Nullable JSONObject fields) throws JSONException {
+        if (fields == null) return null;
+        JSONObject object = new JSONObject();
+        java.util.Iterator<String> keys = fields.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            object.put(key, firestoreValue(fields.optJSONObject(key)));
+        }
+        return object;
+    }
+
+    @Nullable
+    private static Object firestoreValue(@Nullable JSONObject value) throws JSONException {
+        if (value == null || value.has("nullValue")) return JSONObject.NULL;
+        if (value.has("booleanValue")) return value.optBoolean("booleanValue");
+        if (value.has("integerValue")) return Long.parseLong(value.optString("integerValue", "0"));
+        if (value.has("doubleValue")) return value.optDouble("doubleValue");
+        if (value.has("stringValue")) return value.optString("stringValue");
+        if (value.has("mapValue")) {
+            Object map = fromFirestore(value.optJSONObject("mapValue").optJSONObject("fields"));
+            return map != null ? map : new JSONObject();
+        }
+        if (value.has("arrayValue")) {
+            org.json.JSONArray array = new org.json.JSONArray();
+            org.json.JSONArray values = value.optJSONObject("arrayValue").optJSONArray("values");
+            for (int i = 0; values != null && i < values.length(); i++) array.put(firestoreValue(values.optJSONObject(i)));
+            return array;
+        }
+        return JSONObject.NULL;
     }
 
     @NonNull

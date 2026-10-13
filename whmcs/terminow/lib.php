@@ -134,3 +134,21 @@ function bearer_token(array $server): ?string
     if (!preg_match('/^Bearer\s+([A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+)$/', trim($header), $m)) return null;
     return strlen($m[1]) <= 8192 ? $m[1] : null;
 }
+
+/**
+ * Whether a Firestore REST document of entitlements/{uid} says Premium now: its premium flag,
+ * and for Google Play a verified expiry that has not passed.
+ */
+function firestore_premium($document, int $nowMs): bool
+{
+    $fields = is_array($document) ? ($document['fields'] ?? null) : null;
+    if (!is_array($fields) || ($fields['premium']['booleanValue'] ?? false) !== true) return false;
+    $sources = $fields['sources']['mapValue']['fields'] ?? [];
+    foreach ($sources as $name => $source) {
+        $values = $source['mapValue']['fields'] ?? [];
+        if (($values['premium']['booleanValue'] ?? false) !== true) continue;
+        $expires = $values['expiresAt']['integerValue'] ?? null;
+        if ($name !== 'google_play' || ($expires !== null && (int)$expires > $nowMs)) return true;
+    }
+    return false;
+}

@@ -1,10 +1,11 @@
 <?php
 /**
- * TermiNow Premium check, at https://cp.accmove.com/terminow/premium.php
+ * TermiNow Premium check of WHMCS (accmove.com), at https://cp.accmove.com/terminow/premium.php
  *
  * POST with `Authorization: Bearer <Firebase ID token>`. Answers
- * {"premium": true, "plan": "...", "nextDueDate": "YYYY-MM-DD" or null, "source": "accmove" or "play"}
- * or {"premium": false}.
+ * {"premium": true, "plan": "...", "nextDueDate": "YYYY-MM-DD" or null, "source": "accmove"}
+ * or {"premium": false}. Google Play subscriptions are verified by Firebase, and the app reads
+ * them from Firestore; the WHMCS services kept for them do not count here.
  *
  * It uses the internal API of WHMCS, so no API credentials exist anywhere. It answers nothing
  * else about the client, and never logs the token.
@@ -15,7 +16,7 @@ use function TermiNow\Premium\fetch_certs;
 use function TermiNow\Premium\verify_id_token;
 
 require __DIR__ . '/lib.php';
-require __DIR__ . '/play_lib.php';
+require __DIR__ . '/play_sync_lib.php';
 
 header('Content-Type: application/json');
 header('Cache-Control: no-store');
@@ -44,9 +45,7 @@ require dirname(__DIR__) . '/init.php';
 require __DIR__ . '/whmcs_glue.php';
 
 try {
-    $db = terminow_db();
-    \TermiNow\Play\migrate($db);
-    respond(200, terminow_premium($db, $claims));
+    respond(200, terminow_whmcs_premium(terminow_db(), (string)$claims['email']));
 } catch (\Throwable $e) {
     respond(503, ['error' => 'Try again later']);
 }

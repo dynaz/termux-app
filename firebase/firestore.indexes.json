@@ -1,0 +1,13 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "playPurchases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ackState", "order": "ASCENDING" },
+        { "fieldPath": "nextAckAt", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

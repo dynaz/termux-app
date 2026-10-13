@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_premium_plan_price">%1$s %2$s</string>
+    <plurals name="terminow_premium_period_days">
+        <item quantity="other">ทุก %1$d วัน</item>
+    </plurals>
+    <plurals name="terminow_premium_period_weeks">
+        <item quantity="other">ทุก %1$d สัปดาห์</item>
+    </plurals>
+    <plurals name="terminow_premium_period_months">
+        <item quantity="other">ทุก %1$d เดือน</item>
+    </plurals>
+    <plurals name="terminow_premium_period_years">
+        <item quantity="other">ทุก %1$d ปี</item>
+    </plurals>
+    <string name="terminow_premium_status_pending">Google Play: รอการชำระเงิน Premium จะเริ่มเมื่อ Google Play รับชำระเงินเรียบร้อย</string>
+    <string name="terminow_premium_status_verifying">Google Play: กำลังตรวจสอบการซื้อ…</string>
+    <string name="terminow_premium_status_unavailable">Google Play: ยังตรวจสอบการซื้อไม่ได้ (%1$s) TermiNow จะลองอีกครั้งเมื่อเปิดแอป</string>
+    <string name="terminow_premium_status_rejected">Google Play: ไม่รับการซื้อนี้ (%1$s)</string>
+    <string name="terminow_premium_status_active_renews">Google Play: Premium ใช้งานอยู่ ต่ออายุ %1$s</string>
+    <string name="terminow_premium_status_active_ends">Google Play: Premium ใช้งานได้ถึง %1$s และจะไม่ต่ออายุ</string>
+    <string name="terminow_premium_status_on_hold">Google Play: การสมัครสมาชิกถูกพักไว้ อัปเดตวิธีชำระเงินใน Google Play</string>
+    <string name="terminow_premium_status_expired">Google Play: การสมัครสมาชิกสิ้นสุดแล้ว</string>
+    <string name="terminow_premium_test_marker">(การซื้อทดสอบ)</string>
+    <string name="terminow_premium_check_again">ตรวจสอบอีกครั้ง</string>
+    <string name="terminow_premium_restore">กู้คืนการซื้อ</string>
+    <string name="terminow_premium_restore_summary">ตรวจสอบการสมัครสมาชิก Google Play ของอุปกรณ์นี้อีกครั้ง</string>
+    <string name="terminow_premium_restore_none">อุปกรณ์นี้ไม่มีการสมัครสมาชิก TermiNow ใน Google Play สำหรับบัญชีนี้</string>
+    <string name="terminow_account_link">เชื่อมบัญชีที่มีอยู่</string>
+    <string name="terminow_account_link_summary">เชื่อมบัญชีลูกค้าที่มีอยู่แล้วด้วยรหัสจากพื้นที่ลูกค้า</string>
+    <string name="terminow_account_link_note">เข้าสู่ระบบพื้นที่ลูกค้าที่ cp.accmove.com เปิด cp.accmove.com/terminow/link.php แล้วใส่รหัสที่แสดง รหัสใช้ได้ครั้งเดียวภายใน 10 นาที จะไม่มีการเชื่อมบัญชีจากอีเมลเพียงอย่างเดียว</string>
+    <string name="terminow_account_link_code">รหัส</string>
+    <string name="terminow_account_link_button">เชื่อม</string>
+    <string name="terminow_account_link_code_invalid">ใส่รหัส 8 ตัวอักษร</string>
+    <string name="terminow_account_linked">เชื่อมบัญชีลูกค้ากับบัญชี TermiNow นี้แล้ว</string>
+</resources>
