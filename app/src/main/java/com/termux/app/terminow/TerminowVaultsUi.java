@@ -99,6 +99,19 @@ public class TerminowVaultsUi {
     // The name in the tab bar
     // ---------------------------------------------------------------------------------------
 
+    /**
+     * The vaults that a host can be saved in, as pairs of the scope in the store and the name:
+     * the personal vault first, then the team vaults that this phone has the key of.
+     */
+    @NonNull
+    public java.util.List<String[]> getHostVaults() {
+        java.util.List<String[]> vaults = new java.util.ArrayList<>();
+        vaults.add(new String[]{"", mActivity.getString(R.string.terminow_vault_personal)});
+        for (TerminowVaults.Info info : mVaults.getVaults())
+            if (!info.isPersonal() && info.hasKey) vaults.add(new String[]{info.scope(), info.name});
+        return vaults;
+    }
+
     /** The name of the vault that is shown, "Personal" or the name of the team. */
     @NonNull
     public String getActiveName() {

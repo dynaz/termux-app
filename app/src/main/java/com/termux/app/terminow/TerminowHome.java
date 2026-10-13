@@ -3,6 +3,7 @@ package com.termux.app.terminow;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
+import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -36,12 +37,16 @@ import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.BaseAdapter;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.GridView;
 import android.widget.HorizontalScrollView;
+import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.Switch;
 import android.widget.TextView;
 
@@ -79,6 +84,7 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
@@ -111,6 +117,8 @@ public class TerminowHome {
     private static final int PASSWORD_PROMPT_CHECK_DELAY_MS = 300;
     /** The line that ssh waits at for the password of a host, like `root@host's password: `. */
     private static final Pattern PASSWORD_PROMPT_PATTERN = Pattern.compile("'s password:\\s*$", Pattern.CASE_INSENSITIVE);
+    /** The password prompt of a telnet login, like `Password: `. */
+    private static final Pattern TELNET_PASSWORD_PROMPT_PATTERN = Pattern.compile("^\\s*password:\\s*$", Pattern.CASE_INSENSITIVE);
 
     /** The part of the screen width that the host form takes, like the Termius host panel. */
     private static final float HOST_PANEL_SCREEN_WIDTH_FRACTION = 0.36f;
@@ -664,7 +672,8 @@ public class TerminowHome {
                 mItems.add(null);
             for (TerminowStore.Host host : mHosts) {
                 if (host.getTitle().toLowerCase(Locale.ROOT).contains(query) ||
-                    host.address.toLowerCase(Locale.ROOT).contains(query))
+                    host.address.toLowerCase(Locale.ROOT).contains(query) ||
+                    TextUtils.join(",", host.tags).toLowerCase(Locale.ROOT).contains(query))
                     mItems.add(host);
             }
         } else if (mPage == PAGE_KEYCHAIN) {
@@ -896,6 +905,10 @@ public class TerminowHome {
 
     /** Start a session to transfer files to and from a host with sftp. */
     private void connectSftp(@NonNull TerminowStore.Host host) {
+        if (host.telnet) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_host_telnet_no_sftp), true);
+            return;
+        }
         String title = mActivity.getString(R.string.terminow_sftp_session, host.getTitle());
         if (!startConnecting(host, true)) return;
         TerminalSession session = addSession(title);
@@ -904,13 +917,17 @@ public class TerminowHome {
             return;
         }
 
+        Route route = prepareRoute(host);
+        if (route == null) {
+            mConnectingHosts.remove(host.getKey() + ":sftp");
+            return;
+        }
         mSftpSessions.add(session);
         mLauncher.track(session, new TerminowLauncher.SessionInfo(null, host.getTitle(), "sftp", "", ""));
-        String command = host.getSftpCommand(mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
+        String command = host.getSftpCommand(route.jump, route.proxyConnector, mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
         mStore.addLog(title, command);
         writeWhenStarted(session, command + "\r", 0);
-        if (!host.password.isEmpty())
-            writePasswordWhenAsked(session, host.password, 0);
+        writePasswordsWhenAsked(session, getPasswordPrompts(host, route.jump), 0);
         watchConnection(session, host, true, title, 0);
     }
 
@@ -1145,13 +1162,94 @@ public class TerminowHome {
             return;
         }
 
-        mLauncher.track(session, new TerminowLauncher.SessionInfo(null, host.getTitle(), "ssh", "", ""));
-        String command = host.getCommand(mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
+        Route route = prepareRoute(host);
+        if (route == null) {
+            mConnectingHosts.remove(host.getKey() + ":ssh");
+            return;
+        }
+        applySessionOptions(session, host);
+        mLauncher.track(session, new TerminowLauncher.SessionInfo(null, host.getTitle(), host.telnet ? "telnet" : "ssh", "", ""));
+        String command = host.getCommand(route.jump, route.proxyConnector, mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
         mStore.addLog(host.getTitle(), command);
         writeWhenStarted(session, command + "\r", 0);
-        if (!host.password.isEmpty())
-            writePasswordWhenAsked(session, host.password, 0);
+        writePasswordsWhenAsked(session, getPasswordPrompts(host, route.jump), 0);
         watchConnection(session, host, false, host.getTitle(), 0);
+    }
+
+    /** How a connection reaches its host: the jump host and the proxy connector, if it uses them. */
+    private static class Route {
+        @Nullable TerminowStore.Host jump;
+        String proxyConnector = "";
+    }
+
+    /**
+     * Find the jump host and install the proxy connector for a host. Returns {@code null} and
+     * tells the user why if the connection can not be made.
+     */
+    @Nullable
+    private Route prepareRoute(@NonNull TerminowStore.Host host) {
+        Route route = new Route();
+        if (host.telnet) return route;
+        if (!host.jumpHost.isEmpty()) {
+            route.jump = TerminowStore.findHost(mHosts, host.jumpHost);
+            if (route.jump == null || route.jump.telnet) {
+                mActivity.showToast(mActivity.getString(R.string.terminow_host_jump_missing), true);
+                return null;
+            }
+        }
+        if (!host.proxyType.isEmpty()) {
+            try {
+                route.proxyConnector = TerminowProxy.install(new File(TermuxConstants.TERMUX_PREFIX_DIR_PATH)).getPath();
+            } catch (IOException e) {
+                mActivity.showToast(mActivity.getString(R.string.terminow_host_proxy_install_failed, e.getMessage()), true);
+                return null;
+            }
+        }
+        return route;
+    }
+
+    /** The color theme and the Backspace key of the host, for its session only. */
+    private void applySessionOptions(@NonNull TerminalSession session, @NonNull TerminowStore.Host host) {
+        session.setBackspaceSendsCtrlH(host.backspaceSendsCtrlH);
+        TerminowThemes.Theme theme = TerminowThemes.find(host.colorScheme);
+        if (theme != null) session.setColorScheme(TerminowThemes.toScheme(theme));
+    }
+
+    /** A password to type in when a prompt that matches is shown, only once. */
+    private static class PasswordPrompt {
+        final Pattern prompt;
+        final String password;
+        boolean written;
+
+        PasswordPrompt(@NonNull Pattern prompt, @NonNull String password) {
+            this.prompt = prompt;
+            this.password = password;
+        }
+    }
+
+    /**
+     * The password prompts of a connection. Through a jump host, ssh asks for the password of
+     * each host by its name, like `user@host's password:`, so each one only gets its own.
+     */
+    @NonNull
+    static List<PasswordPrompt> getPasswordPrompts(@NonNull TerminowStore.Host host, @Nullable TerminowStore.Host jump) {
+        List<PasswordPrompt> prompts = new ArrayList<>();
+        if (host.telnet) {
+            if (!host.password.isEmpty()) prompts.add(new PasswordPrompt(TELNET_PASSWORD_PROMPT_PATTERN, host.password));
+            return prompts;
+        }
+        if (jump == null) {
+            if (!host.password.isEmpty()) prompts.add(new PasswordPrompt(PASSWORD_PROMPT_PATTERN, host.password));
+            return prompts;
+        }
+        if (!jump.password.isEmpty()) prompts.add(new PasswordPrompt(hostPasswordPrompt(jump), jump.password));
+        if (!host.password.isEmpty()) prompts.add(new PasswordPrompt(hostPasswordPrompt(host), host.password));
+        return prompts;
+    }
+
+    @NonNull
+    private static Pattern hostPasswordPrompt(@NonNull TerminowStore.Host host) {
+        return Pattern.compile("@" + Pattern.quote(host.address) + "'s password:\\s*$", Pattern.CASE_INSENSITIVE);
     }
 
     @Nullable
@@ -1172,21 +1270,25 @@ public class TerminowHome {
         TerminalSession session = addSession(forward.getTitle());
         if (session == null) return;
 
-        String command = host.getForwardCommand(forward, mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
+        Route route = prepareRoute(host);
+        if (route == null || host.telnet) {
+            if (host.telnet) mActivity.showToast(mActivity.getString(R.string.terminow_host_telnet_no_forward), true);
+            return;
+        }
+        String command = host.getForwardCommand(forward, route.jump, route.proxyConnector, mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
         mStore.addLog(forward.getTitle(), command);
         writeWhenStarted(session, command + "\r", 0);
-        if (!host.password.isEmpty())
-            writePasswordWhenAsked(session, host.password, 0);
+        writePasswordsWhenAsked(session, getPasswordPrompts(host, route.jump), 0);
     }
 
     /**
-     * Type in the password of a host the first time that the session waits at a password prompt
-     * after connecting, like `root@host's password: `. Other prompts before it, like to confirm
-     * the key of a new host, are left to the user. The password is only written once, so a wrong
-     * password ends at the prompt of ssh to enter it again instead of being retried.
+     * Type in the passwords of a connection the first time that the session waits at their
+     * prompt, like `root@host's password: `. Other prompts, like to confirm the key of a new host,
+     * are left to the user. Each password is only written once, so a wrong one ends at the prompt
+     * to enter it again instead of being retried.
      */
-    private void writePasswordWhenAsked(@NonNull TerminalSession session, @NonNull String password, int attempt) {
-        if (attempt >= PASSWORD_PROMPT_CHECK_COUNT) return;
+    private void writePasswordsWhenAsked(@NonNull TerminalSession session, @NonNull List<PasswordPrompt> prompts, int attempt) {
+        if (prompts.isEmpty() || attempt >= PASSWORD_PROMPT_CHECK_COUNT) return;
 
         if (session.getPid() > 0) {
             if (!session.isRunning()) return;
@@ -1194,14 +1296,20 @@ public class TerminowHome {
             String transcript = ShellUtils.getTerminalSessionTranscriptText(session, false, true);
             if (transcript != null) {
                 String lastLine = transcript.substring(transcript.lastIndexOf('\n') + 1);
-                if (PASSWORD_PROMPT_PATTERN.matcher(lastLine).find()) {
-                    session.write(password + "\r");
-                    return;
+                for (PasswordPrompt prompt : prompts) {
+                    if (!prompt.written && prompt.prompt.matcher(lastLine).find()) {
+                        prompt.written = true;
+                        session.write(prompt.password + "\r");
+                        break;
+                    }
                 }
+                boolean allWritten = true;
+                for (PasswordPrompt prompt : prompts) allWritten &= prompt.written;
+                if (allWritten) return;
             }
         }
 
-        mHandler.postDelayed(() -> writePasswordWhenAsked(session, password, attempt + 1), PASSWORD_PROMPT_CHECK_DELAY_MS);
+        mHandler.postDelayed(() -> writePasswordsWhenAsked(session, prompts, attempt + 1), PASSWORD_PROMPT_CHECK_DELAY_MS);
     }
 
     private void runSnippet(@NonNull TerminowStore.Snippet snippet) {
@@ -1305,58 +1413,180 @@ public class TerminowHome {
         rootView.setOnClickListener(v -> dialog.dismiss());
 
         TextView titleView = dialog.findViewById(R.id.terminow_host_title);
+        TextView vaultView = dialog.findViewById(R.id.terminow_host_vault);
         EditText labelView = dialog.findViewById(R.id.terminow_host_label);
         EditText addressView = dialog.findViewById(R.id.terminow_host_address);
+        EditText groupView = dialog.findViewById(R.id.terminow_host_group);
+        EditText tagsView = dialog.findViewById(R.id.terminow_host_tags);
+        CheckBox backspaceView = dialog.findViewById(R.id.terminow_host_backspace);
+        View sshCard = dialog.findViewById(R.id.terminow_host_ssh_card);
+        CheckBox sshView = dialog.findViewById(R.id.terminow_host_ssh);
+        CheckBox moshView = dialog.findViewById(R.id.terminow_host_mosh);
         EditText portView = dialog.findViewById(R.id.terminow_host_port);
         EditText usernameView = dialog.findViewById(R.id.terminow_host_username);
         EditText passwordView = dialog.findViewById(R.id.terminow_host_password);
         EditText keyView = dialog.findViewById(R.id.terminow_host_key);
-        EditText groupView = dialog.findViewById(R.id.terminow_host_group);
+        View keyRemoveView = dialog.findViewById(R.id.terminow_host_key_remove);
         EditText snippetView = dialog.findViewById(R.id.terminow_host_snippet);
-        Switch moshView = dialog.findViewById(R.id.terminow_host_mosh);
+        CheckBox agentView = dialog.findViewById(R.id.terminow_host_agent);
+        EditText jumpView = dialog.findViewById(R.id.terminow_host_jump);
+        EditText proxyView = dialog.findViewById(R.id.terminow_host_proxy);
+        LinearLayout envList = dialog.findViewById(R.id.terminow_host_env);
+        TextView schemeView = dialog.findViewById(R.id.terminow_host_scheme);
+        CheckBox telnetView = dialog.findViewById(R.id.terminow_host_telnet);
+        View telnetOptions = dialog.findViewById(R.id.terminow_host_telnet_options);
+        EditText telnetPortView = dialog.findViewById(R.id.terminow_host_telnet_port);
 
         titleView.setText(existingHost == null ? R.string.terminow_new_host : R.string.terminow_edit_host);
+        // The fields that are picked, not typed, are kept here until the host is saved
+        TerminowStore.Host draft = new TerminowStore.Host();
+        TerminowStore.Host source = existingHost != null ? existingHost : prefill;
+
+        // The vault: the one that is shown, and the host can be moved to another one
+        List<String[]> vaults = mVaultsUi.getHostVaults();
+        String currentScope = mStore.getActiveVault();
+        final String[] scope = {currentScope};
+        Runnable showVault = () -> {
+            String name = vaults.get(0)[1];
+            for (String[] vault : vaults) if (vault[0].equals(scope[0])) name = vault[1];
+            vaultView.setText(mActivity.getString(R.string.terminow_host_vault_name, name));
+        };
+        showVault.run();
+        vaultView.setOnClickListener(v -> {
+            String[] names = new String[vaults.size()];
+            for (int i = 0; i < vaults.size(); i++) names[i] = vaults.get(i)[1];
+            new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setTitle(R.string.terminow_host_vault_title)
+                .setItems(names, (d, which) -> {
+                    scope[0] = vaults.get(which)[0];
+                    // A jump host is looked up in the vault of the host
+                    if (!scope[0].equals(currentScope)) {
+                        draft.jumpHost = "";
+                        jumpView.setText("");
+                    }
+                    showVault.run();
+                })
+                .show();
+        });
+
         // A new host is added to the group that is being shown
         String group = existingHost != null ? existingHost.group : mCurrentGroup;
         if (group != null && mGroups.contains(group))
             groupView.setText(group);
         groupView.setOnClickListener(v -> showGroupPicker(groupView));
+        dialog.findViewById(R.id.terminow_host_group_button).setOnClickListener(v -> showGroupPicker(groupView));
+
+        if (source != null) {
+            addressView.setText(source.address);
+            usernameView.setText(source.username);
+            keyView.setText(source.keyPath);
+            if (source.port != 22)
+                portView.setText(String.valueOf(source.port));
+        }
         if (existingHost != null) {
             labelView.setText(existingHost.label);
-            addressView.setText(existingHost.address);
-            usernameView.setText(existingHost.username);
             passwordView.setText(existingHost.password);
-            keyView.setText(existingHost.keyPath);
             if (mStore.getSnippet(existingHost.startupSnippet) != null)
                 snippetView.setText(existingHost.startupSnippet);
             moshView.setChecked(existingHost.mosh);
-            // The default port is shown as the hint of the empty field
-            if (existingHost.port != 22)
-                portView.setText(String.valueOf(existingHost.port));
-        } else if (prefill != null) {
-            addressView.setText(prefill.address);
-            usernameView.setText(prefill.username);
-            keyView.setText(prefill.keyPath);
-            if (prefill.port != 22)
-                portView.setText(String.valueOf(prefill.port));
+            draft.tags.addAll(existingHost.tags);
+            backspaceView.setChecked(existingHost.backspaceSendsCtrlH);
+            telnetView.setChecked(existingHost.telnet);
+            sshView.setChecked(!existingHost.telnet);
+            if (existingHost.telnetPort != 23)
+                telnetPortView.setText(String.valueOf(existingHost.telnetPort));
+            agentView.setChecked(existingHost.agentForwarding);
+            draft.jumpHost = existingHost.jumpHost;
+            draft.proxyType = existingHost.proxyType;
+            draft.proxyHost = existingHost.proxyHost;
+            draft.proxyPort = existingHost.proxyPort;
+            draft.colorScheme = existingHost.colorScheme;
+            for (Map.Entry<String, String> variable : existingHost.env.entrySet())
+                addEnvRow(envList, variable.getKey(), variable.getValue());
         }
 
+        // Tags
+        Runnable showTags = () -> tagsView.setText(TextUtils.join(", ", draft.tags));
+        showTags.run();
+        View.OnClickListener editTags = v -> showTagsEditor(draft.tags, showTags);
+        tagsView.setOnClickListener(editTags);
+        dialog.findViewById(R.id.terminow_host_tags_button).setOnClickListener(editTags);
+
+        // SSH, Mosh and Telnet: Mosh needs SSH to start, Telnet is used instead of both
+        Runnable showProtocol = () -> {
+            telnetOptions.setVisibility(telnetView.isChecked() ? View.VISIBLE : View.GONE);
+            sshCard.setAlpha(telnetView.isChecked() ? 0.5f : 1f);
+        };
+        sshView.setOnCheckedChangeListener((button, checked) -> {
+            if (checked) telnetView.setChecked(false);
+            else moshView.setChecked(false);
+            showProtocol.run();
+        });
+        moshView.setOnCheckedChangeListener((button, checked) -> {
+            if (checked) sshView.setChecked(true);
+        });
+        telnetView.setOnCheckedChangeListener((button, checked) -> {
+            if (checked) sshView.setChecked(false);
+            showProtocol.run();
+        });
+        showProtocol.run();
+        dialog.findViewById(R.id.terminow_host_mosh_learn).setOnClickListener(v -> openUrl("https://mosh.org"));
+
+        // Credentials
+        dialog.findViewById(R.id.terminow_host_password_show).setOnClickListener(v -> {
+            boolean hidden = (passwordView.getInputType() & InputType.TYPE_TEXT_VARIATION_PASSWORD) == InputType.TYPE_TEXT_VARIATION_PASSWORD;
+            int selection = passwordView.getSelectionEnd();
+            passwordView.setInputType(InputType.TYPE_CLASS_TEXT | (hidden ? InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD : InputType.TYPE_TEXT_VARIATION_PASSWORD));
+            passwordView.setSelection(Math.max(0, selection));
+        });
+        Runnable showKeyRemove = () -> keyRemoveView.setVisibility(keyView.getText().length() > 0 ? View.VISIBLE : View.GONE);
+        keyView.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override public void afterTextChanged(Editable s) { showKeyRemove.run(); }
+        });
+        showKeyRemove.run();
+        keyView.setOnClickListener(v -> showKeyPicker(keyView));
         dialog.findViewById(R.id.terminow_host_keys).setOnClickListener(v -> showKeyPicker(keyView));
-        dialog.findViewById(R.id.terminow_host_key_remove).setOnClickListener(v -> keyView.setText(""));
+        keyRemoveView.setOnClickListener(v -> keyView.setText(""));
+
+        // Session options
         snippetView.setOnClickListener(v -> showStartupSnippetPicker(snippetView));
+        dialog.findViewById(R.id.terminow_host_snippet_button).setOnClickListener(v -> showStartupSnippetPicker(snippetView));
+
+        Runnable showJump = () -> {
+            TerminowStore.Host jump = draft.jumpHost.isEmpty() ? null : TerminowStore.findHost(mStore.getHostsIn(scope[0]), draft.jumpHost);
+            jumpView.setText(jump == null ? (draft.jumpHost.isEmpty() ? "" : draft.jumpHost) :
+                mActivity.getString(R.string.terminow_host_chaining_through, jump.getTitle()));
+        };
+        showJump.run();
+        View.OnClickListener pickJump = v -> showJumpHostPicker(scope[0], existingHost, draft, showJump);
+        jumpView.setOnClickListener(pickJump);
+        dialog.findViewById(R.id.terminow_host_jump_button).setOnClickListener(pickJump);
+
+        Runnable showProxy = () -> proxyView.setText(draft.proxyType.isEmpty() ? "" :
+            mActivity.getString(R.string.terminow_host_proxy_value, draft.proxyType.toUpperCase(Locale.ROOT), draft.proxyHost, draft.proxyPort));
+        showProxy.run();
+        View.OnClickListener editProxy = v -> showProxyEditor(draft, showProxy);
+        proxyView.setOnClickListener(editProxy);
+        dialog.findViewById(R.id.terminow_host_proxy_button).setOnClickListener(editProxy);
+
+        dialog.findViewById(R.id.terminow_host_env_add).setOnClickListener(v -> addEnvRow(envList, "", ""));
+
+        Runnable showScheme = () -> schemeView.setText(draft.colorScheme.isEmpty() ?
+            mActivity.getString(R.string.terminow_host_color_scheme_default) : draft.colorScheme);
+        showScheme.run();
+        dialog.findViewById(R.id.terminow_host_scheme_row).setOnClickListener(v -> showSchemePicker(draft, showScheme));
+        dialog.findViewById(R.id.terminow_host_charset_row).setOnClickListener(v ->
+            mActivity.showToast(mActivity.getString(R.string.terminow_host_charset_note), true));
 
         dialog.findViewById(R.id.terminow_host_close).setOnClickListener(v -> dialog.dismiss());
         dialog.findViewById(R.id.terminow_host_save).setOnClickListener(v -> {
             String address = addressView.getText().toString().trim();
             String username = usernameView.getText().toString().trim();
             String keyPath = keyView.getText().toString().trim();
-            String portText = portView.getText().toString().trim();
-            int port;
-            try {
-                port = portText.isEmpty() ? 22 : Integer.parseInt(portText);
-            } catch (NumberFormatException e) {
-                port = -1;
-            }
+            int port = parsePort(portView.getText().toString(), 22);
+            int telnetPort = parsePort(telnetPortView.getText().toString(), 23);
 
             if (!TerminowStore.isValidAddress(address)) {
                 mActivity.showToast(mActivity.getString(R.string.terminow_host_invalid_address), true);
@@ -1378,8 +1608,12 @@ public class TerminowHome {
                 keyView.requestFocus();
                 return;
             }
+            if (!sshView.isChecked() && !telnetView.isChecked()) {
+                mActivity.showToast(mActivity.getString(R.string.terminow_host_no_protocol), true);
+                return;
+            }
 
-            TerminowStore.Host host = existingHost != null ? existingHost : new TerminowStore.Host();
+            TerminowStore.Host host = new TerminowStore.Host();
             host.label = labelView.getText().toString().trim();
             host.address = address;
             host.port = port;
@@ -1388,10 +1622,45 @@ public class TerminowHome {
             host.keyPath = keyPath;
             host.group = groupView.getText().toString();
             host.startupSnippet = snippetView.getText().toString();
-            host.mosh = moshView.isChecked();
-            if (existingHost == null)
-                mHosts.add(host);
-            mStore.setHosts(mHosts);
+            host.telnet = telnetView.isChecked();
+            host.mosh = !host.telnet && moshView.isChecked();
+            host.telnetPort = telnetPort;
+            host.tags.addAll(draft.tags);
+            host.backspaceSendsCtrlH = backspaceView.isChecked();
+            host.agentForwarding = !host.telnet && agentView.isChecked();
+            host.jumpHost = host.telnet ? "" : draft.jumpHost;
+            host.proxyType = host.telnet ? "" : draft.proxyType;
+            host.proxyHost = host.proxyType.isEmpty() ? "" : draft.proxyHost;
+            host.proxyPort = host.proxyType.isEmpty() ? 0 : draft.proxyPort;
+            host.colorScheme = draft.colorScheme;
+            if (!readEnvRows(envList, host.env)) {
+                mActivity.showToast(mActivity.getString(R.string.terminow_host_invalid_env), true);
+                return;
+            }
+            if (!TerminowStore.isValidPort(host.telnetPort)) {
+                mActivity.showToast(mActivity.getString(R.string.terminow_host_invalid_port), true);
+                telnetPortView.requestFocus();
+                return;
+            }
+            Integer problem = host.validateOptions(mStore.getHostsIn(scope[0]));
+            if (problem != null) {
+                mActivity.showToast(mActivity.getString(problem), true);
+                return;
+            }
+
+            // Saved in the chosen vault, and moved out of the one it was in. An edited host keeps its place.
+            int index = existingHost != null ? mHosts.indexOf(existingHost) : -1;
+            if (index >= 0) mHosts.remove(index);
+            if (scope[0].equals(currentScope)) {
+                mHosts.add(index >= 0 ? index : mHosts.size(), host);
+                mStore.setHosts(mHosts);
+            } else {
+                if (existingHost != null) mStore.setHosts(mHosts);
+                List<TerminowStore.Host> target = mStore.getHostsIn(scope[0]);
+                target.add(host);
+                mStore.setHostsIn(scope[0], target);
+                mActivity.showToast(mActivity.getString(R.string.terminow_host_saved_in_vault, vaultView.getText()), false);
+            }
             updateItems();
             dialog.dismiss();
             if (onSaved != null)
@@ -1400,7 +1669,215 @@ public class TerminowHome {
 
         dialog.show();
         if (existingHost == null)
-            addressView.requestFocus();
+            labelView.requestFocus();
+    }
+
+    private static int parsePort(@NonNull String text, int defaultPort) {
+        text = text.trim();
+        if (text.isEmpty()) return defaultPort;
+        try {
+            return Integer.parseInt(text);
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    private void openUrl(@NonNull String url) {
+        try {
+            mActivity.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+        } catch (ActivityNotFoundException e) {
+            mActivity.showToast(url, true);
+        }
+    }
+
+    /** Edit the tags of a host, separated by commas. */
+    private void showTagsEditor(@NonNull List<String> tags, @NonNull Runnable onChanged) {
+        EditText field = new EditText(mActivity);
+        field.setText(TextUtils.join(", ", tags));
+        field.setHint(R.string.terminow_host_tags_hint);
+        field.setSingleLine(true);
+        field.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
+        field.setHintTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+        LinearLayout form = new LinearLayout(mActivity);
+        form.setPadding(dp(22), dp(8), dp(22), 0);
+        form.addView(field, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        AlertDialog dialog = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_host_tags)
+            .setView(form)
+            .setPositiveButton(android.R.string.ok, null)
+            .setNegativeButton(android.R.string.cancel, null)
+            .create();
+        dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            List<String> edited = new ArrayList<>();
+            for (String part : field.getText().toString().split(",")) {
+                String tag = part.trim();
+                if (tag.isEmpty() || edited.contains(tag)) continue;
+                if (!TerminowStore.isValidTag(tag)) {
+                    field.setError(mActivity.getString(R.string.terminow_host_invalid_tag));
+                    return;
+                }
+                edited.add(tag);
+            }
+            tags.clear();
+            tags.addAll(edited);
+            onChanged.run();
+            dialog.dismiss();
+        }));
+        dialog.show();
+    }
+
+    /** Pick the host to connect through, from the other ssh hosts of the vault. */
+    private void showJumpHostPicker(@NonNull String scope, @Nullable TerminowStore.Host editing, @NonNull TerminowStore.Host draft,
+                                    @NonNull Runnable onChanged) {
+        List<TerminowStore.Host> candidates = new ArrayList<>();
+        for (TerminowStore.Host host : mStore.getHostsIn(scope))
+            if (!host.telnet && (editing == null || !host.getKey().equals(editing.getKey()))) candidates.add(host);
+        List<CharSequence> names = new ArrayList<>();
+        names.add(mActivity.getString(R.string.terminow_host_chaining_none));
+        for (TerminowStore.Host host : candidates) names.add(host.getTitle() + "  ·  " + host.getSummary(false));
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_host_chaining)
+            .setItems(names.toArray(new CharSequence[0]), (d, which) -> {
+                draft.jumpHost = which == 0 ? "" : candidates.get(which - 1).getKey();
+                onChanged.run();
+            })
+            .show();
+    }
+
+    /** Set a SOCKS5 or HTTP proxy for the connection, or none. */
+    private void showProxyEditor(@NonNull TerminowStore.Host draft, @NonNull Runnable onChanged) {
+        LinearLayout form = new LinearLayout(mActivity);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(dp(22), dp(8), dp(22), 0);
+        RadioGroup types = new RadioGroup(mActivity);
+        String[] values = {"", TerminowStore.Host.PROXY_SOCKS5, TerminowStore.Host.PROXY_HTTP};
+        int[] labels = {R.string.terminow_host_proxy_none, R.string.terminow_host_proxy_socks5, R.string.terminow_host_proxy_http};
+        RadioButton[] buttons = new RadioButton[values.length];
+        for (int i = 0; i < values.length; i++) {
+            buttons[i] = new RadioButton(mActivity);
+            buttons[i].setId(View.generateViewId());
+            buttons[i].setText(labels[i]);
+            buttons[i].setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
+            types.addView(buttons[i]);
+            if (values[i].equals(draft.proxyType)) buttons[i].setChecked(true);
+        }
+        form.addView(types);
+        EditText hostField = new EditText(mActivity);
+        hostField.setHint(R.string.terminow_host_proxy_host);
+        hostField.setSingleLine(true);
+        hostField.setInputType(InputType.TYPE_TEXT_VARIATION_URI);
+        hostField.setText(draft.proxyHost);
+        EditText portField = new EditText(mActivity);
+        portField.setHint(R.string.terminow_host_port);
+        portField.setInputType(InputType.TYPE_CLASS_NUMBER);
+        if (draft.proxyPort > 0) portField.setText(String.valueOf(draft.proxyPort));
+        for (EditText field : new EditText[]{hostField, portField}) {
+            field.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
+            field.setHintTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+            form.addView(field, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
+        TextView note = new TextView(mActivity);
+        note.setText(R.string.terminow_host_proxy_note);
+        note.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+        note.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        note.setPadding(0, dp(8), 0, 0);
+        form.addView(note);
+        AlertDialog dialog = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_host_proxy)
+            .setView(form)
+            .setPositiveButton(android.R.string.ok, null)
+            .setNegativeButton(android.R.string.cancel, null)
+            .create();
+        dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String type = "";
+            for (int i = 0; i < values.length; i++) if (buttons[i].isChecked()) type = values[i];
+            if (type.isEmpty()) {
+                draft.proxyType = "";
+                draft.proxyHost = "";
+                draft.proxyPort = 0;
+            } else {
+                String proxyHost = hostField.getText().toString().trim();
+                int proxyPort = parsePort(portField.getText().toString(), -1);
+                if (!TerminowStore.isValidAddress(proxyHost)) {
+                    hostField.setError(mActivity.getString(R.string.terminow_host_invalid_address));
+                    return;
+                }
+                if (!TerminowStore.isValidPort(proxyPort)) {
+                    portField.setError(mActivity.getString(R.string.terminow_host_invalid_port));
+                    return;
+                }
+                draft.proxyType = type;
+                draft.proxyHost = proxyHost;
+                draft.proxyPort = proxyPort;
+            }
+            onChanged.run();
+            dialog.dismiss();
+        }));
+        dialog.show();
+    }
+
+    /** Pick the terminal theme of the sessions of a host, or the one of the settings. */
+    private void showSchemePicker(@NonNull TerminowStore.Host draft, @NonNull Runnable onChanged) {
+        List<CharSequence> names = new ArrayList<>();
+        names.add(mActivity.getString(R.string.terminow_host_color_scheme_default));
+        names.add(TerminowThemes.DEFAULT_THEME.name);
+        for (TerminowThemes.Theme theme : TerminowThemes.THEMES)
+            if (!theme.name.equals(TerminowThemes.DEFAULT_THEME.name)) names.add(theme.name);
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_host_color_scheme)
+            .setItems(names.toArray(new CharSequence[0]), (d, which) -> {
+                draft.colorScheme = which == 0 ? "" : names.get(which).toString();
+                onChanged.run();
+            })
+            .show();
+    }
+
+    /** A row of an environment variable: its name, its value and a button to remove it. */
+    private void addEnvRow(@NonNull LinearLayout list, @NonNull String name, @NonNull String value) {
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        EditText nameField = new EditText(mActivity);
+        nameField.setHint(R.string.terminow_host_env_name);
+        nameField.setText(name);
+        EditText valueField = new EditText(mActivity);
+        valueField.setHint(R.string.terminow_host_env_value);
+        valueField.setText(value);
+        for (EditText field : new EditText[]{nameField, valueField}) {
+            field.setSingleLine(true);
+            field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+            field.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
+            field.setHintTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+            field.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        }
+        row.addView(nameField, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        LinearLayout.LayoutParams valueParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.3f);
+        valueParams.setMarginStart(dp(8));
+        row.addView(valueField, valueParams);
+        ImageButton remove = new ImageButton(mActivity);
+        remove.setImageResource(R.drawable.ic_terminow_close);
+        remove.setColorFilter(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+        remove.setBackground(null);
+        remove.setContentDescription(mActivity.getString(R.string.terminow_host_env_remove));
+        remove.setOnClickListener(v -> list.removeView(row));
+        row.addView(remove, new LinearLayout.LayoutParams(dp(36), dp(36)));
+        list.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        if (name.isEmpty()) nameField.requestFocus();
+    }
+
+    /** Read the rows of the environment variables, empty ones are skipped. Returns {@code false} if one is invalid. */
+    private boolean readEnvRows(@NonNull LinearLayout list, @NonNull Map<String, String> env) {
+        for (int i = 0; i < list.getChildCount(); i++) {
+            LinearLayout row = (LinearLayout) list.getChildAt(i);
+            String name = ((EditText) row.getChildAt(0)).getText().toString().trim();
+            String value = ((EditText) row.getChildAt(1)).getText().toString();
+            if (name.isEmpty() && value.isEmpty()) continue;
+            if (!TerminowStore.isValidEnvName(name) || !TerminowStore.isValidEnvValue(value) || env.containsKey(name)) {
+                ((EditText) row.getChildAt(0)).setError(mActivity.getString(R.string.terminow_host_invalid_env));
+                return false;
+            }
+            env.put(name, value);
+        }
+        return true;
     }
 
     /**
@@ -2282,7 +2759,8 @@ public class TerminowHome {
                 if (sessionCount > 0)
                     subtitleView.setText(R.string.terminow_active);
                 else
-                    subtitleView.setText((host.mosh ? "mosh" : "ssh") + (host.username.isEmpty() ? "" : ", " + host.username));
+                    subtitleView.setText((host.telnet ? "telnet" : host.mosh ? "mosh" : "ssh") + (host.username.isEmpty() ? "" : ", " + host.username) +
+                        (host.tags.isEmpty() ? "" : ", " + TextUtils.join(", ", host.tags)));
             } else if (item instanceof KeyItem) {
                 KeyItem key = (KeyItem) item;
                 iconRes = R.drawable.ic_terminow_key;

@@ -56,6 +56,11 @@ public final class TerminalSession extends TerminalOutput {
     /** The pid of the shell process. 0 if not started and -1 if finished running. */
     int mShellPid;
 
+    /** The color theme of this session only, see {@link TerminalColors#setScheme}. Kept until the emulator exists. */
+    private TerminalColorScheme mColorScheme;
+    /** Whether the Backspace key sends Ctrl-H (^H) instead of DEL (^?), for a host that wants it. */
+    private volatile boolean mBackspaceSendsCtrlH;
+
     /** The exit status of the shell process. Only valid if ${@link #mShellPid} is -1. */
     int mShellExitStatus;
 
@@ -122,6 +127,7 @@ public final class TerminalSession extends TerminalOutput {
      */
     public void initializeEmulator(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
         mEmulator = new TerminalEmulator(this, columns, rows, cellWidthPixels, cellHeightPixels, mTranscriptRows, mClient);
+        if (mColorScheme != null) mEmulator.mColors.setScheme(mColorScheme);
 
         int[] processId = new int[1];
         mTerminalFileDescriptor = JNI.createSubprocess(mShellPath, mCwd, mArgs, mEnv, processId, rows, columns, cellWidthPixels, cellHeightPixels);
@@ -214,6 +220,20 @@ public final class TerminalSession extends TerminalOutput {
             mUtf8InputBuffer[bufferPosition++] = (byte) (0b10000000 | (codePoint & 0b111111));
         }
         write(mUtf8InputBuffer, 0, bufferPosition);
+    }
+
+    /** Use a color theme for this session only, {@code null} for the one of the settings. */
+    public void setColorScheme(TerminalColorScheme scheme) {
+        mColorScheme = scheme;
+        if (mEmulator != null) mEmulator.mColors.setScheme(scheme);
+    }
+
+    public boolean getBackspaceSendsCtrlH() {
+        return mBackspaceSendsCtrlH;
+    }
+
+    public void setBackspaceSendsCtrlH(boolean ctrlH) {
+        mBackspaceSendsCtrlH = ctrlH;
     }
 
     public TerminalEmulator getEmulator() {

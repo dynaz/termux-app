@@ -89,4 +89,28 @@ public class TerminowThemes {
         new Theme("Silver Aerogel", 0x929292, 0x000000, 0xD9D9D9, new int[]{0x000000, 0x990000, 0x00A600, 0x999900, 0x0000B2, 0xB200B2, 0x00A6B2, 0xBFBFBF, 0x666666, 0xE50000, 0x00D900, 0xE5E500, 0x0000FF, 0xE500E5, 0x00E5E5, 0xE5E5E5}),
     };
 
+
+    /** The theme with the name, {@code null} if there is none, like for the empty name of "the settings". */
+    @androidx.annotation.Nullable
+    public static Theme find(@NonNull String name) {
+        if (name.isEmpty()) return null;
+        if (DEFAULT_THEME.name.equals(name)) return DEFAULT_THEME;
+        for (Theme theme : THEMES) if (theme.name.equals(name)) return theme;
+        return null;
+    }
+
+    /** The colors of a theme for one terminal session, see {@link com.termux.terminal.TerminalSession#setColorScheme}. */
+    @NonNull
+    public static com.termux.terminal.TerminalColorScheme toScheme(@NonNull Theme theme) {
+        com.termux.terminal.TerminalColorScheme scheme = new com.termux.terminal.TerminalColorScheme();
+        java.util.Properties properties = new java.util.Properties();
+        try {
+            properties.load(new java.io.StringReader(theme.getProperties()));
+        } catch (java.io.IOException e) {
+            // A string can not fail to be read
+        }
+        scheme.updateWith(properties);
+        return scheme;
+    }
+
 }

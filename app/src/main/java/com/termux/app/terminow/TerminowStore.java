@@ -9,6 +9,7 @@ import android.util.Base64;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.termux.R;
 import com.termux.shared.logger.Logger;
 
 import org.json.JSONArray;
@@ -24,8 +25,10 @@ import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 import javax.crypto.Cipher;
@@ -52,6 +55,28 @@ public class TerminowStore {
         public String group = "";
         /** The name of the snippet to run once the connection is made, empty for none. */
         public String startupSnippet = "";
+        /** Words to find and tell hosts apart by, only shown and searched, never run. */
+        public final List<String> tags = new ArrayList<>();
+        /** Whether the Backspace key sends Ctrl-H (^H) instead of DEL (^?), for old systems. */
+        public boolean backspaceSendsCtrlH;
+        /** Connect with telnet instead of ssh, to {@link #telnetPort}. */
+        public boolean telnet;
+        public int telnetPort = 23;
+        /** Forward the ssh agent of this device to the host, `ssh -A`. */
+        public boolean agentForwarding;
+        /** The {@link #getKey()} of another host to connect through, empty for none. */
+        public String jumpHost = "";
+        /** {@link #PROXY_SOCKS5}, {@link #PROXY_HTTP}, or empty for a direct connection. */
+        public String proxyType = "";
+        public String proxyHost = "";
+        public int proxyPort;
+        /** Environment variables sent to the host with `SetEnv`, if its sshd accepts them. */
+        public final Map<String, String> env = new LinkedHashMap<>();
+        /** The name of a terminal theme for the sessions of the host, empty for the one of the settings. */
+        public String colorScheme = "";
+
+        public static final String PROXY_SOCKS5 = "socks5";
+        public static final String PROXY_HTTP = "http";
 
         /** An identifier of the host that does not change with its label, for the recent connections. */
         @NonNull
@@ -79,22 +104,68 @@ public class TerminowStore {
         @NonNull
         private String getSshOptions(int keepAliveInterval, int keepAliveCountMax) {
             return (keyPath.isEmpty() ? "" : " -i " + keyPath) + (port == 22 ? "" : " -p " + port) +
-                (keepAliveInterval <= 0 ? "" : " -o ServerAliveInterval=" + keepAliveInterval + " -o ServerAliveCountMax=" + keepAliveCountMax);
+                getKeepAliveOptions(keepAliveInterval, keepAliveCountMax);
+        }
+
+        @NonNull
+        private static String getKeepAliveOptions(int keepAliveInterval, int keepAliveCountMax) {
+            return keepAliveInterval <= 0 ? "" : " -o ServerAliveInterval=" + keepAliveInterval + " -o ServerAliveCountMax=" + keepAliveCountMax;
+        }
+
+        /**
+         * How the connection reaches the host: through another host with `ssh -W`, or through a
+         * SOCKS5 or HTTP proxy with the proxy connector of the app. Empty for a direct connection.
+         *
+         * @param jump The host of {@link #jumpHost}, {@code null} if none.
+         * @param proxyConnector The path of the proxy connector script, see {@link TerminowProxy}.
+         */
+        @NonNull
+        public String getRouteOptions(@Nullable Host jump, @NonNull String proxyConnector, int keepAliveInterval, int keepAliveCountMax) {
+            String command = null;
+            if (jump != null) {
+                // The jump host never has quotes or spaces, its fields are validated like this host
+                command = "ssh" + jump.getSshOptions(keepAliveInterval, keepAliveCountMax) + " -W %h:%p " + jump.getTarget();
+            } else if (!proxyType.isEmpty() && !proxyConnector.isEmpty()) {
+                command = "bash " + proxyConnector + " " + proxyType + " " + proxyHost + " " + proxyPort + " %h %p";
+            }
+            return command == null ? "" : " -o " + shellQuote("ProxyCommand=" + command);
+        }
+
+        /** The options of the ssh session only: agent forwarding and the environment variables. */
+        @NonNull
+        private String getSessionOptions() {
+            StringBuilder options = new StringBuilder();
+            if (agentForwarding) options.append(" -A");
+            for (Map.Entry<String, String> variable : env.entrySet())
+                options.append(" -o ").append(shellQuote("SetEnv=" + variable.getKey() + "=" + quoteSetEnvValue(variable.getValue())));
+            return options.toString();
         }
 
         /** The command run in a new session to transfer files to and from the host with sftp. */
         @NonNull
         public String getSftpCommand(int keepAliveInterval, int keepAliveCountMax) {
+            return getSftpCommand(null, "", keepAliveInterval, keepAliveCountMax);
+        }
+
+        @NonNull
+        public String getSftpCommand(@Nullable Host jump, @NonNull String proxyConnector, int keepAliveInterval, int keepAliveCountMax) {
             // The option for the port of sftp is upper case
             return "sftp" + (keyPath.isEmpty() ? "" : " -i " + keyPath) + (port == 22 ? "" : " -P " + port) +
-                (keepAliveInterval <= 0 ? "" : " -o ServerAliveInterval=" + keepAliveInterval + " -o ServerAliveCountMax=" + keepAliveCountMax) +
-                " " + getTarget();
+                getKeepAliveOptions(keepAliveInterval, keepAliveCountMax) +
+                getRouteOptions(jump, proxyConnector, keepAliveInterval, keepAliveCountMax) + " " + getTarget();
         }
 
         /** The command run in a new session to only forward a port through the host, see {@link Forward#getOption()}. */
         @NonNull
         public String getForwardCommand(@NonNull Forward forward, int keepAliveInterval, int keepAliveCountMax) {
-            return "ssh -N " + forward.getOption() + getSshOptions(keepAliveInterval, keepAliveCountMax) + " " + getTarget();
+            return getForwardCommand(forward, null, "", keepAliveInterval, keepAliveCountMax);
+        }
+
+        @NonNull
+        public String getForwardCommand(@NonNull Forward forward, @Nullable Host jump, @NonNull String proxyConnector,
+                                        int keepAliveInterval, int keepAliveCountMax) {
+            return "ssh -N " + forward.getOption() + getSshOptions(keepAliveInterval, keepAliveCountMax) +
+                getRouteOptions(jump, proxyConnector, keepAliveInterval, keepAliveCountMax) + " " + getTarget();
         }
 
         /**
@@ -105,13 +176,85 @@ public class TerminowStore {
          */
         @NonNull
         public String getCommand(int keepAliveInterval, int keepAliveCountMax) {
+            return getCommand(null, "", keepAliveInterval, keepAliveCountMax);
+        }
+
+        @NonNull
+        public String getCommand(@Nullable Host jump, @NonNull String proxyConnector, int keepAliveInterval, int keepAliveCountMax) {
+            if (telnet)
+                return "telnet" + (username.isEmpty() ? "" : " -l " + username) + " " + address + " " + telnetPort;
             String target = getTarget();
             String sshOptions = getSshOptions(keepAliveInterval, keepAliveCountMax);
             if (mosh)
-                return "mosh" + (sshOptions.isEmpty() ? "" : " --ssh='ssh" + sshOptions + "'") + " " + target;
-            else
-                return "ssh" + sshOptions + " " + target;
+                // Mosh talks to the host itself over UDP, so a jump host, proxy or SetEnv does not apply
+                return "mosh" + (sshOptions.isEmpty() && !agentForwarding ? "" : " --ssh='ssh" + (agentForwarding ? " -A" : "") + sshOptions + "'") + " " + target;
+            return "ssh" + getSessionOptions() + sshOptions + getRouteOptions(jump, proxyConnector, keepAliveInterval, keepAliveCountMax) + " " + target;
         }
+
+        /**
+         * Returns {@code null} if the options of the host can be used together, otherwise the
+         * resource id of the message that says why not.
+         */
+        @Nullable
+        public Integer validateOptions(@NonNull List<Host> hosts) {
+            if (!tags.isEmpty()) for (String tag : tags) if (!isValidTag(tag)) return R.string.terminow_host_invalid_tag;
+            for (Map.Entry<String, String> variable : env.entrySet())
+                if (!isValidEnvName(variable.getKey()) || !isValidEnvValue(variable.getValue())) return R.string.terminow_host_invalid_env;
+            if (telnet && !isValidPort(telnetPort)) return R.string.terminow_host_invalid_port;
+            if (!proxyType.isEmpty()) {
+                if (!PROXY_SOCKS5.equals(proxyType) && !PROXY_HTTP.equals(proxyType)) return R.string.terminow_host_invalid_proxy;
+                if (!isValidAddress(proxyHost) || !isValidPort(proxyPort)) return R.string.terminow_host_invalid_proxy;
+            }
+            if (!jumpHost.isEmpty()) {
+                if (jumpHost.equals(getKey())) return R.string.terminow_host_jump_self;
+                Host jump = findHost(hosts, jumpHost);
+                if (jump == null) return R.string.terminow_host_jump_missing;
+                if (jump.telnet) return R.string.terminow_host_jump_telnet;
+            }
+            if (!jumpHost.isEmpty() && !proxyType.isEmpty()) return R.string.terminow_host_jump_and_proxy;
+            if (mosh && (!jumpHost.isEmpty() || !proxyType.isEmpty())) return R.string.terminow_host_mosh_route;
+            if (mosh && !env.isEmpty()) return R.string.terminow_host_mosh_env;
+            if (telnet && (mosh || agentForwarding || !jumpHost.isEmpty() || !proxyType.isEmpty() || !env.isEmpty() || !keyPath.isEmpty()))
+                return R.string.terminow_host_telnet_options;
+            return null;
+        }
+    }
+
+    /** The host with the {@link Host#getKey()}, {@code null} if none. */
+    @Nullable
+    public static Host findHost(@NonNull List<Host> hosts, @NonNull String key) {
+        for (Host host : hosts) if (host.getKey().equals(key)) return host;
+        return null;
+    }
+
+    /** A shell word for any text, in single quotes. */
+    @NonNull
+    static String shellQuote(@NonNull String value) {
+        return "'" + value.replace("'", "'\\''") + "'";
+    }
+
+    /** A value of `SetEnv` in double quotes if it has spaces or quotes, as ssh_config parses it. */
+    @NonNull
+    static String quoteSetEnvValue(@NonNull String value) {
+        if (!value.isEmpty() && !value.matches(".*[\\s\"'\\\\].*")) return value;
+        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+    }
+
+    private static final Pattern TAG_PATTERN = Pattern.compile("[^\\p{Cntrl},]{1,32}");
+    private static final Pattern ENV_NAME_PATTERN = Pattern.compile("[A-Za-z_][A-Za-z0-9_]{0,63}");
+
+    public static boolean isValidTag(@Nullable String tag) {
+        return tag != null && !tag.trim().isEmpty() && TAG_PATTERN.matcher(tag).matches();
+    }
+
+    public static boolean isValidEnvName(@Nullable String name) {
+        return name != null && ENV_NAME_PATTERN.matcher(name).matches();
+    }
+
+    public static boolean isValidEnvValue(@Nullable String value) {
+        if (value == null || value.length() > 1024) return false;
+        for (int i = 0; i < value.length(); i++) if (Character.isISOControl(value.charAt(i))) return false;
+        return true;
     }
 
     /** A port forwarded through a host with ssh. */
@@ -280,19 +423,10 @@ public class TerminowStore {
             JSONArray array = new JSONArray(mPreferences.getString(ns(KEY_HOSTS), "[]"));
             for (int i = 0; i < array.length(); i++) {
                 JSONObject object = array.getJSONObject(i);
-                Host host = new Host();
-                host.label = object.optString("label");
-                host.address = object.optString("address");
-                host.port = object.optInt("port", 22);
-                host.username = object.optString("username");
-                host.mosh = object.optBoolean("mosh");
-                host.keyPath = object.optString("keyPath");
-                host.group = object.optString("group");
-                host.startupSnippet = object.optString("startupSnippet");
+                Host host = hostFromJson(object);
                 host.password = decryptPassword(object.optString("password"));
                 // Never run anything from storage that would not have passed validation when saved
-                if (isValidAddress(host.address) && isValidUsername(host.username) && isValidPort(host.port) &&
-                    isValidKeyPath(host.keyPath))
+                if (isRunnable(host))
                     hosts.add(host);
             }
         } catch (JSONException e) {
@@ -305,15 +439,7 @@ public class TerminowStore {
         JSONArray array = new JSONArray();
         try {
             for (Host host : hosts) {
-                JSONObject object = new JSONObject();
-                object.put("label", host.label);
-                object.put("address", host.address);
-                object.put("port", host.port);
-                object.put("username", host.username);
-                object.put("mosh", host.mosh);
-                object.put("keyPath", host.keyPath);
-                object.put("group", host.group);
-                object.put("startupSnippet", host.startupSnippet);
+                JSONObject object = hostToJson(host);
                 object.put("password", encryptPassword(host.password));
                 array.put(object);
             }
@@ -322,6 +448,101 @@ public class TerminowStore {
             return;
         }
         putVaultList(KEY_HOSTS, array.toString());
+    }
+
+    /** The hosts of a vault, which may not be the one that is shown. "" is the personal vault. */
+    @NonNull
+    public List<Host> getHostsIn(@NonNull String scope) {
+        String previous = sVaultScope.get();
+        sVaultScope.set(scope);
+        try {
+            return getHosts();
+        } finally {
+            sVaultScope.set(previous);
+        }
+    }
+
+    public void setHostsIn(@NonNull String scope, @NonNull List<Host> hosts) {
+        String previous = sVaultScope.get();
+        sVaultScope.set(scope);
+        try {
+            setHosts(hosts);
+        } finally {
+            sVaultScope.set(previous);
+        }
+    }
+
+    /** A host without its password, which is stored encrypted or synced in clear by the caller. */
+    @NonNull
+    static JSONObject hostToJson(@NonNull Host host) throws JSONException {
+        JSONObject object = new JSONObject();
+        object.put("label", host.label);
+        object.put("address", host.address);
+        object.put("port", host.port);
+        object.put("username", host.username);
+        object.put("mosh", host.mosh);
+        object.put("keyPath", host.keyPath);
+        object.put("group", host.group);
+        object.put("startupSnippet", host.startupSnippet);
+        object.put("tags", new JSONArray(host.tags));
+        object.put("backspaceSendsCtrlH", host.backspaceSendsCtrlH);
+        object.put("telnet", host.telnet);
+        object.put("telnetPort", host.telnetPort);
+        object.put("agentForwarding", host.agentForwarding);
+        object.put("jumpHost", host.jumpHost);
+        object.put("proxyType", host.proxyType);
+        object.put("proxyHost", host.proxyHost);
+        object.put("proxyPort", host.proxyPort);
+        JSONObject env = new JSONObject();
+        for (Map.Entry<String, String> variable : host.env.entrySet()) env.put(variable.getKey(), variable.getValue());
+        object.put("env", env);
+        object.put("colorScheme", host.colorScheme);
+        return object;
+    }
+
+    /** A host from {@link #hostToJson}, also from an older version without the newer fields. */
+    @NonNull
+    static Host hostFromJson(@NonNull JSONObject object) {
+        Host host = new Host();
+        host.label = object.optString("label");
+        host.address = object.optString("address");
+        host.port = object.optInt("port", 22);
+        host.username = object.optString("username");
+        host.mosh = object.optBoolean("mosh");
+        host.keyPath = object.optString("keyPath");
+        host.group = object.optString("group");
+        host.startupSnippet = object.optString("startupSnippet");
+        JSONArray tags = object.optJSONArray("tags");
+        for (int i = 0; tags != null && i < tags.length(); i++) host.tags.add(tags.optString(i));
+        host.backspaceSendsCtrlH = object.optBoolean("backspaceSendsCtrlH");
+        host.telnet = object.optBoolean("telnet");
+        host.telnetPort = object.optInt("telnetPort", 23);
+        host.agentForwarding = object.optBoolean("agentForwarding");
+        host.jumpHost = object.optString("jumpHost");
+        host.proxyType = object.optString("proxyType");
+        host.proxyHost = object.optString("proxyHost");
+        host.proxyPort = object.optInt("proxyPort");
+        JSONObject env = object.optJSONObject("env");
+        JSONArray names = env != null ? env.names() : null;
+        for (int i = 0; names != null && i < names.length(); i++) host.env.put(names.optString(i), env.optString(names.optString(i)));
+        host.colorScheme = object.optString("colorScheme");
+        return host;
+    }
+
+    /**
+     * Whether a stored or synced host would have passed validation when it was saved. Anything
+     * else is never run, since its fields end up in a command.
+     */
+    static boolean isRunnable(@NonNull Host host) {
+        if (!isValidAddress(host.address) || !isValidUsername(host.username) || !isValidPort(host.port) || !isValidKeyPath(host.keyPath))
+            return false;
+        for (Map.Entry<String, String> variable : host.env.entrySet())
+            if (!isValidEnvName(variable.getKey()) || !isValidEnvValue(variable.getValue())) return false;
+        if (host.telnet && !isValidPort(host.telnetPort)) return false;
+        if (!host.proxyType.isEmpty() && (!(Host.PROXY_SOCKS5.equals(host.proxyType) || Host.PROXY_HTTP.equals(host.proxyType)) ||
+            !isValidAddress(host.proxyHost) || !isValidPort(host.proxyPort))) return false;
+        // The jump host is looked up by key among the saved hosts, which are validated themselves
+        return host.jumpHost.isEmpty() || host.jumpHost.length() <= 300;
     }
 
     @NonNull
@@ -1065,9 +1286,7 @@ public class TerminowStore {
             JSONObject data = TerminowVaultData.empty();
             JSONArray hosts = data.getJSONArray("hosts");
             for (Host host : getHosts()) {
-                hosts.put(new JSONObject().put("label", host.label).put("address", host.address).put("port", host.port)
-                    .put("username", host.username).put("mosh", host.mosh).put("keyPath", host.keyPath).put("group", host.group)
-                    .put("startupSnippet", host.startupSnippet).put("password", host.password));
+                hosts.put(hostToJson(host).put("password", host.password));
             }
             data.put("groups", new JSONArray(getGroups()));
             JSONArray snippets = data.getJSONArray("snippets");
@@ -1099,15 +1318,7 @@ public class TerminowStore {
             for (int i = 0; hostArray != null && i < hostArray.length(); i++) {
                 JSONObject object = hostArray.optJSONObject(i);
                 if (object == null) continue;
-                Host host = new Host();
-                host.label = object.optString("label");
-                host.address = object.optString("address");
-                host.port = object.optInt("port", 22);
-                host.username = object.optString("username");
-                host.mosh = object.optBoolean("mosh");
-                host.keyPath = object.optString("keyPath");
-                host.group = object.optString("group");
-                host.startupSnippet = object.optString("startupSnippet");
+                Host host = hostFromJson(object);
                 host.password = object.optString("password");
                 hosts.add(host);
             }

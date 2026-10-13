@@ -370,4 +370,15 @@ public final class KeyHandler {
         }
         return start + (";" + modifier) + lastChar;
     }
+
+    /** The code of the Backspace key with DEL (^?) and Ctrl-H (^H) swapped, for hosts that use ^H. */
+    public static String swapBackspace(String code) {
+        StringBuilder swapped = new StringBuilder(code.length());
+        for (int i = 0; i < code.length(); i++) {
+            char c = code.charAt(i);
+            swapped.append(c == '\u007F' ? '\u0008' : c == '\u0008' ? '\u007F' : c);
+        }
+        return swapped.toString();
+    }
+
 }

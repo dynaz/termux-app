@@ -921,6 +921,9 @@ public final class TerminalView extends View {
         TerminalEmulator term = mTermSession.getEmulator();
         String code = KeyHandler.getCode(keyCode, keyMod, term.isCursorKeysApplicationMode(), term.isKeypadApplicationMode());
         if (code == null) return false;
+        // A host that wants ^H for Backspace gets it, and Ctrl+Backspace then sends DEL
+        if (keyCode == KeyEvent.KEYCODE_DEL && mTermSession.getBackspaceSendsCtrlH())
+            code = KeyHandler.swapBackspace(code);
         mTermSession.write(code);
         return true;
     }
