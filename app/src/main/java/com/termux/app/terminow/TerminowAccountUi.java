@@ -93,8 +93,9 @@ public class TerminowAccountUi {
             boolean hasPlay = play != null && play.optJSONObject("google_play") != null;
             if (hasPlay)
                 rows.addRow(R.string.terminow_premium_manage, mActivity.getString(R.string.terminow_premium_manage_summary), this::openManage);
-            // Never offered while a purchase waits for its payment or its check
-            if (!isPremium(mStore) && !TerminowPlayPurchases.isPurchaseInProgress(mStore))
+            // Never offered while a purchase waits for its payment or its check, or when the
+            // build can not have a purchase verified: a payment would never become Premium
+            if (!isPremium(mStore) && !TerminowPlayPurchases.isPurchaseInProgress(mStore) && mAccount.hasFirebaseBackend())
                 rows.addRow(R.string.terminow_premium_get, mActivity.getString(R.string.terminow_premium_get_summary), this::buyPremium);
             rows.addRow(R.string.terminow_premium_restore, mActivity.getString(R.string.terminow_premium_restore_summary), this::restorePurchases);
         }
@@ -422,6 +423,10 @@ public class TerminowAccountUi {
         }
         if (!session.emailVerified) {
             showVerify(session);
+            return;
+        }
+        if (!mAccount.hasFirebaseBackend()) {
+            showMessage(R.string.terminow_premium_choose_title, mActivity.getString(R.string.terminow_premium_not_set_up));
             return;
         }
         // A purchase that waits for its payment or its check is never bought again

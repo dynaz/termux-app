@@ -48,4 +48,5 @@
     <string name="terminow_account_link_button">Link</string>
     <string name="terminow_account_link_code_invalid">Enter the 8 characters of the code</string>
     <string name="terminow_account_linked">The client account is linked to this TermiNow account.</string>
+    <string name="terminow_premium_not_set_up">Buying Premium with Google Play is not available in this version yet. Nothing was charged. (BACKEND_NOT_CONFIGURED)</string>
 </resources>

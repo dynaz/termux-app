@@ -33,4 +33,5 @@
     <string name="terminow_account_link_button">เชื่อม</string>
     <string name="terminow_account_link_code_invalid">ใส่รหัส 8 ตัวอักษร</string>
     <string name="terminow_account_linked">เชื่อมบัญชีลูกค้ากับบัญชี TermiNow นี้แล้ว</string>
+    <string name="terminow_premium_not_set_up">ยังซื้อ Premium ผ่าน Google Play ในเวอร์ชันนี้ไม่ได้ ไม่มีการเรียกเก็บเงิน (BACKEND_NOT_CONFIGURED)</string>
 </resources>
