@@ -170,6 +170,11 @@ public class TerminowPtyService extends Service {
                 Logger.logError(LOG_TAG, "Refused a new session, " + MAX_SESSIONS + " are running");
                 return;
             }
+            // The environment is installed when the app is opened the first time
+            if (!new java.io.File(TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH, "bash").isFile()) {
+                PtySession.reportFailure(port, token, id, getString(R.string.terminow_pty_not_installed));
+                return;
+            }
             String executable = intent.getStringExtra(EXTRA_EXECUTABLE);
             if (executable == null || executable.isEmpty())
                 executable = TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH + "/bash";
@@ -376,7 +381,8 @@ public class TerminowPtyService extends Service {
         private static Socket connect(int port, @NonNull String token) {
             Socket socket = new Socket();
             try {
-                socket.connect(new InetSocketAddress(InetAddress.getLoopbackAddress(), port), 5000);
+                // 127.0.0.1, not getLoopbackAddress(), which is ::1 on Android
+                socket.connect(new InetSocketAddress(InetAddress.getByAddress(new byte[]{127, 0, 0, 1}), port), 5000);
                 socket.setTcpNoDelay(true);
                 // The token goes first, so the app knows who connected
                 socket.getOutputStream().write(("TERMINOW-PTY " + PROTOCOL_VERSION + " " + token + "\n").getBytes(StandardCharsets.UTF_8));
