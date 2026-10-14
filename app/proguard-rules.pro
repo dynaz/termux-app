@@ -20,3 +20,8 @@
 -dontwarn com.sun.jna.**
 -dontwarn org.slf4j.**
 -dontwarn org.apache.logging.log4j.**
+
+# YubiKit (FIDO2 security keys of the keychain): a compile-time FindBugs annotation, and its
+# classes kept whole, since its sessions and CBOR are not tested shrunk on devices
+-dontwarn edu.umd.cs.findbugs.annotations.**
+-keep class com.yubico.yubikit.** { *; }
