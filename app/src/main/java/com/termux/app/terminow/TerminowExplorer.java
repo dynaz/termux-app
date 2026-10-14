@@ -1918,7 +1918,7 @@ public class TerminowExplorer {
     }
 
     @NonNull
-    private TerminowSftpFs sftpFor(@NonNull TerminowStore.Host saved) {
+    TerminowSftpFs sftpFor(@NonNull TerminowStore.Host saved) {
         String id = "sftp:" + saved.getKey();
         // With the username, password and key of its identity
         TerminowStore.Host host = TerminowStore.resolve(saved, mStore.getIdentities());

@@ -95,7 +95,13 @@ public class TermuxTerminalExtraKeys extends TerminalExtraKeys {
             else
                 drawerLayout.openDrawer(Gravity.LEFT);
         } else if ("PASTE".equals(key)) {
-            if(mTermuxTerminalSessionActivityClient != null)
+            // The paperclip: paste text, or upload files to /tmp of the terminal
+            if (mActivity.getTerminowHome() != null)
+                mActivity.getTerminowHome().showAttachMenu(view, () -> {
+                    if (mTermuxTerminalSessionActivityClient != null)
+                        mTermuxTerminalSessionActivityClient.onPasteTextFromClipboard(null);
+                });
+            else if (mTermuxTerminalSessionActivityClient != null)
                 mTermuxTerminalSessionActivityClient.onPasteTextFromClipboard(null);
         } else if ("SNIPPETS".equals(key)) {
             if (mActivity.getTerminowHome() != null)

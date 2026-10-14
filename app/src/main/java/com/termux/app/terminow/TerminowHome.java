@@ -70,6 +70,11 @@ import com.termux.terminal.TerminalSession;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
+import com.termux.app.terminow.files.TerminowSftpFs;
+import com.termux.app.terminow.files.TerminowFs;
+import com.termux.app.terminow.linux.TerminowLinuxFs;
+import com.termux.app.terminow.linux.TerminowLinuxEnv;
+import java.io.OutputStream;
 import java.io.File;
 import java.lang.ref.WeakReference;
 import java.io.FileInputStream;
@@ -109,6 +114,7 @@ public class TerminowHome {
     /** The request code for the file picker to import a key. */
     private static final int REQUEST_IMPORT_KEY = 2001;
     private static final int REQUEST_IMPORT_CERTIFICATE = 2002;
+    private static final int REQUEST_UPLOAD_TMP = 2003;
     /** A certificate is one line of some kilobytes. */
     private static final int CERTIFICATE_MAX_SIZE = 64 * 1024;
 
@@ -178,6 +184,8 @@ public class TerminowHome {
     private final TextView mSortView;
     /** The key that a certificate file that is being picked is for. */
     @Nullable private KeyItem mCertificateKey;
+    /** The terminal that files that are being picked are uploaded for. */
+    @Nullable private WeakReference<TerminalSession> mUploadSession;
     private final TextView mSectionTitleView;
     private final View mActionsView;
     private final TextView mEmptyView;
@@ -2646,6 +2654,18 @@ public class TerminowHome {
     public boolean onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         if (mExplorer.onActivityResult(requestCode, resultCode, data)) return true;
         if (mFiles.onActivityResult(requestCode, resultCode, data)) return true;
+        if (requestCode == REQUEST_UPLOAD_TMP) {
+            TerminalSession session = mUploadSession != null ? mUploadSession.get() : null;
+            mUploadSession = null;
+            List<Uri> uris = new ArrayList<>();
+            if (resultCode == Activity.RESULT_OK && data != null) {
+                if (data.getClipData() != null)
+                    for (int i = 0; i < data.getClipData().getItemCount(); i++) uris.add(data.getClipData().getItemAt(i).getUri());
+                else if (data.getData() != null) uris.add(data.getData());
+            }
+            if (session != null && !uris.isEmpty()) uploadToTmp(session, uris);
+            return true;
+        }
         if (requestCode == REQUEST_IMPORT_CERTIFICATE) {
             KeyItem key = mCertificateKey;
             mCertificateKey = null;
@@ -2828,6 +2848,163 @@ public class TerminowHome {
     private interface FormSaver {
         /** Save the form, returns {@code false} if the form is invalid and the dialog should stay open. */
         boolean save();
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // The paperclip of the extra keys: paste text, or upload files to /tmp of the terminal
+    // ---------------------------------------------------------------------------------------
+
+    /** The menu of the paperclip key, above it. */
+    public void showAttachMenu(@NonNull View anchor, @NonNull Runnable paste) {
+        LinearLayout menu = new LinearLayout(mActivity);
+        menu.setOrientation(LinearLayout.VERTICAL);
+        menu.setBackgroundResource(R.drawable.terminow_menu);
+        menu.setPadding(0, dp(8), 0, dp(8));
+        PopupWindow popup = new PopupWindow(menu, dp(280), ViewGroup.LayoutParams.WRAP_CONTENT, true);
+        popup.setElevation(dp(8));
+        popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        addMenuItem(menu, popup, R.drawable.ic_terminow_paste, R.string.terminow_attach_paste, paste);
+        addMenuItem(menu, popup, R.drawable.ic_terminow_import, R.string.terminow_attach_upload, this::pickFilesForTmp);
+        menu.measure(View.MeasureSpec.makeMeasureSpec(dp(280), View.MeasureSpec.EXACTLY), View.MeasureSpec.UNSPECIFIED);
+        popup.showAsDropDown(anchor, 0, -anchor.getHeight() - menu.getMeasuredHeight() - dp(8));
+    }
+
+    private void pickFilesForTmp() {
+        TerminalSession session = mActivity.getCurrentSession();
+        if (session == null) return;
+        mUploadSession = new WeakReference<>(session);
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        try {
+            mActivity.startActivityForResult(intent, REQUEST_UPLOAD_TMP);
+        } catch (Exception e) {
+            mUploadSession = null;
+            mActivity.showToast(mActivity.getString(R.string.terminow_attach_failed, e.getMessage()), true);
+        }
+    }
+
+    /** A file name that is safe on any system and in a shell, like "My photo (1).jpg" to "My_photo_1_.jpg". */
+    @NonNull
+    static String safeUploadName(@Nullable String name) {
+        String base = name == null ? "" : name.substring(name.lastIndexOf('/') + 1);
+        base = base.replaceAll("[^A-Za-z0-9._-]", "_").replaceAll("_+", "_").replaceAll("^[.-]+", "");
+        if (base.length() > 120) base = base.substring(base.length() - 120);
+        return base.isEmpty() ? "upload" : base;
+    }
+
+    /** The name with "-1", "-2"... before the extension, for one that is taken. */
+    @NonNull
+    static String numberedName(@NonNull String name, int number) {
+        if (number == 0) return name;
+        int dot = name.lastIndexOf('.');
+        return dot > 0 ? name.substring(0, dot) + "-" + number + name.substring(dot) : name + "-" + number;
+    }
+
+    /** Where files of a terminal go: its environment's /tmp, its host's /tmp over SFTP, or $PREFIX/tmp. */
+    private interface UploadTarget {
+        /** Write a new file, never replacing one; returns its path as the terminal sees it. */
+        @NonNull String write(@NonNull String name, @NonNull InputStream in) throws IOException;
+    }
+
+    @NonNull
+    private UploadTarget uploadTargetOf(@NonNull TerminalSession session) throws IOException {
+        TerminowLauncher.SessionInfo info = mLauncher.getSessionInfo(session);
+        String environment = info != null ? info.environmentKey : null;
+        if (environment != null && !TerminowMcpTargets.TARGET_TERMINOW.equals(environment)) {
+            TerminowLinuxEnv env = mLinuxUi.getRegistry().get(environment);
+            if (env == null || !env.isInstalled()) throw new IOException("The environment " + environment + " is not installed");
+            // The guest's own /tmp, resolved like the guest sees it, never through a link out of it
+            TerminowLinuxFs fs = mLinuxUi.filesOf(env);
+            return (name, in) -> {
+                TerminowFs.Node tmp = fs.nodeOf("/tmp");
+                for (int i = 0; ; i++) {
+                    String candidate = numberedName(name, i);
+                    if (fs.find(tmp, candidate) != null) continue;
+                    try (OutputStream out = fs.openOutput(tmp, candidate, false)) {
+                        copy(in, out);
+                    }
+                    return "/tmp/" + candidate;
+                }
+            };
+        }
+        if (environment == null && info != null && ("ssh".equals(info.tool) || "mosh".equals(info.tool))) {
+            TerminowStore.Host host = getHost(info.environmentLabel);
+            if (host == null) throw new IOException("The host " + info.environmentLabel + " is not saved");
+            TerminowSftpFs fs = mExplorer.sftpFor(host);
+            return (name, in) -> {
+                fs.connect();
+                TerminowFs.Node tmp = fs.getDirectory("/tmp");
+                for (int i = 0; ; i++) {
+                    String candidate = numberedName(name, i);
+                    if (fs.find(tmp, candidate) != null) continue;
+                    try (OutputStream out = fs.openOutput(tmp, candidate, false)) {
+                        copy(in, out);
+                    }
+                    return "/tmp/" + candidate;
+                }
+            };
+        }
+        File tmp = new File(TermuxConstants.TERMUX_PREFIX_DIR_PATH, "tmp");
+        return (name, in) -> {
+            if (!tmp.isDirectory() && !tmp.mkdirs()) throw new IOException("Could not create " + tmp);
+            for (int i = 0; ; i++) {
+                File file = new File(tmp, numberedName(name, i));
+                if (file.exists()) continue;
+                try (OutputStream out = new java.io.FileOutputStream(file)) {
+                    copy(in, out);
+                }
+                return file.getAbsolutePath();
+            }
+        };
+    }
+
+    private static void copy(@NonNull InputStream in, @NonNull OutputStream out) throws IOException {
+        byte[] buffer = new byte[64 * 1024];
+        int read;
+        while ((read = in.read(buffer)) != -1) out.write(buffer, 0, read);
+    }
+
+    /**
+     * Copy picked files to /tmp of the terminal, then type their paths at its prompt, without
+     * Enter, for the user to use in a command.
+     */
+    private void uploadToTmp(@NonNull TerminalSession session, @NonNull List<Uri> uris) {
+        mActivity.showToast(mActivity.getResources().getQuantityString(R.plurals.terminow_attach_uploading, uris.size(), uris.size()), false);
+        new Thread(() -> {
+            List<String> paths = new ArrayList<>();
+            String error = null;
+            try {
+                UploadTarget target = uploadTargetOf(session);
+                for (Uri uri : uris) {
+                    String name = null;
+                    try (Cursor cursor = mActivity.getContentResolver().query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+                        if (cursor != null && cursor.moveToFirst() && !cursor.isNull(0)) name = cursor.getString(0);
+                    }
+                    try (InputStream in = mActivity.getContentResolver().openInputStream(uri)) {
+                        if (in == null) throw new IOException("Failed to open the file");
+                        paths.add(target.write(safeUploadName(name != null ? name : uri.getLastPathSegment()), in));
+                    }
+                }
+            } catch (IOException | RuntimeException e) {
+                Logger.logStackTraceWithMessage(LOG_TAG, "Failed to upload to /tmp", e);
+                error = String.valueOf(e.getMessage());
+            }
+            String finalError = error;
+            mActivity.runOnUiThread(() -> {
+                if (!paths.isEmpty() && session.isRunning()) {
+                    StringBuilder text = new StringBuilder();
+                    for (String path : paths) text.append(path.matches("[A-Za-z0-9._/~+-]+") ? path : TerminowStore.shellQuote(path)).append(' ');
+                    session.write(text.toString());
+                }
+                if (finalError != null)
+                    mActivity.showToast(mActivity.getString(R.string.terminow_attach_failed, finalError), true);
+                else
+                    mActivity.showToast(mActivity.getResources().getQuantityString(R.plurals.terminow_attach_uploaded, paths.size(), paths.size(),
+                        paths.isEmpty() ? "" : paths.get(0).substring(0, paths.get(0).lastIndexOf('/') + 1)), false);
+            });
+        }, "TerminowUploadTmp").start();
     }
 
     // ---------------------------------------------------------------------------------------

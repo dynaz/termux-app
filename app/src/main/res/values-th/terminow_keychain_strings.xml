@@ -65,4 +65,13 @@
     <string name="terminow_key_fido_other_key">คีย์ความปลอดภัยนี้ไม่มีคีย์นี้ ใช้คีย์ที่ใช้สร้าง</string>
     <string name="terminow_key_fido_not_touched">ไม่ได้แตะคีย์ความปลอดภัยภายในเวลาที่กำหนด</string>
     <string name="terminow_key_fido_error">คีย์ความปลอดภัยแจ้งข้อผิดพลาด: %1$s</string>
+    <string name="terminow_attach_paste">วางข้อความ</string>
+    <string name="terminow_attach_upload">อัปโหลดไฟล์ไปที่ /tmp</string>
+    <string name="terminow_attach_failed">อัปโหลดไม่สำเร็จ: %1$s</string>
+    <plurals name="terminow_attach_uploading">
+        <item quantity="other">กำลังอัปโหลด %d ไฟล์…</item>
+    </plurals>
+    <plurals name="terminow_attach_uploaded">
+        <item quantity="other">อัปโหลด %1$d ไฟล์ไปที่ %2$s แล้ว พาธอยู่ที่พรอมต์</item>
+    </plurals>
 </resources>
