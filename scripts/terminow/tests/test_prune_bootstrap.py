@@ -38,7 +38,8 @@ def make_bootstrap(path):
         ).encode(),
         "var/lib/dpkg/info/dpkg.list": "\n".join([PREFIX, PREFIX + "/bin", PREFIX + "/bin/dpkg", PREFIX + "/share",
                                                    PREFIX + "/share/doc", PREFIX + "/share/doc/dpkg", PREFIX + "/share/doc/dpkg/README"]).encode(),
-        "var/lib/dpkg/info/dpkg-perl.list": "\n".join([PREFIX, PREFIX + "/share", PREFIX + "/share/perl5", PREFIX + "/share/perl5/Dpkg",
+        # Directories with a trailing slash, as the bootstrap script of termux-packages lists them
+        "var/lib/dpkg/info/dpkg-perl.list": "\n".join([PREFIX + "/", PREFIX + "/share/", PREFIX + "/share/perl5/", PREFIX + "/share/perl5/Dpkg/",
                                                         PREFIX + "/share/perl5/Dpkg/Arch.pm", PREFIX + "/share/perl5/Dpkg/Version.pm"]).encode(),
         "var/lib/dpkg/info/dpkg-perl.md5sums": b"x",
         "var/lib/dpkg/info/dpkg-scanpackages.list": "\n".join([PREFIX + "/bin", PREFIX + "/bin/dpkg-scanpackages", PREFIX + "/bin/dpkg-scan"]).encode(),

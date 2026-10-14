@@ -62,6 +62,8 @@ def prune(archive_path, index_text, prefix, required=()):
             paths = set()
             if list_name in names:
                 for line in archive.read(list_name).decode("utf-8").splitlines():
+                    # Directories may be listed with a trailing slash
+                    line = line.rstrip("/")
                     if line == prefix or not line.startswith(prefix + "/"):
                         continue
                     paths.add(line[len(prefix) + 1:])
