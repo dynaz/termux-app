@@ -1,0 +1,24 @@
+Architectures: aarch64 all
+No-Support-for-Architecture-all: Packages
+Codename: stable
+Components: main
+Date: Wed, 14 Oct 2026 11:44:12 +0000
+Label: TermiNow
+Origin: TermiNow
+Suite: stable
+MD5Sum:
+ 319c6922de3606a1cca10a03ba9ba812           153705 main/binary-aarch64/Packages
+ b124c9e7207d6ddf96c3c37219c26969            59490 main/binary-aarch64/Packages.gz
+ ee2bc2724eb50ed7811d134e44c095c2            50740 main/binary-aarch64/Packages.xz
+SHA1:
+ 023f2372bddcc261f99349b39573a4cb1dc48217           153705 main/binary-aarch64/Packages
+ d3ca7b64ae8d26bc9656e8ed8b899d4523965fda            59490 main/binary-aarch64/Packages.gz
+ 79ba735b9234d511a4eb8671325e5b37cb12dcee            50740 main/binary-aarch64/Packages.xz
+SHA256:
+ 7dd497d19937c97337a892207714c2aadbb252ce8df269679f152f503efb2c58           153705 main/binary-aarch64/Packages
+ d5d0171eac58b77057e807febe868b2025910c7dccf43b22eb793e69df44d61f            59490 main/binary-aarch64/Packages.gz
+ fba328fbee60ea7c59bca18fd1e494faeaea93ab0a31a68db6252435b2e1f913            50740 main/binary-aarch64/Packages.xz
+SHA512:
+ 7cf3d9837b6bd4c706bee699bb410eef9e0bfb05aa4b5d37f43c3cd3957a0955e0e0d06f556c7202054f6045a6d9a6bc450ac319ea983ca51e1f10a48b04cfaa           153705 main/binary-aarch64/Packages
+ b8f15d42735cfcfffee7c98dead38bf69fb5e6c241a4dd6cace0f13c31ca7e42ab3580648e1026af2f00fc3f945c9cd19b1e2045706507a7574d164ae65ece30            59490 main/binary-aarch64/Packages.gz
+ 00fdc996b25377c4cc725134bb20063c263f1769c67673f8f41e275171c5ad27046af3c7c781b4852f7071a41dd4a13b51f5a2986722108a37422db49868b464            50740 main/binary-aarch64/Packages.xz
