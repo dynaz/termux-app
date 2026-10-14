@@ -72,6 +72,7 @@ jobs:
         run: |
           sudo apt-get install -yq --no-install-recommends apt-utils gnupg xz-utils
           python3 -I scripts/terminow/tests/test_check_repo_deps.py
+          python3 -I scripts/terminow/tests/test_prune_bootstrap.py
           ./scripts/terminow/tests/test-make-apt-repo.sh
 
       - name: Build bootstrap and packages
@@ -99,6 +100,16 @@ jobs:
         run: |
           . scripts/terminow/config.sh
           ./scripts/terminow/make-apt-repo.sh "$RUNNER_TEMP/work/termux-packages/output" "$RUNNER_TEMP/site/apt/terminow-main"
+          # The bootstrap gets every package the build made, also ones that the repository leaves
+          # out since they can never be installed, like dpkg-perl that needs clang. Leave them out
+          # of the bootstrap too, so that apt works on a new install.
+          for archive in "$RUNNER_TEMP"/work/termux-packages/output/bootstrap-*.zip; do
+            arch="$(basename "$archive" .zip)"; arch="${arch#bootstrap-}"
+            index="$(echo "$RUNNER_TEMP"/site/apt/terminow-main/dists/*/main/binary-"$arch"/Packages)"
+            python3 -I scripts/terminow/prune-bootstrap.py "$archive" "$index" "/data/data/$TERMINOW_PACKAGE_NAME/files/usr" \
+              --require apt bash coreutils dpkg termux-exec termux-tools termux-keyring
+            python3 -I scripts/terminow/check-bootstrap.py "$archive" "$TERMINOW_PACKAGE_NAME"
+          done
           # Like `pkg install` on a device, before the repository is published
           for arch in ${TERMINOW_ARCHITECTURES//,/ }; do
             ./scripts/terminow/test-repo-install.sh "$RUNNER_TEMP/site/apt/terminow-main" "$arch" ${TERMINOW_EXTRA_PACKAGES//,/ } ${TERMINOW_REPO_PACKAGES//,/ }

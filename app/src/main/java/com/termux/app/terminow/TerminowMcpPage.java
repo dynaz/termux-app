@@ -99,6 +99,11 @@ public class TerminowMcpPage {
 
     private Filter mFilter = Filter.ALL;
 
+    private static final int TAB_SERVERS = 0;
+    private static final int TAB_BROWSE = 1;
+    private int mTab = TAB_SERVERS;
+    private String mCategory = TerminowMcpCatalog.CATEGORY_ALL;
+
     /** Whether MCP server management may be used: it is part of TermiNow Premium. */
     private boolean isPremium() {
         return TerminowAccountUi.isPremium(mStore);
@@ -117,6 +122,11 @@ public class TerminowMcpPage {
         mContainer.removeAllViews();
         if (!isPremium()) {
             addLockedState();
+            return;
+        }
+        addTabs();
+        if (mTab == TAB_BROWSE) {
+            renderBrowse();
             return;
         }
         if (mProfiles.isEmpty()) {
@@ -181,6 +191,219 @@ public class TerminowMcpPage {
     private static boolean needsLogin(@NonNull TerminowMcpProfile profile) {
         return profile.testTime != 0 && !profile.testOk && (TerminowMcpClient.Failure.OAUTH_REQUIRED.name().equals(profile.testFailure) ||
             TerminowMcpClient.Failure.AUTH_FAILED.name().equals(profile.testFailure));
+    }
+
+    /** The two tabs of the page: the saved servers and the catalog. */
+    private void addTabs() {
+        LinearLayout tabs = new LinearLayout(mActivity);
+        tabs.setOrientation(LinearLayout.HORIZONTAL);
+        tabs.setPadding(0, 0, 0, dp(12));
+        int[] labels = {R.string.terminow_mcp_tab_servers, R.string.terminow_mcp_tab_browse};
+        for (int i = 0; i < labels.length; i++) {
+            int tab = i;
+            boolean selected = mTab == tab;
+            TextView view = text(mActivity.getString(labels[i]), 15, selected ? R.color.terminow_text : R.color.terminow_text_secondary);
+            view.setTypeface(selected ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+            view.setGravity(Gravity.CENTER);
+            GradientDrawable underline = new GradientDrawable();
+            underline.setColor(color(selected ? R.color.terminow_panel_accent : android.R.color.transparent));
+            LinearLayout column = new LinearLayout(mActivity);
+            column.setOrientation(LinearLayout.VERTICAL);
+            column.addView(view, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(36)));
+            View bar = new View(mActivity);
+            bar.setBackground(underline);
+            column.addView(bar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(3)));
+            column.setOnClickListener(v -> {
+                mTab = tab;
+                render();
+            });
+            column.setContentDescription(mActivity.getString(labels[i]));
+            tabs.addView(column, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        }
+        mContainer.addView(tabs, matchWrap());
+    }
+
+    /** The catalog: category chips and compact rows, like a list of plugins. */
+    private void renderBrowse() {
+        LinearLayout chips = new LinearLayout(mActivity);
+        chips.setOrientation(LinearLayout.HORIZONTAL);
+        chips.setPadding(0, 0, 0, dp(10));
+        for (String category : TerminowMcpCatalog.CATEGORIES) {
+            boolean selected = category.equals(mCategory);
+            TextView chip = text(categoryLabel(category), 13, selected ? R.color.terminow_bar_home : R.color.terminow_text);
+            chip.setTypeface(selected ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+            chip.setGravity(Gravity.CENTER);
+            chip.setPadding(dp(14), 0, dp(14), 0);
+            GradientDrawable shape = new GradientDrawable();
+            shape.setCornerRadius(dp(16));
+            shape.setColor(color(selected ? R.color.terminow_panel_accent : R.color.terminow_field));
+            chip.setBackground(shape);
+            chip.setOnClickListener(v -> {
+                mCategory = category;
+                render();
+            });
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(32));
+            params.setMarginEnd(dp(8));
+            chips.addView(chip, params);
+        }
+        android.widget.HorizontalScrollView scroll = new android.widget.HorizontalScrollView(mActivity);
+        scroll.setHorizontalScrollBarEnabled(false);
+        scroll.addView(chips);
+        mContainer.addView(scroll, matchWrap());
+
+        List<TerminowMcpCatalog.Entry> entries = TerminowMcpCatalog.search(mCategory, mQuery);
+        if (entries.isEmpty()) {
+            TextView none = text(mActivity.getString(R.string.terminow_no_results), 14, R.color.terminow_text_secondary);
+            none.setPadding(0, dp(24), 0, dp(24));
+            none.setGravity(Gravity.CENTER);
+            mContainer.addView(none, matchWrap());
+        } else {
+            int widthDp = Math.round(mActivity.getResources().getConfiguration().screenWidthDp);
+            int columns = widthDp >= 760 ? 2 : 1;
+            LinearLayout list = card();
+            list.setPadding(0, dp(4), 0, dp(4));
+            LinearLayout row = null;
+            for (int i = 0; i < entries.size(); i++) {
+                if (i % columns == 0) {
+                    row = new LinearLayout(mActivity);
+                    row.setOrientation(LinearLayout.HORIZONTAL);
+                    list.addView(row, matchWrap());
+                }
+                row.addView(createCatalogRow(entries.get(i)), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+            }
+            if (columns > 1 && entries.size() % columns != 0 && row != null)
+                row.addView(new View(mActivity), new LinearLayout.LayoutParams(0, 1, 1));
+            mContainer.addView(list, matchWrap());
+        }
+        TextView note = text(mActivity.getString(R.string.terminow_mcp_catalog_footer, TerminowMcpCatalog.CHECKED), 12, R.color.terminow_text_secondary);
+        note.setPadding(dp(4), dp(10), dp(4), dp(16));
+        mContainer.addView(note, matchWrap());
+    }
+
+    @NonNull
+    private String categoryLabel(@NonNull String category) {
+        switch (category) {
+            case TerminowMcpCatalog.CATEGORY_DEVELOPER: return mActivity.getString(R.string.terminow_mcp_category_developer);
+            case TerminowMcpCatalog.CATEGORY_PRODUCTIVITY: return mActivity.getString(R.string.terminow_mcp_category_productivity);
+            case TerminowMcpCatalog.CATEGORY_BUSINESS: return mActivity.getString(R.string.terminow_mcp_category_business);
+            case TerminowMcpCatalog.CATEGORY_DATA: return mActivity.getString(R.string.terminow_mcp_category_data);
+            case TerminowMcpCatalog.CATEGORY_CUSTOM: return mActivity.getString(R.string.terminow_mcp_category_custom);
+            default: return mActivity.getString(R.string.terminow_mcp_filter_all);
+        }
+    }
+
+    /** Whether a saved server has the endpoint of a catalog entry. */
+    private boolean isAdded(@NonNull TerminowMcpCatalog.Entry entry) {
+        if (entry.url == null) return false;
+        for (TerminowMcpProfile profile : mProfiles) if (entry.url.equals(profile.url)) return true;
+        return false;
+    }
+
+    @NonNull
+    private View createCatalogRow(@NonNull TerminowMcpCatalog.Entry entry) {
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(14), dp(10), dp(8), dp(10));
+        row.setBackgroundResource(R.drawable.terminow_action);
+        row.addView(letterIcon(entry.name, entry.color, 40), new LinearLayout.LayoutParams(dp(40), dp(40)));
+        LinearLayout texts = new LinearLayout(mActivity);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        texts.setPadding(dp(12), 0, dp(8), 0);
+        TextView name = text(entry.name, 15, R.color.terminow_text);
+        name.setTypeface(Typeface.DEFAULT_BOLD);
+        name.setSingleLine(true);
+        texts.addView(name, matchWrap());
+        String kind = entry.kind == TerminowMcpCatalog.Kind.LOCAL ? mActivity.getString(R.string.terminow_mcp_catalog_local) + " · " :
+            entry.kind == TerminowMcpCatalog.Kind.REMOTE_MANUAL ? mActivity.getString(R.string.terminow_mcp_catalog_manual) + " · " : "";
+        TextView description = text(kind + entry.description, 13, R.color.terminow_text_secondary);
+        description.setSingleLine(true);
+        description.setEllipsize(TextUtils.TruncateAt.END);
+        texts.addView(description, matchWrap());
+        row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+        TextView action;
+        if (isAdded(entry)) {
+            action = text(mActivity.getString(R.string.terminow_mcp_catalog_added), 12, R.color.terminow_text_secondary);
+        } else if (entry.canAdd()) {
+            action = text("+", 24, R.color.terminow_text);
+            action.setContentDescription(mActivity.getString(R.string.terminow_mcp_catalog_add, entry.name));
+            action.setOnClickListener(v -> showProfileDialog(null, entry));
+        } else {
+            action = text("›", 22, R.color.terminow_text_secondary);
+        }
+        action.setGravity(Gravity.CENTER);
+        row.addView(action, new LinearLayout.LayoutParams(dp(44), dp(40)));
+        row.setOnClickListener(v -> showCatalogEntry(entry));
+        return row;
+    }
+
+    /** The details of a catalog entry: what it is, where it is documented, how to sign in, and Add Server. */
+    private void showCatalogEntry(@NonNull TerminowMcpCatalog.Entry entry) {
+        StringBuilder text = new StringBuilder();
+        text.append(entry.description).append("\n\n");
+        text.append(mActivity.getString(R.string.terminow_mcp_catalog_publisher, entry.publisher)).append('\n');
+        switch (entry.kind) {
+            case REMOTE:
+                text.append(mActivity.getString(R.string.terminow_mcp_catalog_transport_http)).append('\n');
+                text.append(mActivity.getString(R.string.terminow_mcp_catalog_endpoint, entry.url)).append('\n');
+                break;
+            case REMOTE_MANUAL:
+                text.append(mActivity.getString(R.string.terminow_mcp_catalog_transport_manual)).append('\n');
+                break;
+            default:
+                text.append(mActivity.getString(R.string.terminow_mcp_catalog_transport_local)).append('\n');
+                text.append(mActivity.getString(R.string.terminow_mcp_catalog_command, TextUtils.join(" ", entry.command))).append('\n');
+        }
+        text.append(mActivity.getString(R.string.terminow_mcp_catalog_auth, entry.auth)).append('\n');
+        if (entry.oauth) text.append('\n').append(mActivity.getString(R.string.terminow_mcp_catalog_oauth_note)).append('\n');
+        if (!entry.note.isEmpty()) text.append('\n').append(entry.note).append('\n');
+        text.append('\n').append(mActivity.getString(entry.kind == TerminowMcpCatalog.Kind.REMOTE ?
+            R.string.terminow_mcp_catalog_verified : R.string.terminow_mcp_catalog_documented, TerminowMcpCatalog.CHECKED));
+        if (entry.kind == TerminowMcpCatalog.Kind.LOCAL)
+            text.append("\n\n").append(mActivity.getString(R.string.terminow_mcp_catalog_local_note));
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(entry.name)
+            .setMessage(text.toString())
+            .setNeutralButton(R.string.terminow_mcp_catalog_docs, (d, w) -> openUrl(entry.docsUrl))
+            .setNegativeButton(android.R.string.cancel, null);
+        if (entry.canAdd() && !isAdded(entry))
+            builder.setPositiveButton(R.string.terminow_mcp_catalog_add_server, (d, w) -> showProfileDialog(null, entry));
+        else if (entry.kind == TerminowMcpCatalog.Kind.LOCAL)
+            builder.setPositiveButton(R.string.terminow_mcp_catalog_copy_command, (d, w) -> {
+                ClipboardManager clipboard = (ClipboardManager) mActivity.getSystemService(Context.CLIPBOARD_SERVICE);
+                if (clipboard != null) {
+                    clipboard.setPrimaryClip(ClipData.newPlainText("MCP", "claude mcp add " + entry.id + " -- " + TextUtils.join(" ", entry.command)));
+                    mActivity.showToast(mActivity.getString(R.string.terminow_mcp_commands_copied), false);
+                }
+            });
+        builder.show();
+    }
+
+    private void openUrl(@NonNull String url) {
+        try {
+            mActivity.startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)));
+        } catch (android.content.ActivityNotFoundException e) {
+            mActivity.showToast(url, true);
+        }
+    }
+
+    /** A rounded square with the first letter of a name, in a color of its own. */
+    @NonNull
+    private View letterIcon(@NonNull String name, int background, int sizeDp) {
+        TextView icon = new TextView(mActivity);
+        icon.setText(name.isEmpty() ? "?" : name.substring(0, 1).toUpperCase(Locale.ROOT));
+        // Dark text on light colors
+        int r = (background >> 16) & 0xff, g = (background >> 8) & 0xff, b = background & 0xff;
+        icon.setTextColor((r * 299 + g * 587 + b * 114) / 1000 > 160 ? 0xFF111111 : 0xFFFFFFFF);
+        icon.setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeDp * 0.42f);
+        icon.setTypeface(Typeface.DEFAULT_BOLD);
+        icon.setGravity(Gravity.CENTER);
+        GradientDrawable shape = new GradientDrawable();
+        shape.setCornerRadius(dp(sizeDp * 0.28f));
+        shape.setColor(background);
+        icon.setBackground(shape);
+        return icon;
     }
 
     /** For free users: what Premium gives, and that nothing saved is lost. */
@@ -320,10 +543,19 @@ public class TerminowMcpPage {
         texts.addView(title);
         texts.addView(text(mActivity.getString(R.string.terminow_mcp_empty_short), 13, R.color.terminow_text_secondary));
         row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        card.addView(row, matchWrap());
+        LinearLayout buttons = new LinearLayout(mActivity);
+        buttons.setPadding(0, dp(12), 0, 0);
         TextView add = actionButton(mActivity.getString(R.string.terminow_mcp_add_short), true);
         add.setOnClickListener(v -> showProfileDialog(null));
-        row.addView(add, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(36)));
-        card.addView(row, matchWrap());
+        buttons.addView(add, actionParams());
+        TextView browse = actionButton(mActivity.getString(R.string.terminow_mcp_browse_servers), false);
+        browse.setOnClickListener(v -> {
+            mTab = TAB_BROWSE;
+            render();
+        });
+        buttons.addView(browse, actionParams());
+        card.addView(buttons, matchWrap());
         LinearLayout.LayoutParams cardParams = matchWrap();
         cardParams.bottomMargin = dp(10);
         mContainer.addView(card, cardParams);
@@ -397,7 +629,8 @@ public class TerminowMcpPage {
             text = mActivity.getString(R.string.terminow_mcp_row_not_tested);
         } else if (profile.testOk) {
             status = Status.OK;
-            text = mActivity.getResources().getQuantityString(R.plurals.terminow_mcp_row_passed, profile.testTools.size(), profile.testTools.size());
+            text = mActivity.getResources().getQuantityString(R.plurals.terminow_mcp_row_connected, profile.testTools.size(),
+                java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(new Date(profile.testTime)), profile.testTools.size());
         } else if (needsLogin(profile)) {
             status = Status.WARN;
             text = mActivity.getString(R.string.terminow_mcp_row_needs_login);
@@ -510,6 +743,14 @@ public class TerminowMcpPage {
 
     /** Show the form to add a profile, or to edit {@code existing}. */
     public void showProfileDialog(@Nullable TerminowMcpProfile existing) {
+        showProfileDialog(existing, null);
+    }
+
+    /**
+     * The form to add a server, with the fields of a catalog entry filled in to review, or to
+     * edit {@code existing}. Only the name and the documented endpoint are filled in.
+     */
+    private void showProfileDialog(@Nullable TerminowMcpProfile existing, @Nullable TerminowMcpCatalog.Entry entry) {
         if (!isPremium()) {
             requirePremium(() -> render());
             return;
@@ -644,6 +885,15 @@ public class TerminowMcpPage {
             userValue[0] = profile.containerUser;
             scopeValue[0] = profile.scope;
             projectView.setText(profile.projectDir);
+        }
+        if (profile == null && entry != null && entry.canAdd()) {
+            String name = entry.suggestedName();
+            for (int i = 2; TerminowMcpProfile.isNameTaken(mProfiles, name, null); i++) name = entry.suggestedName() + "-" + i;
+            nameView.setText(name);
+            urlView.setText(entry.url);
+            TextView from = text(mActivity.getString(R.string.terminow_mcp_catalog_prefilled, entry.name, entry.auth), 12, R.color.terminow_text_secondary);
+            from.setPadding(0, dp(4), 0, dp(4));
+            form.addView(from, 0, matchWrap());
         }
         authGroup.check(profile == null || TerminowMcpProfile.AUTH_NONE.equals(profile.authType) ? authNone.getId() :
             TerminowMcpProfile.AUTH_BEARER.equals(profile.authType) ? authBearer.getId() : authHeaders.getId());

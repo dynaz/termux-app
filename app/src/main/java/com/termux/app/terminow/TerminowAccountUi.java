@@ -119,10 +119,14 @@ public class TerminowAccountUi {
      * Check the Google Play purchases of this device when the app comes back, at most every
      * few minutes, so that a purchase whose check failed or a renewal is picked up.
      */
-    public void recoverPurchases() {
+    public void recoverPurchases(@Nullable Runnable onDone) {
         TerminowAccount.Session session = mStore.getAccount();
         if (session == null || !session.emailVerified || mBusy) return;
-        mPurchases.recover(false, error -> mOnChanged.run());
+        mPurchases.recover(false, error -> {
+            mOnChanged.run();
+            // Premium may have changed: what shows it, like the MCP page, is drawn again
+            if (onDone != null) onDone.run();
+        });
     }
 
     /** Check Premium with WHMCS and Google Play now, like tapping the Premium row. */

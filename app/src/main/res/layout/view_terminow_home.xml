@@ -129,13 +129,28 @@
                 android:gravity="center_horizontal"
                 android:orientation="vertical">
 
-                <ImageView
+                <!-- The crown marks a Premium feature, like the File Manager -->
+                <FrameLayout
                     android:layout_width="56dp"
                     android:layout_height="34dp"
-                    android:duplicateParentState="true"
-                    android:padding="6dp"
-                    android:src="@drawable/ic_terminow_mcp"
-                    tools:ignore="ContentDescription" />
+                    android:duplicateParentState="true">
+
+                    <ImageView
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:duplicateParentState="true"
+                        android:padding="6dp"
+                        android:src="@drawable/ic_terminow_mcp"
+                        tools:ignore="ContentDescription" />
+
+                    <ImageView
+                        android:layout_width="14dp"
+                        android:layout_height="14dp"
+                        android:layout_gravity="top|end"
+                        android:layout_marginEnd="6dp"
+                        android:src="@drawable/ic_terminow_crown"
+                        tools:ignore="ContentDescription" />
+                </FrameLayout>
 
                 <TextView
                     android:layout_width="wrap_content"

@@ -1087,7 +1087,7 @@ public class TerminowHome {
         mExplorer.onResume();
         mVaultsUi.onResume();
         // A purchase whose check failed, or a renewal or expiry that the server found, is picked up
-        mSettings.recoverPurchases();
+        mSettings.recoverPurchases(this::updateItems);
     }
 
     public void onStoragePermissionResult() {

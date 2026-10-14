@@ -161,7 +161,7 @@
     <string name="terminow_mcp_filter_all">All</string>
     <string name="terminow_mcp_filter_remote">Remote</string>
     <string name="terminow_mcp_filter_local">Local</string>
-    <string name="terminow_mcp_filter_passed">Test passed</string>
+    <string name="terminow_mcp_filter_passed">Connected</string>
     <string name="terminow_mcp_filter_needs_login">Needs login</string>
     <string name="terminow_mcp_empty_short">Add a remote MCP server, test it, then add it to Claude Code.</string>
     <string name="terminow_mcp_cancel_short">Cancel</string>
@@ -187,4 +187,37 @@
         <item quantity="other">Your %1$d saved servers are kept, and servers already added to Claude Code keep working there.</item>
     </plurals>
     <string name="terminow_mcp_premium_message">Managing MCP servers is part of TermiNow Premium. Your saved servers are kept, and servers already added to Claude Code keep working there.</string>
+    <!-- Tabs and the catalog -->
+    <string name="terminow_mcp_tab_servers">My Servers</string>
+    <string name="terminow_mcp_tab_browse">Browse</string>
+    <string name="terminow_mcp_browse_servers">Browse servers</string>
+    <string name="terminow_mcp_category_developer">Developer Tools</string>
+    <string name="terminow_mcp_category_productivity">Productivity</string>
+    <string name="terminow_mcp_category_business">Business</string>
+    <string name="terminow_mcp_category_data">Data</string>
+    <string name="terminow_mcp_category_custom">Custom</string>
+    <plurals name="terminow_mcp_row_connected">
+        <item quantity="one">Connected at %1$s · %2$d tool</item>
+        <item quantity="other">Connected at %1$s · %2$d tools</item>
+    </plurals>
+    <string name="terminow_mcp_catalog_footer">Endpoints come from the documentation of each provider, checked %1$s. TermiNow connects only to test a server and list its tools; it never runs a tool.</string>
+    <string name="terminow_mcp_catalog_local">Local</string>
+    <string name="terminow_mcp_catalog_manual">Set up by hand</string>
+    <string name="terminow_mcp_catalog_added">Added</string>
+    <string name="terminow_mcp_catalog_add">Add %1$s</string>
+    <string name="terminow_mcp_catalog_publisher">Publisher: %1$s</string>
+    <string name="terminow_mcp_catalog_transport_http">Transport: Streamable HTTP (remote)</string>
+    <string name="terminow_mcp_catalog_transport_manual">Transport: remote, the documentation does not give the exact URL</string>
+    <string name="terminow_mcp_catalog_transport_local">Transport: stdio (a local command)</string>
+    <string name="terminow_mcp_catalog_endpoint">Endpoint: %1$s</string>
+    <string name="terminow_mcp_catalog_command">Command: %1$s</string>
+    <string name="terminow_mcp_catalog_auth">Sign-in: %1$s</string>
+    <string name="terminow_mcp_catalog_oauth_note">TermiNow does not sign in with OAuth itself: its test shows Login required. Add the server to Claude Code and sign in there with /mcp.</string>
+    <string name="terminow_mcp_catalog_verified">The endpoint and sign-in are from the official documentation, checked %1$s.</string>
+    <string name="terminow_mcp_catalog_documented">From the official documentation, checked %1$s. Nothing is filled in that it does not give exactly.</string>
+    <string name="terminow_mcp_catalog_local_note">TermiNow can not run or test local servers yet. Copy the command to add it to Claude Code in the environment that has its runtime, like your Ubuntu.</string>
+    <string name="terminow_mcp_catalog_docs">Documentation</string>
+    <string name="terminow_mcp_catalog_add_server">Add server</string>
+    <string name="terminow_mcp_catalog_copy_command">Copy command</string>
+    <string name="terminow_mcp_catalog_prefilled">From the catalog: %1$s. Sign-in: %2$s. Review the fields before saving.</string>
 </resources>

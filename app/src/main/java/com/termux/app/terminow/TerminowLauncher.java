@@ -114,21 +114,56 @@ public class TerminowLauncher {
     /**
      * Installs proot-distro and Ubuntu, step by step in a tab that shows everything. It is only
      * started after the user saw the steps and confirmed them. The tab stays a shell afterwards.
+     *
+     * One setup runs at a time (a lock with its pid, taken over if that process is gone). Each
+     * step is skipped if it is done, so running it again continues where it failed. Ubuntu files
+     * that exist are never deleted or installed again. Success is only reported after a command
+     * ran in Ubuntu through `proot-distro login`, which is then written to
+     * $PREFIX/var/lib/terminow/ubuntu-ok.
      */
     static final String UBUNTU_SETUP_SCRIPT =
+        "state=\"$PREFIX/var/lib/terminow\"; lock=\"$PREFIX/tmp/terminow-ubuntu-setup.lock\"\n" +
+        "mkdir -p \"$state\" \"$PREFIX/tmp\"\n" +
+        "finish() { rm -rf \"$lock\"; exec bash -l; }\n" +
+        "fail() { echo \"TermiNow: $1 failed, see above. Your files are kept. Retry: start Ubuntu setup again from Open tools, it continues from this step.\"; finish; }\n" +
+        "if ! mkdir \"$lock\" 2>/dev/null; then\n" +
+        "  other=$(cat \"$lock/pid\" 2>/dev/null)\n" +
+        "  if [ -n \"$other\" ] && kill -0 \"$other\" 2>/dev/null; then echo 'TermiNow: Ubuntu setup is already running in another tab.'; exec bash -l; fi\n" +
+        "  rm -rf \"$lock\"; mkdir \"$lock\" || { echo 'TermiNow: could not start the setup'; exec bash -l; }\n" +
+        "fi\n" +
+        "echo $$ > \"$lock/pid\"\n" +
         // Bootstraps up to terminow-bootstrap-2026.10.11-r7 have dpkg-perl, which depends on clang
         // that the TermiNow repository does not have, so apt refuses to install anything. It and
         // dpkg-scanpackages, the only package that needs it, are tools to build packages.
         "if dpkg -s dpkg-perl >/dev/null 2>&1 && ! dpkg -s clang >/dev/null 2>&1; then\n" +
         "  echo 'TermiNow: removing dpkg-perl and dpkg-scanpackages, which need clang that is not available'\n" +
-        "  dpkg --remove dpkg-scanpackages dpkg-perl || { echo 'TermiNow: could not remove them, see above'; exec bash -l; }\n" +
+        "  dpkg --remove dpkg-scanpackages dpkg-perl || { echo 'TermiNow: could not remove them, see above'; finish; }\n" +
         "fi\n" +
-        "echo 'TermiNow: step 1 of 2: pkg install proot-distro'\n" +
-        "if ! pkg install -y proot-distro; then echo 'TermiNow: step 1 failed, see above'; exec bash -l; fi\n" +
-        "echo 'TermiNow: step 2 of 2: proot-distro install ubuntu'\n" +
-        "if proot-distro install ubuntu; then echo 'TermiNow: Ubuntu is installed. Open tools again to use it.';\n" +
-        "else echo 'TermiNow: step 2 failed, see above'; fi\n" +
-        "exec bash -l\n";
+        "echo 'TermiNow: step 1 of 3: pkg install proot-distro'\n" +
+        "if command -v proot-distro >/dev/null 2>&1; then echo 'TermiNow: proot-distro is installed already'\n" +
+        "elif ! pkg install -y proot-distro; then fail 'step 1'; fi\n" +
+        // proot-distro is a Python program that starts proot: say so if Python can not start programs
+        "if command -v python3 >/dev/null 2>&1; then\n" +
+        "  r=$(python3 -c 'import os, subprocess; subprocess.run([os.environ[\"PREFIX\"] + \"/bin/sh\", \"-c\", \"exit 0\"], check=True); print(\"ok\")' 2>&1)\n" +
+        "  if [ \"$r\" != ok ]; then\n" +
+        "    echo 'TermiNow: Python can not start programs in this app:'; echo \"$r\" | tail -n 3\n" +
+        "    echo \"TermiNow: LD_PRELOAD=${LD_PRELOAD:-unset} TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE=${TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE:-unset}\"\n" +
+        "    echo 'TermiNow: please send a screenshot of these lines'\n" +
+        "  fi\n" +
+        "fi\n" +
+        "echo 'TermiNow: step 2 of 3: proot-distro install ubuntu'\n" +
+        "if [ -d \"$PREFIX/var/lib/proot-distro/containers/ubuntu/rootfs\" ] || [ -d \"$PREFIX/var/lib/proot-distro/installed-rootfs/ubuntu\" ]; then\n" +
+        "  echo 'TermiNow: Ubuntu files are there already, they are kept'\n" +
+        "elif ! proot-distro install ubuntu; then fail 'step 2'; fi\n" +
+        "echo 'TermiNow: step 3 of 3: checking that Ubuntu starts'\n" +
+        "out=$(proot-distro login ubuntu -- /bin/sh -c 'echo TERMINOW_UBUNTU_OK' 2>&1)\n" +
+        "case \"$out\" in\n" +
+        "  *TERMINOW_UBUNTU_OK*) date > \"$state/ubuntu-ok\"; echo 'TermiNow: Ubuntu is installed and starts. Open tools again to use it.';;\n" +
+        "  *) echo \"$out\" | tail -n 20\n" +
+        "     echo 'TermiNow: Ubuntu is there but does not start, see above. Its files are kept. Retry: start Ubuntu setup again.'\n" +
+        "     echo 'TermiNow: only if you want to start over, run: proot-distro remove ubuntu   (this deletes everything in it)';;\n" +
+        "esac\n" +
+        "finish\n";
 
     /** The sign-in pages of Claude Code that a login session may print, nothing else is offered. */
     private static final Pattern LOGIN_URL = Pattern.compile(

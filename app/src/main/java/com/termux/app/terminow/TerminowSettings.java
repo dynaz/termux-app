@@ -395,8 +395,8 @@ public class TerminowSettings {
     }
 
     /** Check the Google Play purchases of this device, see {@link TerminowAccountUi#recoverPurchases()}. */
-    public void recoverPurchases() {
-        mAccountUi.recoverPurchases();
+    public void recoverPurchases(@Nullable Runnable onDone) {
+        mAccountUi.recoverPurchases(onDone);
     }
 
 }
