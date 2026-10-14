@@ -86,6 +86,11 @@ public class TerminowLinuxUi {
     /** Disk usage by alias, computed in the background, -1 while computing. */
     private final Map<String, Long> mUsage = new HashMap<>();
     @Nullable private TerminowLinuxInstaller mInstaller;
+    /**
+     * The install that runs in this process now, which outlives an activity: an activity that is
+     * made again must not take it for one that was killed and clean it up.
+     */
+    @Nullable private static volatile String sLiveInstall;
     @Nullable private String mInstallingAlias;
 
     public TerminowLinuxUi(@NonNull TermuxActivity activity, @NonNull TerminowStore store, @NonNull Host host) {
@@ -106,7 +111,10 @@ public class TerminowLinuxUi {
                 }
             }, mOps, () -> mInstallingAlias);
         // An install that was killed with the app is cleaned up, its folder is not an environment
-        if (mStore.getLinuxInstalling() != null) mExecutor.execute(() -> {
+        String marked = mStore.getLinuxInstalling();
+        if (marked != null && !marked.equals(sLiveInstall)) mExecutor.execute(() -> {
+            // Not if an install started meanwhile
+            if (sLiveInstall != null) return;
             String alias = newInstaller().cleanUpInterrupted();
             if (alias != null) mHandler.post(() -> {
                 mActivity.showToast(mActivity.getString(R.string.terminow_linux_cleaned_interrupted, alias), true);
@@ -153,6 +161,7 @@ public class TerminowLinuxUi {
 
             @Override
             public void set(@Nullable String alias) {
+                sLiveInstall = alias;
                 mStore.setLinuxInstalling(alias);
             }
         }, mOps);
