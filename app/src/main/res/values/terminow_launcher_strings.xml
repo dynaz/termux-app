@@ -15,7 +15,7 @@
     <string name="terminow_launcher_shell">TermiNow Shell</string>
     <string name="terminow_launcher_shell_summary">A new bash session of TermiNow, in the folder</string>
     <string name="terminow_launcher_ubuntu">Ubuntu</string>
-    <string name="terminow_launcher_ubuntu_choose">Choose it as the environment to open it or run Claude Code there</string>
+    <string name="terminow_launcher_ubuntu_choose">Open it, or choose it as the environment to run Claude Code there</string>
     <string name="terminow_launcher_ubuntu_summary">proot-distro container %1$s, user %2$s</string>
     <string name="terminow_launcher_ubuntu_missing">Ubuntu is not installed. TermiNow only installs it when you ask: Set up Ubuntu shows the two steps first, or run them yourself in a TermiNow Shell.</string>
     <string name="terminow_launcher_ubuntu_install_command">pkg install proot-distro\nproot-distro install ubuntu</string>

@@ -158,7 +158,10 @@ public class TerminowLauncher {
         "echo 'TermiNow: step 3 of 3: checking that Ubuntu starts'\n" +
         "out=$(proot-distro login ubuntu -- /bin/sh -c 'echo TERMINOW_UBUNTU_OK' 2>&1)\n" +
         "case \"$out\" in\n" +
-        "  *TERMINOW_UBUNTU_OK*) date > \"$state/ubuntu-ok\"; echo 'TermiNow: Ubuntu is installed and starts. Open tools again to use it.';;\n" +
+        // Ubuntu starts: this tab becomes its shell, no need to open it from Open tools
+        "  *TERMINOW_UBUNTU_OK*) date > \"$state/ubuntu-ok\"; rm -rf \"$lock\"\n" +
+        "     echo 'TermiNow: Ubuntu is installed and starts. Opening it now; later, open it from Open tools.'\n" +
+        "     exec proot-distro login ubuntu;;\n" +
         "  *) echo \"$out\" | tail -n 20\n" +
         "     echo 'TermiNow: Ubuntu is there but does not start, see above. Its files are kept. Retry: start Ubuntu setup again.'\n" +
         "     echo 'TermiNow: only if you want to start over, run: proot-distro remove ubuntu   (this deletes everything in it)';;\n" +
@@ -472,6 +475,10 @@ public class TerminowLauncher {
                     params.topMargin = dp(8);
                     card.addView(choose, params);
                 }
+                // Open it right away, without choosing it as the environment first
+                Environment first = firstContainer();
+                if (first != null)
+                    addButtons(card, button(R.string.terminow_launcher_open, true, () -> launchUbuntu(first)));
                 content.addView(card, cardParams());
             }
         } else {

@@ -15,7 +15,7 @@
     <string name="terminow_launcher_shell">TermiNow Shell</string>
     <string name="terminow_launcher_shell_summary">เซสชัน bash ใหม่ของ TermiNow ในโฟลเดอร์ที่เลือก</string>
     <string name="terminow_launcher_ubuntu">Ubuntu</string>
-    <string name="terminow_launcher_ubuntu_choose">เลือกเป็นสภาพแวดล้อมเพื่อเปิด หรือใช้ Claude Code ในนั้น</string>
+    <string name="terminow_launcher_ubuntu_choose">เปิดได้เลย หรือเลือกเป็นสภาพแวดล้อมเพื่อใช้ Claude Code ในนั้น</string>
     <string name="terminow_launcher_ubuntu_summary">คอนเทนเนอร์ proot-distro %1$s ผู้ใช้ %2$s</string>
     <string name="terminow_launcher_ubuntu_missing">ยังไม่ได้ติดตั้ง Ubuntu TermiNow จะติดตั้งเมื่อคุณสั่งเท่านั้น: ตั้งค่า Ubuntu จะแสดงสองขั้นตอนให้ดูก่อน หรือรันเองใน TermiNow Shell</string>
     <string name="terminow_launcher_ubuntu_install_command">pkg install proot-distro\nproot-distro install ubuntu</string>

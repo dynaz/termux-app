@@ -84,6 +84,8 @@ public class TerminowUbuntuSetupTest {
         assertTrue(out, out.split("--calls--")[1].contains("proot-distro install ubuntu"));
         assertTrue(out, out.split("--calls--")[1].contains("proot-distro login ubuntu"));
         assertTrue(out, out.contains("Ubuntu is installed and starts"));
+        // The tab becomes the Ubuntu shell
+        assertTrue(out, out.split("--calls--")[1].contains("proot-distro login ubuntu\n"));
         assertTrue(succeeded());
         assertFalse("the lock is gone", new File(mPrefix, "tmp/terminow-ubuntu-setup.lock").exists());
     }
