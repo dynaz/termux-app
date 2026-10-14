@@ -100,4 +100,12 @@ public final class TerminowLinuxCatalog {
         }
     }
 
+
+    /** The entry of a distribution, {@code null} if there is none. */
+    @androidx.annotation.Nullable
+    public static Entry find(@androidx.annotation.NonNull String distroId) {
+        for (Entry entry : ENTRIES) if (entry.distroId.equals(distroId)) return entry;
+        return null;
+    }
+
 }

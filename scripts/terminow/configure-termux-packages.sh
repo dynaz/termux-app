@@ -103,6 +103,17 @@ grep -q 'loader\.elf' packages/proot/build.sh || fail "The loader was not rename
 replace_line packages/termux-tools/build.sh '^([[:space:]]*)autoreconf -vfi$' \
 	'\1export TERMUX_APP_PACKAGE TERMUX_PREFIX TERMUX_ANDROID_HOME TERMUX_BASE_DIR="$TERMUX__ROOTFS" TERMUX_CACHE_DIR="$TERMUX_APP__DATA_DIR/cache"\n\1autoreconf -vfi'
 
+# The scripts that termux-packages generates for Python packages start pip3, py3compile and
+# py3clean with an empty LD_PRELOAD, which unloads termux-exec in that Python. The app targets an
+# API level where files in the app data directory can only be executed through termux-exec (with
+# the system linker), so that Python then fails to start any program, like py3compile running
+# bash: "PermissionError: [Errno 13] Permission denied: '.../usr/bin/bash'". Keep termux-exec.
+python_debscripts=scripts/build/termux_step_create_python_debscripts.sh
+count="$(grep -c "LD_PRELOAD=''" "$python_debscripts" || true)"
+[ "$count" = "3" ] || fail "Expected 3 commands with an empty LD_PRELOAD in '$python_debscripts' but found $count"
+sed -i "s/LD_PRELOAD='' //" "$python_debscripts"
+! grep -q "LD_PRELOAD=''" "$python_debscripts" || fail "An empty LD_PRELOAD is left in '$python_debscripts'"
+
 echo "[*] Adding the repository key to termux-keyring..."
 cp "$TERMINOW_REPO_PUBLIC_KEY_FILE" packages/termux-keyring/terminow.gpg
 replace_line packages/termux-keyring/build.sh '^([[:space:]]*)install -Dm600 "\$TERMUX_PKG_BUILDER_DIR/termux-autobuilds\.gpg" "\$GPG_SHARE_DIR"$' \

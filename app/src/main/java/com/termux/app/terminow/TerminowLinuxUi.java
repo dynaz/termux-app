@@ -131,7 +131,7 @@ public class TerminowLinuxUi {
     }
 
     @NonNull
-    private TerminowLinuxInstaller newInstaller() {
+    TerminowLinuxInstaller newInstaller() {
         return new TerminowLinuxInstaller(mRegistry, new File(mActivity.getCacheDir(), "linux-install"), new TerminowLinuxInstaller.Runner() {
             @NonNull
             @Override

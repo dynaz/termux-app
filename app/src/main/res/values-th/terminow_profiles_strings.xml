@@ -96,9 +96,6 @@
     <string name="terminow_settings_default_profile_short">ค่าเริ่มต้น…</string>
 
     <string name="terminow_launcher_ubuntu_setup">ตั้งค่า Ubuntu</string>
-    <string name="terminow_launcher_ubuntu_setup_title">ตั้งค่า Ubuntu</string>
-    <string name="terminow_launcher_ubuntu_setup_message">แท็บใหม่จะทำสองขั้นตอนนี้ และแสดงทุกอย่างที่พิมพ์ออกมา:\n\n1. pkg install proot-distro\n2. proot-distro install ubuntu\n\nขั้นที่ 2 ดาวน์โหลด Ubuntu จากอินเทอร์เน็ต หลายสิบเมกะไบต์ Ubuntu เก็บอยู่ภายใน TermiNow แยกจากแอป Termux ใด ๆ จะไม่มีการดาวน์โหลดจนกว่าคุณจะแตะ เรียกใช้</string>
-    <string name="terminow_launcher_ubuntu_setup_run">เรียกใช้</string>
     <string name="terminow_launcher_open_plain_shell">เปิดเชลล์ธรรมดา</string>
     <string name="terminow_launcher_folder_saf">นี่เป็นเอกสารจากตัวเลือกไฟล์ของ Android ไม่ใช่โฟลเดอร์ที่เชลล์เปิดได้ คัดลอกเข้า TermiNow Home ด้วยตัวจัดการไฟล์ แล้วเลือกที่นี่</string>
     <string name="terminow_launcher_login_link_title">ลิงก์ลงชื่อเข้าใช้ Claude</string>

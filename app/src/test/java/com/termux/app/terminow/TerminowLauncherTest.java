@@ -144,4 +144,16 @@ public class TerminowLauncherTest {
         assertEquals("no", state.loggedIn);
     }
 
+
+    @Test
+    public void ubuntuOpensAsItsUserInItsFolderWithItsSharedFolders() {
+        List<String> args = TerminowLauncher.ubuntuLoginArgs("ubuntu2", "dev", "/home/dev/project",
+            Arrays.asList("--bind", "/storage/emulated/0/Projects:/mnt/projects"));
+        assertEquals(Arrays.asList("login", "ubuntu2", "--user", "dev", "--work-dir", "/home/dev/project",
+            "--bind", "/storage/emulated/0/Projects:/mnt/projects"), args);
+        // Separate arguments: a folder with a space is never split or run as a command
+        assertEquals("/home/dev/my project", TerminowLauncher.ubuntuLoginArgs("ubuntu", "root", "/home/dev/my project",
+            new ArrayList<>()).get(5));
+    }
+
 }

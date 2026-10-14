@@ -111,63 +111,6 @@ public class TerminowLauncher {
     static final String CLAUDE_SCRIPT = "PATH=\"$HOME/.local/bin:$PATH\"; export PATH; exec claude \"$@\"";
 
 
-    /**
-     * Installs proot-distro and Ubuntu, step by step in a tab that shows everything. It is only
-     * started after the user saw the steps and confirmed them. The tab stays a shell afterwards.
-     *
-     * One setup runs at a time (a lock with its pid, taken over if that process is gone). Each
-     * step is skipped if it is done, so running it again continues where it failed. Ubuntu files
-     * that exist are never deleted or installed again. Success is only reported after a command
-     * ran in Ubuntu through `proot-distro login`, which is then written to
-     * $PREFIX/var/lib/terminow/ubuntu-ok.
-     */
-    static final String UBUNTU_SETUP_SCRIPT =
-        "state=\"$PREFIX/var/lib/terminow\"; lock=\"$PREFIX/tmp/terminow-ubuntu-setup.lock\"\n" +
-        "mkdir -p \"$state\" \"$PREFIX/tmp\"\n" +
-        "finish() { rm -rf \"$lock\"; exec bash -l; }\n" +
-        "fail() { echo \"TermiNow: $1 failed, see above. Your files are kept. Retry: start Ubuntu setup again from Open tools, it continues from this step.\"; finish; }\n" +
-        "if ! mkdir \"$lock\" 2>/dev/null; then\n" +
-        "  other=$(cat \"$lock/pid\" 2>/dev/null)\n" +
-        "  if [ -n \"$other\" ] && kill -0 \"$other\" 2>/dev/null; then echo 'TermiNow: Ubuntu setup is already running in another tab.'; exec bash -l; fi\n" +
-        "  rm -rf \"$lock\"; mkdir \"$lock\" || { echo 'TermiNow: could not start the setup'; exec bash -l; }\n" +
-        "fi\n" +
-        "echo $$ > \"$lock/pid\"\n" +
-        // Bootstraps up to terminow-bootstrap-2026.10.11-r7 have dpkg-perl, which depends on clang
-        // that the TermiNow repository does not have, so apt refuses to install anything. It and
-        // dpkg-scanpackages, the only package that needs it, are tools to build packages.
-        "if dpkg -s dpkg-perl >/dev/null 2>&1 && ! dpkg -s clang >/dev/null 2>&1; then\n" +
-        "  echo 'TermiNow: removing dpkg-perl and dpkg-scanpackages, which need clang that is not available'\n" +
-        "  dpkg --remove dpkg-scanpackages dpkg-perl || { echo 'TermiNow: could not remove them, see above'; finish; }\n" +
-        "fi\n" +
-        "echo 'TermiNow: step 1 of 3: pkg install proot-distro'\n" +
-        "if command -v proot-distro >/dev/null 2>&1; then echo 'TermiNow: proot-distro is installed already'\n" +
-        "elif ! pkg install -y proot-distro; then fail 'step 1'; fi\n" +
-        // proot-distro is a Python program that starts proot: say so if Python can not start programs
-        "if command -v python3 >/dev/null 2>&1; then\n" +
-        "  r=$(python3 -c 'import os, subprocess; subprocess.run([os.environ[\"PREFIX\"] + \"/bin/sh\", \"-c\", \"exit 0\"], check=True); print(\"ok\")' 2>&1)\n" +
-        "  if [ \"$r\" != ok ]; then\n" +
-        "    echo 'TermiNow: Python can not start programs in this app:'; echo \"$r\" | tail -n 3\n" +
-        "    echo \"TermiNow: LD_PRELOAD=${LD_PRELOAD:-unset} TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE=${TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE:-unset}\"\n" +
-        "    echo 'TermiNow: please send a screenshot of these lines'\n" +
-        "  fi\n" +
-        "fi\n" +
-        "echo 'TermiNow: step 2 of 3: proot-distro install ubuntu'\n" +
-        "if [ -d \"$PREFIX/var/lib/proot-distro/containers/ubuntu/rootfs\" ] || [ -d \"$PREFIX/var/lib/proot-distro/installed-rootfs/ubuntu\" ]; then\n" +
-        "  echo 'TermiNow: Ubuntu files are there already, they are kept'\n" +
-        "elif ! proot-distro install ubuntu; then fail 'step 2'; fi\n" +
-        "echo 'TermiNow: step 3 of 3: checking that Ubuntu starts'\n" +
-        "out=$(proot-distro login ubuntu -- /bin/sh -c 'echo TERMINOW_UBUNTU_OK' 2>&1)\n" +
-        "case \"$out\" in\n" +
-        // Ubuntu starts: this tab becomes its shell, no need to open it from Open tools
-        "  *TERMINOW_UBUNTU_OK*) date > \"$state/ubuntu-ok\"; rm -rf \"$lock\"\n" +
-        "     echo 'TermiNow: Ubuntu is installed and starts. Opening it now; later, open it from Open tools.'\n" +
-        "     exec proot-distro login ubuntu;;\n" +
-        "  *) echo \"$out\" | tail -n 20\n" +
-        "     echo 'TermiNow: Ubuntu is there but does not start, see above. Its files are kept. Retry: start Ubuntu setup again.'\n" +
-        "     echo 'TermiNow: only if you want to start over, run: proot-distro remove ubuntu   (this deletes everything in it)';;\n" +
-        "esac\n" +
-        "finish\n";
-
     /** The sign-in pages of Claude Code that a login session may print, nothing else is offered. */
     private static final Pattern LOGIN_URL = Pattern.compile(
         "https://(?:claude\\.ai|claude\\.com|platform\\.claude\\.com|console\\.anthropic\\.com|[a-z0-9-]+\\.anthropic\\.com)/[^\\s\"'<>`]+");
@@ -830,15 +773,19 @@ public class TerminowLauncher {
 
     /** Show the steps of installing Ubuntu, and run them in a new tab only if the user confirms. */
     private void confirmUbuntuSetup() {
-        new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
-            .setTitle(R.string.terminow_launcher_ubuntu_setup_title)
-            .setMessage(R.string.terminow_launcher_ubuntu_setup_message)
-            .setPositiveButton(R.string.terminow_launcher_ubuntu_setup_run, (d, w) -> launch("setup-ubuntu",
-                new File(mTargets.getPrefixDir(), "bin/bash").getPath(), new String[]{"-lc", UBUNTU_SETUP_SCRIPT},
-                TermuxConstants.TERMUX_HOME_DIR_PATH, mActivity.getString(R.string.terminow_launcher_tab, "Local", "Ubuntu setup"), false,
-                new SessionInfo(TerminowMcpTargets.TARGET_TERMINOW, "Local", "Ubuntu setup", TermuxConstants.TERMUX_HOME_DIR_PATH, "")))
-            .setNegativeButton(android.R.string.cancel, null)
-            .show();
+        if (mLinux == null) return;
+        dismiss();
+        new TerminowUbuntuSetupUi(mActivity, mLinux, this::openEnvironment).show();
+    }
+
+    /** Open an installed environment, like its Open button, with its user, folder and the terminal theme. */
+    private void openEnvironment(@NonNull String alias) {
+        Environment environment = environmentFor(alias);
+        if (environment == null || environment.container == null) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_ubuntu_setup_not_found, alias), true);
+            return;
+        }
+        launchUbuntu(environment);
     }
 
     @NonNull
@@ -930,12 +877,18 @@ public class TerminowLauncher {
     private void launchUbuntu(@NonNull Environment environment) {
         if (environment.container == null) return;
         String folder = getFolder(environment);
-        List<String> login = new ArrayList<>(Arrays.asList("login", environment.container.name, "--user", getUser(environment), "--work-dir", folder));
-        login.addAll(bindsOf(environment));
-        String[] args = login.toArray(new String[0]);
+        String[] args = ubuntuLoginArgs(environment.container.name, getUser(environment), folder, bindsOf(environment)).toArray(new String[0]);
         launch("ubuntu|" + environment.key + "|" + folder, new File(mTargets.getPrefixDir(), "bin/proot-distro").getPath(), args,
             TermuxConstants.TERMUX_HOME_DIR_PATH, mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), "bash"), false,
             new SessionInfo(environment.key, environment.shortName(), "bash", folder, ""));
+    }
+
+    /** The arguments of proot-distro that open a shell of an environment as a user in a folder. */
+    @NonNull
+    static List<String> ubuntuLoginArgs(@NonNull String alias, @NonNull String user, @NonNull String folder, @NonNull List<String> binds) {
+        List<String> login = new ArrayList<>(Arrays.asList("login", alias, "--user", user, "--work-dir", folder));
+        login.addAll(binds);
+        return login;
     }
 
     /**

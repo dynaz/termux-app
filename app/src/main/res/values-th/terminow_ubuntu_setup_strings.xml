@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_ubuntu_setup_title">ตั้งค่า Ubuntu</string>
+    <string name="terminow_ubuntu_setup_intro">TermiNow ตรวจสอบรันไทม์ ติดตั้ง proot-distro หากจำเป็น แล้วใช้ Ubuntu ที่ติดตั้งไว้แล้ว หรือดาวน์โหลด Ubuntu รุ่นที่กำหนดไว้ (ตรวจสอบด้วย SHA-256) และตรวจสอบว่าใช้งานได้ จะไม่ลบสิ่งที่มีอยู่</string>
+    <string name="terminow_ubuntu_setup_show_details">แสดงรายละเอียด</string>
+    <string name="terminow_ubuntu_setup_hide_details">ซ่อนรายละเอียด</string>
+    <string name="terminow_ubuntu_setup_idle">ยังไม่ได้เริ่ม</string>
+    <string name="terminow_ubuntu_setup_running_note">ปิดหน้านี้ได้ การตั้งค่าจะทำต่อขณะที่ TermiNow ทำงาน และแสดงที่นี่อีกครั้ง</string>
+    <string name="terminow_ubuntu_setup_ready">Ubuntu พร้อมใช้งาน: %1$s ชื่อ \'%2$s\' เริ่มทำงาน อ่าน /etc/os-release เปิดโฟลเดอร์หลัก และรันคำสั่งได้</string>
+    <string name="terminow_ubuntu_setup_cancelled">ยกเลิกแล้ว ไม่ได้ลบสิ่งที่มีอยู่ ลองใหม่เพื่อทำต่อ</string>
+    <string name="terminow_ubuntu_setup_failed">ล้มเหลวที่: %1$s\n%2$s</string>
+    <string name="terminow_ubuntu_setup_close">ปิด</string>
+    <string name="terminow_ubuntu_setup_copy_log">คัดลอกบันทึก</string>
+    <string name="terminow_ubuntu_setup_open">เปิด Ubuntu</string>
+    <string name="terminow_ubuntu_setup_check_again">ตรวจสอบอีกครั้ง</string>
+    <string name="terminow_ubuntu_setup_start">เริ่ม</string>
+    <string name="terminow_ubuntu_setup_retry">ลองใหม่</string>
+    <string name="terminow_ubuntu_setup_log_copied">คัดลอกบันทึกการตั้งค่าแล้ว</string>
+    <string name="terminow_ubuntu_setup_not_found">ไม่พบสภาพแวดล้อม %1$s</string>
+    <string name="terminow_ubuntu_stage_runtime">ตรวจสอบรันไทม์</string>
+    <string name="terminow_ubuntu_stage_dependencies">ติดตั้งแพ็กเกจที่ต้องใช้</string>
+    <string name="terminow_ubuntu_stage_packages">ตรวจสอบความสมบูรณ์ของแพ็กเกจ</string>
+    <string name="terminow_ubuntu_stage_downloading">ดาวน์โหลด Ubuntu</string>
+    <string name="terminow_ubuntu_stage_configuring">แตกไฟล์และตั้งค่า Ubuntu</string>
+    <string name="terminow_ubuntu_stage_verifying">ตรวจสอบ Ubuntu</string>
+    <string name="terminow_ubuntu_stage_ready">พร้อม</string>
+    <string name="terminow_ubuntu_stage_failed">ล้มเหลว</string>
+</resources>

@@ -100,9 +100,6 @@
 
     <!-- Ubuntu setup, folders, Claude sign-in -->
     <string name="terminow_launcher_ubuntu_setup">Set up Ubuntu</string>
-    <string name="terminow_launcher_ubuntu_setup_title">Set up Ubuntu</string>
-    <string name="terminow_launcher_ubuntu_setup_message">A new tab runs these two steps, and shows everything they print:\n\n1. pkg install proot-distro\n2. proot-distro install ubuntu\n\nStep 2 downloads Ubuntu from the internet, tens of megabytes. Ubuntu is kept inside TermiNow, apart from any Termux app. Nothing is downloaded until you tap Run.</string>
-    <string name="terminow_launcher_ubuntu_setup_run">Run</string>
     <string name="terminow_launcher_open_plain_shell">Open plain shell</string>
     <string name="terminow_launcher_folder_saf">This is a document of Android\'s file picker, not a folder a shell can open. Copy it into TermiNow Home with the File Manager, then choose it here.</string>
     <string name="terminow_launcher_login_link_title">Claude sign-in link</string>
