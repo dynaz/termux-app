@@ -246,7 +246,38 @@
                         android:textSize="15sp"
                         android:textStyle="bold" />
 
+                    <!-- An identity of the keychain, whose username, password and key the host logs in with -->
                     <LinearLayout style="@style/TerminowPanelFieldRow">
+
+                        <EditText
+                            android:id="@+id/terminow_host_identity"
+                            style="@style/TerminowPanelField"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:cursorVisible="false"
+                            android:focusable="false"
+                            android:hint="@string/terminow_host_identity_field"
+                            android:inputType="none" />
+
+                        <ImageButton
+                            android:id="@+id/terminow_host_identity_remove"
+                            android:layout_width="36dp"
+                            android:layout_height="36dp"
+                            android:background="@null"
+                            android:contentDescription="@string/terminow_host_identity_remove"
+                            android:src="@drawable/ic_terminow_close"
+                            android:tint="@color/terminow_text_secondary"
+                            android:visibility="gone" />
+
+                        <ImageView
+                            style="@style/TerminowPanelFieldIcon"
+                            android:contentDescription="@null"
+                            android:src="@drawable/ic_terminow_person_add" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/terminow_host_username_row"
+                        style="@style/TerminowPanelFieldRow">
 
                         <EditText
                             android:id="@+id/terminow_host_username"
@@ -262,7 +293,9 @@
                             android:src="@drawable/ic_terminow_person" />
                     </LinearLayout>
 
-                    <LinearLayout style="@style/TerminowPanelFieldRow">
+                    <LinearLayout
+                        android:id="@+id/terminow_host_password_row"
+                        style="@style/TerminowPanelFieldRow">
 
                         <EditText
                             android:id="@+id/terminow_host_password"
@@ -280,7 +313,9 @@
                             android:src="@drawable/ic_terminow_lock" />
                     </LinearLayout>
 
-                    <LinearLayout style="@style/TerminowPanelFieldRow">
+                    <LinearLayout
+                        android:id="@+id/terminow_host_key_row"
+                        style="@style/TerminowPanelFieldRow">
 
                         <!-- Not editable, tapping it shows the keychain to pick from -->
                         <EditText

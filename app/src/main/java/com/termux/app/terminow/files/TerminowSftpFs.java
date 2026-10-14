@@ -134,7 +134,12 @@ public class TerminowSftpFs implements TerminowFs {
             if (knownHosts.isFile()) jsch.setKnownHosts(knownHosts.getPath());
 
             List<File> keys = new ArrayList<>();
-            if (!mKeyPath.isEmpty()) {
+            if (com.termux.app.terminow.TerminowBiometricKeys.isAgentKeyPath(mKeyPath)) {
+                // A biometric key of the Android keystore or a FIDO2 security key, which sign after the user agrees
+                com.termux.app.terminow.TerminowSshAgent.Key key = com.termux.app.terminow.TerminowBiometricKeys.agentKeyFor(mKeyPath);
+                if (key == null) throw new IOException("The key " + mKeyPath + " is not on this phone any more");
+                jsch.addIdentity(new AgentKeyIdentity(mKeyPath, key), null);
+            } else if (!mKeyPath.isEmpty()) {
                 keys.add(resolveKey(mKeyPath));
             } else {
                 for (String name : DEFAULT_KEYS) keys.add(new File(mHome, ".ssh/" + name));
@@ -546,6 +551,61 @@ public class TerminowSftpFs implements TerminowFs {
         if (mSession != null) mSession.disconnect();
         mChannel = null;
         mSession = null;
+    }
+
+
+    /** A key that signs through {@link com.termux.app.terminow.TerminowSshAgent.Key}, like a biometric key. */
+    private static final class AgentKeyIdentity implements com.jcraft.jsch.Identity {
+        private final String mName;
+        private final com.termux.app.terminow.TerminowSshAgent.Key mKey;
+
+        AgentKeyIdentity(@NonNull String name, @NonNull com.termux.app.terminow.TerminowSshAgent.Key key) {
+            mName = name;
+            mKey = key;
+        }
+
+        @Override
+        public boolean setPassphrase(byte[] passphrase) {
+            return true;
+        }
+
+        @Override
+        public byte[] getPublicKeyBlob() {
+            return mKey.publicBlob();
+        }
+
+        @Override
+        public byte[] getSignature(byte[] data) {
+            try {
+                return mKey.sign(data, 0);
+            } catch (Exception e) {
+                return null;
+            }
+        }
+
+        @Override
+        public byte[] getSignature(byte[] data, String algorithm) {
+            return getSignature(data);
+        }
+
+        @Override
+        public String getAlgName() {
+            return new com.termux.app.terminow.TerminowSshWire.Reader(mKey.publicBlob()).text();
+        }
+
+        @Override
+        public String getName() {
+            return mName;
+        }
+
+        @Override
+        public boolean isEncrypted() {
+            return false;
+        }
+
+        @Override
+        public void clear() {
+        }
     }
 
 }

@@ -80,6 +80,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.text.DateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
@@ -107,6 +108,9 @@ public class TerminowHome {
     private static final int KEY_FILE_MAX_SIZE = 64 * 1024;
     /** The request code for the file picker to import a key. */
     private static final int REQUEST_IMPORT_KEY = 2001;
+    private static final int REQUEST_IMPORT_CERTIFICATE = 2002;
+    /** A certificate is one line of some kilobytes. */
+    private static final int CERTIFICATE_MAX_SIZE = 64 * 1024;
 
     /** How long to wait for the shell of a new session to start before giving up on sending it a command. */
     private static final int WRITE_RETRY_COUNT = 50;
@@ -170,6 +174,10 @@ public class TerminowHome {
     private final View mSettingsScrollView;
     private final TerminowSettings mSettings;
     private final EditText mSearchView;
+    /** Sorts the keychain, only shown on it. */
+    private final TextView mSortView;
+    /** The key that a certificate file that is being picked is for. */
+    @Nullable private KeyItem mCertificateKey;
     private final TextView mSectionTitleView;
     private final View mActionsView;
     private final TextView mEmptyView;
@@ -260,6 +268,12 @@ public class TerminowHome {
         mRailHosts = activity.findViewById(R.id.terminow_rail_hosts);
         mRailSnippets = activity.findViewById(R.id.terminow_rail_snippets);
         mSearchView = activity.findViewById(R.id.terminow_search);
+        mSortView = activity.findViewById(R.id.terminow_sort);
+        mSortView.setOnClickListener(this::showKeychainSort);
+        mSortView.setText("za".equals(mStore.getKeychainSort()) ? "Za" : "Az");
+        // Biometric keys sign through the agent of the app, with prompts over this activity
+        TerminowBiometricKeys.setActivity(activity);
+        TerminowBiometricKeys.startAgent();
         mSectionTitleView = activity.findViewById(R.id.terminow_section_title);
         mEmptyView = activity.findViewById(R.id.terminow_empty);
 
@@ -551,6 +565,7 @@ public class TerminowHome {
         setRailItemSelected(mRailMcp, page == PAGE_MCP);
         setRailItemSelected(mRailFiles, page == PAGE_FILES);
         mActionsView.setVisibility(page == PAGE_HOSTS ? View.VISIBLE : View.GONE);
+        mSortView.setVisibility(page == PAGE_KEYCHAIN ? View.VISIBLE : View.GONE);
         mSearchView.setHint(page == PAGE_KEYCHAIN ? R.string.terminow_search_keys_hint :
             page == PAGE_MCP ? R.string.terminow_mcp_search_hint : R.string.terminow_search_hint);
 
@@ -593,7 +608,7 @@ public class TerminowHome {
 
     private void updateSectionTitle() {
         if (mPage == PAGE_KEYCHAIN)
-            mSectionTitleView.setText(R.string.terminow_ssh_keys);
+            mSectionTitleView.setText(mStore.getIdentities().isEmpty() ? R.string.terminow_ssh_keys : R.string.terminow_keychain_title);
         else if (mPage == PAGE_MCP)
             mSectionTitleView.setText(R.string.terminow_mcp);
         else if (mPage == PAGE_FORWARDING)
@@ -677,11 +692,22 @@ public class TerminowHome {
                     mItems.add(host);
             }
         } else if (mPage == PAGE_KEYCHAIN) {
+            // Identities first, then the keys, like the keychain of Termius
+            List<TerminowStore.Identity> identities = new ArrayList<>();
+            for (TerminowStore.Identity identity : mStore.getIdentities()) {
+                if (query.isEmpty() || identity.getTitle().toLowerCase(Locale.ROOT).contains(query) ||
+                    identity.username.toLowerCase(Locale.ROOT).contains(query))
+                    identities.add(identity);
+            }
+            List<KeyItem> keys = new ArrayList<>();
             for (KeyItem key : getKeys()) {
                 if (query.isEmpty() || key.name.toLowerCase(Locale.ROOT).contains(query) ||
                     key.label.toLowerCase(Locale.ROOT).contains(query))
-                    mItems.add(key);
+                    keys.add(key);
             }
+            sortKeychain(identities, keys, mStore.getKeychainSort());
+            mItems.addAll(identities);
+            mItems.addAll(keys);
         } else if (mPage == PAGE_FORWARDING) {
             for (TerminowStore.Forward forward : mForwards) {
                 if (query.isEmpty() || forward.getTitle().toLowerCase(Locale.ROOT).contains(query) ||
@@ -742,6 +768,8 @@ public class TerminowHome {
             updateItems();
         } else if (item instanceof TerminowStore.Host) {
             connect((TerminowStore.Host) item);
+        } else if (item instanceof TerminowStore.Identity) {
+            showIdentityDialog((TerminowStore.Identity) item, null);
         } else if (item instanceof KeyItem) {
             showKeyActions((KeyItem) item);
         } else if (item instanceof TerminowStore.Forward) {
@@ -756,6 +784,10 @@ public class TerminowHome {
     private boolean onItemLongClick(@Nullable Object item) {
         if (item == null) return false;
 
+        if (item instanceof TerminowStore.Identity) {
+            showIdentityActions((TerminowStore.Identity) item);
+            return true;
+        }
         if (item instanceof KeyItem) {
             showKeyActions((KeyItem) item);
             return true;
@@ -924,10 +956,10 @@ public class TerminowHome {
         }
         mSftpSessions.add(session);
         mLauncher.track(session, new TerminowLauncher.SessionInfo(null, host.getTitle(), "sftp", "", ""));
-        String command = host.getSftpCommand(route.jump, route.proxyConnector, mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
+        String command = route.login.getSftpCommand(route.jump, route.proxyConnector, mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
         mStore.addLog(title, command);
         writeWhenStarted(session, command + "\r", 0);
-        writePasswordsWhenAsked(session, getPasswordPrompts(host, route.jump), 0);
+        writePasswordsWhenAsked(session, getPasswordPrompts(route.login, route.jump), 0);
         watchConnection(session, host, true, title, 0);
     }
 
@@ -1171,15 +1203,17 @@ public class TerminowHome {
         }
         applySessionOptions(session, host);
         mLauncher.track(session, new TerminowLauncher.SessionInfo(null, host.getTitle(), host.telnet ? "telnet" : "ssh", "", ""));
-        String command = host.getCommand(route.jump, route.proxyConnector, mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
+        String command = route.login.getCommand(route.jump, route.proxyConnector, mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
         mStore.addLog(host.getTitle(), command);
         writeWhenStarted(session, command + "\r", 0);
-        writePasswordsWhenAsked(session, getPasswordPrompts(host, route.jump), 0);
+        writePasswordsWhenAsked(session, getPasswordPrompts(route.login, route.jump), 0);
         watchConnection(session, host, false, host.getTitle(), 0);
     }
 
     /** How a connection reaches its host: the jump host and the proxy connector, if it uses them. */
     private static class Route {
+        /** The host as it logs in: with the username, password and key of its identity. */
+        TerminowStore.Host login;
         @Nullable TerminowStore.Host jump;
         String proxyConnector = "";
     }
@@ -1191,6 +1225,8 @@ public class TerminowHome {
     @Nullable
     private Route prepareRoute(@NonNull TerminowStore.Host host) {
         Route route = new Route();
+        List<TerminowStore.Identity> identities = mStore.getIdentities();
+        route.login = TerminowStore.resolve(host, identities);
         if (host.telnet) return route;
         if (!host.jumpHost.isEmpty()) {
             route.jump = TerminowStore.findHost(mHosts, host.jumpHost);
@@ -1198,6 +1234,7 @@ public class TerminowHome {
                 mActivity.showToast(mActivity.getString(R.string.terminow_host_jump_missing), true);
                 return null;
             }
+            route.jump = TerminowStore.resolve(route.jump, identities);
         }
         if (!host.proxyType.isEmpty()) {
             try {
@@ -1277,10 +1314,10 @@ public class TerminowHome {
             if (host.telnet) mActivity.showToast(mActivity.getString(R.string.terminow_host_telnet_no_forward), true);
             return;
         }
-        String command = host.getForwardCommand(forward, route.jump, route.proxyConnector, mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
+        String command = route.login.getForwardCommand(forward, route.jump, route.proxyConnector, mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
         mStore.addLog(forward.getTitle(), command);
         writeWhenStarted(session, command + "\r", 0);
-        writePasswordsWhenAsked(session, getPasswordPrompts(host, route.jump), 0);
+        writePasswordsWhenAsked(session, getPasswordPrompts(route.login, route.jump), 0);
     }
 
     /**
@@ -1429,6 +1466,8 @@ public class TerminowHome {
         EditText passwordView = dialog.findViewById(R.id.terminow_host_password);
         EditText keyView = dialog.findViewById(R.id.terminow_host_key);
         View keyRemoveView = dialog.findViewById(R.id.terminow_host_key_remove);
+        EditText identityView = dialog.findViewById(R.id.terminow_host_identity);
+        View identityRemoveView = dialog.findViewById(R.id.terminow_host_identity_remove);
         EditText snippetView = dialog.findViewById(R.id.terminow_host_snippet);
         CheckBox agentView = dialog.findViewById(R.id.terminow_host_agent);
         EditText jumpView = dialog.findViewById(R.id.terminow_host_jump);
@@ -1488,6 +1527,7 @@ public class TerminowHome {
         if (existingHost != null) {
             labelView.setText(existingHost.label);
             passwordView.setText(existingHost.password);
+            draft.identity = existingHost.identity;
             if (mStore.getSnippet(existingHost.startupSnippet) != null)
                 snippetView.setText(existingHost.startupSnippet);
             moshView.setChecked(existingHost.mosh);
@@ -1551,6 +1591,36 @@ public class TerminowHome {
         keyView.setOnClickListener(v -> showKeyPicker(keyView));
         dialog.findViewById(R.id.terminow_host_keys).setOnClickListener(v -> showKeyPicker(keyView));
         keyRemoveView.setOnClickListener(v -> keyView.setText(""));
+
+        // An identity: the fields that it has come from it, the others from the host
+        View usernameRow = dialog.findViewById(R.id.terminow_host_username_row);
+        View passwordRow = dialog.findViewById(R.id.terminow_host_password_row);
+        View keyRow = dialog.findViewById(R.id.terminow_host_key_row);
+        Runnable showIdentity = () -> {
+            TerminowStore.Identity identity = draft.identity.isEmpty() ? null : TerminowStore.findIdentity(mStore.getIdentities(), draft.identity);
+            if (identity == null) draft.identity = "";
+            identityView.setText(identity == null ? "" : identity.getTitle());
+            identityRemoveView.setVisibility(identity == null ? View.GONE : View.VISIBLE);
+            boolean username = identity != null && !identity.username.isEmpty();
+            boolean password = identity != null && !identity.password.isEmpty();
+            boolean key = identity != null && !identity.keyPath.isEmpty();
+            usernameRow.setAlpha(username ? 0.4f : 1f);
+            usernameView.setEnabled(!username);
+            passwordRow.setAlpha(password ? 0.4f : 1f);
+            passwordView.setEnabled(!password);
+            keyRow.setAlpha(key ? 0.4f : 1f);
+            keyView.setEnabled(!key);
+            dialog.findViewById(R.id.terminow_host_keys).setEnabled(!key);
+        };
+        identityView.setOnClickListener(v -> showIdentityPicker(id -> {
+            draft.identity = id;
+            showIdentity.run();
+        }));
+        identityRemoveView.setOnClickListener(v -> {
+            draft.identity = "";
+            showIdentity.run();
+        });
+        showIdentity.run();
 
         // Session options
         snippetView.setOnClickListener(v -> showStartupSnippetPicker(snippetView));
@@ -1635,6 +1705,7 @@ public class TerminowHome {
             host.proxyHost = host.proxyType.isEmpty() ? "" : draft.proxyHost;
             host.proxyPort = host.proxyType.isEmpty() ? 0 : draft.proxyPort;
             host.colorScheme = draft.colorScheme;
+            host.identity = host.telnet ? "" : draft.identity;
             if (!readEnvRows(envList, host.env)) {
                 mActivity.showToast(mActivity.getString(R.string.terminow_host_invalid_env), true);
                 return;
@@ -2064,12 +2135,61 @@ public class TerminowHome {
         final File publicFile;
         /** The name that the user gave the key, empty if none. */
         final String label;
+        /** For a biometric key, its id in the keystore; its file is then its public key. */
+        @Nullable final String biometricId;
+        /** For a FIDO2 security key, its id in the app; its file is then its public key. */
+        @Nullable final String fidoId;
 
         KeyItem(@NonNull File file, @NonNull String label) {
             this.name = file.getName();
             this.file = file;
             this.publicFile = new File(file.getPath() + ".pub");
             this.label = label;
+            this.biometricId = null;
+            this.fidoId = null;
+        }
+
+        /** A biometric or FIDO2 key, by its public key file. */
+        KeyItem(@NonNull File publicFile, @NonNull String label, @Nullable String biometricId, @Nullable String fidoId) {
+            this.name = publicFile.getName();
+            this.file = publicFile;
+            this.publicFile = publicFile;
+            this.label = label;
+            this.biometricId = biometricId;
+            this.fidoId = fidoId;
+        }
+
+        /** Where ssh finds the certificate of the key: next to the key, with `-cert.pub`. */
+        @NonNull
+        File certificateFile() {
+            return new File(file.getPath() + "-cert.pub");
+        }
+
+        /** The certificate of the key, {@code null} if it has none or it can not be read. */
+        @Nullable
+        TerminowSshWire.Certificate readCertificate() {
+            File certificate = certificateFile();
+            if (!certificate.isFile() || certificate.length() > CERTIFICATE_MAX_SIZE) return null;
+            try {
+                TerminowSshWire.PublicKeyLine line = TerminowSshWire.parseLine(new String(java.nio.file.Files.readAllBytes(certificate.toPath()),
+                    StandardCharsets.UTF_8));
+                return line != null ? TerminowSshWire.parseCertificate(line.blob) : null;
+            } catch (IOException e) {
+                return null;
+            }
+        }
+
+        /** The public key blob, {@code null} if there is no public key file. */
+        @Nullable
+        byte[] readPublicBlob() {
+            if (!publicFile.isFile() || publicFile.length() > CERTIFICATE_MAX_SIZE) return null;
+            try {
+                TerminowSshWire.PublicKeyLine line = TerminowSshWire.parseLine(new String(java.nio.file.Files.readAllBytes(publicFile.toPath()),
+                    StandardCharsets.UTF_8));
+                return line != null ? line.blob : null;
+            } catch (IOException e) {
+                return null;
+            }
         }
 
         @NonNull
@@ -2117,6 +2237,17 @@ public class TerminowHome {
                 continue;
             keys.add(new KeyItem(file, mStore.getKeyLabel(name)));
         }
+        // The keys of the keystore that have their public key file
+        for (String id : TerminowBiometricKeys.ids()) {
+            File publicFile = TerminowBiometricKeys.publicFile(id);
+            if (publicFile.isFile()) keys.add(new KeyItem(publicFile, mStore.getKeyLabel(publicFile.getName()), id, null));
+        }
+        // The FIDO2 security keys
+        for (TerminowFidoKeys.Credential credential : TerminowFidoKeys.load()) {
+            File publicFile = TerminowFidoKeys.publicFile(credential.id);
+            String label = mStore.getKeyLabel(publicFile.getName());
+            if (publicFile.isFile()) keys.add(new KeyItem(publicFile, label.isEmpty() ? credential.label : label, null, credential.id));
+        }
         Collections.sort(keys, (a, b) -> a.getTitle().compareToIgnoreCase(b.getTitle()));
         return keys;
     }
@@ -2156,12 +2287,19 @@ public class TerminowHome {
 
     private void showKeyActions(@NonNull KeyItem key) {
         List<TerminowStore.Host> hosts = getHostsUsingKey(key);
+        TerminowSshWire.Certificate certificate = key.readCertificate();
         CharSequence[] actions = {
             mActivity.getString(R.string.terminow_key_rename),
             mActivity.getString(R.string.terminow_key_copy_public),
             mActivity.getResources().getQuantityString(R.plurals.terminow_key_used_by, hosts.size(), hosts.size()),
-            mActivity.getString(R.string.terminow_delete)};
+            mActivity.getString(R.string.terminow_delete),
+            mActivity.getString(certificate != null ? R.string.terminow_cert_show : R.string.terminow_cert_add)};
         new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog).setTitle(key.getTitle()).setItems(actions, (dialog, which) -> {
+            if (which == 4) {
+                if (certificate != null) showCertificate(key, certificate);
+                else showCertificateSource(key);
+                return;
+            }
             if (which == 0) {
                 LinearLayout form = createForm();
                 EditText labelView = addField(form, R.string.terminow_key_label, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
@@ -2191,10 +2329,18 @@ public class TerminowHome {
                 new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
                     .setMessage(message)
                     .setPositiveButton(R.string.terminow_delete, (confirmDialog, confirmWhich) -> {
-                        if (!key.file.delete())
-                            Logger.logError(LOG_TAG, "Failed to delete \"" + key.file + "\"");
-                        if (key.publicFile.isFile() && !key.publicFile.delete())
-                            Logger.logError(LOG_TAG, "Failed to delete \"" + key.publicFile + "\"");
+                        if (key.biometricId != null) {
+                            TerminowBiometricKeys.delete(key.biometricId);
+                        } else if (key.fidoId != null) {
+                            TerminowFidoKeys.delete(key.fidoId);
+                        } else {
+                            if (!key.file.delete())
+                                Logger.logError(LOG_TAG, "Failed to delete \"" + key.file + "\"");
+                            if (key.publicFile.isFile() && !key.publicFile.delete())
+                                Logger.logError(LOG_TAG, "Failed to delete \"" + key.publicFile + "\"");
+                            //noinspection ResultOfMethodCallIgnored
+                            key.certificateFile().delete();
+                        }
                         mStore.setKeyLabel(key.name, "");
                         // The hosts would fail to log in with a key that does not exist anymore
                         for (TerminowStore.Host host : hosts)
@@ -2278,9 +2424,17 @@ public class TerminowHome {
         popup.setElevation(dp(8));
         popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
 
+        addMenuItem(menu, popup, R.drawable.ic_terminow_person_add, R.string.terminow_identity_new, () -> showIdentityDialog(null, null));
+        addMenuDivider(menu);
         addMenuItem(menu, popup, R.drawable.ic_terminow_paste, R.string.terminow_key_paste, this::showPasteKeyDialog);
         addMenuItem(menu, popup, R.drawable.ic_terminow_import, R.string.terminow_key_import, this::pickKeyFile);
         addMenuItem(menu, popup, R.drawable.ic_terminow_key, R.string.terminow_key_generate, this::showNewKeyDialog);
+        addMenuDivider(menu);
+        addMenuItem(menu, popup, R.drawable.ic_terminow_paste, R.string.terminow_cert_paste, () -> pickKeyForCertificate(false));
+        addMenuItem(menu, popup, R.drawable.ic_terminow_import, R.string.terminow_cert_import, () -> pickKeyForCertificate(true));
+        addMenuDivider(menu);
+        addMenuItem(menu, popup, R.drawable.ic_terminow_lock, R.string.terminow_key_biometric_new, this::showNewBiometricKeyDialog);
+        addMenuItem(menu, popup, R.drawable.ic_terminow_sdcard, R.string.terminow_key_fido_new, this::showNewFidoKeyDialog);
 
         // Above the button, with its end at the end of the button
         menu.measure(View.MeasureSpec.makeMeasureSpec(dp(300), View.MeasureSpec.EXACTLY), View.MeasureSpec.UNSPECIFIED);
@@ -2492,6 +2646,26 @@ public class TerminowHome {
     public boolean onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         if (mExplorer.onActivityResult(requestCode, resultCode, data)) return true;
         if (mFiles.onActivityResult(requestCode, resultCode, data)) return true;
+        if (requestCode == REQUEST_IMPORT_CERTIFICATE) {
+            KeyItem key = mCertificateKey;
+            mCertificateKey = null;
+            if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null && key != null) {
+                try (InputStream in = mActivity.getContentResolver().openInputStream(data.getData())) {
+                    if (in == null) throw new IOException("Failed to open the file");
+                    ByteArrayOutputStream out = new ByteArrayOutputStream();
+                    byte[] buffer = new byte[8192];
+                    int read;
+                    while ((read = in.read(buffer)) != -1) {
+                        out.write(buffer, 0, read);
+                        if (out.size() > CERTIFICATE_MAX_SIZE) throw new IOException("The file is too large to be a certificate");
+                    }
+                    saveCertificate(key, new String(out.toByteArray(), StandardCharsets.UTF_8));
+                } catch (IOException | RuntimeException e) {
+                    mActivity.showToast(mActivity.getString(R.string.terminow_cert_invalid, e.getMessage()), true);
+                }
+            }
+            return true;
+        }
         if (requestCode != REQUEST_IMPORT_KEY) return false;
         if (resultCode != Activity.RESULT_OK || data == null || data.getData() == null) return true;
 
@@ -2656,6 +2830,403 @@ public class TerminowHome {
         boolean save();
     }
 
+    // ---------------------------------------------------------------------------------------
+    // Keychain: sorting, identities, certificates, biometric and FIDO2 keys
+    // ---------------------------------------------------------------------------------------
+
+    static void sortKeychain(@NonNull List<TerminowStore.Identity> identities, @NonNull List<KeyItem> keys, @NonNull String sort) {
+        switch (sort) {
+            case "za":
+                identities.sort((a, b) -> b.getTitle().compareToIgnoreCase(a.getTitle()));
+                keys.sort((a, b) -> b.getTitle().compareToIgnoreCase(a.getTitle()));
+                break;
+            case "new":
+                identities.sort((a, b) -> Long.compare(b.created, a.created));
+                keys.sort((a, b) -> Long.compare(b.file.lastModified(), a.file.lastModified()));
+                break;
+            case "old":
+                identities.sort((a, b) -> Long.compare(a.created, b.created));
+                keys.sort((a, b) -> Long.compare(a.file.lastModified(), b.file.lastModified()));
+                break;
+            default:
+                identities.sort((a, b) -> a.getTitle().compareToIgnoreCase(b.getTitle()));
+                keys.sort((a, b) -> a.getTitle().compareToIgnoreCase(b.getTitle()));
+        }
+    }
+
+    private void showKeychainSort(@NonNull View anchor) {
+        String[] values = {"az", "za", "new", "old"};
+        CharSequence[] labels = {mActivity.getString(R.string.terminow_sort_az), mActivity.getString(R.string.terminow_sort_za),
+            mActivity.getString(R.string.terminow_sort_new), mActivity.getString(R.string.terminow_sort_old)};
+        int current = Arrays.asList(values).indexOf(mStore.getKeychainSort());
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_keychain_sort)
+            .setSingleChoiceItems(labels, Math.max(current, 0), (dialog, which) -> {
+                mStore.setKeychainSort(values[which]);
+                mSortView.setText(which == 1 ? "Za" : "Az");
+                dialog.dismiss();
+                updateItems();
+            })
+            .show();
+    }
+
+    private void addMenuDivider(@NonNull LinearLayout menu) {
+        View divider = new View(mActivity);
+        divider.setBackgroundColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+        divider.setAlpha(0.25f);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1);
+        params.setMargins(dp(24), dp(6), dp(24), dp(6));
+        menu.addView(divider, params);
+    }
+
+    @NonNull
+    private String describeIdentity(@NonNull TerminowStore.Identity identity) {
+        List<String> parts = new ArrayList<>();
+        if (!identity.username.isEmpty()) parts.add(identity.username);
+        if (!identity.password.isEmpty()) parts.add(mActivity.getString(R.string.terminow_identity_has_password));
+        if (!identity.keyPath.isEmpty()) parts.add(identity.keyPath.substring(identity.keyPath.lastIndexOf('/') + 1));
+        int hosts = getHostsUsingIdentity(identity).size();
+        if (hosts > 0) parts.add(mActivity.getResources().getQuantityString(R.plurals.terminow_key_hosts, hosts, hosts));
+        return parts.isEmpty() ? mActivity.getString(R.string.terminow_identity_empty) : TextUtils.join(" · ", parts);
+    }
+
+    @NonNull
+    private List<TerminowStore.Host> getHostsUsingIdentity(@NonNull TerminowStore.Identity identity) {
+        List<TerminowStore.Host> hosts = new ArrayList<>();
+        for (TerminowStore.Host host : mHosts) if (host.identity.equals(identity.id)) hosts.add(host);
+        return hosts;
+    }
+
+    /**
+     * Add or edit an identity: a name, a username, a password and a key. {@code onSaved} gets
+     * the id of the identity, like for the host form that asked for a new one.
+     */
+    private void showIdentityDialog(@Nullable TerminowStore.Identity existing, @Nullable java.util.function.Consumer<String> onSaved) {
+        LinearLayout form = createForm();
+        EditText labelView = addField(form, R.string.terminow_identity_label, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        EditText usernameView = addField(form, R.string.terminow_host_username, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+        EditText passwordView = addField(form, R.string.terminow_host_password, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        EditText keyView = addField(form, R.string.terminow_host_key_field, InputType.TYPE_NULL);
+        keyView.setFocusable(false);
+        keyView.setCursorVisible(false);
+        keyView.setOnClickListener(v -> showKeyPicker(keyView));
+        TextView keyClear = new TextView(form.getContext());
+        keyClear.setText(R.string.terminow_host_key_remove);
+        keyClear.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_panel_accent));
+        keyClear.setPadding(0, dp(4), 0, dp(8));
+        keyClear.setOnClickListener(v -> keyView.setText(""));
+        form.addView(keyClear);
+        if (existing != null) {
+            labelView.setText(existing.label);
+            usernameView.setText(existing.username);
+            passwordView.setText(existing.password);
+            keyView.setText(existing.keyPath);
+        }
+        showFormDialog(existing != null ? R.string.terminow_identity_edit : R.string.terminow_identity_new, form, () -> {
+            TerminowStore.Identity identity = new TerminowStore.Identity();
+            identity.id = existing != null ? existing.id : Long.toString(System.currentTimeMillis(), 36) +
+                Integer.toString((int) (Math.random() * 1296), 36);
+            identity.created = existing != null ? existing.created : System.currentTimeMillis();
+            identity.label = labelView.getText().toString().trim();
+            identity.username = usernameView.getText().toString().trim();
+            identity.password = passwordView.getText().toString();
+            identity.keyPath = keyView.getText().toString().trim();
+            if (identity.username.isEmpty() && identity.password.isEmpty() && identity.keyPath.isEmpty()) {
+                mActivity.showToast(mActivity.getString(R.string.terminow_identity_empty), true);
+                return false;
+            }
+            if (!TerminowStore.isValidUsername(identity.username)) {
+                mActivity.showToast(mActivity.getString(R.string.terminow_host_invalid_username), true);
+                return false;
+            }
+            if (!identity.isValid()) {
+                mActivity.showToast(mActivity.getString(R.string.terminow_host_invalid_key), true);
+                return false;
+            }
+            List<TerminowStore.Identity> identities = mStore.getIdentities();
+            boolean replaced = false;
+            for (int i = 0; i < identities.size(); i++) {
+                if (identities.get(i).id.equals(identity.id)) {
+                    identities.set(i, identity);
+                    replaced = true;
+                }
+            }
+            if (!replaced) identities.add(identity);
+            mStore.setIdentities(identities);
+            updateItems();
+            if (onSaved != null) onSaved.accept(identity.id);
+            return true;
+        });
+    }
+
+    private void showIdentityActions(@NonNull TerminowStore.Identity identity) {
+        List<TerminowStore.Host> hosts = getHostsUsingIdentity(identity);
+        CharSequence[] actions = {mActivity.getString(R.string.terminow_identity_edit),
+            mActivity.getResources().getQuantityString(R.plurals.terminow_key_used_by, hosts.size(), hosts.size()),
+            mActivity.getString(R.string.terminow_delete)};
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog).setTitle(identity.getTitle()).setItems(actions, (dialog, which) -> {
+            if (which == 0) {
+                showIdentityDialog(identity, null);
+            } else if (which == 1) {
+                AlertDialog.Builder builder = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog).setTitle(identity.getTitle());
+                if (hosts.isEmpty()) {
+                    builder.setMessage(R.string.terminow_key_no_hosts);
+                } else {
+                    CharSequence[] names = new CharSequence[hosts.size()];
+                    for (int i = 0; i < hosts.size(); i++) names[i] = hosts.get(i).getTitle();
+                    builder.setItems(names, (d, w) -> showHostDialog(hosts.get(w)));
+                }
+                builder.setPositiveButton(android.R.string.ok, null).show();
+            } else {
+                String message = mActivity.getString(R.string.terminow_identity_delete_confirm, identity.getTitle());
+                if (!hosts.isEmpty())
+                    message += "\n\n" + mActivity.getResources().getQuantityString(R.plurals.terminow_identity_delete_hosts, hosts.size(), hosts.size());
+                new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                    .setMessage(message)
+                    .setPositiveButton(R.string.terminow_delete, (d, w) -> {
+                        List<TerminowStore.Identity> identities = mStore.getIdentities();
+                        identities.removeIf(other -> other.id.equals(identity.id));
+                        mStore.setIdentities(identities);
+                        // The hosts log in with their own username, password and key again
+                        for (TerminowStore.Host host : hosts) host.identity = "";
+                        if (!hosts.isEmpty()) mStore.setHosts(mHosts);
+                        updateItems();
+                    })
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
+            }
+        }).show();
+    }
+
+    /** Pick an identity for a host form, or make a new one. */
+    private void showIdentityPicker(@NonNull java.util.function.Consumer<String> onPicked) {
+        List<TerminowStore.Identity> identities = mStore.getIdentities();
+        sortKeychain(identities, new ArrayList<>(), "az");
+        List<CharSequence> names = new ArrayList<>();
+        for (TerminowStore.Identity identity : identities) names.add(identity.getTitle() + "  ·  " + describeIdentity(identity));
+        names.add(mActivity.getString(R.string.terminow_identity_new));
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_host_identity_field)
+            .setItems(names.toArray(new CharSequence[0]), (dialog, which) -> {
+                if (which < identities.size()) onPicked.accept(identities.get(which).id);
+                else showIdentityDialog(null, onPicked);
+            })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    // Certificates
+
+    @NonNull
+    private String describeCertificateShort(@NonNull TerminowSshWire.Certificate certificate) {
+        long now = System.currentTimeMillis() / 1000;
+        if (!certificate.isValidAt(now))
+            return mActivity.getString(Long.compareUnsigned(now, certificate.validAfter) < 0 ? R.string.terminow_cert_not_yet : R.string.terminow_cert_expired);
+        if (!certificate.expires()) return mActivity.getString(R.string.terminow_cert_valid_forever);
+        return mActivity.getString(R.string.terminow_cert_valid_until,
+            java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(new java.util.Date(certificate.validBefore * 1000)));
+    }
+
+    private void showCertificate(@NonNull KeyItem key, @NonNull TerminowSshWire.Certificate certificate) {
+        java.text.DateFormat format = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT);
+        String message = mActivity.getString(R.string.terminow_cert_details,
+            certificate.keyId,
+            certificate.principals.isEmpty() ? mActivity.getString(R.string.terminow_cert_any_principal) : TextUtils.join(", ", certificate.principals),
+            certificate.validAfter == 0 ? "—" : format.format(new java.util.Date(certificate.validAfter * 1000)),
+            !certificate.expires() ? mActivity.getString(R.string.terminow_cert_valid_forever) : format.format(new java.util.Date(certificate.validBefore * 1000)),
+            Long.toUnsignedString(certificate.serial),
+            mActivity.getString(certificate.certType == 1 ? R.string.terminow_cert_user : R.string.terminow_cert_host),
+            describeCertificateShort(certificate));
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(mActivity.getString(R.string.terminow_cert_title, key.getTitle()))
+            .setMessage(message)
+            .setPositiveButton(android.R.string.ok, null)
+            .setNeutralButton(R.string.terminow_cert_replace, (d, w) -> showCertificateSource(key))
+            .setNegativeButton(R.string.terminow_cert_remove, (d, w) -> {
+                //noinspection ResultOfMethodCallIgnored
+                key.certificateFile().delete();
+                updateItems();
+            })
+            .show();
+    }
+
+    /** Pick the key that a certificate is for, then paste it or pick its file. */
+    private void pickKeyForCertificate(boolean fromFile) {
+        List<KeyItem> keys = new ArrayList<>();
+        for (KeyItem key : getKeys()) if (key.readPublicBlob() != null) keys.add(key);
+        if (keys.isEmpty()) {
+            new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setMessage(R.string.terminow_cert_no_keys)
+                .setPositiveButton(android.R.string.ok, null)
+                .show();
+            return;
+        }
+        CharSequence[] names = new CharSequence[keys.size()];
+        for (int i = 0; i < keys.size(); i++) names[i] = keys.get(i).getTitle();
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_cert_pick_key)
+            .setItems(names, (dialog, which) -> {
+                if (fromFile) pickCertificateFile(keys.get(which));
+                else showPasteCertificateDialog(keys.get(which));
+            })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    private void showCertificateSource(@NonNull KeyItem key) {
+        if (key.readPublicBlob() == null) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_key_no_public), true);
+            return;
+        }
+        CharSequence[] sources = {mActivity.getString(R.string.terminow_cert_paste), mActivity.getString(R.string.terminow_cert_import)};
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(mActivity.getString(R.string.terminow_cert_title, key.getTitle()))
+            .setItems(sources, (dialog, which) -> {
+                if (which == 0) showPasteCertificateDialog(key);
+                else pickCertificateFile(key);
+            })
+            .show();
+    }
+
+    private void showPasteCertificateDialog(@NonNull KeyItem key) {
+        LinearLayout form = createForm();
+        EditText contentView = addField(form, R.string.terminow_cert_content,
+            InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        contentView.setMaxLines(6);
+        contentView.setTextSize(12);
+        ClipboardManager clipboardManager = (ClipboardManager) mActivity.getSystemService(Context.CLIPBOARD_SERVICE);
+        ClipData clip = clipboardManager != null ? clipboardManager.getPrimaryClip() : null;
+        if (clip != null && clip.getItemCount() > 0) {
+            CharSequence text = clip.getItemAt(0).coerceToText(mActivity);
+            if (text != null && text.toString().contains(TerminowSshWire.CERT_SUFFIX)) contentView.setText(text.toString().trim());
+        }
+        showFormDialog(R.string.terminow_cert_paste, form, () -> saveCertificate(key, contentView.getText().toString()));
+    }
+
+    private void pickCertificateFile(@NonNull KeyItem key) {
+        mCertificateKey = key;
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        try {
+            mActivity.startActivityForResult(intent, REQUEST_IMPORT_CERTIFICATE);
+        } catch (Exception e) {
+            mCertificateKey = null;
+            mActivity.showToast(mActivity.getString(R.string.terminow_key_import_failed, e.getMessage()), true);
+        }
+    }
+
+    /**
+     * Keep a certificate where ssh finds it for the key, only if it is a user certificate of
+     * exactly this key.
+     */
+    private boolean saveCertificate(@NonNull KeyItem key, @NonNull String text) {
+        TerminowSshWire.PublicKeyLine line = TerminowSshWire.parseLine(text.trim());
+        TerminowSshWire.Certificate certificate = line != null ? TerminowSshWire.parseCertificate(line.blob) : null;
+        if (certificate == null) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_cert_invalid, mActivity.getString(R.string.terminow_cert_not_certificate)), true);
+            return false;
+        }
+        byte[] blob = key.readPublicBlob();
+        if (blob == null || !Arrays.equals(blob, certificate.keyBlob)) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_cert_invalid, mActivity.getString(R.string.terminow_cert_other_key)), true);
+            return false;
+        }
+        if (certificate.certType != 1) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_cert_invalid, mActivity.getString(R.string.terminow_cert_host_certificate)), true);
+            return false;
+        }
+        File file = key.certificateFile();
+        try (java.io.FileOutputStream out = new java.io.FileOutputStream(file)) {
+            out.write((TerminowSshWire.publicKeyLine(line.blob, line.comment) + "\n").getBytes(StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_cert_invalid, e.getMessage()), true);
+            return false;
+        }
+        mActivity.showToast(mActivity.getString(R.string.terminow_cert_saved, certificate.keyId, describeCertificateShort(certificate)), false);
+        updateItems();
+        return true;
+    }
+
+    // Biometric and FIDO2 keys
+
+    private void showNewBiometricKeyDialog() {
+        if (!TerminowBiometricKeys.isSupported(mActivity)) {
+            new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setTitle(R.string.terminow_key_biometric_new)
+                .setMessage(R.string.terminow_key_biometric_unsupported)
+                .setPositiveButton(android.R.string.ok, null)
+                .show();
+            return;
+        }
+        LinearLayout form = createForm();
+        TextView about = new TextView(form.getContext());
+        about.setText(R.string.terminow_key_biometric_about);
+        about.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+        about.setPadding(0, 0, 0, dp(8));
+        form.addView(about);
+        EditText nameView = addField(form, R.string.terminow_key_label, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        nameView.setText(mActivity.getString(R.string.terminow_key_biometric_default_name, android.os.Build.MODEL));
+        showFormDialog(R.string.terminow_key_biometric_new, form, () -> {
+            String name = nameView.getText().toString().trim().replaceAll("[\\r\\n]", " ");
+            if (name.isEmpty() || name.length() > 100) {
+                mActivity.showToast(mActivity.getString(R.string.terminow_key_invalid), true);
+                return false;
+            }
+            new Thread(() -> {
+                String error = null;
+                String id = null;
+                try {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) id = TerminowBiometricKeys.create(name);
+                } catch (Exception e) {
+                    Logger.logStackTraceWithMessage(LOG_TAG, "Failed to create a biometric key", e);
+                    error = String.valueOf(e.getMessage());
+                }
+                String finalError = error;
+                String finalId = id;
+                mActivity.runOnUiThread(() -> {
+                    if (finalId == null) {
+                        mActivity.showToast(mActivity.getString(R.string.terminow_key_biometric_failed, String.valueOf(finalError)), true);
+                        return;
+                    }
+                    mStore.setKeyLabel(TerminowBiometricKeys.publicFile(finalId).getName(), name);
+                    updateItems();
+                    setKeyTarget(TerminowBiometricKeys.publicFile(finalId).getName());
+                    mActivity.showToast(mActivity.getString(R.string.terminow_key_biometric_created, name), false);
+                });
+            }, "TerminowBiometricKeyCreate").start();
+            return true;
+        });
+    }
+
+    private void showNewFidoKeyDialog() {
+        LinearLayout form = createForm();
+        TextView about = new TextView(form.getContext());
+        about.setText(R.string.terminow_key_fido_about);
+        about.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+        about.setPadding(0, 0, 0, dp(8));
+        form.addView(about);
+        EditText nameView = addField(form, R.string.terminow_key_label, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        nameView.setText(R.string.terminow_key_fido_default_name);
+        showFormDialog(R.string.terminow_key_fido_new, form, () -> {
+            String name = nameView.getText().toString().trim().replaceAll("[\\r\\n]", " ");
+            if (name.isEmpty() || name.length() > 100) {
+                mActivity.showToast(mActivity.getString(R.string.terminow_key_invalid), true);
+                return false;
+            }
+            TerminowFidoKeys.create(mActivity, name, (id, error) -> {
+                if (id == null) {
+                    if (error != null) mActivity.showToast(mActivity.getString(R.string.terminow_key_fido_failed, error), true);
+                    return;
+                }
+                updateItems();
+                setKeyTarget(TerminowFidoKeys.publicFile(id).getName());
+                mActivity.showToast(mActivity.getString(R.string.terminow_key_biometric_created, name), false);
+            });
+            return true;
+        });
+    }
+
     private void showFormDialog(int titleRes, @NonNull View form, @NonNull FormSaver saver) {
         AlertDialog dialog = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
             .setTitle(titleRes)
@@ -2763,14 +3334,24 @@ public class TerminowHome {
                 else
                     subtitleView.setText((host.telnet ? "telnet" : host.mosh ? "mosh" : "ssh") + (host.username.isEmpty() ? "" : ", " + host.username) +
                         (host.tags.isEmpty() ? "" : ", " + TextUtils.join(", ", host.tags)));
+            } else if (item instanceof TerminowStore.Identity) {
+                TerminowStore.Identity identity = (TerminowStore.Identity) item;
+                iconRes = R.drawable.ic_terminow_person;
+                iconColorRes = R.color.terminow_host_ssh;
+                titleView.setText(identity.getTitle());
+                subtitleView.setText(describeIdentity(identity));
             } else if (item instanceof KeyItem) {
                 KeyItem key = (KeyItem) item;
-                iconRes = R.drawable.ic_terminow_key;
+                iconRes = key.biometricId != null ? R.drawable.ic_terminow_lock : key.fidoId != null ? R.drawable.ic_terminow_sdcard : R.drawable.ic_terminow_key;
                 iconColorRes = R.color.terminow_host_mosh;
                 titleView.setText(key.getTitle());
                 String keyType = getKeyType(key);
                 String subtitle = mActivity.getString(R.string.terminow_key_type,
                     keyType != null ? keyType : mActivity.getString(R.string.terminow_key_type_unknown));
+                if (key.biometricId != null) subtitle += " · " + mActivity.getString(R.string.terminow_key_biometric);
+                if (key.fidoId != null) subtitle += " · " + mActivity.getString(R.string.terminow_key_fido);
+                TerminowSshWire.Certificate certificate = key.readCertificate();
+                if (certificate != null) subtitle += " · " + describeCertificateShort(certificate);
                 int hostCount = getHostsUsingKey(key).size();
                 if (hostCount > 0)
                     subtitle += " · " + mActivity.getResources().getQuantityString(R.plurals.terminow_key_hosts, hostCount, hostCount);

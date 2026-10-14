@@ -54,6 +54,9 @@ android {
         implementation "com.google.android.libraries.identity.googleid:googleid:1.1.1"
         // SFTP for the File Explorer, with known_hosts checking (maintained fork of JSch)
         implementation "com.github.mwiede:jsch:0.2.20"
+        // FIDO2 security keys over USB and NFC (CTAP2), for the FIDO2 keys of the keychain
+        implementation "com.yubico.yubikit:android:3.1.0"
+        implementation "com.yubico.yubikit:fido:3.1.0"
         // Argon2 for the passphrases of PuTTY v3 keys
         implementation "org.bouncycastle:bcprov-jdk18on:1.78.1"
 
@@ -68,7 +71,7 @@ android {
         applicationId "com.terminow"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 164
+        versionCode 165
         versionName "0.118.0"
 
         if (appVersionName) versionName = appVersionName

@@ -379,7 +379,7 @@
     <string name="terminow_logs_clear_confirm">Clear all logs?</string>
     <string name="terminow_no_logs">No connections yet.</string>
     <string name="terminow_ssh_keys">SSH Keys</string>
-    <string name="terminow_search_keys_hint">Search keys</string>
+    <string name="terminow_search_keys_hint">Search keys and identities</string>
     <string name="terminow_key_type">Key Type: %s</string>
     <string name="terminow_key_type_unknown">Unknown</string>
     <string name="terminow_key_paste">Paste SSH key</string>

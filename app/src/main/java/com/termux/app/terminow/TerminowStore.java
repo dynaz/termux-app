@@ -74,6 +74,8 @@ public class TerminowStore {
         public final Map<String, String> env = new LinkedHashMap<>();
         /** The name of a terminal theme for the sessions of the host, empty for the one of the settings. */
         public String colorScheme = "";
+        /** The {@link Identity#id} whose username, password and key the host logs in with, empty for its own. */
+        public String identity = "";
 
         public static final String PROXY_SOCKS5 = "socks5";
         public static final String PROXY_HTTP = "http";
@@ -103,8 +105,19 @@ public class TerminowStore {
 
         @NonNull
         private String getSshOptions(int keepAliveInterval, int keepAliveCountMax) {
-            return (keyPath.isEmpty() ? "" : " -i " + keyPath) + (port == 22 ? "" : " -p " + port) +
-                getKeepAliveOptions(keepAliveInterval, keepAliveCountMax);
+            return getKeyOptions() + (port == 22 ? "" : " -p " + port) + getKeepAliveOptions(keepAliveInterval, keepAliveCountMax);
+        }
+
+        /**
+         * The key: a key file, or the public key of a biometric or FIDO2 key, whose private key ssh uses
+         * through the agent of the app and only that one.
+         */
+        @NonNull
+        private String getKeyOptions() {
+            if (keyPath.isEmpty()) return "";
+            if (TerminowBiometricKeys.isAgentKeyPath(keyPath))
+                return " -i " + keyPath + " -o IdentitiesOnly=yes -o IdentityAgent=" + TerminowBiometricKeys.AGENT_SOCKET;
+            return " -i " + keyPath;
         }
 
         @NonNull
@@ -150,7 +163,7 @@ public class TerminowStore {
         @NonNull
         public String getSftpCommand(@Nullable Host jump, @NonNull String proxyConnector, int keepAliveInterval, int keepAliveCountMax) {
             // The option for the port of sftp is upper case
-            return "sftp" + (keyPath.isEmpty() ? "" : " -i " + keyPath) + (port == 22 ? "" : " -P " + port) +
+            return "sftp" + getKeyOptions() + (port == 22 ? "" : " -P " + port) +
                 getKeepAliveOptions(keepAliveInterval, keepAliveCountMax) +
                 getRouteOptions(jump, proxyConnector, keepAliveInterval, keepAliveCountMax) + " " + getTarget();
         }
@@ -258,6 +271,33 @@ public class TerminowStore {
     }
 
     /** A port forwarded through a host with ssh. */
+    /**
+     * A username with a password and/or a key, that hosts log in with instead of their own, like
+     * the identities of Termius. Kept on this device only, its password encrypted like the ones of
+     * hosts.
+     */
+    public static class Identity {
+        public String id = "";
+        public String label = "";
+        public String username = "";
+        /** Typed in when the host asks for it, like {@link Host#password}; empty for none. */
+        public String password = "";
+        /** The key to log in with, like {@link Host#keyPath}; empty for none. */
+        public String keyPath = "";
+        public long created;
+
+        @NonNull
+        public String getTitle() {
+            return !label.isEmpty() ? label : !username.isEmpty() ? username : id;
+        }
+
+        /** The checks of a host, for the fields that end up in its command. */
+        public boolean isValid() {
+            return isValidIdentityId(id) && isValidUsername(username) && isValidKeyPath(keyPath) && label.length() <= 200 &&
+                !label.contains("\n");
+        }
+    }
+
     public static class Forward {
         public static final String TYPE_LOCAL = "local";
         public static final String TYPE_REMOTE = "remote";
@@ -333,6 +373,8 @@ public class TerminowStore {
     private static final String KEY_SNIPPETS = "snippets";
     private static final String KEY_GROUPS = "groups";
     private static final String KEY_KEY_LABELS = "key_labels";
+    private static final String KEY_IDENTITIES = "identities";
+    private static final String KEY_KEYCHAIN_SORT = "keychain_sort";
     private static final String KEY_MCP_PROFILES = "mcp_profiles";
     private static final String KEY_MCP_LOCAL_HTTP = "mcp_local_http";
     private static final String KEY_ACCOUNT = "account";
@@ -497,6 +539,7 @@ public class TerminowStore {
         for (Map.Entry<String, String> variable : host.env.entrySet()) env.put(variable.getKey(), variable.getValue());
         object.put("env", env);
         object.put("colorScheme", host.colorScheme);
+        object.put("identity", host.identity);
         return object;
     }
 
@@ -526,6 +569,7 @@ public class TerminowStore {
         JSONArray names = env != null ? env.names() : null;
         for (int i = 0; names != null && i < names.length(); i++) host.env.put(names.optString(i), env.optString(names.optString(i)));
         host.colorScheme = object.optString("colorScheme");
+        host.identity = object.optString("identity");
         return host;
     }
 
@@ -541,6 +585,7 @@ public class TerminowStore {
         if (host.telnet && !isValidPort(host.telnetPort)) return false;
         if (!host.proxyType.isEmpty() && (!(Host.PROXY_SOCKS5.equals(host.proxyType) || Host.PROXY_HTTP.equals(host.proxyType)) ||
             !isValidAddress(host.proxyHost) || !isValidPort(host.proxyPort))) return false;
+        if (!host.identity.isEmpty() && !isValidIdentityId(host.identity)) return false;
         // The jump host is looked up by key among the saved hosts, which are validated themselves
         return host.jumpHost.isEmpty() || host.jumpHost.length() <= 300;
     }
@@ -1244,6 +1289,90 @@ public class TerminowStore {
         for (Snippet snippet : getSnippets())
             if (snippet.name.equals(name)) return snippet;
         return null;
+    }
+
+    public static boolean isValidIdentityId(@Nullable String id) {
+        return id != null && id.matches("[a-z0-9]{1,40}");
+    }
+
+    @NonNull
+    public List<Identity> getIdentities() {
+        List<Identity> identities = new ArrayList<>();
+        try {
+            JSONArray array = new JSONArray(mPreferences.getString(KEY_IDENTITIES, "[]"));
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject object = array.getJSONObject(i);
+                Identity identity = new Identity();
+                identity.id = object.optString("id");
+                identity.label = object.optString("label");
+                identity.username = object.optString("username");
+                identity.password = decryptPassword(object.optString("password"));
+                identity.keyPath = object.optString("keyPath");
+                identity.created = object.optLong("created");
+                // Never use anything from storage that would not have passed validation when saved
+                if (identity.isValid()) identities.add(identity);
+            }
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to load identities", e);
+        }
+        return identities;
+    }
+
+    public void setIdentities(@NonNull List<Identity> identities) {
+        JSONArray array = new JSONArray();
+        try {
+            for (Identity identity : identities) {
+                JSONObject object = new JSONObject();
+                object.put("id", identity.id);
+                object.put("label", identity.label);
+                object.put("username", identity.username);
+                object.put("password", encryptPassword(identity.password));
+                object.put("keyPath", identity.keyPath);
+                object.put("created", identity.created);
+                array.put(object);
+            }
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to save identities", e);
+            return;
+        }
+        mPreferences.edit().putString(KEY_IDENTITIES, array.toString()).apply();
+    }
+
+    @Nullable
+    public static Identity findIdentity(@NonNull List<Identity> identities, @NonNull String id) {
+        for (Identity identity : identities) if (identity.id.equals(id)) return identity;
+        return null;
+    }
+
+    /**
+     * The host as it connects: with the username, password and key of its identity, where the
+     * identity has them. A host whose identity was deleted, or is on another device, uses its own.
+     */
+    @NonNull
+    public static Host resolve(@NonNull Host host, @NonNull List<Identity> identities) {
+        Identity identity = host.identity.isEmpty() ? null : findIdentity(identities, host.identity);
+        if (identity == null) return host;
+        Host resolved;
+        try {
+            resolved = hostFromJson(hostToJson(host));
+        } catch (JSONException e) {
+            return host;
+        }
+        resolved.password = host.password;
+        if (!identity.username.isEmpty()) resolved.username = identity.username;
+        if (!identity.password.isEmpty()) resolved.password = identity.password;
+        if (!identity.keyPath.isEmpty()) resolved.keyPath = identity.keyPath;
+        return resolved;
+    }
+
+    /** How the keychain is sorted: {@code "az"}, {@code "za"}, {@code "new"} or {@code "old"}. */
+    @NonNull
+    public String getKeychainSort() {
+        return mPreferences.getString(KEY_KEYCHAIN_SORT, "az");
+    }
+
+    public void setKeychainSort(@NonNull String sort) {
+        mPreferences.edit().putString(KEY_KEYCHAIN_SORT, sort).apply();
     }
 
     /** The label that the user gave a key file of `~/.ssh`, empty if none. */

@@ -1918,8 +1918,10 @@ public class TerminowExplorer {
     }
 
     @NonNull
-    private TerminowSftpFs sftpFor(@NonNull TerminowStore.Host host) {
-        String id = "sftp:" + host.getKey();
+    private TerminowSftpFs sftpFor(@NonNull TerminowStore.Host saved) {
+        String id = "sftp:" + saved.getKey();
+        // With the username, password and key of its identity
+        TerminowStore.Host host = TerminowStore.resolve(saved, mStore.getIdentities());
         TerminowFs existing = mFileSystems.get(id);
         if (existing instanceof TerminowSftpFs) return (TerminowSftpFs) existing;
         TerminowSftpFs fs = new TerminowSftpFs(new File(TermuxConstants.TERMUX_HOME_DIR_PATH), id, host.getTitle(), host.address,

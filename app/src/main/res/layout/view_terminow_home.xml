@@ -308,21 +308,44 @@
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
-            <EditText
-                android:id="@+id/terminow_search"
+            <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="44dp"
+                android:layout_height="wrap_content"
                 android:layout_marginTop="18dp"
-                android:background="@drawable/terminow_field"
-                android:hint="@string/terminow_search_hint"
-                android:imeOptions="actionSearch|flagNoFullscreen"
-                android:importantForAutofill="no"
-                android:inputType="text"
-                android:maxLines="1"
-                android:paddingHorizontal="20dp"
-                android:textColor="@color/terminow_text"
-                android:textColorHint="@color/terminow_text_secondary"
-                android:textSize="15sp" />
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <EditText
+                    android:id="@+id/terminow_search"
+                    android:layout_width="0dp"
+                    android:layout_height="44dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/terminow_field"
+                    android:hint="@string/terminow_search_hint"
+                    android:imeOptions="actionSearch|flagNoFullscreen"
+                    android:importantForAutofill="no"
+                    android:inputType="text"
+                    android:maxLines="1"
+                    android:paddingHorizontal="20dp"
+                    android:textColor="@color/terminow_text"
+                    android:textColorHint="@color/terminow_text_secondary"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:id="@+id/terminow_sort"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:layout_marginStart="10dp"
+                    android:background="@drawable/terminow_field"
+                    android:contentDescription="@string/terminow_keychain_sort"
+                    android:gravity="center"
+                    android:text="Az"
+                    android:textColor="@color/terminow_text"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:visibility="gone"
+                    tools:ignore="HardcodedText" />
+            </LinearLayout>
 
             <HorizontalScrollView
                 android:id="@+id/terminow_actions"
