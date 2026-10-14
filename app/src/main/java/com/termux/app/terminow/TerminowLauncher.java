@@ -116,6 +116,13 @@ public class TerminowLauncher {
      * started after the user saw the steps and confirmed them. The tab stays a shell afterwards.
      */
     static final String UBUNTU_SETUP_SCRIPT =
+        // Bootstraps up to terminow-bootstrap-2026.10.11-r7 have dpkg-perl, which depends on clang
+        // that the TermiNow repository does not have, so apt refuses to install anything. It and
+        // dpkg-scanpackages, the only package that needs it, are tools to build packages.
+        "if dpkg -s dpkg-perl >/dev/null 2>&1 && ! dpkg -s clang >/dev/null 2>&1; then\n" +
+        "  echo 'TermiNow: removing dpkg-perl and dpkg-scanpackages, which need clang that is not available'\n" +
+        "  dpkg --remove dpkg-scanpackages dpkg-perl || { echo 'TermiNow: could not remove them, see above'; exec bash -l; }\n" +
+        "fi\n" +
         "echo 'TermiNow: step 1 of 2: pkg install proot-distro'\n" +
         "if ! pkg install -y proot-distro; then echo 'TermiNow: step 1 failed, see above'; exec bash -l; fi\n" +
         "echo 'TermiNow: step 2 of 2: proot-distro install ubuntu'\n" +
