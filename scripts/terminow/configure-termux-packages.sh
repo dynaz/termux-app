@@ -114,6 +114,11 @@ count="$(grep -c "LD_PRELOAD=''" "$python_debscripts" || true)"
 sed -i "s/LD_PRELOAD='' //" "$python_debscripts"
 ! grep -q "LD_PRELOAD=''" "$python_debscripts" || fail "An empty LD_PRELOAD is left in '$python_debscripts'"
 
+# Some source hosts, like xorg.freedesktop.org, are down for many minutes at times, longer than
+# the two retries of termux_download, which fails the whole build. Retry for longer; the
+# checksum of the download is still checked.
+replace_line scripts/build/termux_download.sh '^([[:space:]]*)local retry=2$' '\1local retry=10'
+
 echo "[*] Adding the repository key to termux-keyring..."
 cp "$TERMINOW_REPO_PUBLIC_KEY_FILE" packages/termux-keyring/terminow.gpg
 replace_line packages/termux-keyring/build.sh '^([[:space:]]*)install -Dm600 "\$TERMUX_PKG_BUILDER_DIR/termux-autobuilds\.gpg" "\$GPG_SHARE_DIR"$' \
