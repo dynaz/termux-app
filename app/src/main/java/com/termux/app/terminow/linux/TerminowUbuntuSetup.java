@@ -316,6 +316,9 @@ public class TerminowUbuntuSetup {
 
     void checkRuntime() throws StepFailure, Cancelled, IOException {
         stage(Stage.CHECKING_RUNTIME);
+        // The environment of the app itself, which the first terminal tab installs
+        if (!new File(mPrefix, "bin/bash").isFile())
+            throw new StepFailure("The TermiNow environment is not installed yet. Open a terminal tab, wait until it shows a prompt, then Retry.");
         // What the runtime looks like, for the log: ids, the permissions of bash and its folders,
         // the variables that decide how programs are started, and termux-exec
         StringBuilder script = new StringBuilder("echo \"uid=$(id -u) gid=$(id -g) groups=$(id -G)\"\n" +

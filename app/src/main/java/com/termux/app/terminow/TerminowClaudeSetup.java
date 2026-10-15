@@ -161,6 +161,18 @@ public class TerminowClaudeSetup {
     }
 
     /**
+     * The home of the terminal, made if it is not there yet (the terminal makes it when its first
+     * tab opens), or else the files of the app, so that a command never fails to start for it.
+     */
+    @NonNull
+    private File workingDirectory() {
+        File home = mTargets.getTerminowHome();
+        //noinspection ResultOfMethodCallIgnored
+        if (!home.isDirectory()) home.mkdirs();
+        return home.isDirectory() ? home : new File(com.termux.shared.termux.TermuxConstants.TERMUX_FILES_DIR_PATH);
+    }
+
+    /**
      * Start a command with the environment of the terminal, from the TermiNow runtime itself,
      * never inside an environment. Output is read by the caller.
      */
@@ -177,7 +189,7 @@ public class TerminowClaudeSetup {
             int equals = entry.indexOf('=');
             if (equals > 0) builder.environment().put(entry.substring(0, equals), entry.substring(equals + 1));
         }
-        builder.directory(mTargets.getTerminowHome());
+        builder.directory(workingDirectory());
         return builder.start();
     }
 
@@ -198,7 +210,7 @@ public class TerminowClaudeSetup {
                 int equals = entry.indexOf('=');
                 if (equals > 0) builder.environment().put(entry.substring(0, equals), entry.substring(equals + 1));
             }
-            builder.directory(mTargets.getTerminowHome());
+            builder.directory(workingDirectory());
             process = builder.start();
         } catch (IOException | RuntimeException e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Failed to start the setup process", e);

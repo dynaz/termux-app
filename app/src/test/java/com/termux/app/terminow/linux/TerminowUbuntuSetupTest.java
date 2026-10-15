@@ -47,6 +47,8 @@ public class TerminowUbuntuSetupTest {
         mPrefix = Files.createTempDirectory("terminow-prefix").toFile();
         mHome = Files.createTempDirectory("terminow-home").toFile();
         assertTrue(new File(mPrefix, "var/lib/dpkg/info").mkdirs());
+        // The environment of the app, as the bootstrap installs it
+        write(new File(mPrefix, "bin/bash"), "elf");
         mRegistry = new TerminowLinuxRegistry(mPrefix, mHome, new TerminowLinuxRegistry.Settings() {
             private JSONObject mSettings = new JSONObject();
 
@@ -397,7 +399,7 @@ public class TerminowUbuntuSetupTest {
     @Test
     public void thePythonCheckStartsBashWithSubprocess() throws Exception {
         Assume.assumeTrue(new File("/usr/bin/python3").canExecute() && new File("/bin/bash").canExecute());
-        assertTrue(new File(mPrefix, "bin").mkdirs());
+        Files.delete(new File(mPrefix, "bin/bash").toPath());
         Files.createSymbolicLink(new File(mPrefix, "bin/bash").toPath(), new File("/bin/bash").toPath());
         ProcessBuilder builder = new ProcessBuilder("/usr/bin/python3", "-c", TerminowUbuntuSetup.PYTHON_SPAWN_CHECK);
         builder.environment().put("PREFIX", mPrefix.getPath());
@@ -424,6 +426,17 @@ public class TerminowUbuntuSetupTest {
         assertTrue(TerminowUbuntuSetup.LOCK_HELD.matcher("dpkg: error: dpkg frontend lock was locked by another process with pid 7").find()
             || TerminowUbuntuSetup.LOCK_HELD.matcher("dpkg: error: dpkg status database is locked by another process").find());
         assertFalse(TerminowUbuntuSetup.LOCK_HELD.matcher("E: Unable to locate package nope").find());
+    }
+
+
+    @Test
+    public void withoutTheEnvironmentOfTheAppItSaysSoAndRunsNothing() throws Exception {
+        Files.delete(new File(mPrefix, "bin/bash").toPath());
+        TerminowUbuntuSetup.State state = runSetup();
+        assertEquals(TerminowUbuntuSetup.State.Status.FAILED, state.status);
+        assertEquals(TerminowUbuntuSetup.Stage.CHECKING_RUNTIME, state.failedStage);
+        assertTrue(state.error, state.error.contains("not installed yet"));
+        assertTrue(mCommands.isEmpty());
     }
 
 }
