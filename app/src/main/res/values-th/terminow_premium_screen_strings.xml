@@ -34,4 +34,9 @@
     <string name="terminow_toolbar_upgrade">อัปเกรด</string>
     <string name="terminow_toolbar_premium_active">Premium ใช้งานอยู่ เปิดบัญชีและ Premium</string>
     <string name="terminow_toolbar_premium_upgrade">รับ Premium เปิดบัญชีและ Premium</string>
+    <string name="terminow_vault_notification_personal_off">ห้องนิรภัยส่วนตัวยังไม่ได้ซิงค์</string>
+    <string name="terminow_vault_personal_off_message">ห้องนิรภัยอื่นซิงค์แล้ว ห้องนิรภัยส่วนตัวอยู่บนโทรศัพท์นี้เท่านั้น แตะไอคอนคลาวด์ข้าง Personal แล้วเปิดการซิงค์</string>
+    <string name="terminow_vault_offer_title">ซิงค์ห้องนิรภัยส่วนตัวหรือไม่</string>
+    <string name="terminow_vault_offer_message">ด้วย Premium ห้องนิรภัยส่วนตัวสามารถซิงค์ไปยังอุปกรณ์อื่นของคุณได้ จะอยู่บนโทรศัพท์นี้เท่านั้นจนกว่าคุณจะเปิดการซิงค์</string>
+    <string name="terminow_vault_offer_later">ไว้ทีหลัง</string>
 </resources>

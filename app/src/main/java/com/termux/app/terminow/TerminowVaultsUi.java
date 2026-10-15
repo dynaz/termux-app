@@ -204,7 +204,10 @@ public class TerminowVaultsUi {
 
     /** A notification of Android, and an entry in the bell of the app. */
     private void notifySync(boolean ok, @NonNull String text) {
-        String title = mActivity.getString(ok ? R.string.terminow_vault_notification_ok : R.string.terminow_vault_notification_failed);
+        notify(mActivity.getString(ok ? R.string.terminow_vault_notification_ok : R.string.terminow_vault_notification_failed), text);
+    }
+
+    private void notify(@NonNull String title, @NonNull String text) {
         mStore.addNotification(title, text);
         try {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O)
@@ -249,6 +252,26 @@ public class TerminowVaultsUi {
     /** Sync everything when the app is shown again, at most once a minute. */
     public void onResume() {
         if (canSync() && System.currentTimeMillis() - mLastSync > RESUME_SYNC_INTERVAL_MS) syncQuietly(false);
+        offerPersonalSync();
+    }
+
+    /**
+     * Once per account that can sync (signed in, verified, Premium), while the Personal vault is
+     * only on this phone: ask whether to sync it. Nothing is uploaded unless the user says so.
+     */
+    public void offerPersonalSync() {
+        TerminowAccount.Session session = mStore.getAccount();
+        if (session == null || mVaults.getPersonal() != null || !mStore.getActiveVault().isEmpty()) return;
+        int reason = blockedReason();
+        if (reason != 0 && reason != R.string.terminow_vault_state_locked) return;
+        if (mStore.isPersonalSyncOffered(session.uid)) return;
+        mStore.setPersonalSyncOffered(session.uid);
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_vault_offer_title)
+            .setMessage(mActivity.getString(R.string.terminow_vault_offer_message) + "\n\n" + mActivity.getString(R.string.terminow_vault_about))
+            .setPositiveButton(R.string.terminow_vault_enable_sync, (d, w) -> ready(this::enablePersonalSync))
+            .setNegativeButton(R.string.terminow_vault_offer_later, null)
+            .show();
     }
 
     private void syncQuietly(boolean report) {
@@ -277,8 +300,16 @@ public class TerminowVaultsUi {
                 if (result == null) mStore.setVaultLastSync(mLastSync);
                 mListener.onVaultChanged();
                 // Asked for, or a change: failing, or working again; not every quiet sync
-                if (report || (result != null && !result.equals(before)) || (result == null && before != null))
-                    notifySync(result == null, result == null ? getStatusText() : mActivity.getString(R.string.terminow_vault_sync_failed, result));
+                if (report || (result != null && !result.equals(before)) || (result == null && before != null)) {
+                    if (result != null)
+                        notifySync(false, mActivity.getString(R.string.terminow_vault_sync_failed, result));
+                    else if (getState() == State.OFF)
+                        // The other vaults synced, the Personal vault is not synced at all: never "synced"
+                        notify(mActivity.getString(R.string.terminow_vault_notification_personal_off),
+                            mActivity.getString(R.string.terminow_vault_personal_off_message));
+                    else
+                        notifySync(true, getStatusText());
+                }
                 if (report)
                     mActivity.showToast(result == null ? mActivity.getString(R.string.terminow_vault_synced) :
                         mActivity.getString(R.string.terminow_vault_sync_failed, result), true);

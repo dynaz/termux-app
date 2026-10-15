@@ -347,6 +347,8 @@ public class TerminowHome {
         mSettings.getAccountUi().addChangeListener(() -> {
             updatePremiumButton();
             if (isVisible()) updateItems();
+            // A new Premium can sync the Personal vault: offered once
+            if (mVaultsUi != null) mVaultsUi.offerPersonalSync();
         });
         updatePremiumButton();
         mSettings.setVaultSettings(mVaultsUi::showSettings);

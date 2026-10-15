@@ -31,4 +31,9 @@
     <string name="terminow_toolbar_upgrade">Upgrade</string>
     <string name="terminow_toolbar_premium_active">Premium is active. Open Account and Premium</string>
     <string name="terminow_toolbar_premium_upgrade">Get Premium. Open Account and Premium</string>
+    <string name="terminow_vault_notification_personal_off">Personal vault is not synced</string>
+    <string name="terminow_vault_personal_off_message">Your other vaults synced. The Personal vault is only on this phone: tap the cloud next to Personal and turn on sync.</string>
+    <string name="terminow_vault_offer_title">Sync your Personal vault?</string>
+    <string name="terminow_vault_offer_message">With Premium, your Personal vault can sync to your other devices. It is only on this phone until you turn sync on.</string>
+    <string name="terminow_vault_offer_later">Not now</string>
 </resources>

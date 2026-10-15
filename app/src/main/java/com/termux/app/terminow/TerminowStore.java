@@ -1646,6 +1646,15 @@ public class TerminowStore {
     // ---------------------------------------------------------------------------------------
 
     /** When the vaults last synced without an error, 0 for never. */
+    /** Whether syncing the Personal vault was offered to the account already, so it is asked once. */
+    public boolean isPersonalSyncOffered(@NonNull String uid) {
+        return mPreferences.getBoolean("personal_sync_offered_" + uid, false);
+    }
+
+    public void setPersonalSyncOffered(@NonNull String uid) {
+        mPreferences.edit().putBoolean("personal_sync_offered_" + uid, true).apply();
+    }
+
     public long getVaultLastSync() {
         return mPreferences.getLong("vault_last_sync", 0);
     }
