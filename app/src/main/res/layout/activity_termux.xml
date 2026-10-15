@@ -81,6 +81,40 @@
                 android:orientation="horizontal" />
         </HorizontalScrollView>
 
+        <!-- Account & Premium: a crown, with "Premium" or "Upgrade" next to it on wide screens -->
+        <LinearLayout
+            android:id="@+id/terminow_premium_button"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:layout_marginStart="6dp"
+            android:background="?android:attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center_vertical"
+            android:minWidth="44dp"
+            android:orientation="horizontal"
+            android:paddingHorizontal="10dp">
+
+            <ImageView
+                android:id="@+id/terminow_premium_icon"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:src="@drawable/ic_terminow_crown"
+                tools:ignore="ContentDescription" />
+
+            <TextView
+                android:id="@+id/terminow_premium_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:maxLines="1"
+                android:text="@string/terminow_toolbar_premium"
+                android:textColor="@color/terminow_text"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+        </LinearLayout>
+
         <!-- The launcher: TermiNow shell, Ubuntu and Claude Code -->
         <ImageView
             android:id="@+id/terminow_launcher_button"

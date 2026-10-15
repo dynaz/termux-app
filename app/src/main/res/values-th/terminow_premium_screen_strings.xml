@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_account_google">ดำเนินการต่อด้วย Google</string>
+    <string name="terminow_account_or_email">หรือลงชื่อเข้าใช้ด้วยอีเมล</string>
+    <string name="terminow_account_google_failed">ลงชื่อเข้าใช้ด้วย Google ไม่สำเร็จ: %1$s</string>
+    <string name="terminow_account_google_signing_in">กำลังลงชื่อเข้าใช้…</string>
+    <string name="terminow_account_google_failed_title">ลงชื่อเข้าใช้ด้วย Google ไม่สำเร็จ</string>
+    <string name="terminow_account_google_no_token">Google ไม่ได้ส่งบัญชีกลับมา ลองอีกครั้ง หรือลงชื่อเข้าใช้ด้วยอีเมล</string>
+    <string name="terminow_account_google_no_account">ไม่มีบัญชี Google ที่ใช้ได้ เพิ่มบัญชีใน การตั้งค่า Android → บัญชี แล้วลองอีกครั้ง หากยังเกิดขึ้น ให้ลงชื่อเข้าใช้ด้วยอีเมล</string>
+    <string name="terminow_account_google_interrupted">การลงชื่อเข้าใช้ถูกขัดจังหวะ ลองอีกครั้ง</string>
+    <string name="terminow_account_google_unsupported">การลงชื่อเข้าใช้ด้วย Google ต้องใช้บริการ Google Play อัปเดตบริการ Google Play หรือลงชื่อเข้าใช้ด้วยอีเมล</string>
+    <string name="terminow_account_google_has_password">อีเมลนี้มีบัญชี TermiNow ที่ใช้รหัสผ่านอยู่แล้ว ลงชื่อเข้าใช้ด้วยอีเมลและรหัสผ่านนั้น บัญชีจะไม่ถูกรวมกันเพียงเพราะอีเมลเหมือนกัน</string>
+    <string name="terminow_account_password_show">แสดงรหัสผ่าน</string>
+    <string name="terminow_account_password_hide">ซ่อนรหัสผ่าน</string>
+    <string name="terminow_premium_play_only">ซื้อ Premium ได้ใน TermiNow เวอร์ชัน Google Play หรือที่ accmove.com</string>
+    <string name="terminow_premium_sign_in_first">ลงชื่อเข้าใช้เพื่อรับ Premium</string>
+    <string name="terminow_premium_already">คุณมี Premium แล้ว</string>
+    <string name="terminow_account_screen_title">บัญชีและ Premium</string>
+    <string name="terminow_account_screen_signed_out">ลงชื่อเข้าใช้เพื่อใช้ Premium บนโทรศัพท์นี้ โฮสต์ คีย์ ไฟล์ และเทอร์มินัลของคุณยังอยู่บนโทรศัพท์นี้เสมอ</string>
+    <string name="terminow_account_screen_email">ลงชื่อเข้าใช้ด้วยอีเมล</string>
+    <string name="terminow_account_plan_premium">Premium</string>
+    <string name="terminow_account_plan_free">ฟรี</string>
+    <string name="terminow_account_plan_signed_out">ยังไม่ได้ลงชื่อเข้าใช้: จะตรวจสอบ Premium กับเซิร์ฟเวอร์เมื่อคุณลงชื่อเข้าใช้</string>
+    <string name="terminow_account_source_play">จาก Google Play</string>
+    <string name="terminow_account_source_accmove">จาก accmove.com</string>
+    <string name="terminow_account_source_both">จาก Google Play และ accmove.com</string>
+    <string name="terminow_account_plans_note">ราคาและรอบการชำระมาจาก Google Play การสมัครสมาชิกจะต่ออายุจนกว่าคุณจะยกเลิกใน Google Play</string>
+    <string name="terminow_account_refresh">รีเฟรชสถานะ</string>
+    <string name="terminow_account_refresh_summary">ตรวจสอบ Premium กับเซิร์ฟเวอร์อีกครั้ง</string>
+    <string name="terminow_account_manage_accmove">จัดการที่ accmove.com</string>
+    <string name="terminow_account_manage_accmove_summary">บริการและใบแจ้งหนี้ accmove.com ของคุณ</string>
+    <string name="terminow_account_screen_local_note">การออกจากระบบจะเก็บโฮสต์ คีย์ รหัสผ่าน ไฟล์ และเทอร์มินัลไว้บนโทรศัพท์นี้</string>
+    <string name="terminow_toolbar_premium">Premium</string>
+    <string name="terminow_toolbar_upgrade">อัปเกรด</string>
+    <string name="terminow_toolbar_premium_active">Premium ใช้งานอยู่ เปิดบัญชีและ Premium</string>
+    <string name="terminow_toolbar_premium_upgrade">รับ Premium เปิดบัญชีและ Premium</string>
+</resources>

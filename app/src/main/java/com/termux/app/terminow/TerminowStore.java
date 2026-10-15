@@ -704,6 +704,8 @@ public class TerminowStore {
             session.uid = object.optString("uid");
             session.email = object.optString("email");
             session.emailVerified = object.optBoolean("emailVerified");
+            session.displayName = object.optString("displayName");
+            session.photoUrl = object.optString("photoUrl");
             session.refreshToken = decryptPassword(object.optString("refreshToken"));
             // A token that could not be decrypted, like after a restore, needs a new sign in
             return session.refreshToken.isEmpty() ? null : session;
@@ -722,6 +724,8 @@ public class TerminowStore {
                 .put("uid", session.uid)
                 .put("email", session.email)
                 .put("emailVerified", session.emailVerified)
+                .put("displayName", session.displayName)
+                .put("photoUrl", session.photoUrl)
                 .put("refreshToken", encryptPassword(session.refreshToken));
             mPreferences.edit().putString(KEY_ACCOUNT, object.toString()).apply();
         } catch (JSONException e) {

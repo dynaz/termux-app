@@ -49,6 +49,9 @@ public class TerminowAccount {
         /** When the ID token expires, in milliseconds. */
         public long idTokenExpiry;
         public boolean emailVerified;
+        /** The name and the photo of the account, from Google; empty if not known. */
+        public String displayName = "";
+        public String photoUrl = "";
     }
 
     public static class Premium {
@@ -358,6 +361,10 @@ public class TerminowAccount {
         session.email = result.optString("email");
         session.idToken = result.optString("idToken");
         session.refreshToken = result.optString("refreshToken");
+        session.displayName = result.optString("displayName", result.optString("fullName"));
+        // Only an https photo of Google, which the account screen may load
+        String photo = result.optString("photoUrl");
+        session.photoUrl = photo.startsWith("https://") && photo.length() < 2000 ? photo : "";
         session.idTokenExpiry = System.currentTimeMillis() + Long.parseLong(result.optString("expiresIn", "3600")) * 1000;
         if (session.idToken.isEmpty() || session.refreshToken.isEmpty())
             throw new AccountException("", "Firebase did not return a session");

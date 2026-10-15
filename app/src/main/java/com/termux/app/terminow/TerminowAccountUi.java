@@ -21,6 +21,10 @@ import androidx.credentials.GetCredentialRequest;
 import androidx.credentials.GetCredentialResponse;
 import androidx.credentials.exceptions.GetCredentialCancellationException;
 import androidx.credentials.exceptions.GetCredentialException;
+import androidx.credentials.exceptions.GetCredentialInterruptedException;
+import androidx.credentials.exceptions.GetCredentialProviderConfigurationException;
+import androidx.credentials.exceptions.GetCredentialUnsupportedException;
+import androidx.credentials.exceptions.NoCredentialException;
 
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption;
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
@@ -60,12 +64,20 @@ public class TerminowAccountUi {
     private final Runnable mOnChanged;
     private final Handler mHandler = new Handler(Looper.getMainLooper());
     private boolean mBusy;
+    /** Told when the account, Premium or a purchase changed, on the main thread. */
+    private final List<Runnable> mListeners = new ArrayList<>();
+    /** Whether a Google sign in runs, so that it is never started twice. */
+    private boolean mGoogleBusy;
     @Nullable private String mPremiumError;
 
     public TerminowAccountUi(@NonNull TermuxActivity activity, @NonNull TerminowStore store, @NonNull Runnable onChanged) {
         mActivity = activity;
         mStore = store;
-        mOnChanged = onChanged;
+        // The settings, and everything else that shows the account or Premium, like the toolbar
+        mOnChanged = () -> {
+            onChanged.run();
+            for (Runnable listener : new ArrayList<>(mListeners)) listener.run();
+        };
         mAccount = new TerminowAccount(BuildConfig.TERMINOW_FIREBASE_API_KEY, mActivity.getPackageName());
         mAccount.setFirebaseBackend(BuildConfig.TERMINOW_FIREBASE_PROJECT_ID, BuildConfig.TERMINOW_FUNCTIONS_REGION);
         mPurchases = new TerminowPlayPurchases(activity, store, mAccount);
@@ -110,6 +122,29 @@ public class TerminowAccountUi {
             checkPremium(session, false);
     }
 
+    public void addChangeListener(@NonNull Runnable listener) {
+        if (!mListeners.contains(listener)) mListeners.add(listener);
+    }
+
+    public void removeChangeListener(@NonNull Runnable listener) {
+        mListeners.remove(listener);
+    }
+
+    @NonNull
+    TerminowStore getStore() {
+        return mStore;
+    }
+
+    /** Whether accounts can be used in this build, with its Firebase project. */
+    boolean isConfigured() {
+        return mAccount.isConfigured();
+    }
+
+    /** Whether Google sign in is set up in this build. */
+    static boolean hasGoogleSignIn() {
+        return !BuildConfig.TERMINOW_GOOGLE_WEB_CLIENT_ID.isEmpty();
+    }
+
     /** Whether Premium features may be used now, see {@link TerminowEntitlement}. */
     public static boolean isPremium(@NonNull TerminowStore store) {
         return TerminowEntitlement.get(store) == TerminowEntitlement.State.ACTIVE;
@@ -150,7 +185,7 @@ public class TerminowAccountUi {
     }
 
     @NonNull
-    private String getPremiumSummary(@NonNull TerminowAccount.Session session) {
+    String getPremiumSummary(@NonNull TerminowAccount.Session session) {
         if (!session.emailVerified) return mActivity.getString(R.string.terminow_account_premium_verify_first);
         if (mBusy) return mActivity.getString(R.string.terminow_account_premium_checking);
         JSONObject premium = mStore.getPremium();
@@ -175,7 +210,7 @@ public class TerminowAccountUi {
 
     /** What the Google Play purchase of the account is, from the server, and what was last tried. */
     @Nullable
-    private String getPlaySummary() {
+    String getPlaySummary() {
         JSONObject status = mStore.getPlayPurchaseStatus();
         TerminowPlayPurchases.Status state = TerminowPlayPurchases.getStatus(mStore);
         JSONObject entitlement = mStore.getPlayEntitlement();
@@ -203,37 +238,47 @@ public class TerminowAccountUi {
     void showSignIn() {
         LinearLayout form = form();
         final AlertDialog[] dialogHolder = new AlertDialog[1];
-        if (!BuildConfig.TERMINOW_GOOGLE_WEB_CLIENT_ID.isEmpty()) {
-            TextView google = new TextView(mActivity);
-            google.setText(R.string.terminow_account_google);
-            google.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
-            google.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-            google.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-            google.setGravity(android.view.Gravity.CENTER);
-            google.setBackgroundResource(R.drawable.terminow_action);
-            google.setOnClickListener(v -> signInWithGoogle(dialogHolder[0]));
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44));
-            params.topMargin = dp(8);
-            params.bottomMargin = dp(8);
-            form.addView(google, params);
-            TextView or = new TextView(mActivity);
-            or.setText(R.string.terminow_account_or_email);
-            or.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
-            or.setGravity(android.view.Gravity.CENTER);
-            form.addView(or);
+        if (hasGoogleSignIn()) {
+            TerminowGoogleButton google = new TerminowGoogleButton(mActivity);
+            google.setOnClickListener(v -> signInWithGoogle(dialogHolder[0], google));
+            form.addView(google, TerminowGoogleButton.fullWidth(form, 8, 4));
+            form.addView(divider(R.string.terminow_account_or_email));
         }
         EditText emailView = field(form, R.string.terminow_account_email, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
-        EditText passwordView = field(form, R.string.terminow_account_password, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        emailView.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_NEXT);
+        EditText passwordView = passwordField(form);
         TextView note = new TextView(mActivity);
         note.setText(R.string.terminow_account_sign_in_note);
         note.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
         note.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         note.setPadding(0, dp(12), 0, 0);
+
+        // A forgotten password is reset by email
+        TextView forgot = new TextView(mActivity);
+        forgot.setText(R.string.terminow_account_forgot);
+        forgot.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_panel_accent));
+        forgot.setPadding(0, dp(12), 0, dp(4));
+        forgot.setMinHeight(dp(48));
+        forgot.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        forgot.setOnClickListener(v -> {
+            String email = emailView.getText().toString().trim();
+            if (email.isEmpty()) {
+                emailView.setError(mActivity.getString(R.string.terminow_account_enter_email));
+                emailView.requestFocus();
+                return;
+            }
+            run(() -> mAccount.sendPasswordReset(email), () ->
+                mActivity.showToast(mActivity.getString(R.string.terminow_account_reset_sent, email), true));
+        });
+        form.addView(forgot);
         form.addView(note);
 
+        // Scrolls on small screens and with the keyboard open
+        android.widget.ScrollView scroll = new android.widget.ScrollView(mActivity);
+        scroll.addView(form);
         AlertDialog dialog = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
             .setTitle(R.string.terminow_account_sign_in)
-            .setView(form)
+            .setView(scroll)
             .setPositiveButton(R.string.terminow_account_sign_in_button, null)
             .setNeutralButton(R.string.terminow_account_create, null)
             .setNegativeButton(android.R.string.cancel, null)
@@ -243,27 +288,88 @@ public class TerminowAccountUi {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> submit(dialog, emailView, passwordView, false));
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> submit(dialog, emailView, passwordView, true));
         });
-        dialog.show();
-
-        // A forgotten password is reset by email
-        TextView forgot = new TextView(mActivity);
-        forgot.setText(R.string.terminow_account_forgot);
-        forgot.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_panel_accent));
-        forgot.setPadding(0, dp(10), 0, 0);
-        forgot.setOnClickListener(v -> {
-            String email = emailView.getText().toString().trim();
-            if (email.isEmpty()) {
-                emailView.setError(mActivity.getString(R.string.terminow_account_enter_email));
-                return;
+        // Enter on the password signs in
+        passwordView.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                submit(dialog, emailView, passwordView, false);
+                return true;
             }
-            run(() -> mAccount.sendPasswordReset(email), () ->
-                mActivity.showToast(mActivity.getString(R.string.terminow_account_reset_sent, email), true));
+            return false;
         });
-        form.addView(forgot);
+        if (dialog.getWindow() != null)
+            dialog.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        dialog.show();
+    }
+
+    /** A line with a text in the middle, like "or sign in with email". */
+    @NonNull
+    android.view.View divider(int textRes) {
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(12), 0, dp(4));
+        for (int i = 0; i < 3; i++) {
+            if (i == 1) {
+                TextView text = new TextView(mActivity);
+                text.setText(textRes);
+                text.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+                text.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+                text.setPadding(dp(12), 0, dp(12), 0);
+                row.addView(text);
+            } else {
+                android.view.View line = new android.view.View(mActivity);
+                line.setBackgroundColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+                line.setAlpha(0.35f);
+                row.addView(line, new LinearLayout.LayoutParams(0, Math.max(1, dp(1)), 1));
+            }
+        }
+        return row;
+    }
+
+    /** A password field with a button that shows or hides it. */
+    @NonNull
+    private EditText passwordField(@NonNull LinearLayout form) {
+        android.widget.FrameLayout box = new android.widget.FrameLayout(mActivity);
+        EditText field = new EditText(mActivity);
+        int hidden = InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD;
+        int shown = InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD;
+        field.setHint(R.string.terminow_account_password);
+        field.setInputType(hidden);
+        field.setSingleLine(true);
+        field.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
+        field.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
+        field.setHintTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+        field.setPaddingRelative(field.getPaddingStart(), field.getPaddingTop(), dp(48), field.getPaddingBottom());
+        box.addView(field, new android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT));
+        android.widget.ImageButton toggle = new android.widget.ImageButton(mActivity);
+        toggle.setImageResource(R.drawable.ic_terminow_lock);
+        toggle.setColorFilter(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+        toggle.setBackgroundResource(android.R.color.transparent);
+        toggle.setContentDescription(mActivity.getString(R.string.terminow_account_password_show));
+        toggle.setOnClickListener(v -> {
+            boolean show = field.getInputType() == hidden;
+            int cursor = field.getSelectionEnd();
+            field.setInputType(show ? shown : hidden);
+            field.setSelection(Math.max(0, Math.min(cursor, field.length())));
+            toggle.setColorFilter(ContextCompat.getColor(mActivity, show ? R.color.terminow_panel_accent : R.color.terminow_text_secondary));
+            toggle.setContentDescription(mActivity.getString(show ? R.string.terminow_account_password_hide : R.string.terminow_account_password_show));
+        });
+        android.widget.FrameLayout.LayoutParams toggleParams = new android.widget.FrameLayout.LayoutParams(dp(48), dp(48),
+            android.view.Gravity.END | android.view.Gravity.CENTER_VERTICAL);
+        box.addView(toggle, toggleParams);
+        form.addView(box);
+        return field;
     }
 
     /** Show the Google account picker of Android, then sign in to Firebase with its ID token. */
-    private void signInWithGoogle(@Nullable AlertDialog dialog) {
+    void signInWithGoogle(@Nullable AlertDialog dialog, @Nullable TerminowGoogleButton button) {
+        if (mGoogleBusy) return;
+        mGoogleBusy = true;
+        if (button != null) button.setLoading(true);
+        Runnable done = () -> {
+            mGoogleBusy = false;
+            if (button != null) button.setLoading(false);
+        };
         GetSignInWithGoogleOption option = new GetSignInWithGoogleOption.Builder(BuildConfig.TERMINOW_GOOGLE_WEB_CLIENT_ID).build();
         GetCredentialRequest request = new GetCredentialRequest.Builder().addCredentialOption(option).build();
         CredentialManager.create(mActivity).getCredentialAsync(mActivity, request, new CancellationSignal(),
@@ -281,26 +387,46 @@ public class TerminowAccountUi {
                         }
                     }
                     if (idToken == null) {
-                        mActivity.showToast(mActivity.getString(R.string.terminow_account_google_failed, "no Google account"), true);
+                        done.run();
+                        showMessage(R.string.terminow_account_google_failed_title, mActivity.getString(R.string.terminow_account_google_no_token));
                         return;
                     }
                     String token = idToken;
                     final TerminowAccount.Session[] result = new TerminowAccount.Session[1];
-                    run(() -> result[0] = mAccount.signInWithGoogle(token), () -> {
+                    // Signing in gives no Premium: that is only what the server verified
+                    runThen(() -> result[0] = mAccount.signInWithGoogle(token), error -> {
+                        done.run();
+                        if (error != null) {
+                            showMessage(R.string.terminow_account_google_failed_title, error);
+                            return;
+                        }
                         mStore.setAccount(result[0]);
                         mPremiumError = null;
                         if (dialog != null) dialog.dismiss();
                         mOnChanged.run();
+                        // The Premium of this account, from the server
+                        checkPremiumNow();
                     });
                 }
 
                 @Override
                 public void onError(GetCredentialException e) {
+                    done.run();
                     // Closing the picker is not an error
                     if (e instanceof GetCredentialCancellationException) return;
-                    mActivity.showToast(mActivity.getString(R.string.terminow_account_google_failed, String.valueOf(e.getMessage())), true);
+                    showMessage(R.string.terminow_account_google_failed_title, describeGoogleError(e));
                 }
             });
+    }
+
+    /** What a failed Google sign in means, and what to do about it. */
+    @NonNull
+    String describeGoogleError(@NonNull GetCredentialException e) {
+        if (e instanceof NoCredentialException) return mActivity.getString(R.string.terminow_account_google_no_account);
+        if (e instanceof GetCredentialInterruptedException) return mActivity.getString(R.string.terminow_account_google_interrupted);
+        if (e instanceof GetCredentialProviderConfigurationException || e instanceof GetCredentialUnsupportedException)
+            return mActivity.getString(R.string.terminow_account_google_unsupported);
+        return mActivity.getString(R.string.terminow_account_google_failed, String.valueOf(e.getMessage()));
     }
 
     private void submit(@NonNull AlertDialog dialog, @NonNull EditText emailView, @NonNull EditText passwordView, boolean create) {
@@ -325,7 +451,7 @@ public class TerminowAccountUi {
         });
     }
 
-    private void showVerify(@NonNull TerminowAccount.Session session) {
+    void showVerify(@NonNull TerminowAccount.Session session) {
         new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
             .setTitle(R.string.terminow_account_verify_title)
             .setMessage(mActivity.getString(R.string.terminow_account_verify_message, session.email))
@@ -373,7 +499,7 @@ public class TerminowAccountUi {
     }
 
     /** Give every Google Play purchase of this device to the server again, like after a reinstall. */
-    private void restorePurchases() {
+    void restorePurchases() {
         TerminowAccount.Session session = mStore.getAccount();
         if (session == null || mBusy) return;
         mBusy = true;
@@ -388,7 +514,7 @@ public class TerminowAccountUi {
     }
 
     /** Link an existing accmove.com client with the one-time code of its client area. */
-    private void showLinkAccount(@NonNull TerminowAccount.Session session) {
+    void showLinkAccount(@NonNull TerminowAccount.Session session) {
         LinearLayout form = form();
         TextView note = new TextView(mActivity);
         note.setText(R.string.terminow_account_link_note);
@@ -530,9 +656,118 @@ public class TerminowAccountUi {
         });
     }
 
+    /** Why Premium can not be bought here now, {@code null} if it can. */
+    @Nullable
+    String whyNoPurchase() {
+        TerminowAccount.Session session = mStore.getAccount();
+        if (!TerminowBilling.isSupported()) return mActivity.getString(R.string.terminow_premium_play_only);
+        if (session == null) return mActivity.getString(R.string.terminow_premium_sign_in_first);
+        if (!session.emailVerified) return mActivity.getString(R.string.terminow_account_premium_verify_first);
+        if (!mAccount.hasFirebaseBackend()) return mActivity.getString(R.string.terminow_premium_not_set_up);
+        if (isPremium(mStore)) return mActivity.getString(R.string.terminow_premium_already);
+        if (TerminowPlayPurchases.isPurchaseInProgress(mStore)) {
+            String summary = getPlaySummary();
+            return summary != null ? summary : mActivity.getString(R.string.terminow_premium_status_verifying);
+        }
+        return null;
+    }
+
+    /** The plans of Premium with their prices and periods from Google Play. */
+    void loadPlans(@NonNull TerminowBilling.Result<List<TerminowBilling.Plan>> result) {
+        final TerminowBilling[] holder = new TerminowBilling[1];
+        holder[0] = TerminowBilling.create(mActivity, new TerminowBilling.Listener() {
+            @Override
+            public void onPurchases(@NonNull List<TerminowBilling.Owned> purchases) {
+            }
+
+            @Override
+            public void onCancelled() {
+            }
+
+            @Override
+            public void onError(@NonNull String message) {
+            }
+        });
+        if (holder[0] == null) {
+            result.onResult(null, mActivity.getString(R.string.terminow_premium_unavailable));
+            return;
+        }
+        holder[0].queryPlans((plans, error) -> {
+            holder[0].end();
+            mHandler.post(() -> result.onResult(plans, error));
+        });
+    }
+
+    /**
+     * Buy a plan with Google Play for the signed in account, like the plans dialog does: a
+     * subscription that this account has on the device already is checked instead of bought again.
+     * {@code onCancelled} is called when the user closes Google Play without buying.
+     */
+    void buyPlan(@NonNull TerminowBilling.Plan plan, @NonNull Runnable onCancelled) {
+        TerminowAccount.Session session = mStore.getAccount();
+        if (session == null || whyNoPurchase() != null) {
+            onCancelled.run();
+            return;
+        }
+        final TerminowBilling[] holder = new TerminowBilling[1];
+        holder[0] = TerminowBilling.create(mActivity, new TerminowBilling.Listener() {
+            @Override
+            public void onPurchases(@NonNull List<TerminowBilling.Owned> purchases) {
+                holder[0].end();
+                onPurchased(session, purchases);
+            }
+
+            @Override
+            public void onCancelled() {
+                holder[0].end();
+                onCancelled.run();
+            }
+
+            @Override
+            public void onError(@NonNull String message) {
+                holder[0].end();
+                onCancelled.run();
+                showMessage(R.string.terminow_premium_choose_title, message);
+            }
+        });
+        if (holder[0] == null) {
+            onCancelled.run();
+            return;
+        }
+        holder[0].queryOwned((owned, ownedError) -> {
+            String accountId = TerminowBilling.accountId(session.uid);
+            boolean hasOwn = false;
+            if (owned != null) for (TerminowBilling.Owned purchase : owned) hasOwn |= accountId.equals(purchase.accountId);
+            if (hasOwn) {
+                holder[0].end();
+                mHandler.post(() -> {
+                    onCancelled.run();
+                    onPurchased(session, owned);
+                });
+                return;
+            }
+            mHandler.post(() -> holder[0].buy(mActivity, plan, accountId, (none, buyError) -> {
+                if (buyError == null) return;
+                holder[0].end();
+                onCancelled.run();
+                showMessage(R.string.terminow_premium_choose_title, buyError);
+            }));
+        });
+    }
+
+    /** The client area of accmove.com, where Premium from accmove is managed. */
+    void openAccmove() {
+        try {
+            mActivity.startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW,
+                android.net.Uri.parse("https://cp.accmove.com/clientarea.php?action=services")));
+        } catch (android.content.ActivityNotFoundException e) {
+            mActivity.showToast("https://cp.accmove.com/clientarea.php", true);
+        }
+    }
+
     /** The price and the billing period of a plan, both as Google Play gives them. */
     @NonNull
-    private String planLabel(@NonNull TerminowBilling.Plan plan) {
+    String planLabel(@NonNull TerminowBilling.Plan plan) {
         java.util.regex.Matcher period = java.util.regex.Pattern.compile("P(\\d+)([DWMY])").matcher(plan.period);
         if (!period.matches()) return plan.price + " / " + plan.period;
         int count = Integer.parseInt(period.group(1));
@@ -567,7 +802,7 @@ public class TerminowAccountUi {
         });
     }
 
-    private void openManage() {
+    void openManage() {
         try {
             mActivity.startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW,
                 android.net.Uri.parse(TerminowBilling.manageUrl(mActivity.getPackageName()))));
@@ -578,7 +813,7 @@ public class TerminowAccountUi {
 
     // -----------------------------------------------------------------------------------------
 
-    private void confirmSignOut() {
+    void confirmSignOut() {
         new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
             .setMessage(R.string.terminow_account_sign_out_confirm)
             .setPositiveButton(R.string.terminow_account_sign_out, (d, w) -> {
@@ -590,7 +825,7 @@ public class TerminowAccountUi {
             .show();
     }
 
-    private void confirmDelete(@NonNull TerminowAccount.Session session) {
+    void confirmDelete(@NonNull TerminowAccount.Session session) {
         new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
             .setTitle(R.string.terminow_account_delete)
             .setMessage(mActivity.getString(R.string.terminow_account_delete_confirm, session.email))
@@ -607,6 +842,20 @@ public class TerminowAccountUi {
 
     private interface Call {
         void run() throws TerminowAccount.AccountException;
+    }
+
+    /** Run a call in the background without a dialog, then tell its error, {@code null} on success, on the main thread. */
+    private void runThen(@NonNull Call call, @NonNull java.util.function.Consumer<String> onDone) {
+        new Thread(() -> {
+            String error = null;
+            try {
+                call.run();
+            } catch (TerminowAccount.AccountException e) {
+                error = "NEED_CONFIRMATION".equals(e.code) ? mActivity.getString(R.string.terminow_account_google_has_password) : e.getMessage();
+            }
+            String finalError = error;
+            mHandler.post(() -> onDone.accept(finalError));
+        }).start();
     }
 
     /** Run a call in the background with a progress dialog, then {@code onDone} on success. */

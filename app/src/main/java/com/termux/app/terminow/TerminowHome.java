@@ -179,6 +179,7 @@ public class TerminowHome {
     private final View mFabView;
     private final View mSettingsScrollView;
     private final TerminowSettings mSettings;
+    private final View mPremiumButton;
     private final EditText mSearchView;
     /** Sorts the keychain, only shown on it. */
     private final TextView mSortView;
@@ -339,6 +340,15 @@ public class TerminowHome {
         mFabView = activity.findViewById(R.id.terminow_fab);
         mSettingsScrollView = activity.findViewById(R.id.terminow_settings_scroll);
         mSettings = new TerminowSettings(activity, mStore, activity.findViewById(R.id.terminow_settings));
+        // Account & Premium in the top bar, drawn again when the account or Premium changes
+        mPremiumButton = activity.findViewById(R.id.terminow_premium_button);
+        mPremiumButton.setOnClickListener(v -> openAccountScreen());
+        // Gated pages, like MCP, too: right after a sign in, a purchase or a restore
+        mSettings.getAccountUi().addChangeListener(() -> {
+            updatePremiumButton();
+            if (isVisible()) updateItems();
+        });
+        updatePremiumButton();
         mSettings.setVaultSettings(mVaultsUi::showSettings);
         TerminowSettings.applyScreenshotsBlocked(activity, mStore);
         addUpdateNotification();
@@ -1127,7 +1137,10 @@ public class TerminowHome {
         mExplorer.onResume();
         mVaultsUi.onResume();
         // A purchase whose check failed, or a renewal or expiry that the server found, is picked up
-        mSettings.recoverPurchases(this::updateItems);
+        mSettings.recoverPurchases(() -> {
+            updateItems();
+            updatePremiumButton();
+        });
     }
 
     public void onStoragePermissionResult() {
@@ -2848,6 +2861,33 @@ public class TerminowHome {
     private interface FormSaver {
         /** Save the form, returns {@code false} if the form is invalid and the dialog should stay open. */
         boolean save();
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Account & Premium
+    // ---------------------------------------------------------------------------------------
+
+    /** Open Account & Premium: sign in, the plan, and buying or managing Premium. */
+    public void openAccountScreen() {
+        new TerminowAccountScreen(mActivity, mSettings.getAccountUi()).show();
+    }
+
+    /**
+     * The crown of the top bar: gold for Premium, gray with an upgrade for everyone else, and its
+     * label next to it where there is room.
+     */
+    public void updatePremiumButton() {
+        if (mPremiumButton == null) return;
+        boolean premium = TerminowAccountUi.isPremium(mStore);
+        ImageView icon = mPremiumButton.findViewById(R.id.terminow_premium_icon);
+        TextView label = mPremiumButton.findViewById(R.id.terminow_premium_label);
+        icon.setColorFilter(premium ? 0xFFFFC107 : ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+        label.setText(premium ? R.string.terminow_toolbar_premium : R.string.terminow_toolbar_upgrade);
+        label.setTextColor(premium ? 0xFFFFC107 : ContextCompat.getColor(mActivity, R.color.terminow_text));
+        boolean wide = mActivity.getResources().getConfiguration().screenWidthDp >= 600;
+        label.setVisibility(wide ? View.VISIBLE : View.GONE);
+        mPremiumButton.setContentDescription(mActivity.getString(premium ? R.string.terminow_toolbar_premium_active :
+            R.string.terminow_toolbar_premium_upgrade));
     }
 
     // ---------------------------------------------------------------------------------------

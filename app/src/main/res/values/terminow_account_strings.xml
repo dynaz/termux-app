@@ -8,7 +8,7 @@
     <string name="terminow_account_create">Create account</string>
     <string name="terminow_account_sign_in_note">Use the email of your accmove.com account, so that TermiNow can find your Premium. Your hosts, keys and passwords stay on this device.</string>
     <string name="terminow_account_google">Continue with Google</string>
-    <string name="terminow_account_or_email">or with email</string>
+    <string name="terminow_account_or_email">or sign in with email</string>
     <string name="terminow_account_google_failed">Google sign-in failed: %1$s</string>
     <string name="terminow_account_email">Email</string>
     <string name="terminow_account_password">Password</string>
