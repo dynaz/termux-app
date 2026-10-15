@@ -166,10 +166,14 @@ public class TerminowClaudeSetup {
      */
     @NonNull
     private File workingDirectory() {
-        File home = mTargets.getTerminowHome();
+        return workingDirectoryFor(mTargets.getTerminowHome(), new File(com.termux.shared.termux.TermuxConstants.TERMUX_FILES_DIR_PATH));
+    }
+
+    @NonNull
+    static File workingDirectoryFor(@NonNull File home, @NonNull File fallback) {
         //noinspection ResultOfMethodCallIgnored
         if (!home.isDirectory()) home.mkdirs();
-        return home.isDirectory() ? home : new File(com.termux.shared.termux.TermuxConstants.TERMUX_FILES_DIR_PATH);
+        return home.isDirectory() ? home : fallback;
     }
 
     /**

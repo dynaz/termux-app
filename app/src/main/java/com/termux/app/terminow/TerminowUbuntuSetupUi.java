@@ -64,7 +64,7 @@ public class TerminowUbuntuSetupUi {
     private static final String KEY_STATE = "state";
     private static final long MAX_LOG_BYTES = 512 * 1024;
 
-    @Nullable private static TerminowUbuntuSetup sSetup;
+    @Nullable private static volatile TerminowUbuntuSetup sSetup;
     private static final ExecutorService sExecutor = Executors.newSingleThreadExecutor();
     private static boolean sRecovered;
     /** The Linux screen of the current activity, which makes installers. */
@@ -92,12 +92,16 @@ public class TerminowUbuntuSetupUi {
                 SharedPreferences preferences = app.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
                 File logFile = logFile(app);
                 sSetup = new TerminowUbuntuSetup(new File(TermuxConstants.TERMUX_PREFIX_DIR_PATH), mLinux.getRegistry(),
+                    log -> prepareRuntime(app, log),
                     (command, output) -> runCommand(app, command, output),
                     new TerminowUbuntuSetup.Installer() {
                         @NonNull
                         @Override
                         public TerminowLinuxEnv install(@NonNull TerminowLinuxCatalog.Entry entry, @NonNull String alias,
                                                         @NonNull TerminowLinuxInstaller.Listener listener) throws IOException {
+                            // One Linux install at a time, also with Browse Linux
+                            String other = TerminowLinuxUi.liveInstall();
+                            if (other != null) throw new IOException("Another Linux environment (" + other + ") is being installed. Let it finish, then Retry.");
                             long usable = new StatFs(TermuxConstants.TERMUX_FILES_DIR_PATH).getAvailableBytes();
                             TerminowLinuxInstaller installer = currentLinux().newInstaller();
                             sInstaller = installer;
@@ -147,6 +151,45 @@ public class TerminowUbuntuSetupUi {
         TerminowLinuxUi linux = sLinux;
         if (linux == null) throw new IllegalStateException("No Linux screen");
         return linux;
+    }
+
+    /**
+     * Make the environment of the app ready like its start and its first terminal tab do: the
+     * bootstrap with the same install as the start of the app (waiting for it if it runs), then
+     * the home, $PREFIX/tmp and the environment file. Nothing that is installed is removed.
+     */
+    @Nullable
+    static String prepareRuntime(@NonNull Context context, @NonNull TerminowUbuntuSetup.LineSink log) throws InterruptedException {
+        if (com.termux.app.TermuxInstaller.isBootstrapInstalling())
+            log.line("Waiting for the TermiNow environment, which is being installed");
+        else if (!com.termux.app.TermuxInstaller.isBootstrapInstalled())
+            log.line("Installing the TermiNow environment (bootstrap) into " + TermuxConstants.TERMUX_PREFIX_DIR_PATH);
+        else
+            log.line("The TermiNow environment is installed");
+        java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicReference<String> error = new java.util.concurrent.atomic.AtomicReference<>();
+        com.termux.app.TermuxInstaller.ensureBootstrap(context, result -> {
+            error.set(result);
+            done.countDown();
+        });
+        done.await();
+        if (error.get() != null) {
+            for (String line : error.get().split("\n")) if (!line.trim().isEmpty()) log.line("  " + line);
+            String first = error.get().trim().split("\n")[0].replaceAll("[*`#]", "").trim();
+            return "the bootstrap was not installed (" + first + ")";
+        }
+        // What the first terminal tab makes: the home, the temporary folder, the environment file
+        java.util.HashMap<String, String> environment = new com.termux.shared.termux.shell.command.environment.TermuxShellEnvironment()
+            .getEnvironment(context, false);
+        com.termux.shared.shell.command.environment.ShellEnvironmentUtils.createHomeDir(environment);
+        File home = new File(TermuxConstants.TERMUX_HOME_DIR_PATH);
+        if (!home.isDirectory()) return "the home folder " + home + " could not be created";
+        File tmp = new File(TermuxConstants.TERMUX_PREFIX_DIR_PATH, "tmp");
+        //noinspection ResultOfMethodCallIgnored
+        if (!tmp.isDirectory()) tmp.mkdirs();
+        com.termux.shared.termux.shell.command.environment.TermuxShellEnvironment.writeEnvironmentToFile(context);
+        log.line("Home " + home + ", " + (tmp.isDirectory() ? "temporary folder " + tmp : "no temporary folder") + ": ready");
+        return null;
     }
 
     @NonNull
@@ -252,6 +295,12 @@ public class TerminowUbuntuSetupUi {
         return setup().isRunning();
     }
 
+    /** Whether a setup runs now, without making the job. */
+    public static boolean isSetupRunning() {
+        TerminowUbuntuSetup setup = sSetup;
+        return setup != null && setup.isRunning();
+    }
+
     // ---------------------------------------------------------------------------------------
     // The screen
     // ---------------------------------------------------------------------------------------
@@ -314,10 +363,21 @@ public class TerminowUbuntuSetupUi {
             .setView(scroll)
             .create();
 
+        // A setup that this screen sees finish opens Ubuntu right away
+        boolean[] sawRunning = {setup.isRunning()};
         TerminowUbuntuSetup.Listener listener = new TerminowUbuntuSetup.Listener() {
             @Override
             public void onChanged(@NonNull TerminowUbuntuSetup.State state) {
-                mHandler.post(() -> render(dialog, setup, state, steps, bar, summary, buttons));
+                mHandler.post(() -> {
+                    if (state.status == TerminowUbuntuSetup.State.Status.RUNNING) sawRunning[0] = true;
+                    if (state.status == TerminowUbuntuSetup.State.Status.READY && sawRunning[0] && dialog.isShowing() && !setup.isRunning()) {
+                        sawRunning[0] = false;
+                        dialog.dismiss();
+                        mOpener.open(state.alias);
+                        return;
+                    }
+                    render(dialog, setup, state, steps, bar, summary, buttons);
+                });
             }
 
             @Override
@@ -427,6 +487,7 @@ public class TerminowUbuntuSetupUi {
     @NonNull
     private String stageLabel(@NonNull TerminowUbuntuSetup.Stage stage) {
         switch (stage) {
+            case PREPARING_RUNTIME: return mActivity.getString(R.string.terminow_ubuntu_stage_preparing);
             case CHECKING_RUNTIME: return mActivity.getString(R.string.terminow_ubuntu_stage_runtime);
             case INSTALLING_DEPENDENCIES: return mActivity.getString(R.string.terminow_ubuntu_stage_dependencies);
             case CHECKING_PACKAGES: return mActivity.getString(R.string.terminow_ubuntu_stage_packages);

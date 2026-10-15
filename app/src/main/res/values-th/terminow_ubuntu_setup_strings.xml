@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="terminow_ubuntu_setup_title">ตั้งค่า Ubuntu</string>
-    <string name="terminow_ubuntu_setup_intro">TermiNow ตรวจสอบรันไทม์ ติดตั้ง proot-distro หากจำเป็น แล้วใช้ Ubuntu ที่ติดตั้งไว้แล้ว หรือดาวน์โหลด Ubuntu รุ่นที่กำหนดไว้ (ตรวจสอบด้วย SHA-256) และตรวจสอบว่าใช้งานได้ จะไม่ลบสิ่งที่มีอยู่</string>
+    <string name="terminow_ubuntu_setup_intro">TermiNow จะเตรียมสภาพแวดล้อมของตัวเองหากยังไม่พร้อม ติดตั้ง proot-distro หากจำเป็น แล้วใช้ Ubuntu ที่ติดตั้งไว้แล้ว หรือดาวน์โหลด Ubuntu รุ่นที่กำหนดไว้ (ตรวจสอบด้วย SHA-256) และตรวจสอบว่าใช้งานได้ จะไม่ลบสิ่งที่มีอยู่</string>
     <string name="terminow_ubuntu_setup_show_details">แสดงรายละเอียด</string>
     <string name="terminow_ubuntu_setup_hide_details">ซ่อนรายละเอียด</string>
     <string name="terminow_ubuntu_setup_idle">ยังไม่ได้เริ่ม</string>
@@ -25,4 +25,6 @@
     <string name="terminow_ubuntu_stage_verifying">ตรวจสอบ Ubuntu</string>
     <string name="terminow_ubuntu_stage_ready">พร้อม</string>
     <string name="terminow_ubuntu_stage_failed">ล้มเหลว</string>
+    <string name="terminow_ubuntu_stage_preparing">กำลังเตรียม TermiNow</string>
+    <string name="terminow_linux_install_busy">กำลังติดตั้งสภาพแวดล้อม Linux อื่นอยู่ รอให้เสร็จก่อน</string>
 </resources>

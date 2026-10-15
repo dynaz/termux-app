@@ -139,6 +139,12 @@ public class TerminowLinuxUi {
     }
 
     @NonNull
+    /** The alias of the Linux install that runs in this process now, {@code null} if none. */
+    @Nullable
+    static String liveInstall() {
+        return sLiveInstall;
+    }
+
     TerminowLinuxInstaller newInstaller() {
         return new TerminowLinuxInstaller(mRegistry, new File(mActivity.getCacheDir(), "linux-install"), new TerminowLinuxInstaller.Runner() {
             @NonNull
@@ -372,6 +378,11 @@ public class TerminowLinuxUi {
     }
 
     private void confirmInstall(@NonNull TerminowLinuxCatalog.Entry entry, @NonNull Dialog browse) {
+        // One Linux install at a time, also with the Ubuntu setup
+        if (TerminowUbuntuSetupUi.isSetupRunning() || sLiveInstall != null) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_linux_install_busy), true);
+            return;
+        }
         TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.MULTIPLE_ENVIRONMENTS, installedCount(), () -> {
             TerminowLinuxInstaller probe = newInstaller();
             String alias = probe.freeAlias(entry.distroId);

@@ -123,7 +123,12 @@ public class TerminowUbuntuSetupTest {
 
     @NonNull
     private TerminowUbuntuSetup setup() {
-        return new TerminowUbuntuSetup(mPrefix, mRegistry, this::shell, new TerminowUbuntuSetup.Installer() {
+        return setup(null);
+    }
+
+    @NonNull
+    private TerminowUbuntuSetup setup(@Nullable TerminowUbuntuSetup.Runtime runtime) {
+        return new TerminowUbuntuSetup(mPrefix, mRegistry, runtime, this::shell, new TerminowUbuntuSetup.Installer() {
             @NonNull
             @Override
             public TerminowLinuxEnv install(@NonNull TerminowLinuxCatalog.Entry entry, @NonNull String alias,
@@ -430,13 +435,66 @@ public class TerminowUbuntuSetupTest {
 
 
     @Test
-    public void withoutTheEnvironmentOfTheAppItSaysSoAndRunsNothing() throws Exception {
+    public void anEnvironmentThatIsStillMissingAfterPreparingIsAFailureThatRunsNothing() throws Exception {
         Files.delete(new File(mPrefix, "bin/bash").toPath());
         TerminowUbuntuSetup.State state = runSetup();
         assertEquals(TerminowUbuntuSetup.State.Status.FAILED, state.status);
         assertEquals(TerminowUbuntuSetup.Stage.CHECKING_RUNTIME, state.failedStage);
-        assertTrue(state.error, state.error.contains("not installed yet"));
+        assertTrue(state.error, state.error.contains("is missing after it was prepared"));
         assertTrue(mCommands.isEmpty());
+    }
+
+    /** A setup with the runtime of a phone where no terminal tab was ever opened. */
+    @NonNull
+    private TerminowUbuntuSetup setupWithRuntime(@NonNull TerminowUbuntuSetup.Runtime runtime) {
+        return setup(runtime);
+    }
+
+    @Test
+    public void aSetupBeforeAnyTerminalTabPreparesTheEnvironmentFirst() throws Exception {
+        // Fresh install: no bootstrap, no home
+        Files.delete(new File(mPrefix, "bin/bash").toPath());
+        File home = new File(mHome, "home");
+        List<String> order = new ArrayList<>();
+        TerminowUbuntuSetup setup = setupWithRuntime(log -> {
+            order.add("prepare, commands so far: " + mCommands.size());
+            log.line("Installing the TermiNow environment (bootstrap)");
+            // What the bootstrap and the first terminal tab make
+            try {
+                write(new File(mPrefix, "bin/bash"), "elf");
+            } catch (IOException e) {
+                return e.getMessage();
+            }
+            assertTrue(home.mkdirs());
+            return null;
+        });
+        assertTrue(setup.start());
+        setup.run();
+        TerminowUbuntuSetup.State state = setup.getState();
+        assertEquals(String.join("\n", mLog), TerminowUbuntuSetup.State.Status.READY, state.status);
+        assertEquals("prepared before anything ran", Arrays.asList("prepare, commands so far: 0"), order);
+        assertTrue(home.isDirectory());
+        assertTrue(mLog.toString(), mLog.contains("Installing the TermiNow environment (bootstrap)"));
+        assertEquals(1, mInstalls.size());
+        assertTrue(ranTool("proot-distro", "login"));
+    }
+
+    @Test
+    public void anEnvironmentThatCanNotBePreparedStopsWithItsError() {
+        TerminowUbuntuSetup setup = setupWithRuntime(log -> "the bootstrap was not installed (No space left on device)");
+        assertTrue(setup.start());
+        setup.run();
+        TerminowUbuntuSetup.State state = setup.getState();
+        assertEquals(TerminowUbuntuSetup.State.Status.FAILED, state.status);
+        assertEquals(TerminowUbuntuSetup.Stage.PREPARING_RUNTIME, state.failedStage);
+        assertTrue(state.error, state.error.contains("No space left on device"));
+        assertTrue(mCommands.isEmpty());
+        assertTrue(mInstalls.isEmpty());
+        // Retry once it is fixed
+        TerminowUbuntuSetup retry = setupWithRuntime(log -> null);
+        assertTrue(retry.start());
+        retry.run();
+        assertEquals(TerminowUbuntuSetup.State.Status.READY, retry.getState().status);
     }
 
 }

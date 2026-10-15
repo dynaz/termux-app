@@ -39,11 +39,11 @@ import java.util.regex.Pattern;
 public class TerminowUbuntuSetup {
 
     public enum Stage {
-        CHECKING_RUNTIME, INSTALLING_DEPENDENCIES, CHECKING_PACKAGES, DOWNLOADING, CONFIGURING, VERIFYING, READY, FAILED, CANCELLED
+        PREPARING_RUNTIME, CHECKING_RUNTIME, INSTALLING_DEPENDENCIES, CHECKING_PACKAGES, DOWNLOADING, CONFIGURING, VERIFYING, READY, FAILED, CANCELLED
     }
 
     /** The stages that a setup goes through, in order, for the list of the screen. */
-    public static final List<Stage> STEPS = Collections.unmodifiableList(Arrays.asList(Stage.CHECKING_RUNTIME,
+    public static final List<Stage> STEPS = Collections.unmodifiableList(Arrays.asList(Stage.PREPARING_RUNTIME, Stage.CHECKING_RUNTIME,
         Stage.INSTALLING_DEPENDENCIES, Stage.CHECKING_PACKAGES, Stage.DOWNLOADING, Stage.CONFIGURING, Stage.VERIFYING));
 
     /** Runs a command of the TermiNow runtime: stdout and stderr line by line, and its exit status. */
@@ -53,6 +53,16 @@ public class TerminowUbuntuSetup {
 
     public interface LineSink {
         void line(@NonNull String line);
+    }
+
+    /**
+     * Makes the environment of the app ready, like its start does: installs the bootstrap if it
+     * is not installed (or waits for the install that runs), and makes the home, the temporary
+     * folder and the environment file that the terminal makes when its first tab opens.
+     */
+    public interface Runtime {
+        /** {@code null} when ready, else what went wrong. Blocks; may log what it does. */
+        @Nullable String prepare(@NonNull LineSink log) throws InterruptedException;
     }
 
     /** Installs the pinned catalog entry as a new container, like Browse Linux does. */
@@ -89,7 +99,7 @@ public class TerminowUbuntuSetup {
         public enum Status { IDLE, RUNNING, READY, FAILED, CANCELLED }
 
         public Status status = Status.IDLE;
-        public Stage stage = Stage.CHECKING_RUNTIME;
+        public Stage stage = Stage.PREPARING_RUNTIME;
         /** For a failure, the stage that failed. */
         @Nullable public Stage failedStage;
         /** A short summary of the failure. */
@@ -134,7 +144,7 @@ public class TerminowUbuntuSetup {
             try {
                 JSONObject object = new JSONObject(text);
                 state.status = Status.valueOf(object.optString("status", "IDLE"));
-                state.stage = Stage.valueOf(object.optString("stage", Stage.CHECKING_RUNTIME.name()));
+                state.stage = Stage.valueOf(object.optString("stage", Stage.PREPARING_RUNTIME.name()));
                 String failed = object.optString("failedStage");
                 state.failedStage = failed.isEmpty() ? null : Stage.valueOf(failed);
                 state.error = object.optString("error");
@@ -193,6 +203,7 @@ public class TerminowUbuntuSetup {
 
     private final File mPrefix;
     private final TerminowLinuxRegistry mRegistry;
+    @Nullable private final Runtime mRuntime;
     private final Shell mShell;
     private final Installer mInstaller;
     private final StateStore mStore;
@@ -205,8 +216,14 @@ public class TerminowUbuntuSetup {
 
     public TerminowUbuntuSetup(@NonNull File prefix, @NonNull TerminowLinuxRegistry registry, @NonNull Shell shell,
                                @NonNull Installer installer, @NonNull StateStore store, @NonNull LogSink log) {
+        this(prefix, registry, null, shell, installer, store, log);
+    }
+
+    public TerminowUbuntuSetup(@NonNull File prefix, @NonNull TerminowLinuxRegistry registry, @Nullable Runtime runtime,
+                               @NonNull Shell shell, @NonNull Installer installer, @NonNull StateStore store, @NonNull LogSink log) {
         mPrefix = prefix;
         mRegistry = registry;
+        mRuntime = runtime;
         mShell = shell;
         mInstaller = installer;
         mStore = store;
@@ -268,6 +285,7 @@ public class TerminowUbuntuSetup {
     /** The whole setup, blocking. Only after a successful {@link #start()}. */
     public void run() {
         try {
+            prepareRuntime();
             checkRuntime();
             installDependencies();
             checkPackages();
@@ -311,6 +329,24 @@ public class TerminowUbuntuSetup {
     }
 
     // ---------------------------------------------------------------------------------------
+    // 0. The environment of the app, ready like after its first terminal tab
+    // ---------------------------------------------------------------------------------------
+
+    void prepareRuntime() throws StepFailure, Cancelled {
+        stage(Stage.PREPARING_RUNTIME);
+        if (mRuntime == null) return;
+        String error;
+        try {
+            error = mRuntime.prepare(this::log);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new Cancelled();
+        }
+        checkCancelled();
+        if (error != null) throw new StepFailure("TermiNow could not prepare its environment: " + error);
+    }
+
+    // ---------------------------------------------------------------------------------------
     // 1. The runtime
     // ---------------------------------------------------------------------------------------
 
@@ -318,7 +354,8 @@ public class TerminowUbuntuSetup {
         stage(Stage.CHECKING_RUNTIME);
         // The environment of the app itself, which the first terminal tab installs
         if (!new File(mPrefix, "bin/bash").isFile())
-            throw new StepFailure("The TermiNow environment is not installed yet. Open a terminal tab, wait until it shows a prompt, then Retry.");
+            throw new StepFailure("The TermiNow environment is not complete: " + new File(mPrefix, "bin/bash") +
+                " is missing after it was prepared. Retry; if it fails again, copy the log.");
         // What the runtime looks like, for the log: ids, the permissions of bash and its folders,
         // the variables that decide how programs are started, and termux-exec
         StringBuilder script = new StringBuilder("echo \"uid=$(id -u) gid=$(id -g) groups=$(id -G)\"\n" +
