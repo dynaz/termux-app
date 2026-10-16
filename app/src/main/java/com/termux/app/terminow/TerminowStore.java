@@ -1206,9 +1206,23 @@ public class TerminowStore {
      */
     @NonNull
     public static List<Host> readSshConfigHosts(@NonNull File configFile) throws IOException {
+        try (java.io.Reader in = new InputStreamReader(new FileInputStream(configFile), StandardCharsets.UTF_8)) {
+            return readSshConfigHosts(in);
+        }
+    }
+
+    /**
+     * Read the hosts of an ssh config, from any source like a file picked on the phone. Like
+     * {@link #readSshConfigHosts(File)}, and a `ProxyJump` to another host of the same config
+     * makes that host the jump host.
+     */
+    @NonNull
+    public static List<Host> readSshConfigHosts(@NonNull java.io.Reader in) throws IOException {
         List<Host> hosts = new ArrayList<>();
         List<Host> currentHosts = new ArrayList<>();
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(configFile), StandardCharsets.UTF_8))) {
+        // The ProxyJump of each host, resolved against the aliases once all are read
+        Map<Host, String> jumps = new java.util.IdentityHashMap<>();
+        try (BufferedReader reader = new BufferedReader(in)) {
             String line;
             while ((line = reader.readLine()) != null) {
                 line = line.trim();
@@ -1250,6 +1264,9 @@ public class TerminowStore {
                             }
                         } else if (keyword.equals("identityfile") && host.keyPath.isEmpty()) {
                             host.keyPath = value;
+                        } else if (keyword.equals("proxyjump") && !jumps.containsKey(host)) {
+                            // The first hop, as user@host:port or an alias of this config
+                            jumps.put(host, value.split(",")[0].trim());
                         }
                     }
                 }
@@ -1263,6 +1280,17 @@ public class TerminowStore {
                 host.keyPath = "";
             if (isValidAddress(host.address) && isValidUsername(host.username) && isValidPort(host.port))
                 validHosts.add(host);
+        }
+        for (Map.Entry<Host, String> jump : jumps.entrySet()) {
+            String alias = jump.getValue();
+            if (alias.equalsIgnoreCase("none")) continue;
+            for (Host other : validHosts) {
+                if (other != jump.getKey() && (other.label.equals(alias) || alias.equals(other.username + "@" + other.address) ||
+                    alias.equals(other.address))) {
+                    jump.getKey().jumpHost = other.getKey();
+                    break;
+                }
+            }
         }
         return validHosts;
     }

@@ -115,6 +115,7 @@ public class TerminowHome {
     private static final int REQUEST_IMPORT_KEY = 2001;
     private static final int REQUEST_IMPORT_CERTIFICATE = 2002;
     private static final int REQUEST_UPLOAD_TMP = 2003;
+    private static final int REQUEST_IMPORT_HOSTS = 2004;
     /** A certificate is one line of some kilobytes. */
     private static final int CERTIFICATE_MAX_SIZE = 64 * 1024;
 
@@ -2098,57 +2099,146 @@ public class TerminowHome {
     /** Ask to import the hosts of the ssh config file of the home directory. */
     private void showImportDialog() {
         final File configFile = new File(TermuxConstants.TERMUX_HOME_DIR_PATH, ".ssh/config");
-        if (!configFile.isFile()) {
-            new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
-                .setTitle(R.string.terminow_import_title)
-                .setMessage(R.string.terminow_import_no_file)
-                .setPositiveButton(android.R.string.ok, null)
-                .show();
-            return;
+        List<CharSequence> items = new ArrayList<>();
+        List<Runnable> actions = new ArrayList<>();
+        if (configFile.isFile()) {
+            items.add(mActivity.getString(R.string.terminow_import_from_config));
+            actions.add(() -> {
+                try (java.io.Reader in = new java.io.InputStreamReader(new FileInputStream(configFile), StandardCharsets.UTF_8)) {
+                    StringBuilder text = new StringBuilder();
+                    char[] buffer = new char[8192];
+                    int read;
+                    while ((read = in.read(buffer)) != -1) text.append(buffer, 0, read);
+                    previewImport(text.toString());
+                } catch (IOException e) {
+                    mActivity.showToast(String.valueOf(e.getMessage()), true);
+                }
+            });
         }
-
+        items.add(mActivity.getString(R.string.terminow_import_from_file));
+        actions.add(this::pickImportFile);
+        items.add(mActivity.getString(R.string.terminow_import_termius));
+        actions.add(() -> new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_import_termius)
+            .setMessage(R.string.terminow_import_termius_message)
+            .setPositiveButton(R.string.terminow_import_from_file, (d, w) -> pickImportFile())
+            .setNegativeButton(android.R.string.cancel, null)
+            .show());
         new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
             .setTitle(R.string.terminow_import_title)
-            .setMessage(R.string.terminow_import_message)
-            .setPositiveButton(R.string.terminow_import_confirm, (dialog, which) -> importHosts(configFile))
+            .setItems(items.toArray(new CharSequence[0]), (dialog, which) -> actions.get(which).run())
             .setNegativeButton(android.R.string.cancel, null)
             .show();
     }
 
-    private void importHosts(@NonNull File configFile) {
-        List<TerminowStore.Host> importedHosts;
+    /** Pick an ssh config or a CSV of hosts anywhere on the phone. */
+    private void pickImportFile() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
         try {
-            importedHosts = TerminowStore.readSshConfigHosts(configFile);
+            mActivity.startActivityForResult(intent, REQUEST_IMPORT_HOSTS);
+        } catch (Exception e) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_key_import_failed, e.getMessage()), true);
+        }
+    }
+
+    /** Read a picked file of hosts, at most 2 MB. */
+    private void readImportFile(@NonNull Uri uri) {
+        new Thread(() -> {
+            String text = null;
+            String error = null;
+            try (InputStream in = mActivity.getContentResolver().openInputStream(uri)) {
+                if (in == null) throw new IOException("Failed to open the file");
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, read);
+                    if (out.size() > 2 * 1024 * 1024) throw new IOException("The file is too large to be a list of hosts");
+                }
+                text = new String(out.toByteArray(), StandardCharsets.UTF_8);
+            } catch (IOException | RuntimeException e) {
+                error = String.valueOf(e.getMessage());
+            }
+            String finalText = text;
+            String finalError = error;
+            mActivity.runOnUiThread(() -> {
+                if (finalText != null) previewImport(finalText);
+                else mActivity.showToast(mActivity.getString(R.string.terminow_import_failed, finalError), true);
+            });
+        }, "TerminowImportHosts").start();
+    }
+
+    /** What would be imported, before anything is saved: new hosts, ones that are there, and what was left out. */
+    private void previewImport(@NonNull String text) {
+        TerminowHostImport.Result result;
+        try {
+            result = TerminowHostImport.read(text, name -> {
+                File key = new File(getSshDir(), name);
+                return key.isFile() && !name.endsWith(".pub") ? "~/.ssh/" + name : null;
+            });
         } catch (IOException e) {
-            mActivity.showToast(e.getMessage() != null ? e.getMessage() : e.toString(), true);
+            mActivity.showToast(mActivity.getString(R.string.terminow_import_failed, e.getMessage()), true);
             return;
         }
-
-        int count = 0;
-        for (TerminowStore.Host importedHost : importedHosts) {
+        List<TerminowStore.Host> fresh = new ArrayList<>();
+        int existing = 0;
+        for (TerminowStore.Host imported : result.hosts) {
             boolean exists = false;
-            for (TerminowStore.Host host : mHosts) {
-                if (host.address.equals(importedHost.address) && host.port == importedHost.port &&
-                    host.username.equals(importedHost.username)) {
-                    exists = true;
-                    break;
-                }
+            for (TerminowStore.Host host : mHosts) exists |= sameHost(host, imported);
+            for (TerminowStore.Host host : fresh) exists |= sameHost(host, imported);
+            if (exists) existing++;
+            else fresh.add(imported);
+        }
+        StringBuilder message = new StringBuilder(mActivity.getString(result.csv ? R.string.terminow_import_read_csv : R.string.terminow_import_read_config));
+        message.append("\n\n").append(mActivity.getResources().getQuantityString(R.plurals.terminow_import_new, fresh.size(), fresh.size()));
+        if (existing > 0) message.append("\n").append(mActivity.getResources().getQuantityString(R.plurals.terminow_import_existing, existing, existing));
+        if (!result.skipped.isEmpty()) {
+            message.append("\n").append(mActivity.getResources().getQuantityString(R.plurals.terminow_import_skipped, result.skipped.size(), result.skipped.size()));
+            for (int i = 0; i < Math.min(5, result.skipped.size()); i++) message.append("\n  · ").append(result.skipped.get(i));
+            if (result.skipped.size() > 5) message.append("\n  …");
+        }
+        if (!result.missingKeys.isEmpty())
+            message.append("\n\n").append(mActivity.getString(R.string.terminow_import_missing_keys, TextUtils.join(", ", result.missingKeys)));
+        if (fresh.isEmpty()) {
+            new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setTitle(R.string.terminow_import_title)
+                .setMessage(message.toString() + "\n\n" + mActivity.getString(R.string.terminow_import_none_new))
+                .setPositiveButton(android.R.string.ok, null)
+                .show();
+            return;
+        }
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_import_title)
+            .setMessage(message.toString())
+            .setPositiveButton(mActivity.getResources().getQuantityString(R.plurals.terminow_import_button, fresh.size(), fresh.size()),
+                (d, w) -> importHosts(fresh, result.groups))
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    private static boolean sameHost(@NonNull TerminowStore.Host a, @NonNull TerminowStore.Host b) {
+        return a.address.equals(b.address) && a.port == b.port && a.username.equals(b.username) && a.telnet == b.telnet;
+    }
+
+    /** Save new hosts, with their groups; a host without a group goes to the group that is shown. */
+    private void importHosts(@NonNull List<TerminowStore.Host> hosts, @NonNull java.util.Set<String> groups) {
+        boolean groupsChanged = false;
+        for (String group : groups) {
+            if (!mGroups.contains(group)) {
+                mGroups.add(group);
+                groupsChanged = true;
             }
-            if (exists) continue;
-
-            // Import into the group that is being shown
-            importedHost.group = mCurrentGroup != null ? mCurrentGroup : "";
-            mHosts.add(importedHost);
-            count++;
         }
-
-        if (count > 0) {
-            mStore.setHosts(mHosts);
-            updateItems();
-            mActivity.showToast(mActivity.getResources().getQuantityString(R.plurals.terminow_import_done, count, count), true);
-        } else {
-            mActivity.showToast(mActivity.getString(R.string.terminow_import_none), true);
+        if (groupsChanged) mStore.setGroups(mGroups);
+        for (TerminowStore.Host host : hosts) {
+            if (host.group.isEmpty()) host.group = mCurrentGroup != null ? mCurrentGroup : "";
+            mHosts.add(host);
         }
+        mStore.setHosts(mHosts);
+        updateItems();
+        mActivity.showToast(mActivity.getResources().getQuantityString(R.plurals.terminow_import_done, hosts.size(), hosts.size()), true);
     }
 
     /** An item of the keychain page for a private key file in `~/.ssh`. */
@@ -2669,6 +2759,10 @@ public class TerminowHome {
     public boolean onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         if (mExplorer.onActivityResult(requestCode, resultCode, data)) return true;
         if (mFiles.onActivityResult(requestCode, resultCode, data)) return true;
+        if (requestCode == REQUEST_IMPORT_HOSTS) {
+            if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null) readImportFile(data.getData());
+            return true;
+        }
         if (requestCode == REQUEST_UPLOAD_TMP) {
             TerminalSession session = mUploadSession != null ? mUploadSession.get() : null;
             mUploadSession = null;
