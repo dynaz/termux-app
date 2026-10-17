@@ -32,6 +32,8 @@ import androidx.core.content.ContextCompat;
 import com.termux.BuildConfig;
 import com.termux.R;
 import com.termux.app.TermuxActivity;
+import com.termux.app.terminow.mcp.McpException;
+import com.termux.app.terminow.mcp.McpTool;
 import com.termux.shared.termux.TermuxConstants;
 
 import org.json.JSONException;
@@ -189,8 +191,8 @@ public class TerminowMcpPage {
     }
 
     private static boolean needsLogin(@NonNull TerminowMcpProfile profile) {
-        return profile.testTime != 0 && !profile.testOk && (TerminowMcpClient.Failure.OAUTH_REQUIRED.name().equals(profile.testFailure) ||
-            TerminowMcpClient.Failure.AUTH_FAILED.name().equals(profile.testFailure));
+        return profile.testTime != 0 && !profile.testOk && (McpException.Kind.OAUTH_REQUIRED.name().equals(profile.testFailure) ||
+            McpException.Kind.AUTH_FAILED.name().equals(profile.testFailure));
     }
 
     /** The two tabs of the page: the saved servers and the catalog. */
@@ -1168,7 +1170,7 @@ public class TerminowMcpPage {
                     render();
                     return;
                 }
-                if (result.failure != TerminowMcpClient.Failure.CANCELLED) {
+                if (result.failure != McpException.Kind.CANCELLED) {
                     stored.testTime = System.currentTimeMillis();
                     stored.testOk = result.ok;
                     stored.testFailure = result.failure != null ? result.failure.name() : "";
@@ -1176,7 +1178,7 @@ public class TerminowMcpPage {
                     stored.testServer = (result.serverName + " " + result.serverVersion).trim();
                     stored.testProtocol = result.protocolVersion;
                     stored.testTools.clear();
-                    for (TerminowMcpClient.Tool tool : result.tools) stored.testTools.add(tool.name);
+                    for (McpTool tool : result.tools) stored.testTools.add(tool.name);
                     mStore.setMcpProfiles(mProfiles);
                 }
                 render();
@@ -1191,7 +1193,7 @@ public class TerminowMcpPage {
     }
 
     private void showTestResult(@NonNull TerminowMcpProfile profile, @NonNull TerminowMcpClient.Result result) {
-        if (result.failure == TerminowMcpClient.Failure.CANCELLED) return;
+        if (result.failure == McpException.Kind.CANCELLED) return;
         StringBuilder text = new StringBuilder();
         if (result.ok) {
             text.append(mActivity.getString(R.string.terminow_mcp_result_ok_summary,
@@ -1204,7 +1206,7 @@ public class TerminowMcpPage {
                 text.append(mActivity.getResources().getQuantityString(R.plurals.terminow_mcp_tools, result.tools.size(), result.tools.size()));
                 if (result.toolsTruncated) text.append(" +");
                 text.append('\n');
-                for (TerminowMcpClient.Tool tool : result.tools) {
+                for (McpTool tool : result.tools) {
                     text.append("\n• ").append(tool.name);
                     if (!tool.description.isEmpty()) {
                         String description = tool.description.trim().replace('\n', ' ');
@@ -1213,16 +1215,16 @@ public class TerminowMcpPage {
                 }
             }
             text.append("\n\n").append(mActivity.getString(R.string.terminow_mcp_result_ok_note, getTargetLabel(profile)));
-        } else if (result.failure == TerminowMcpClient.Failure.OAUTH_REQUIRED) {
+        } else if (result.failure == McpException.Kind.OAUTH_REQUIRED) {
             text.append(mActivity.getString(R.string.terminow_mcp_result_oauth));
             if (!result.resourceMetadata.isEmpty()) text.append("\n\n").append(result.resourceMetadata);
-        } else if (result.failure == TerminowMcpClient.Failure.AUTH_FAILED) {
+        } else if (result.failure == McpException.Kind.AUTH_FAILED) {
             text.append(result.message).append("\n\n").append(mActivity.getString(R.string.terminow_mcp_result_auth_failed));
         } else {
             text.append(result.message);
         }
         int title = result.ok ? R.string.terminow_mcp_result_ok :
-            result.failure == TerminowMcpClient.Failure.OAUTH_REQUIRED || result.failure == TerminowMcpClient.Failure.AUTH_FAILED ?
+            result.failure == McpException.Kind.OAUTH_REQUIRED || result.failure == McpException.Kind.AUTH_FAILED ?
                 R.string.terminow_mcp_result_auth : R.string.terminow_mcp_result_failed;
         showMessage(mActivity.getString(title), text.toString());
     }

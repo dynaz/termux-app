@@ -79,18 +79,34 @@ class FakeMcpServer implements AutoCloseable {
 
     static final int TOOL_COUNT = 7;
     static final int PAGE_SIZE = 3;
-    static final String SESSION_ID = "session-abc-123";
     static final String GOOD_TOKEN = "good-token-1234";
+    /** A 1x1 PNG. */
+    static final String PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
     final List<String> methods = Collections.synchronizedList(new ArrayList<>());
     final List<String> httpMethods = Collections.synchronizedList(new ArrayList<>());
     final List<String> authorizations = Collections.synchronizedList(new ArrayList<>());
+    /** The responses of the client to requests of the server. */
+    final List<JSONObject> responses = Collections.synchronizedList(new ArrayList<>());
+    /** The request ids of notifications/cancelled. */
+    final List<String> cancelled = Collections.synchronizedList(new ArrayList<>());
+    /** The tools that were called, with the Mcp-Name header of a modern request. */
+    final List<String> calls = Collections.synchronizedList(new ArrayList<>());
     private final ServerSocket mServer;
     private final Mode mMode;
+    /** Each server has its own, so that a restarted server does not know the session of the last one. */
+    private final String mSessionId = "session-" + java.util.UUID.randomUUID();
 
     FakeMcpServer(Mode mode) throws IOException {
+        this(mode, 0);
+    }
+
+    /** A server on a port, to start one again on the port of a stopped one. */
+    FakeMcpServer(Mode mode, int port) throws IOException {
         mMode = mode;
-        mServer = new ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"));
+        mServer = new ServerSocket();
+        mServer.setReuseAddress(true);
+        mServer.bind(new java.net.InetSocketAddress(InetAddress.getByName("127.0.0.1"), port), 50);
         Thread thread = new Thread(() -> {
             while (!mServer.isClosed()) {
                 try {
@@ -107,6 +123,10 @@ class FakeMcpServer implements AutoCloseable {
 
     String getUrl() {
         return "http://127.0.0.1:" + mServer.getLocalPort() + "/mcp";
+    }
+
+    int getPort() {
+        return mServer.getLocalPort();
     }
 
     @Override
@@ -160,7 +180,7 @@ class FakeMcpServer implements AutoCloseable {
             String body = new String(exchange.body, StandardCharsets.UTF_8);
 
             if (exchange.getRequestMethod().equals("DELETE")) {
-                send(exchange, SESSION_ID.equals(exchange.getRequestHeaders().getFirst("Mcp-Session-Id")) ? 200 : 404, null, "");
+                send(exchange, mSessionId.equals(exchange.getRequestHeaders().getFirst("Mcp-Session-Id")) ? 200 : 404, null, "");
                 return;
             }
             if (mMode == Mode.OLD_SSE) {
@@ -193,8 +213,15 @@ class FakeMcpServer implements AutoCloseable {
             }
 
             JSONObject message = new JSONObject(body);
+            if (!message.has("method")) {
+                responses.add(message);
+                send(exchange, 202, null, "");
+                return;
+            }
             String method = message.optString("method");
             methods.add(method);
+            if (method.equals("notifications/cancelled"))
+                cancelled.add(String.valueOf(message.optJSONObject("params").opt("requestId")));
             Object id = message.opt("id");
             JSONObject params = message.optJSONObject("params");
 
@@ -211,6 +238,10 @@ class FakeMcpServer implements AutoCloseable {
 
     private void handleModern(HttpExchange exchange, String method, Object id, JSONObject params) throws Exception {
         String version = exchange.getRequestHeaders().getFirst("MCP-Protocol-Version");
+        if (id == null) {
+            send(exchange, 202, null, "");
+            return;
+        }
         JSONObject meta = params != null ? params.optJSONObject("_meta") : null;
         if (meta == null || version == null) {
             // What a modern-only server does with a legacy initialize request
@@ -237,6 +268,12 @@ class FakeMcpServer implements AutoCloseable {
                     new JSONObject().put("name", "fake-modern").put("version", "9.1"))), false);
         } else if (method.equals("tools/list")) {
             sendResult(exchange, id, toolsPage(params.optString("cursor", "")), false);
+        } else if (method.equals("tools/call")) {
+            if (!params.optString("name").equals(exchange.getRequestHeaders().getFirst("Mcp-Name"))) {
+                sendError(exchange, 400, id, -32020, "Header mismatch", null);
+                return;
+            }
+            call(exchange, id, params, false);
         } else {
             sendError(exchange, 404, id, -32601, "Method not found", null);
         }
@@ -252,7 +289,7 @@ class FakeMcpServer implements AutoCloseable {
         if (method.equals("initialize")) {
             String requested = params.optString("protocolVersion");
             String version = sse ? "2025-06-18" : requested;
-            exchange.getResponseHeaders().add("Mcp-Session-Id", SESSION_ID);
+            exchange.getResponseHeaders().add("Mcp-Session-Id", mSessionId);
             sendResult(exchange, id, new JSONObject()
                 .put("protocolVersion", version)
                 .put("capabilities", new JSONObject().put("tools", new JSONObject().put("listChanged", true)))
@@ -260,8 +297,14 @@ class FakeMcpServer implements AutoCloseable {
                 .put("instructions", "Use carefully"), sse);
             return;
         }
-        if (!SESSION_ID.equals(exchange.getRequestHeaders().getFirst("Mcp-Session-Id"))) {
+        String session = exchange.getRequestHeaders().getFirst("Mcp-Session-Id");
+        if (session == null) {
             sendError(exchange, 400, id, -32000, "Bad Request: No valid session ID provided", null);
+            return;
+        }
+        if (!mSessionId.equals(session)) {
+            // What the specification says for a session the server does not know
+            sendError(exchange, 404, id, -32001, "Session not found", null);
             return;
         }
         if (method.equals("notifications/initialized")) {
@@ -275,8 +318,54 @@ class FakeMcpServer implements AutoCloseable {
             JSONObject page = toolsPage(cursor);
             if (mMode == Mode.LOOPING_CURSOR) page.put("nextCursor", "same");
             sendResult(exchange, id, page, sse);
+        } else if (method.equals("tools/call")) {
+            call(exchange, id, params, sse);
+        } else if (method.startsWith("notifications/")) {
+            send(exchange, 202, null, "");
         } else {
             sendError(exchange, 200, id, -32601, "Method not found", null);
+        }
+    }
+
+    /** The tools that can be called, whatever tools/list says. */
+    private void call(HttpExchange exchange, Object id, JSONObject params, boolean sse) throws Exception {
+        String name = params.optString("name");
+        JSONObject arguments = params.optJSONObject("arguments");
+        calls.add(name);
+        switch (name) {
+            case "echo": {
+                String text = arguments != null ? arguments.optString("message") : "";
+                sendResult(exchange, id, new JSONObject()
+                    .put("content", new JSONArray().put(new JSONObject().put("type", "text").put("text", "Echo: " + text)))
+                    .put("structuredContent", new JSONObject().put("echoed", text)), sse);
+                return;
+            }
+            case "fail_tool":
+                sendResult(exchange, id, new JSONObject().put("isError", true)
+                    .put("content", new JSONArray().put(new JSONObject().put("type", "text").put("text", "The tool failed"))), sse);
+                return;
+            case "image_tool":
+                sendResult(exchange, id, new JSONObject().put("content", new JSONArray()
+                    .put(new JSONObject().put("type", "image").put("mimeType", "image/png").put("data", PNG_BASE64))
+                    .put(new JSONObject().put("type", "resource_link").put("uri", "file:///tmp/a.txt").put("name", "a.txt"))), sse);
+                return;
+            case "slow_tool": {
+                // Until the client cancels, or for 10 s. An SSE server starts its stream at once
+                if (sse) startEventStream(exchange);
+                long end = System.currentTimeMillis() + 10_000;
+                while (System.currentTimeMillis() < end && !cancelled.contains(String.valueOf(id))) Thread.sleep(20);
+                if (cancelled.contains(String.valueOf(id))) return;
+                JSONObject done = new JSONObject().put("jsonrpc", "2.0").put("id", id).put("result", new JSONObject().put("content", new JSONArray()));
+                if (sse) {
+                    writeChunk(exchange.socket.getOutputStream(), "data: " + done + "\n\n");
+                    exchange.socket.getOutputStream().write("0\r\n\r\n".getBytes(StandardCharsets.ISO_8859_1));
+                    return;
+                }
+                send(exchange, 200, "application/json", done.toString());
+                return;
+            }
+            default:
+                sendError(exchange, 200, id, -32602, "Unknown tool: " + name, null);
         }
     }
 
@@ -308,6 +397,24 @@ class FakeMcpServer implements AutoCloseable {
         send(exchange, 200, "text/event-stream", events);
     }
 
+    /**
+     * The headers of a chunked SSE response and a comment, with the stream left open, like an
+     * Express server sends a stream.
+     */
+    private static void startEventStream(HttpExchange exchange) throws IOException {
+        OutputStream out = exchange.socket.getOutputStream();
+        out.write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n".getBytes(StandardCharsets.ISO_8859_1));
+        writeChunk(out, ": working\n\n");
+    }
+
+    private static void writeChunk(OutputStream out, String text) throws IOException {
+        byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
+        out.write((Integer.toHexString(bytes.length) + "\r\n").getBytes(StandardCharsets.ISO_8859_1));
+        out.write(bytes);
+        out.write("\r\n".getBytes(StandardCharsets.ISO_8859_1));
+        out.flush();
+    }
+
     private void sendError(HttpExchange exchange, int status, Object id, int code, String message, JSONObject data) throws Exception {
         JSONObject error = new JSONObject().put("code", code).put("message", message);
         if (data != null) error.put("data", data);
@@ -334,6 +441,7 @@ class FakeMcpServer implements AutoCloseable {
         switch (status) {
             case 200: return "OK";
             case 202: return "Accepted";
+            case 500: return "Internal Server Error";
             case 307: return "Temporary Redirect";
             case 400: return "Bad Request";
             case 401: return "Unauthorized";

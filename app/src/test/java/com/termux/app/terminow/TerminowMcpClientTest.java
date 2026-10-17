@@ -7,6 +7,9 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import com.termux.app.terminow.mcp.McpException;
+
+import org.json.JSONObject;
 import org.junit.Test;
 
 import java.net.URL;
@@ -87,7 +90,7 @@ public class TerminowMcpClientTest {
         try (FakeMcpServer server = new FakeMcpServer(FakeMcpServer.Mode.MODERN_FUTURE_ONLY)) {
             TerminowMcpClient.Result result = test(server, Collections.emptyMap());
             assertFalse(result.ok);
-            assertEquals(TerminowMcpClient.Failure.UNSUPPORTED_VERSION, result.failure);
+            assertEquals(McpException.Kind.UNSUPPORTED_VERSION, result.failure);
             assertTrue(result.message, result.message.contains("2099-01-01"));
             // A modern error must not make the client fall back to initialize
             assertFalse(server.methods.contains("initialize"));
@@ -99,7 +102,7 @@ public class TerminowMcpClientTest {
         try (FakeMcpServer server = new FakeMcpServer(FakeMcpServer.Mode.OAUTH)) {
             TerminowMcpClient.Result result = test(server, Collections.emptyMap());
             assertFalse(result.ok);
-            assertEquals(TerminowMcpClient.Failure.OAUTH_REQUIRED, result.failure);
+            assertEquals(McpException.Kind.OAUTH_REQUIRED, result.failure);
             assertEquals("https://auth.example/.well-known/oauth-protected-resource", result.resourceMetadata);
             assertTrue(result.tools.isEmpty());
         }
@@ -119,7 +122,7 @@ public class TerminowMcpClientTest {
             headers.put("Authorization", "Bearer wrong-secret-98765");
             TerminowMcpClient.Result result = test(server, headers);
             assertFalse(result.ok);
-            assertEquals(TerminowMcpClient.Failure.AUTH_FAILED, result.failure);
+            assertEquals(McpException.Kind.AUTH_FAILED, result.failure);
             assertFalse(result.message, result.message.contains("wrong-secret-98765"));
         }
     }
@@ -128,26 +131,26 @@ public class TerminowMcpClientTest {
     public void timeoutAndInvalidResponses() throws Exception {
         try (FakeMcpServer server = new FakeMcpServer(FakeMcpServer.Mode.SLOW)) {
             TerminowMcpClient.Result result = test(server, Collections.emptyMap());
-            assertEquals(TerminowMcpClient.Failure.TIMEOUT, result.failure);
+            assertEquals(McpException.Kind.TIMEOUT, result.failure);
         }
         try (FakeMcpServer server = new FakeMcpServer(FakeMcpServer.Mode.HTML)) {
             TerminowMcpClient.Result result = test(server, Collections.emptyMap());
             // An HTTP 200 alone is never a success
             assertFalse(result.ok);
-            assertEquals(TerminowMcpClient.Failure.INVALID_RESPONSE, result.failure);
+            assertEquals(McpException.Kind.INVALID_RESPONSE, result.failure);
         }
         try (FakeMcpServer server = new FakeMcpServer(FakeMcpServer.Mode.OLD_SSE)) {
             TerminowMcpClient.Result result = test(server, Collections.emptyMap());
-            assertEquals(TerminowMcpClient.Failure.OLD_SSE_TRANSPORT, result.failure);
+            assertEquals(McpException.Kind.OLD_SSE_TRANSPORT, result.failure);
         }
         try (FakeMcpServer server = new FakeMcpServer(FakeMcpServer.Mode.REDIRECT)) {
             TerminowMcpClient.Result result = test(server, Collections.emptyMap());
-            assertEquals(TerminowMcpClient.Failure.REDIRECT, result.failure);
+            assertEquals(McpException.Kind.REDIRECT, result.failure);
             assertEquals(1, server.httpMethods.size());
         }
         try (FakeMcpServer server = new FakeMcpServer(FakeMcpServer.Mode.LOOPING_CURSOR)) {
             TerminowMcpClient.Result result = test(server, Collections.emptyMap());
-            assertEquals(TerminowMcpClient.Failure.INVALID_RESPONSE, result.failure);
+            assertEquals(McpException.Kind.INVALID_RESPONSE, result.failure);
         }
     }
 
@@ -165,20 +168,24 @@ public class TerminowMcpClientTest {
             }).start();
             long start = System.currentTimeMillis();
             TerminowMcpClient.Result result = client.test();
-            assertEquals(TerminowMcpClient.Failure.CANCELLED, result.failure);
+            assertEquals(McpException.Kind.CANCELLED, result.failure);
             assertTrue(System.currentTimeMillis() - start < 2500);
         }
     }
 
     @Test
     public void noOtherMethodCanBeSent() throws Exception {
-        TerminowMcpClient client = new TerminowMcpClient(new URL("https://example.com/mcp"), Collections.emptyMap(), "test");
+        java.util.List<String> sent = new java.util.ArrayList<>();
+        com.termux.app.terminow.mcp.McpTransport transport = TerminowMcpClient.readOnly(
+            new com.termux.app.terminow.mcp.McpHttpTransport(new URL("https://example.com/mcp"), Collections.emptyMap(), "test"), sent);
+        JSONObject call = new JSONObject().put("jsonrpc", "2.0").put("id", 1).put("method", "tools/call");
         try {
-            client.post(new TerminowMcpClient.Result(), "tools/call", null, null, true);
+            transport.request(call, "tools/call", 1000);
             fail("tools/call was allowed");
         } catch (IllegalArgumentException expected) {
             // Expected
         }
+        assertTrue(sent.isEmpty());
     }
 
     @Test
