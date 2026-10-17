@@ -12,6 +12,7 @@ import android.database.Cursor;
 import android.graphics.Color;
 import android.graphics.PorterDuff;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
 import android.os.Handler;
@@ -333,6 +334,14 @@ public class TerminowHome {
             @Override
             public void renameSession(@NonNull TerminalSession session) {
                 mActivity.getTermuxTerminalSessionClient().renameSession(session);
+            }
+
+            @Override
+            public void reconnectHost(@NonNull String hostKey) {
+                mHosts = mStore.getHosts();
+                TerminowStore.Host host = TerminowStore.findHost(mHosts, hostKey);
+                if (host != null) TerminowHome.this.connect(host);
+                else mActivity.showToast(mActivity.getString(R.string.terminow_rdp_host_gone), true);
             }
 
             @Override
@@ -1081,8 +1090,108 @@ public class TerminowHome {
         return session != null && session.isRunning() && mSftpSessions.contains(session) ? session : null;
     }
 
+    // ---------------------------------------------------------------------------------------
+    // Windows hosts: the built-in remote desktop, and PowerShell over WinRM
+
+    /**
+     * Open the remote desktop of an RDP host: the connection that is still open, if the user
+     * wants it, or a new one, which connects to the saved host again.
+     */
+    private void openRdp(@NonNull TerminowStore.Host host) {
+        if (!com.termux.app.terminow.rdp.TerminowRdpNative.isAvailable()) {
+            new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setTitle(R.string.terminow_rdp_title)
+                .setMessage(mActivity.getString(R.string.terminow_rdp_no_engine, String.valueOf(
+                    com.termux.app.terminow.rdp.TerminowRdpNative.loadError())))
+                .setPositiveButton(android.R.string.ok, null)
+                .show();
+            return;
+        }
+        for (com.termux.app.terminow.rdp.TerminowRdpSession session : com.termux.app.terminow.rdp.TerminowRdpSession.open()) {
+            if (!session.target.hostKey.equals(host.getKey())) continue;
+            new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setTitle(host.getTitle())
+                .setMessage(R.string.terminow_rdp_open_already)
+                .setPositiveButton(R.string.terminow_rdp_resume, (d, w) -> com.termux.app.terminow.rdp.TerminowRdpActivity.show(mActivity, session))
+                .setNeutralButton(R.string.terminow_rdp_new_connection, (d, w) -> startRdp(host))
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+            return;
+        }
+        startRdp(host);
+    }
+
+    private void startRdp(@NonNull TerminowStore.Host host) {
+        // A desktop of the size of this screen, in its pixels, for a host that takes the size of the screen
+        android.util.DisplayMetrics metrics = mActivity.getResources().getDisplayMetrics();
+        int width = Math.max(metrics.widthPixels, metrics.heightPixels);
+        int height = Math.min(metrics.widthPixels, metrics.heightPixels);
+        if (width > 1920) {
+            height = Math.round(height * 1920f / width);
+            width = 1920;
+        }
+        com.termux.app.terminow.rdp.TerminowRdpSession.Target target;
+        try {
+            target = TerminowRdpBridge.rdpTarget(mStore, host, mHosts, width & ~3, height & ~1);
+        } catch (TerminowRdpBridge.TargetException e) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_rdp_host_invalid, e.getMessage()), true);
+            return;
+        }
+        mStore.addRecentConnection(host, false);
+        com.termux.app.terminow.rdp.TerminowRdpActivity.show(mActivity, com.termux.app.terminow.rdp.TerminowRdpSession.start(mActivity, target));
+    }
+
+    /** The open remote desktops or consoles of a Windows host. */
+    private static int windowsSessions(@NonNull TerminowStore.Host host) {
+        int count = 0;
+        for (com.termux.app.terminow.rdp.TerminowRdpSession session : com.termux.app.terminow.rdp.TerminowRdpSession.open())
+            if (session.target.hostKey.equals(host.getKey())) count++;
+        for (com.termux.app.terminow.winrm.TerminowWinrmSession session : com.termux.app.terminow.winrm.TerminowWinrmSession.open())
+            if (session.target.hostKey.equals(host.getKey())) count++;
+        return count;
+    }
+
+    /** The PowerShell console of a WinRM host, through the Linux environment. */
+    private void openWinrm(@NonNull TerminowStore.Host host) {
+        for (com.termux.app.terminow.winrm.TerminowWinrmSession session : com.termux.app.terminow.winrm.TerminowWinrmSession.open()) {
+            if (!session.target.hostKey.equals(host.getKey())) continue;
+            new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setTitle(host.getTitle())
+                .setMessage(R.string.terminow_winrm_open_already)
+                .setPositiveButton(R.string.terminow_rdp_resume, (d, w) -> com.termux.app.terminow.winrm.TerminowWinrmActivity.show(mActivity, session))
+                .setNeutralButton(R.string.terminow_rdp_new_connection, (d, w) -> startWinrm(host))
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+            return;
+        }
+        startWinrm(host);
+    }
+
+    private void startWinrm(@NonNull TerminowStore.Host host) {
+        com.termux.app.terminow.winrm.TerminowWinrmSession.Target target = com.termux.app.terminow.winrm.TerminowWinrmHosts.targetFor(mStore, host);
+        if (target == null) {
+            // WinRM runs in Ubuntu: without it, what to do instead of a failure
+            new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setTitle(R.string.terminow_winrm_title)
+                .setMessage(R.string.terminow_winrm_needs_linux)
+                .setPositiveButton(R.string.terminow_quick_add_environment, (d, w) -> {
+                    showQuickLaunch();
+                    mQuickLaunch.showAddEnvironment();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+            return;
+        }
+        mStore.addRecentConnection(host, false);
+        com.termux.app.terminow.winrm.TerminowWinrmActivity.show(mActivity, com.termux.app.terminow.winrm.TerminowWinrmSession.start(mActivity, target));
+    }
+
     /** Start a session to transfer files to and from a host with sftp. */
     private void connectSftp(@NonNull TerminowStore.Host host) {
+        if (!host.isTerminal()) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_host_no_sftp_windows), true);
+            return;
+        }
         if (host.telnet) {
             mActivity.showToast(mActivity.getString(R.string.terminow_host_telnet_no_sftp), true);
             return;
@@ -1556,6 +1665,14 @@ public class TerminowHome {
     }
 
     private void connect(@NonNull TerminowStore.Host host) {
+        if (host.isRdp()) {
+            openRdp(host);
+            return;
+        }
+        if (host.isWinrm()) {
+            openWinrm(host);
+            return;
+        }
         if (!startConnecting(host, false)) return;
         TerminalSession session = addSession(host.getTitle());
         if (session == null) {
@@ -2031,6 +2148,102 @@ public class TerminowHome {
         tagsView.setOnClickListener(editTags);
         dialog.findViewById(R.id.terminow_host_tags_button).setOnClickListener(editTags);
 
+        // The protocol: SSH (with Mosh and Telnet), the built-in RDP desktop, or WinRM PowerShell
+        String[] protocol = {existingHost != null ? existingHost.protocol : TerminowStore.Host.PROTOCOL_SSH};
+        EditText domainView = dialog.findViewById(R.id.terminow_host_domain);
+        CheckBox rdpNlaView = dialog.findViewById(R.id.terminow_host_rdp_nla);
+        CheckBox rdpClipboardView = dialog.findViewById(R.id.terminow_host_rdp_clipboard);
+        EditText rdpSizeView = dialog.findViewById(R.id.terminow_host_rdp_size);
+        CheckBox winrmHttpsView = dialog.findViewById(R.id.terminow_host_winrm_https);
+        CheckBox winrmVerifyView = dialog.findViewById(R.id.terminow_host_winrm_verify);
+        int[] rdpSize = {existingHost != null ? existingHost.rdpWidth : 0, existingHost != null ? existingHost.rdpHeight : 0};
+        if (existingHost != null) {
+            domainView.setText(existingHost.domain);
+            rdpNlaView.setChecked(existingHost.rdpNla);
+            rdpClipboardView.setChecked(existingHost.rdpClipboard);
+            winrmHttpsView.setChecked(existingHost.winrmHttps);
+            winrmVerifyView.setChecked(existingHost.winrmVerify);
+        }
+        Runnable showRdpSize = () -> rdpSizeView.setText(rdpSize[0] == 0 ? mActivity.getString(R.string.terminow_host_rdp_size_fit) :
+            rdpSize[0] + " × " + rdpSize[1]);
+        showRdpSize.run();
+        rdpSizeView.setOnClickListener(v -> {
+            int[][] sizes = {{0, 0}, {1280, 720}, {1366, 768}, {1600, 900}, {1920, 1080}, {2560, 1440}};
+            CharSequence[] labels = new CharSequence[sizes.length];
+            for (int i = 0; i < sizes.length; i++)
+                labels[i] = sizes[i][0] == 0 ? mActivity.getString(R.string.terminow_host_rdp_size_fit) : sizes[i][0] + " × " + sizes[i][1];
+            new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setTitle(R.string.terminow_host_rdp_size)
+                .setItems(labels, (d, which) -> {
+                    rdpSize[0] = sizes[which][0];
+                    rdpSize[1] = sizes[which][1];
+                    showRdpSize.run();
+                })
+                .show();
+        });
+        LinearLayout protocolsView = dialog.findViewById(R.id.terminow_host_protocols);
+        View windowsCard = dialog.findViewById(R.id.terminow_host_windows_card);
+        View rdpOptions = dialog.findViewById(R.id.terminow_host_rdp_options);
+        View winrmOptions = dialog.findViewById(R.id.terminow_host_winrm_options);
+        View sessionCard = dialog.findViewById(R.id.terminow_host_session_card);
+        View telnetCard = dialog.findViewById(R.id.terminow_host_telnet_card);
+        View sshRow = dialog.findViewById(R.id.terminow_host_ssh_row);
+        View moshRow = dialog.findViewById(R.id.terminow_host_mosh_row);
+        View keyRowView = dialog.findViewById(R.id.terminow_host_key_row);
+        String[] protocols = {TerminowStore.Host.PROTOCOL_SSH, TerminowStore.Host.PROTOCOL_RDP, TerminowStore.Host.PROTOCOL_WINRM};
+        int[] protocolLabels = {R.string.terminow_host_protocol_ssh, R.string.terminow_host_protocol_rdp, R.string.terminow_host_protocol_winrm};
+        List<TextView> protocolChips = new ArrayList<>();
+        Runnable[] showKind = new Runnable[1];
+        for (int i = 0; i < protocols.length; i++) {
+            TextView chip = new TextView(mActivity);
+            chip.setText(protocolLabels[i]);
+            chip.setGravity(Gravity.CENTER);
+            chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+            chip.setTypeface(Typeface.DEFAULT_BOLD);
+            String value = protocols[i];
+            chip.setTag(value);
+            chip.setOnClickListener(v -> {
+                protocol[0] = value;
+                showKind[0].run();
+            });
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1);
+            if (i > 0) params.setMarginStart(dp(8));
+            protocolsView.addView(chip, params);
+            protocolChips.add(chip);
+        }
+        showKind[0] = () -> {
+            boolean rdp = TerminowStore.Host.PROTOCOL_RDP.equals(protocol[0]);
+            boolean winrm = TerminowStore.Host.PROTOCOL_WINRM.equals(protocol[0]);
+            boolean windows = rdp || winrm;
+            for (TextView chip : protocolChips) {
+                boolean selected = chip.getTag().equals(protocol[0]);
+                GradientDrawable shape = new GradientDrawable();
+                shape.setCornerRadius(dp(10));
+                shape.setColor(ContextCompat.getColor(mActivity, selected ? R.color.terminow_panel_accent : R.color.terminow_panel_button));
+                chip.setBackground(shape);
+                chip.setTextColor(ContextCompat.getColor(mActivity, selected ? R.color.terminow_bar_home : R.color.terminow_text));
+            }
+            windowsCard.setVisibility(windows ? View.VISIBLE : View.GONE);
+            rdpOptions.setVisibility(rdp ? View.VISIBLE : View.GONE);
+            winrmOptions.setVisibility(winrm ? View.VISIBLE : View.GONE);
+            sshRow.setVisibility(windows ? View.GONE : View.VISIBLE);
+            moshRow.setVisibility(windows ? View.GONE : View.VISIBLE);
+            telnetCard.setVisibility(windows ? View.GONE : View.VISIBLE);
+            keyRowView.setVisibility(windows ? View.GONE : View.VISIBLE);
+            // RDP keeps only the jump host of the session options: its SSH tunnel
+            sessionCard.setVisibility(winrm ? View.GONE : View.VISIBLE);
+            ViewGroup sessionGroup = (ViewGroup) sessionCard;
+            for (int c = 0; c < sessionGroup.getChildCount(); c++) {
+                View child = sessionGroup.getChildAt(c);
+                boolean jump = child == jumpView || (child instanceof ViewGroup && ((ViewGroup) child).indexOfChild(jumpView) >= 0);
+                child.setVisibility(!rdp || jump ? View.VISIBLE : View.GONE);
+            }
+            sshCard.setAlpha(!windows && telnetView.isChecked() ? 0.5f : 1f);
+            portView.setHint(rdp ? "3389" : winrm ? (winrmHttpsView.isChecked() ? "5986" : "5985") :
+                mActivity.getString(R.string.terminow_host_port_default));
+        };
+        winrmHttpsView.setOnCheckedChangeListener((b, checked) -> showKind[0].run());
+
         // SSH, Mosh and Telnet: Mosh needs SSH to start, Telnet is used instead of both
         Runnable showProtocol = () -> {
             telnetOptions.setVisibility(telnetView.isChecked() ? View.VISIBLE : View.GONE);
@@ -2049,6 +2262,7 @@ public class TerminowHome {
             showProtocol.run();
         });
         showProtocol.run();
+        showKind[0].run();
         dialog.findViewById(R.id.terminow_host_mosh_learn).setOnClickListener(v -> openUrl("https://mosh.org"));
 
         // Credentials
@@ -2133,9 +2347,18 @@ public class TerminowHome {
         dialog.findViewById(R.id.terminow_host_save).setOnClickListener(v -> {
             String address = addressView.getText().toString().trim();
             String username = usernameView.getText().toString().trim();
-            String keyPath = keyView.getText().toString().trim();
-            int port = parsePort(portView.getText().toString(), 22);
+            boolean rdp = TerminowStore.Host.PROTOCOL_RDP.equals(protocol[0]);
+            boolean winrm = TerminowStore.Host.PROTOCOL_WINRM.equals(protocol[0]);
+            boolean windows = rdp || winrm;
+            String keyPath = windows ? "" : keyView.getText().toString().trim();
+            int port = parsePort(portView.getText().toString(), rdp ? 3389 : winrm ? (winrmHttpsView.isChecked() ? 5986 : 5985) : 22);
             int telnetPort = parsePort(telnetPortView.getText().toString(), 23);
+            String domain = domainView.getText().toString().trim();
+            if (windows && !TerminowStore.isValidDomain(domain)) {
+                mActivity.showToast(mActivity.getString(R.string.terminow_host_invalid_domain), true);
+                domainView.requestFocus();
+                return;
+            }
 
             if (!TerminowStore.isValidAddress(address)) {
                 mActivity.showToast(mActivity.getString(R.string.terminow_host_invalid_address), true);
@@ -2157,7 +2380,7 @@ public class TerminowHome {
                 keyView.requestFocus();
                 return;
             }
-            if (!sshView.isChecked() && !telnetView.isChecked()) {
+            if (!windows && !sshView.isChecked() && !telnetView.isChecked()) {
                 mActivity.showToast(mActivity.getString(R.string.terminow_host_no_protocol), true);
                 return;
             }
@@ -2184,7 +2407,35 @@ public class TerminowHome {
             host.proxyPort = host.proxyType.isEmpty() ? 0 : draft.proxyPort;
             host.colorScheme = draft.colorScheme;
             host.identity = host.telnet ? "" : draft.identity;
-            if (!readEnvRows(envList, host.env)) {
+            host.protocol = protocol[0];
+            host.domain = windows ? domain : "";
+            if (windows) {
+                // What only SSH has is not kept for a Windows host
+                host.telnet = false;
+                host.mosh = false;
+                host.agentForwarding = false;
+                host.remoteTmux = false;
+                host.startupSnippet = "";
+                host.proxyType = "";
+                host.proxyHost = "";
+                host.proxyPort = 0;
+                host.colorScheme = "";
+                if (winrm) host.jumpHost = "";
+                host.rdpNla = rdpNlaView.isChecked();
+                host.rdpClipboard = rdp && rdpClipboardView.isChecked();
+                host.rdpWidth = rdp ? rdpSize[0] : 0;
+                host.rdpHeight = rdp ? rdpSize[1] : 0;
+                host.winrmHttps = winrmHttpsView.isChecked();
+                host.winrmVerify = winrmVerifyView.isChecked();
+                if (rdp && !host.jumpHost.isEmpty()) {
+                    TerminowStore.Host jump = TerminowStore.findHost(mStore.getHostsIn(scope[0]), host.jumpHost);
+                    if (jump == null || !jump.isTerminal() || jump.telnet) {
+                        mActivity.showToast(mActivity.getString(R.string.terminow_host_rdp_jump_ssh), true);
+                        return;
+                    }
+                }
+            }
+            if (!windows && !readEnvRows(envList, host.env)) {
                 mActivity.showToast(mActivity.getString(R.string.terminow_host_invalid_env), true);
                 return;
             }
@@ -4637,14 +4888,17 @@ public class TerminowHome {
                 subtitleView.setText(R.string.terminow_local_terminal_subtitle);
             } else if (item instanceof TerminowStore.Host) {
                 TerminowStore.Host host = (TerminowStore.Host) item;
-                iconRes = R.drawable.ic_terminow_hosts;
-                iconColorRes = host.mosh ? R.color.terminow_host_mosh : R.color.terminow_host_ssh;
+                // The badge of the protocol: the icon, its color and the first word
+                iconRes = host.isRdp() ? R.drawable.ic_terminow_desktop : host.isWinrm() ? R.drawable.ic_terminow_terminal : R.drawable.ic_terminow_hosts;
+                iconColorRes = host.isRdp() ? R.color.terminow_host_rdp : host.isWinrm() ? R.color.terminow_host_winrm :
+                    host.mosh ? R.color.terminow_host_mosh : R.color.terminow_host_ssh;
                 titleView.setText(host.getTitle());
-                sessionCount = getSessionCount(host);
+                sessionCount = host.isTerminal() ? getSessionCount(host) : windowsSessions(host);
+                String kind = host.isRdp() ? "rdp" : host.isWinrm() ? "winrm" : host.telnet ? "telnet" : host.mosh ? "mosh" : "ssh";
                 if (sessionCount > 0)
                     subtitleView.setText(R.string.terminow_active);
                 else
-                    subtitleView.setText((host.telnet ? "telnet" : host.mosh ? "mosh" : "ssh") + (host.username.isEmpty() ? "" : ", " + host.username) +
+                    subtitleView.setText(kind + (host.username.isEmpty() ? "" : ", " + host.username) +
                         (host.tags.isEmpty() ? "" : ", " + TextUtils.join(", ", host.tags)));
             } else if (item instanceof TerminowStore.Identity) {
                 TerminowStore.Identity identity = (TerminowStore.Identity) item;

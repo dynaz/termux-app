@@ -71,7 +71,7 @@ android {
         applicationId "com.terminow"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 175
+        versionCode 176
         versionName "0.118.0"
 
         if (appVersionName) versionName = appVersionName
@@ -200,6 +200,10 @@ android {
             includeAndroidResources = true
         }
     }
+
+    // The built-in RDP engine, libterminow-rdp.so, made by native/rdp/build.sh with the pinned
+    // OpenSSL and FreeRDP. Without it, RDP hosts say that this build has no RDP.
+    sourceSets.main.jniLibs.srcDirs += 'src/main/rdpLibs'
 
     packagingOptions {
         jniLibs {

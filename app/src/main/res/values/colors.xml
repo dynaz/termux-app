@@ -19,6 +19,8 @@
     <color name="terminow_host_mosh">#0D5C91</color>
     <color name="terminow_host_local">#2E7D5B</color>
     <color name="terminow_host_group">#4A5073</color>
+    <color name="terminow_host_rdp">#0078D4</color>
+    <color name="terminow_host_winrm">#2B5797</color>
 
     <!-- Host form panel. -->
     <color name="terminow_panel">#1E2233</color>

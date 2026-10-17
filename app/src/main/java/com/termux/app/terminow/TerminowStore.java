@@ -81,6 +81,47 @@ public class TerminowStore {
         public String colorScheme = "";
         /** The {@link Identity#id} whose username, password and key the host logs in with, empty for its own. */
         public String identity = "";
+        /** {@link #PROTOCOL_SSH} (also Mosh and Telnet), {@link #PROTOCOL_RDP} or {@link #PROTOCOL_WINRM}. */
+        public String protocol = PROTOCOL_SSH;
+        /** RDP and WinRM: the Windows domain of the user, empty for a local account. */
+        public String domain = "";
+        /** RDP: Network Level Authentication, on unless the server can not do it. */
+        public boolean rdpNla = true;
+        /** RDP: share text of the clipboard with Windows, off unless the user turned it on. */
+        public boolean rdpClipboard;
+        /** RDP: the size of the desktop, 0 for the size of the screen. */
+        public int rdpWidth;
+        public int rdpHeight;
+        /** WinRM: HTTPS (port 5986) rather than HTTP (5985), and its certificate verified. */
+        public boolean winrmHttps = true;
+        public boolean winrmVerify = true;
+
+        public static final String PROTOCOL_SSH = "ssh";
+        public static final String PROTOCOL_RDP = "rdp";
+        public static final String PROTOCOL_WINRM = "winrm";
+
+        public boolean isRdp() {
+            return PROTOCOL_RDP.equals(protocol);
+        }
+
+        public boolean isWinrm() {
+            return PROTOCOL_WINRM.equals(protocol);
+        }
+
+        /** Whether it opens a terminal with ssh, mosh or telnet, not a desktop or a PowerShell console. */
+        public boolean isTerminal() {
+            return !isRdp() && !isWinrm();
+        }
+
+        /**
+         * The ssh of a tunnel through this host, without a forward of its own, like
+         * `ssh -N -i key -p 22 user@host`. Its fields are validated like the ones of a connection.
+         */
+        @NonNull
+        public String getTunnelCommand(@Nullable Host jump, @NonNull String proxyConnector, int keepAliveInterval, int keepAliveCountMax) {
+            return "ssh -N " + getSshOptions(keepAliveInterval, keepAliveCountMax).trim() +
+                getRouteOptions(jump, proxyConnector, keepAliveInterval, keepAliveCountMax) + " " + getTarget();
+        }
 
         public static final String PROXY_SOCKS5 = "socks5";
         public static final String PROXY_HTTP = "http";
@@ -607,6 +648,14 @@ public class TerminowStore {
         object.put("env", env);
         object.put("colorScheme", host.colorScheme);
         object.put("identity", host.identity);
+        object.put("protocol", host.protocol);
+        object.put("domain", host.domain);
+        object.put("rdpNla", host.rdpNla);
+        object.put("rdpClipboard", host.rdpClipboard);
+        object.put("rdpWidth", host.rdpWidth);
+        object.put("rdpHeight", host.rdpHeight);
+        object.put("winrmHttps", host.winrmHttps);
+        object.put("winrmVerify", host.winrmVerify);
         return object;
     }
 
@@ -638,7 +687,25 @@ public class TerminowStore {
         for (int i = 0; names != null && i < names.length(); i++) host.env.put(names.optString(i), env.optString(names.optString(i)));
         host.colorScheme = object.optString("colorScheme");
         host.identity = object.optString("identity");
+        host.protocol = object.optString("protocol", Host.PROTOCOL_SSH);
+        host.domain = object.optString("domain");
+        host.rdpNla = object.optBoolean("rdpNla", true);
+        host.rdpClipboard = object.optBoolean("rdpClipboard");
+        host.rdpWidth = object.optInt("rdpWidth");
+        host.rdpHeight = object.optInt("rdpHeight");
+        host.winrmHttps = object.optBoolean("winrmHttps", true);
+        host.winrmVerify = object.optBoolean("winrmVerify", true);
         return host;
+    }
+
+    /** A Windows domain: a NetBIOS or DNS name, empty for none. */
+    public static boolean isValidDomain(@Nullable String domain) {
+        return domain != null && domain.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,63}|");
+    }
+
+    /** The desktop sizes that RDP hosts can ask for, 0 x 0 for the size of the screen. */
+    public static boolean isValidDesktopSize(int width, int height) {
+        return (width == 0 && height == 0) || (width >= 640 && width <= 8192 && height >= 480 && height <= 8192);
     }
 
     /**
@@ -654,6 +721,8 @@ public class TerminowStore {
         if (!host.proxyType.isEmpty() && (!(Host.PROXY_SOCKS5.equals(host.proxyType) || Host.PROXY_HTTP.equals(host.proxyType)) ||
             !isValidAddress(host.proxyHost) || !isValidPort(host.proxyPort))) return false;
         if (!host.identity.isEmpty() && !isValidIdentityId(host.identity)) return false;
+        if (!Host.PROTOCOL_SSH.equals(host.protocol) && !host.isRdp() && !host.isWinrm()) return false;
+        if (!isValidDomain(host.domain) || !isValidDesktopSize(host.rdpWidth, host.rdpHeight)) return false;
         // The jump host is looked up by key among the saved hosts, which are validated themselves
         return host.jumpHost.isEmpty() || host.jumpHost.length() <= 300;
     }

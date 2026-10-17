@@ -114,7 +114,9 @@ public final class TerminowQuickModel {
         /** A tmux session that runs and no client is attached to. */
         DETACHED,
         /** A tmux session that runs with a client, not one of the tabs of TermiNow. */
-        ATTACHED
+        ATTACHED,
+        /** A remote desktop or WinRM console that ended: its saved host is connected to again, it is not resumed. */
+        SAVED
     }
 
     /** A session that can be resumed, as it was found just now, never only from a saved history. */

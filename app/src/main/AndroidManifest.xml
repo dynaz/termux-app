@@ -94,6 +94,27 @@
             </intent-filter>
         </activity-alias>
 
+        <!-- The built-in remote desktop. It handles rotation, folding and keyboards itself, so
+             its connection is never torn down by a configuration change. -->
+        <activity
+            android:name=".app.terminow.rdp.TerminowRdpActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|smallestScreenSize|density|screenLayout|keyboard|keyboardHidden|navigation|uiMode"
+            android:label="@string/terminow_rdp_title"
+            android:resizeableActivity="true"
+            android:theme="@android:style/Theme.Material.NoActionBar"
+            android:windowSoftInputMode="adjustResize|stateHidden" />
+
+        <!-- The PowerShell console of WinRM hosts, through the Ubuntu environment. -->
+        <activity
+            android:name=".app.terminow.winrm.TerminowWinrmActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|smallestScreenSize|density|screenLayout|keyboard|keyboardHidden|navigation|uiMode"
+            android:label="@string/terminow_winrm_title"
+            android:resizeableActivity="true"
+            android:theme="@android:style/Theme.Material.NoActionBar"
+            android:windowSoftInputMode="adjustResize" />
+
         <activity
             android:name=".app.activities.HelpActivity"
             android:exported="false"

@@ -68,6 +68,9 @@ public class TerminowQuickLaunch {
 
         /** The system file picker for a root filesystem archive to import. */
         void pickRootfs();
+
+        /** Connect again to the saved host with the key, like tapping its card. */
+        void reconnectHost(@NonNull String hostKey);
     }
 
     private final TermuxActivity mActivity;
@@ -727,6 +730,19 @@ public class TerminowQuickLaunch {
                     session.name, environment.key, label, session.attached > 0 ? TerminowQuickModel.State.ATTACHED : TerminowQuickModel.State.DETACHED,
                     session.created * 1000, session.name));
         }
+        // Remote desktops and WinRM consoles: the ones that run are resumed, the ones that ended connect again
+        for (com.termux.app.terminow.rdp.TerminowRdpSession rdp : com.termux.app.terminow.rdp.TerminowRdpSession.open())
+            tabs.add(new TerminowQuickModel.Recent("rdp:" + rdp.id, rdp.target.title, "@rdp", mActivity.getString(R.string.terminow_quick_rdp),
+                TerminowQuickModel.State.OPEN, rdp.getLastUsed(), ""));
+        for (com.termux.app.terminow.rdp.TerminowRdpSession rdp : com.termux.app.terminow.rdp.TerminowRdpSession.ended())
+            tabs.add(new TerminowQuickModel.Recent("rdphost:" + rdp.target.hostKey, rdp.target.title, "@rdp",
+                mActivity.getString(R.string.terminow_quick_rdp), TerminowQuickModel.State.SAVED, rdp.getLastUsed(), ""));
+        for (com.termux.app.terminow.winrm.TerminowWinrmSession winrm : com.termux.app.terminow.winrm.TerminowWinrmSession.open())
+            tabs.add(new TerminowQuickModel.Recent("winrm:" + winrm.id, winrm.target.title, "@winrm", mActivity.getString(R.string.terminow_quick_winrm),
+                TerminowQuickModel.State.OPEN, winrm.getLastUsed(), ""));
+        for (com.termux.app.terminow.winrm.TerminowWinrmSession winrm : com.termux.app.terminow.winrm.TerminowWinrmSession.ended())
+            tabs.add(new TerminowQuickModel.Recent("winrmhost:" + winrm.target.hostKey, winrm.target.title, "@winrm",
+                mActivity.getString(R.string.terminow_quick_winrm), TerminowQuickModel.State.SAVED, winrm.getLastUsed(), ""));
         return TerminowQuickModel.merge(tabs, tabTmux, tmux);
     }
 
@@ -753,7 +769,8 @@ public class TerminowQuickLaunch {
             DateUtils.getRelativeTimeSpanString(session.lastUsed, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)) : "");
         texts.addView(statusLine(detail, stateColor(session.state)));
         row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        TextView resume = text(mActivity.getString(R.string.terminow_quick_resume), 14, R.color.terminow_text);
+        TextView resume = text(mActivity.getString(session.state == TerminowQuickModel.State.SAVED ? R.string.terminow_quick_reconnect :
+            R.string.terminow_quick_resume), 14, R.color.terminow_text);
         resume.setTypeface(Typeface.DEFAULT_BOLD);
         resume.setGravity(Gravity.CENTER);
         resume.setPadding(dp(16), 0, dp(16), 0);
@@ -775,6 +792,8 @@ public class TerminowQuickLaunch {
 
     private int iconForEnvironment(@NonNull String environmentKey) {
         if (environmentKey.isEmpty()) return R.drawable.ic_terminow_os_linux;
+        if (environmentKey.equals("@rdp")) return R.drawable.ic_terminow_os_windows;
+        if (environmentKey.equals("@winrm")) return R.drawable.ic_terminow_os_powershell;
         if (TerminowMcpTargets.TARGET_TERMINOW.equals(environmentKey)) return R.drawable.ic_terminow_os_local;
         TerminowLinuxEnv env = mLinux.getRegistry().get(environmentKey);
         return iconOf(env != null ? env.distroId : "");
@@ -786,6 +805,7 @@ public class TerminowQuickLaunch {
             case OPEN: return mActivity.getString(R.string.terminow_quick_state_open);
             case ENDED: return mActivity.getString(R.string.terminow_quick_state_ended);
             case ATTACHED: return mActivity.getString(R.string.terminow_quick_state_attached);
+            case SAVED: return mActivity.getString(R.string.terminow_quick_state_saved);
             default: return mActivity.getString(R.string.terminow_quick_state_detached);
         }
     }
@@ -809,6 +829,21 @@ public class TerminowQuickLaunch {
 
     /** Resume what is still there, checked now; else say so, and offer a new session in its environment. */
     private void resume(@NonNull TerminowQuickModel.Recent session) {
+        if (session.key.startsWith("rdp:") || session.key.startsWith("winrm:")) {
+            // A connection that runs: shown again as it is
+            String id = session.key.substring(session.key.indexOf(':') + 1);
+            com.termux.app.terminow.rdp.TerminowRdpSession rdp = com.termux.app.terminow.rdp.TerminowRdpSession.get(id);
+            com.termux.app.terminow.winrm.TerminowWinrmSession winrm = com.termux.app.terminow.winrm.TerminowWinrmSession.get(id);
+            if (rdp != null && rdp.isOpen()) com.termux.app.terminow.rdp.TerminowRdpActivity.show(mActivity, rdp);
+            else if (winrm != null && winrm.isOpen()) com.termux.app.terminow.winrm.TerminowWinrmActivity.show(mActivity, winrm);
+            else offerNew(session, null, R.string.terminow_quick_gone_connection);
+            return;
+        }
+        if (session.key.startsWith("rdphost:") || session.key.startsWith("winrmhost:")) {
+            // It ended: a new connection to the saved host, not the old one resumed
+            mHost.reconnectHost(session.key.substring(session.key.indexOf(':') + 1));
+            return;
+        }
         // A tab of a remote host has no environment to open a new session in
         TerminowLauncher.Environment environment = session.environmentKey.isEmpty() ? null : mLauncher.environmentFor(session.environmentKey);
         if (session.key.startsWith("tab:")) {
@@ -851,7 +886,11 @@ public class TerminowQuickLaunch {
     private void sessionMenu(@NonNull View anchor, @NonNull TerminowQuickModel.Recent session) {
         PopupMenu menu = new PopupMenu(mActivity, anchor);
         TerminowLauncher.Environment environment = session.environmentKey.isEmpty() ? null : mLauncher.environmentFor(session.environmentKey);
-        if (session.key.startsWith("tab:")) {
+        if (session.key.startsWith("rdp:") || session.key.startsWith("winrm:")) {
+            menu.getMenu().add(0, 7, 0, R.string.terminow_rdp_disconnect);
+        } else if (session.key.startsWith("rdphost:") || session.key.startsWith("winrmhost:")) {
+            menu.getMenu().add(0, 8, 0, R.string.terminow_quick_reconnect);
+        } else if (session.key.startsWith("tab:")) {
             menu.getMenu().add(0, 1, 0, R.string.terminow_quick_rename_tab);
             menu.getMenu().add(0, 2, 0, R.string.terminow_quick_close_tab);
         } else {
@@ -877,6 +916,16 @@ public class TerminowQuickLaunch {
                         .show();
                     break;
                 case 6: if (environment != null) mLauncher.openTerminal(environment); break;
+                case 7: {
+                    String id = session.key.substring(session.key.indexOf(':') + 1);
+                    com.termux.app.terminow.rdp.TerminowRdpSession rdp = com.termux.app.terminow.rdp.TerminowRdpSession.get(id);
+                    com.termux.app.terminow.winrm.TerminowWinrmSession winrm = com.termux.app.terminow.winrm.TerminowWinrmSession.get(id);
+                    if (rdp != null) rdp.disconnect();
+                    if (winrm != null) winrm.disconnect();
+                    mHandler.postDelayed(this::render, 300);
+                    break;
+                }
+                case 8: mHost.reconnectHost(session.key.substring(session.key.indexOf(':') + 1)); break;
                 default: break;
             }
             return true;
