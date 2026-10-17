@@ -18,8 +18,10 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Run Claude Code commands in an environment, to find it and to check what it reads from its
@@ -165,7 +167,7 @@ public class TerminowClaudeSetup {
      * tab opens), or else the files of the app, so that a command never fails to start for it.
      */
     @NonNull
-    private File workingDirectory() {
+    File workingDirectory() {
         return workingDirectoryFor(mTargets.getTerminowHome(), new File(com.termux.shared.termux.TermuxConstants.TERMUX_FILES_DIR_PATH));
     }
 
@@ -182,10 +184,23 @@ public class TerminowClaudeSetup {
      */
     @NonNull
     public Process start(@NonNull List<String> command) throws IOException {
+        return startInTerminal(mContext, command, Collections.<String, String>emptyMap(), workingDirectory());
+    }
+
+    /**
+     * Start a command with the environment of the terminal and {@code extraEnv}. A command
+     * without a path is looked up in the PATH of the terminal, not of the app.
+     */
+    @NonNull
+    static Process startInTerminal(@NonNull Context context, @NonNull List<String> command, @NonNull Map<String, String> extraEnv,
+                                   @NonNull File directory) throws IOException {
         TermuxShellEnvironment shellEnvironment = new TermuxShellEnvironment();
-        HashMap<String, String> environment = shellEnvironment.getEnvironment(mContext, false);
+        HashMap<String, String> environment = shellEnvironment.getEnvironment(context, false);
+        environment.putAll(extraEnv);
         TermuxShellUtils.setupSystemLinkerExecLdPreloadLib();
-        String[] args = shellEnvironment.setupShellCommandArguments(command.get(0),
+        String executable = resolveExecutable(command.get(0), environment.get("PATH"), directory);
+        if (executable == null) throw new IOException(command.get(0) + ": command not found in the PATH of TermiNow");
+        String[] args = shellEnvironment.setupShellCommandArguments(executable,
             command.subList(1, command.size()).toArray(new String[0]));
         ProcessBuilder builder = new ProcessBuilder(args);
         builder.environment().clear();
@@ -193,8 +208,25 @@ public class TerminowClaudeSetup {
             int equals = entry.indexOf('=');
             if (equals > 0) builder.environment().put(entry.substring(0, equals), entry.substring(equals + 1));
         }
-        builder.directory(workingDirectory());
+        builder.directory(directory);
         return builder.start();
+    }
+
+    /**
+     * The file to run for a command: itself if it has a slash, else the first match in the
+     * PATH. Files are not checked for the executable bit, which the app can not see for its own
+     * files on Android 15 and later.
+     */
+    @Nullable
+    static String resolveExecutable(@NonNull String command, @Nullable String path, @NonNull File directory) {
+        if (command.contains("/")) return command.startsWith("/") ? command : new File(directory, command).getPath();
+        if (path == null) return null;
+        for (String dir : path.split(":")) {
+            if (dir.isEmpty()) continue;
+            File file = new File(dir, command);
+            if (file.isFile()) return file.getPath();
+        }
+        return null;
     }
 
     /** Run a command with the environment of the terminal and capture its output. */
@@ -203,19 +235,7 @@ public class TerminowClaudeSetup {
         ProcessResult result = new ProcessResult();
         Process process;
         try {
-            TermuxShellEnvironment shellEnvironment = new TermuxShellEnvironment();
-            HashMap<String, String> environment = shellEnvironment.getEnvironment(mContext, false);
-            TermuxShellUtils.setupSystemLinkerExecLdPreloadLib();
-            String[] args = shellEnvironment.setupShellCommandArguments(command.get(0),
-                command.subList(1, command.size()).toArray(new String[0]));
-            ProcessBuilder builder = new ProcessBuilder(args);
-            builder.environment().clear();
-            for (String entry : ShellEnvironmentUtils.convertEnvironmentToEnviron(environment)) {
-                int equals = entry.indexOf('=');
-                if (equals > 0) builder.environment().put(entry.substring(0, equals), entry.substring(equals + 1));
-            }
-            builder.directory(workingDirectory());
-            process = builder.start();
+            process = start(command);
         } catch (IOException | RuntimeException e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Failed to start the setup process", e);
             result.error = "Failed to start: " + e.getMessage();

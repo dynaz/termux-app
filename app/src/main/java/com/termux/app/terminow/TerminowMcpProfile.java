@@ -3,6 +3,8 @@ package com.termux.app.terminow;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.termux.app.terminow.mcp.McpTool;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -16,12 +18,10 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
- * A saved MCP server. Its secrets, the bearer token and the values of the custom headers, are
- * never part of {@link #toJson()}: {@link TerminowStore} keeps them encrypted with a key of the
- * Android keystore.
- *
- * Only the Streamable HTTP transport is offered. The fields for a local stdio server are kept
- * for a later release, and a profile with that transport is shown as not supported.
+ * A saved MCP server: a remote one over Streamable HTTP, or a local command over stdio. Its
+ * secrets, the bearer token, the values of the custom headers and of the environment variables,
+ * are never part of {@link #toJson()}: {@link TerminowStore} keeps them encrypted with a key of
+ * the Android keystore.
  */
 public class TerminowMcpProfile {
 
@@ -43,6 +43,9 @@ public class TerminowMcpProfile {
     private static final Pattern NAME_PATTERN = Pattern.compile("[A-Za-z0-9_-]{1,64}");
     /** HTTP header names, RFC 9110 tokens. */
     private static final Pattern HEADER_NAME_PATTERN = Pattern.compile("[!#$%&'*+.^_`|~0-9A-Za-z-]{1,64}");
+    private static final Pattern ENV_NAME_PATTERN = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
+    /** The most text of tool descriptions and schemas that is kept to show before connecting. */
+    private static final int MAX_CACHED_TOOLS_CHARS = 256 * 1024;
 
     /** Headers that the MCP client sets itself. */
     private static final String[] RESERVED_HEADERS = {"accept", "content-type", "content-length", "host", "connection",
@@ -95,9 +98,10 @@ public class TerminowMcpProfile {
     public String scope = SCOPE_USER;
     public String projectDir = "";
 
-    // A local stdio server, not offered yet
+    // A local stdio server, run in {@link #target} as {@link #containerUser}
     public String command = "";
     public final List<String> args = new ArrayList<>();
+    /** The values are secret. */
     public final Map<String, String> env = new LinkedHashMap<>();
     public String workingDir = "";
 
@@ -109,6 +113,10 @@ public class TerminowMcpProfile {
     public String testServer = "";
     public String testProtocol = "";
     public final List<String> testTools = new ArrayList<>();
+
+    /** The tools of the last connection, to show before connecting again. Not secret. */
+    public final List<McpTool> cachedTools = new ArrayList<>();
+    public long cachedToolsTime;
 
     /** By target, the configuration of Claude Code. */
     public final Map<String, Applied> applied = new LinkedHashMap<>();
@@ -142,8 +150,46 @@ public class TerminowMcpProfile {
         return null;
     }
 
-    public boolean isSupported() {
+    /** Returns {@code null} if the command can be run, or why it can not. */
+    @Nullable
+    public static String validateCommand(@NonNull String command) {
+        if (command.trim().isEmpty()) return "Enter the command that starts the server";
+        if (hasControl(command)) return "The command can not have line breaks or control characters";
+        // In a container the command follows env NAME=value arguments, which it must not look like
+        if (command.contains("=")) return "The command can not contain =";
+        return null;
+    }
+
+    @Nullable
+    public static String validateArgument(@NonNull String argument) {
+        return argument.indexOf('\0') >= 0 ? "An argument can not contain a NUL character" : null;
+    }
+
+    @Nullable
+    public static String validateEnv(@NonNull String name, @NonNull String value) {
+        if (!ENV_NAME_PATTERN.matcher(name).matches()) return "\"" + name + "\" is not a valid variable name";
+        if (value.indexOf('\0') >= 0) return "The value of " + name + " can not contain a NUL character";
+        return null;
+    }
+
+    @Nullable
+    public static String validateWorkingDir(@NonNull String dir) {
+        if (dir.isEmpty()) return null;
+        if (!dir.startsWith("/") || hasControl(dir)) return "Enter an absolute path, like /root/project, or leave it empty";
+        return null;
+    }
+
+    private static boolean hasControl(@NonNull String text) {
+        for (int i = 0; i < text.length(); i++) if (text.charAt(i) < 0x20) return true;
+        return false;
+    }
+
+    public boolean isHttp() {
         return TRANSPORT_HTTP.equals(transport);
+    }
+
+    public boolean isStdio() {
+        return TRANSPORT_STDIO.equals(transport);
     }
 
     /** The headers that are sent to the server, with their secret values. */
@@ -163,6 +209,7 @@ public class TerminowMcpProfile {
         List<String> secrets = new ArrayList<>();
         if (!bearerToken.isEmpty()) secrets.add(bearerToken);
         for (Header header : headers) if (!header.value.isEmpty()) secrets.add(header.value);
+        for (String value : env.values()) if (!value.isEmpty()) secrets.add(value);
         return secrets;
     }
 
@@ -207,6 +254,10 @@ public class TerminowMcpProfile {
         object.put("testServer", testServer);
         object.put("testProtocol", testProtocol);
         object.put("testTools", new JSONArray(testTools));
+        JSONArray toolsArray = new JSONArray();
+        for (McpTool tool : cachedTools) toolsArray.put(tool.toJson());
+        object.put("cachedTools", toolsArray);
+        object.put("cachedToolsTime", cachedToolsTime);
         JSONObject appliedObject = new JSONObject();
         for (Map.Entry<String, Applied> entry : applied.entrySet()) {
             Applied a = entry.getValue();
@@ -250,6 +301,13 @@ public class TerminowMcpProfile {
         profile.testProtocol = object.optString("testProtocol");
         JSONArray tools = object.optJSONArray("testTools");
         if (tools != null) for (int i = 0; i < tools.length(); i++) profile.testTools.add(tools.optString(i));
+        JSONArray cached = object.optJSONArray("cachedTools");
+        for (int i = 0; cached != null && i < cached.length(); i++) {
+            JSONObject toolObject = cached.optJSONObject(i);
+            McpTool tool = toolObject != null ? McpTool.parse(toolObject) : null;
+            if (tool != null) profile.cachedTools.add(tool);
+        }
+        profile.cachedToolsTime = object.optLong("cachedToolsTime");
         JSONObject appliedObject = object.optJSONObject("applied");
         if (appliedObject != null) {
             JSONArray keys = appliedObject.names();
@@ -274,8 +332,20 @@ public class TerminowMcpProfile {
         return profile;
     }
 
-    /** Forget the last test, since the server or its credentials changed. */
-    public void clearTest() {
+    /** Keep the tools of a connection, as many as fit in a small part of the settings. */
+    public void setCachedTools(@NonNull List<McpTool> tools, long time) {
+        cachedTools.clear();
+        int chars = 0;
+        for (McpTool tool : tools) {
+            chars += tool.toJson().toString().length();
+            if (chars > MAX_CACHED_TOOLS_CHARS) break;
+            cachedTools.add(tool);
+        }
+        cachedToolsTime = time;
+    }
+
+    /** Forget what the app learned about the server, since the server or its credentials changed. */
+    public void forgetServer() {
         testTime = 0;
         testOk = false;
         testFailure = "";
@@ -283,6 +353,8 @@ public class TerminowMcpProfile {
         testServer = "";
         testProtocol = "";
         testTools.clear();
+        cachedTools.clear();
+        cachedToolsTime = 0;
     }
 
 }

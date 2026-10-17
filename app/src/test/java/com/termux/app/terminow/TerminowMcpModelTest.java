@@ -76,6 +76,117 @@ public class TerminowMcpModelTest {
     }
 
     @Test
+    public void stdioProfilesKeepEnvValuesSecret() throws Exception {
+        TerminowMcpProfile profile = new TerminowMcpProfile();
+        profile.name = "everything";
+        profile.transport = TerminowMcpProfile.TRANSPORT_STDIO;
+        profile.command = "npx";
+        profile.args.addAll(Arrays.asList("-y", "@modelcontextprotocol/server-everything"));
+        profile.env.put("API_KEY", "env-secret-31337");
+        profile.env.put("REGION", "eu-west-1");
+        assertTrue(profile.isStdio());
+        assertFalse(profile.isHttp());
+        assertTrue(profile.getSecrets().contains("env-secret-31337"));
+
+        String json = profile.toJson().toString();
+        assertFalse(json.contains("env-secret-31337"));
+        assertFalse(json.contains("eu-west-1"));
+        TerminowMcpProfile loaded = TerminowMcpProfile.fromJson(new JSONObject(json));
+        assertEquals(Arrays.asList("API_KEY", "REGION"), new java.util.ArrayList<>(loaded.env.keySet()));
+        assertEquals("", loaded.env.get("API_KEY"));
+
+        // The store keeps them encrypted, in the order of the names
+        TerminowStore.sTestsWithoutKeystore = true;
+        MemoryPreferences preferences = new MemoryPreferences();
+        new TerminowStore(preferences).setMcpProfiles(Arrays.asList(profile));
+        TerminowMcpProfile stored = new TerminowStore(preferences).getMcpProfiles().get(0);
+        assertEquals("env-secret-31337", stored.env.get("API_KEY"));
+        assertEquals("eu-west-1", stored.env.get("REGION"));
+        assertEquals(Arrays.asList("-y", "@modelcontextprotocol/server-everything"), stored.args);
+    }
+
+    @Test
+    public void stdioValidation() {
+        assertNull(TerminowMcpProfile.validateCommand("npx"));
+        assertNull(TerminowMcpProfile.validateCommand("/usr/bin/python3"));
+        assertNotNull(TerminowMcpProfile.validateCommand(" "));
+        assertNotNull(TerminowMcpProfile.validateCommand("npx\nrm"));
+        assertNotNull(TerminowMcpProfile.validateCommand("A=1"));
+        assertNull(TerminowMcpProfile.validateEnv("API_KEY", "x y=z"));
+        assertNull(TerminowMcpProfile.validateEnv("_private2", ""));
+        assertNotNull(TerminowMcpProfile.validateEnv("2FA", "x"));
+        assertNotNull(TerminowMcpProfile.validateEnv("MY-KEY", "x"));
+        assertNotNull(TerminowMcpProfile.validateEnv("KEY", "a\0b"));
+        assertNull(TerminowMcpProfile.validateArgument("--flag=value with spaces"));
+        assertNotNull(TerminowMcpProfile.validateArgument("a\0b"));
+        assertNull(TerminowMcpProfile.validateWorkingDir(""));
+        assertNull(TerminowMcpProfile.validateWorkingDir("/root/project"));
+        assertNotNull(TerminowMcpProfile.validateWorkingDir("project"));
+    }
+
+    @Test
+    public void toolsAreCachedWithoutTheTestOfAnotherServer() throws Exception {
+        TerminowMcpProfile profile = new TerminowMcpProfile();
+        com.termux.app.terminow.mcp.McpTool tool = com.termux.app.terminow.mcp.McpTool.parse(new JSONObject(
+            "{\"name\":\"search\",\"description\":\"Find\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"q\":{\"type\":\"string\"}}}," +
+                "\"annotations\":{\"readOnlyHint\":true}}"));
+        profile.setCachedTools(Arrays.asList(tool), 1234);
+        TerminowMcpProfile loaded = TerminowMcpProfile.fromJson(profile.toJson());
+        assertEquals(1, loaded.cachedTools.size());
+        assertEquals("search", loaded.cachedTools.get(0).name);
+        assertTrue(loaded.cachedTools.get(0).isReadOnly());
+        assertTrue(loaded.cachedTools.get(0).getInputSchema().getJSONObject("properties").has("q"));
+        assertEquals(1234, loaded.cachedToolsTime);
+        loaded.forgetServer();
+        assertTrue(loaded.cachedTools.isEmpty());
+    }
+
+    @Test
+    public void stdioLaunchInTerminowAndInAContainer() {
+        File prefix = new File("/data/data/com.terminow/files/usr");
+        TerminowMcpProfile profile = new TerminowMcpProfile();
+        profile.transport = TerminowMcpProfile.TRANSPORT_STDIO;
+        profile.command = "npx";
+        profile.args.addAll(Arrays.asList("-y", "server; rm -rf ~", "my dir"));
+        profile.env.put("API_KEY", "k 1");
+
+        TerminowMcpStdio.Launch local = TerminowMcpStdio.plan(prefix, profile);
+        assertEquals(Arrays.asList("npx", "-y", "server; rm -rf ~", "my dir"), local.command);
+        assertEquals("k 1", local.env.get("API_KEY"));
+        assertEquals(null, local.workingDir);
+
+        profile.target = "ubuntu";
+        profile.containerUser = "dev";
+        profile.workingDir = "/home/dev/project";
+        TerminowMcpStdio.Launch ubuntu = TerminowMcpStdio.plan(prefix, profile);
+        assertEquals(Arrays.asList("/data/data/com.terminow/files/usr/bin/proot-distro", "login", "ubuntu", "--user", "dev",
+            "--work-dir", "/home/dev/project", "--", "/usr/bin/env", "API_KEY=k 1", "npx", "-y", "server; rm -rf ~", "my dir"), ubuntu.command);
+        assertTrue(ubuntu.env.isEmpty());
+
+        profile.target = "ubuntu; reboot";
+        try {
+            TerminowMcpStdio.plan(prefix, profile);
+            org.junit.Assert.fail("An invalid container name was accepted");
+        } catch (IllegalArgumentException expected) {
+            // Expected
+        }
+    }
+
+    @Test
+    public void commandsAreFoundInThePathOfTheTerminal() throws Exception {
+        File bin = mFolder.newFolder("usr", "bin");
+        File other = mFolder.newFolder("other");
+        write(new File(bin, "npx"), "#!/bin/sh\n");
+        write(new File(other, "npx"), "#!/bin/sh\n");
+        String path = bin.getPath() + "::" + other.getPath();
+        assertEquals(new File(bin, "npx").getPath(), TerminowClaudeSetup.resolveExecutable("npx", path, other));
+        assertNull(TerminowClaudeSetup.resolveExecutable("uvx", path, other));
+        assertNull(TerminowClaudeSetup.resolveExecutable("npx", null, other));
+        assertEquals("/usr/bin/python3", TerminowClaudeSetup.resolveExecutable("/usr/bin/python3", path, other));
+        assertEquals(new File(other, "bin/server").getPath(), TerminowClaudeSetup.resolveExecutable("bin/server", path, other));
+    }
+
+    @Test
     public void requestHeadersByAuthType() {
         TerminowMcpProfile profile = new TerminowMcpProfile();
         profile.bearerToken = "tok-1234";

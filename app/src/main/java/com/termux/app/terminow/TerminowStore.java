@@ -664,6 +664,10 @@ public class TerminowStore {
                     JSONArray values = secretsObject.optJSONArray("headers");
                     for (int j = 0; values != null && j < values.length() && j < profile.headers.size(); j++)
                         profile.headers.get(j).value = values.optString(j);
+                    JSONArray envValues = secretsObject.optJSONArray("env");
+                    List<String> envNames = new ArrayList<>(profile.env.keySet());
+                    for (int j = 0; envValues != null && j < envValues.length() && j < envNames.size(); j++)
+                        profile.env.put(envNames.get(j), envValues.optString(j));
                 }
                 profiles.add(profile);
             }
@@ -678,10 +682,13 @@ public class TerminowStore {
         try {
             for (TerminowMcpProfile profile : profiles) {
                 JSONObject object = profile.toJson();
-                if (profile.hasSecrets() || !profile.bearerToken.isEmpty()) {
+                if (!profile.getSecrets().isEmpty()) {
                     JSONArray values = new JSONArray();
                     for (TerminowMcpProfile.Header header : profile.headers) values.put(header.value);
-                    object.put("secrets", encryptPassword(new JSONObject().put("bearer", profile.bearerToken).put("headers", values).toString()));
+                    // In the order of envNames in the profile
+                    JSONArray envValues = new JSONArray(new ArrayList<>(profile.env.values()));
+                    object.put("secrets", encryptPassword(new JSONObject().put("bearer", profile.bearerToken).put("headers", values)
+                        .put("env", envValues).toString()));
                 }
                 array.put(object);
             }

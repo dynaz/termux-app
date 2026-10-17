@@ -182,7 +182,7 @@ public class TerminowMcpPage {
 
     private boolean matchesFilter(@NonNull TerminowMcpProfile profile) {
         switch (mFilter) {
-            case REMOTE: return profile.isSupported();
+            case REMOTE: return profile.isHttp();
             case LOCAL: return TerminowMcpProfile.TRANSPORT_STDIO.equals(profile.transport);
             case PASSED: return profile.testTime != 0 && profile.testOk && !mTests.containsKey(profile.id);
             case NEEDS_LOGIN: return needsLogin(profile);
@@ -592,7 +592,7 @@ public class TerminowMcpPage {
 
         boolean testing = mTests.containsKey(profile.id);
         TextView test = actionButton(mActivity.getString(testing ? R.string.terminow_mcp_cancel_short : R.string.terminow_mcp_test), false);
-        test.setEnabled(profile.isSupported());
+        test.setEnabled(profile.isHttp());
         test.setAlpha(test.isEnabled() ? 1f : 0.5f);
         test.setOnClickListener(v -> {
             if (mTests.containsKey(profile.id)) cancelTest(profile);
@@ -617,7 +617,7 @@ public class TerminowMcpPage {
         String text;
         boolean secretsMissing = (TerminowMcpProfile.AUTH_BEARER.equals(profile.authType) && profile.bearerToken.isEmpty()) ||
             (TerminowMcpProfile.AUTH_HEADERS.equals(profile.authType) && hasEmptyHeader(profile));
-        if (!profile.isSupported()) {
+        if (!profile.isHttp()) {
             status = Status.NONE;
             text = mActivity.getString(R.string.terminow_mcp_stdio_unsupported);
         } else if (mTests.containsKey(profile.id)) {
@@ -686,13 +686,13 @@ public class TerminowMcpPage {
 
     @NonNull
     private String getTransportLabel(@NonNull TerminowMcpProfile profile) {
-        return profile.isSupported() ? "HTTP" : profile.transport.toUpperCase(Locale.ROOT);
+        return profile.isHttp() ? "HTTP" : profile.transport.toUpperCase(Locale.ROOT);
     }
 
     /** The host of the URL, never its path or query, which can carry a key. */
     @NonNull
     private static String getEndpointLabel(@NonNull TerminowMcpProfile profile) {
-        if (!profile.isSupported()) return profile.command;
+        if (!profile.isHttp()) return profile.command;
         try {
             URL url = new URL(profile.url);
             return url.getHost() + (url.getPort() == -1 ? "" : ":" + url.getPort());
@@ -989,7 +989,7 @@ public class TerminowMcpPage {
             target.scope = scope;
             target.projectDir = TerminowMcpProfile.SCOPE_USER.equals(scope) ? "" : projectDir;
             // A test is only valid for what was tested
-            if (connectionChanged) target.clearTest();
+            if (connectionChanged) target.forgetServer();
             if (profile == null) mProfiles.add(target);
             mStore.setMcpProfiles(mProfiles);
             dialog.dismiss();
@@ -1057,7 +1057,7 @@ public class TerminowMcpPage {
         List<Runnable> handlers = new ArrayList<>();
         actions.add(mActivity.getString(R.string.terminow_mcp_details));
         handlers.add(() -> showDetails(profile));
-        if (profile.isSupported() && !mBusy.contains(profile.id)) {
+        if (profile.isHttp() && !mBusy.contains(profile.id)) {
             actions.add(mActivity.getString(R.string.terminow_mcp_configure));
             handlers.add(() -> startConfigure(profile));
         }
@@ -1268,7 +1268,7 @@ public class TerminowMcpPage {
 
     /** Detect Claude Code and plan the change in the background, then show the preview. */
     private void prepare(@NonNull TerminowMcpProfile profile, boolean remove) {
-        if (!profile.isSupported()) {
+        if (!profile.isHttp()) {
             showMessage(profile.name, mActivity.getString(R.string.terminow_mcp_stdio_unsupported));
             return;
         }
