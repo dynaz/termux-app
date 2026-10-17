@@ -49,6 +49,7 @@ import java.io.File;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -352,7 +353,143 @@ public class TerminowLauncher {
         return found;
     }
 
+    /** Told when what is known about environments changed, like Claude Code or tmux sessions, for Quick Launch. */
+    @Nullable private Runnable mOnStateChanged;
+
+    void setOnStateChanged(@Nullable Runnable onStateChanged) {
+        mOnStateChanged = onStateChanged;
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // For Quick Launch
+    // ---------------------------------------------------------------------------------------
+
+    /** The tmux session of the cards of an environment, like "ubuntu" or "local". */
+    @NonNull
+    String quickTmuxName(@NonNull Environment environment) {
+        String name = TerminowLaunchPlan.tmuxNameFor(environment.isLocal() ? "local" : environment.key);
+        return TerminowLaunchPlan.isValidTmuxName(name) ? name : "terminow";
+    }
+
+    /** Whether Open terminal of an environment starts in its tmux session: "off" or "attach". */
+    @NonNull
+    String tmuxPreferenceOf(@NonNull Environment environment) {
+        String value = getPrefs().optString("tmux:" + environment.key, TerminowLaunchPlan.TMUX_OFF);
+        return TerminowLaunchPlan.TMUX_ATTACH.equals(value) ? value : TerminowLaunchPlan.TMUX_OFF;
+    }
+
+    void setLaunchSettings(@NonNull Environment environment, @NonNull String user, @NonNull String folder, @NonNull String tmux) {
+        if (environment.container != null) putPref("user:" + environment.key, user);
+        putPref("folder:" + environment.key, folder);
+        putPref("tmux:" + environment.key, tmux);
+    }
+
+    @NonNull
+    String folderOf(@NonNull Environment environment) {
+        return getFolder(environment);
+    }
+
+    @NonNull
+    List<String> usersOf(@NonNull Environment environment) {
+        return environment.container != null ? TerminowMcpTargets.getUsers(environment.container) : Collections.singletonList("root");
+    }
+
+    /**
+     * Open terminal of a card: always a new session in the environment, as its user, in its
+     * folder, in its tmux session if the user chose that. Nothing else runs.
+     */
+    void openTerminal(@NonNull Environment environment) {
+        String user = getUser(environment);
+        String tmux = tmuxPreferenceOf(environment);
+        boolean useTmux = TerminowLaunchPlan.TMUX_ATTACH.equals(tmux);
+        Runnable open = () -> launchPlan("quick|" + environment.key + "|" + System.nanoTime(), environment, user, getFolder(environment),
+            TerminowLaunchPlan.TOOL_SHELL, "", tmux, quickTmuxName(environment),
+            mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), "bash"), true, "bash");
+        if (useTmux) TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.TMUX, 0, open);
+        else open.run();
+    }
+
+    void openClaude(@NonNull Environment environment) {
+        launchClaude(environment, new String[0], false);
+    }
+
+    /** What is known about Claude Code in the environment, {@code null} until it was checked. */
+    @Nullable
+    ClaudeState claudeOf(@NonNull Environment environment) {
+        return mClaude.get(stateKey(environment));
+    }
+
+    /** Find out about Claude Code, once per environment and user: it only runs `claude --version` and `--help`. */
+    void detectClaude(@NonNull Environment environment) {
+        checkClaude(environment, false);
+    }
+
+    @Nullable
+    TerminowTmux.State tmuxOf(@NonNull Environment environment) {
+        return mTmux.get(stateKey(environment));
+    }
+
+    boolean isTmuxChecking(@NonNull Environment environment) {
+        return mTmuxChecking.contains(stateKey(environment));
+    }
+
+    /** List the tmux sessions of the environment's user, with its own tmux. Never starts or stops one. */
+    void listTmux(@NonNull Environment environment, boolean force) {
+        checkTmux(environment, force);
+    }
+
+    @NonNull
+    String userOf(@NonNull Environment environment) {
+        return getUser(environment);
+    }
+
+    /**
+     * Resume a tmux session: listed again first, and attached to only if it is still there;
+     * otherwise {@code missing} runs, and nothing is created.
+     */
+    void resumeTmux(@NonNull Environment environment, @NonNull String name, @NonNull Runnable missing) {
+        TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.TMUX, 0, () -> {
+            String user = getUser(environment);
+            mExecutor.execute(() -> {
+                TerminowClaudeSetup.ProcessResult result = new TerminowClaudeSetup(mActivity, mTargets).run(TerminowClaudeSetup.buildCommand(
+                    mTargets.getPrefixDir(), environment.key, user, TerminowTmux.SCRIPT, environment.isLocal() ? "local" : "guest",
+                    TerminowLaunchPlan.tmuxSocket(environment.isLocal(), user), "list"), TerminowClaudeSetup.DETECT_TIMEOUT_MS);
+                TerminowTmux.State state = result.error == null ? TerminowTmux.parse(result.stdout) : null;
+                boolean there = false;
+                if (state != null) for (TerminowTmux.Session session : state.sessions) there |= session.name.equals(name);
+                boolean found = there;
+                TerminowTmux.State finalState = state;
+                mHandler.post(() -> {
+                    if (finalState != null && finalState.checked) mTmux.put(stateKey(environment), finalState);
+                    if (found) launchTmux(environment, name);
+                    else missing.run();
+                    render();
+                });
+            });
+        });
+    }
+
+    void renameTmuxSession(@NonNull Environment environment, @NonNull String name) {
+        renameTmux(environment, name);
+    }
+
+    void tmuxSessionOperation(@NonNull Environment environment, @NonNull String op, @NonNull String name) {
+        tmuxOperation(environment, op, name, "");
+    }
+
+    void openFilesOf(@NonNull Environment environment) {
+        TerminowLinuxEnv linux = linuxOf(environment);
+        if (linux == null || mLinux == null) return;
+        mLinux.openFiles(linux, getUser(environment), getFolder(environment));
+    }
+
+    /** The tools sheet of before, with the commands of environments and Claude Code in all its ways. */
+    void showTools() {
+        show();
+    }
+
     private void render() {
+        if (mOnStateChanged != null) mOnStateChanged.run();
         LinearLayout content = mContent;
         if (content == null) return;
         content.removeAllViews();
@@ -1085,7 +1222,7 @@ public class TerminowLauncher {
             runProfile(profile, environment, user, folder);
             return;
         }
-        TextView commandView = text(profile.command, 13, R.color.terminow_text);
+        TextView commandView = text(profile.whatRuns(), 13, R.color.terminow_text);
         commandView.setTypeface(Typeface.MONOSPACE);
         commandView.setTextIsSelectable(true);
         LinearLayout box = vertical();
@@ -1099,7 +1236,7 @@ public class TerminowLauncher {
             .setTitle(mActivity.getString(R.string.terminow_profiles_confirm_title, profile.name))
             .setView(box)
             .setPositiveButton(R.string.terminow_tools_run, (d, w) -> {
-                profile.confirmedCommand = profile.command;
+                profile.confirmedCommand = profile.whatRuns();
                 mProfiles.save(profile);
                 runProfile(profile, environment, user, folder);
             })
@@ -1112,7 +1249,7 @@ public class TerminowLauncher {
         boolean tmux = !TerminowLaunchPlan.TMUX_OFF.equals(profile.tmux);
         String key = tmux ? "tmux|" + environment.key + "|" + profile.getTmuxName() : "profile|" + profile.id;
         launchPlan(key, environment, user, folder, profile.tool, profile.command, profile.tmux, profile.getTmuxName(),
-            profile.icon + " " + profile.name, !tmux, toolLabel(profile.tool, profile.name));
+            profile.icon + " " + profile.name, !tmux, toolLabel(profile.tool, profile.name), profile);
     }
 
     /** Open a tmux session of an environment in a new tab, creating it if it is gone. */
@@ -1162,10 +1299,21 @@ public class TerminowLauncher {
                                        @NonNull String folder, @NonNull String tool, @NonNull String command,
                                        @NonNull String tmuxMode, @NonNull String tmuxName, @NonNull String tabName,
                                        boolean alwaysNew, @NonNull String toolLabel) {
+        return launchPlan(key, environment, user, folder, tool, command, tmuxMode, tmuxName, tabName, alwaysNew, toolLabel, null);
+    }
+
+    /** Like the other, with the program and startup command of a profile, if it has them. */
+    @Nullable
+    private TerminalSession launchPlan(@NonNull String key, @NonNull Environment environment, @NonNull String user,
+                                       @NonNull String folder, @NonNull String tool, @NonNull String command,
+                                       @NonNull String tmuxMode, @NonNull String tmuxName, @NonNull String tabName,
+                                       boolean alwaysNew, @NonNull String toolLabel, @Nullable TerminowLaunchProfile profile) {
         TerminowLaunchPlan plan;
         try {
             plan = TerminowLaunchPlan.build(mTargets.getPrefixDir().getPath(), environment.isLocal() ? "" : environment.key, user,
-                folder, tool, command, tmuxMode, tmuxName, isLocalTmuxInstalled(), bindsOf(environment));
+                folder, tool, command, tmuxMode, tmuxName, isLocalTmuxInstalled(), bindsOf(environment),
+                profile != null ? profile.executable : "", profile != null ? profile.arguments : new ArrayList<>(),
+                profile != null ? profile.startup : "");
         } catch (IllegalArgumentException e) {
             showFailure(tabName, String.valueOf(e.getMessage()));
             return null;
@@ -1185,7 +1333,8 @@ public class TerminowLauncher {
     private String toolLabel(@NonNull String tool, @NonNull String customName) {
         switch (tool) {
             case TerminowLaunchPlan.TOOL_SHELL: return "bash";
-            case TerminowLaunchPlan.TOOL_CUSTOM: return customName;
+            case TerminowLaunchPlan.TOOL_CUSTOM:
+            case TerminowLaunchPlan.TOOL_PROGRAM: return customName;
             case TerminowLaunchPlan.TOOL_CLAUDE_LOGIN: return "Claude login";
             default: return "Claude";
         }

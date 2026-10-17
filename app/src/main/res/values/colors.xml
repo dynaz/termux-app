@@ -29,6 +29,13 @@
     <color name="terminow_panel_scrim">#99000000</color>
     <color name="terminow_panel_button">#2F344B</color>
 
+    <!-- Quick Launch. -->
+    <color name="terminow_quick_card">#1B2236</color>
+    <color name="terminow_quick_border">#2C3650</color>
+    <color name="terminow_quick_primary">#1F6FEB</color>
+    <color name="terminow_quick_ready">#22C55E</color>
+    <color name="terminow_quick_idle">#94A3B8</color>
+
     <!-- Extra keys bar. -->
     <color name="terminow_keys_bar">#1C1C1E</color>
     <color name="terminow_keys_text">#E6E6E6</color>

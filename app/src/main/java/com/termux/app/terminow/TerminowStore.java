@@ -970,6 +970,64 @@ public class TerminowStore {
         mPreferences.edit().putString(KEY_DEFAULT_LAUNCH_PROFILE, value).apply();
     }
 
+    private static final String KEY_QUICK_PINS = "quick_pins";
+    private static final String KEY_QUICK_NAMES = "quick_names";
+
+    /**
+     * The cards pinned to Quick Launch, by id, in their order, see {@link TerminowQuickModel}.
+     * Saved the first time from the launch profiles there were, which were all in the + menu.
+     */
+    @NonNull
+    public List<String> getQuickPins() {
+        List<String> stored = null;
+        String text = mPreferences.getString(KEY_QUICK_PINS, null);
+        if (text != null) {
+            stored = new ArrayList<>();
+            try {
+                JSONArray array = new JSONArray(text);
+                for (int i = 0; i < array.length(); i++) {
+                    String id = array.optString(i);
+                    if (!id.isEmpty() && id.length() <= 120 && !stored.contains(id)) stored.add(id);
+                }
+            } catch (JSONException e) {
+                stored = new ArrayList<>();
+            }
+        }
+        if (stored != null) return stored;
+        List<String> profileIds = new ArrayList<>();
+        for (TerminowLaunchProfile profile : getLaunchProfiles()) profileIds.add(TerminowQuickModel.profileId(profile.id));
+        List<String> migrated = TerminowQuickModel.migratePins(null, profileIds);
+        setQuickPins(migrated);
+        return migrated;
+    }
+
+    public void setQuickPins(@NonNull List<String> pins) {
+        mPreferences.edit().putString(KEY_QUICK_PINS, new JSONArray(pins).toString()).apply();
+    }
+
+    /** The name that the user gave a card, empty for its own name. */
+    @NonNull
+    public String getQuickName(@NonNull String id) {
+        try {
+            return new JSONObject(mPreferences.getString(KEY_QUICK_NAMES, "{}")).optString(id);
+        } catch (JSONException e) {
+            return "";
+        }
+    }
+
+    public void setQuickName(@NonNull String id, @NonNull String name) {
+        try {
+            JSONObject names = new JSONObject(mPreferences.getString(KEY_QUICK_NAMES, "{}"));
+            String clean = name.replaceAll("\\p{Cntrl}", " ").trim();
+            if (clean.length() > 60) clean = clean.substring(0, 60);
+            if (clean.isEmpty()) names.remove(id);
+            else names.put(id, clean);
+            mPreferences.edit().putString(KEY_QUICK_NAMES, names.toString()).apply();
+        } catch (JSONException e) {
+            Logger.logError(LOG_TAG, "Failed to save a name of Quick Launch");
+        }
+    }
+
     /** The choices of the terminal launcher: environment, and user and folder per environment. */
     @NonNull
     public JSONObject getLauncher() {

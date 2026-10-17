@@ -93,6 +93,55 @@ public class TerminowLinuxUi {
     @Nullable private static volatile String sLiveInstall;
     @Nullable private String mInstallingAlias;
 
+    /** What the install of this process does now, for the cards of Quick Launch. */
+    public static class Progress {
+        public final String alias;
+        public final String distroId;
+        public final String name;
+        /** The phase, as the user reads it. */
+        public String phase = "";
+        /** 0 to 1000, -1 while not known. */
+        public int permille = -1;
+
+        Progress(@NonNull String alias, @NonNull String distroId, @NonNull String name) {
+            this.alias = alias;
+            this.distroId = distroId;
+            this.name = name;
+        }
+    }
+
+    @Nullable private static volatile Progress sProgress;
+    private final List<Runnable> mProgressListeners = new ArrayList<>();
+
+    /** The install or import that runs now, {@code null} if none. */
+    @Nullable
+    public static Progress progress() {
+        return sProgress;
+    }
+
+    /** Told on the main thread when an install or import moves on, starts or ends. */
+    public void addProgressListener(@NonNull Runnable listener) {
+        if (!mProgressListeners.contains(listener)) mProgressListeners.add(listener);
+    }
+
+    public void removeProgressListener(@NonNull Runnable listener) {
+        mProgressListeners.remove(listener);
+    }
+
+    private void notifyProgress() {
+        for (Runnable listener : new ArrayList<>(mProgressListeners)) listener.run();
+    }
+
+    /** Whether an install or import runs now, here or in the Ubuntu setup: there is only one at a time. */
+    public static boolean isBusy() {
+        return TerminowUbuntuSetupUi.isSetupRunning() || sLiveInstall != null || sProgress != null;
+    }
+
+    /** Install a distribution of the catalog, like from Browse Linux: confirmed, with its progress. */
+    public void installEntry(@NonNull TerminowLinuxCatalog.Entry entry) {
+        confirmInstall(entry, null);
+    }
+
     public TerminowLinuxUi(@NonNull TermuxActivity activity, @NonNull TerminowStore store, @NonNull Host host) {
         mActivity = activity;
         mStore = store;
@@ -377,9 +426,9 @@ public class TerminowLinuxUi {
         return mRegistry.installed().size();
     }
 
-    private void confirmInstall(@NonNull TerminowLinuxCatalog.Entry entry, @NonNull Dialog browse) {
+    private void confirmInstall(@NonNull TerminowLinuxCatalog.Entry entry, @Nullable Dialog browse) {
         // One Linux install at a time, also with the Ubuntu setup
-        if (TerminowUbuntuSetupUi.isSetupRunning() || sLiveInstall != null) {
+        if (isBusy()) {
             mActivity.showToast(mActivity.getString(R.string.terminow_linux_install_busy), true);
             return;
         }
@@ -397,7 +446,7 @@ public class TerminowLinuxUi {
                 .setMessage(space ? message : message + "\n\n" + mActivity.getString(R.string.terminow_linux_no_space))
                 .setNegativeButton(android.R.string.cancel, null);
             if (space) builder.setPositiveButton(R.string.terminow_linux_install, (d, w) -> {
-                browse.dismiss();
+                if (browse != null) browse.dismiss();
                 install(entry, alias, usable);
             });
             builder.show();
@@ -420,6 +469,10 @@ public class TerminowLinuxUi {
         TerminowLinuxInstaller installer = newInstaller();
         mInstaller = installer;
         mInstallingAlias = alias;
+        Progress state = new Progress(alias, entry.distroId, entry.name);
+        state.phase = mActivity.getString(R.string.terminow_linux_phase_checking);
+        sProgress = state;
+        notifyProgress();
         LinearLayout box = vertical();
         box.setPadding(dp(24), dp(10), dp(24), dp(4));
         TextView phase = text(mActivity.getString(R.string.terminow_linux_phase_checking), 15, R.color.terminow_text);
@@ -456,6 +509,9 @@ public class TerminowLinuxUi {
                     public void onPhase(@NonNull TerminowLinuxInstaller.Phase p, @NonNull String text) {
                         mHandler.post(() -> {
                             if (installer.isCancelled()) return;
+                            state.phase = phaseText(p);
+                            if (p != TerminowLinuxInstaller.Phase.DOWNLOADING) state.permille = -1;
+                            notifyProgress();
                             phase.setText(phaseText(p));
                             bar.setIndeterminate(p != TerminowLinuxInstaller.Phase.DOWNLOADING);
                             if (p != TerminowLinuxInstaller.Phase.DOWNLOADING) detail.setText(text.startsWith("http") ? "" : text);
@@ -468,6 +524,8 @@ public class TerminowLinuxUi {
                             if (total > 0) {
                                 bar.setIndeterminate(false);
                                 bar.setProgress((int) (done * 1000 / total));
+                                state.permille = (int) (done * 1000 / total);
+                                notifyProgress();
                             }
                             detail.setText(mActivity.getString(R.string.terminow_linux_downloaded,
                                 android.text.format.Formatter.formatShortFileSize(mActivity, done),
@@ -483,6 +541,8 @@ public class TerminowLinuxUi {
             mHandler.post(() -> {
                 mInstaller = null;
                 mInstallingAlias = null;
+                sProgress = null;
+                notifyProgress();
                 if (!mActivity.isFinishing()) progress.dismiss();
                 mHost.onChanged();
                 if (finalEnv != null) {
@@ -494,14 +554,181 @@ public class TerminowLinuxUi {
                         .show();
                 } else {
                     boolean cancelled = installer.isCancelled();
+                    // Nothing of a failed install is left: it can be tried again from the start
                     new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
                         .setTitle(cancelled ? R.string.terminow_linux_cancelled_title : R.string.terminow_linux_failed_title)
                         .setMessage(mActivity.getString(cancelled ? R.string.terminow_linux_cancelled_message : R.string.terminow_linux_failed_message, finalError))
+                        .setPositiveButton(android.R.string.ok, null)
+                        .setNeutralButton(R.string.terminow_ubuntu_setup_retry, (d, w) -> confirmInstall(entry, null))
+                        .show();
+                }
+            });
+        });
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Importing a root filesystem
+    // ---------------------------------------------------------------------------------------
+
+    /** The largest archive that is imported. */
+    private static final long IMPORT_MAX_BYTES = 8L * 1024 * 1024 * 1024;
+
+    /**
+     * Import a root filesystem archive that the user picked: asks for its name, copies it into
+     * the app, then imports it with the checks of {@link TerminowLinuxInstaller#importArchive}.
+     */
+    public void importRootfs(@NonNull android.net.Uri uri, @NonNull String fileName) {
+        if (isBusy()) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_linux_install_busy), true);
+            return;
+        }
+        if (!TerminowLinuxInstaller.isImportable(fileName)) {
+            new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setTitle(R.string.terminow_quick_import_title)
+                .setMessage(mActivity.getString(R.string.terminow_quick_import_format, fileName))
+                .setPositiveButton(android.R.string.ok, null)
+                .show();
+            return;
+        }
+        TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.MULTIPLE_ENVIRONMENTS, installedCount(), () -> {
+            String base = fileName.toLowerCase(java.util.Locale.ROOT).replaceAll("\\.(tar\\.gz|tgz)$", "").replaceAll("[^a-z0-9_.-]", "");
+            String suggested = newInstaller().freeAlias(base.isEmpty() ? "linux" : base.length() > 24 ? base.substring(0, 24) : base);
+            EditText field = new EditText(mActivity);
+            field.setSingleLine(true);
+            field.setText(suggested);
+            field.setTextColor(color(R.color.terminow_text));
+            LinearLayout box = vertical();
+            box.setPadding(dp(22), dp(6), dp(22), 0);
+            box.addView(text(mActivity.getString(R.string.terminow_quick_import_message, fileName), 13, R.color.terminow_text_secondary), matchWrap());
+            box.addView(field, matchWrap());
+            TextView hint = text(mActivity.getString(R.string.terminow_quick_import_name_hint), 12, R.color.terminow_text_secondary);
+            box.addView(hint, matchWrap());
+            AlertDialog dialog = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setTitle(R.string.terminow_quick_import_title)
+                .setView(box)
+                .setPositiveButton(R.string.terminow_quick_import_button, null)
+                .setNegativeButton(android.R.string.cancel, null)
+                .create();
+            dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                String alias = field.getText().toString().trim();
+                if (!TerminowLinuxRegistry.isValidAlias(alias) || mRegistry.get(alias) != null) {
+                    hint.setTextColor(color(R.color.terminow_mcp_warn));
+                    return;
+                }
+                dialog.dismiss();
+                runImport(uri, alias);
+            }));
+            dialog.show();
+        });
+    }
+
+    private void runImport(@NonNull android.net.Uri uri, @NonNull String alias) {
+        TerminowLinuxInstaller installer = newInstaller();
+        mInstaller = installer;
+        mInstallingAlias = alias;
+        Progress state = new Progress(alias, "", alias);
+        state.phase = mActivity.getString(R.string.terminow_quick_import_copying);
+        sProgress = state;
+        notifyProgress();
+        LinearLayout box = vertical();
+        box.setPadding(dp(24), dp(10), dp(24), dp(4));
+        TextView phase = text(state.phase, 15, R.color.terminow_text);
+        box.addView(phase, matchWrap());
+        ProgressBar bar = new ProgressBar(mActivity, null, android.R.attr.progressBarStyleHorizontal);
+        bar.setIndeterminate(true);
+        bar.setProgressTintList(ColorStateList.valueOf(color(R.color.terminow_panel_accent)));
+        LinearLayout.LayoutParams barParams = matchWrap();
+        barParams.topMargin = dp(12);
+        box.addView(bar, barParams);
+        AlertDialog progress = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(mActivity.getString(R.string.terminow_quick_import_running, alias))
+            .setView(box)
+            .setCancelable(false)
+            .setNegativeButton(android.R.string.cancel, null)
+            .create();
+        progress.setOnShowListener(d -> progress.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(v -> {
+            installer.cancel();
+            phase.setText(R.string.terminow_linux_phase_cancelling);
+            v.setEnabled(false);
+        }));
+        progress.show();
+        File dir = new File(mActivity.getCacheDir(), "linux-install");
+        File archive = new File(dir, alias + ".tar.gz");
+        long usable = usableBytes();
+        mExecutor.execute(() -> {
+            String error = null;
+            TerminowLinuxEnv env = null;
+            try {
+                if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("Could not create " + dir);
+                copyPicked(uri, archive, installer);
+                env = installer.importArchive(archive, alias, deviceArch(), usable, new TerminowLinuxInstaller.Listener() {
+                    @Override
+                    public void onPhase(@NonNull TerminowLinuxInstaller.Phase p, @NonNull String text) {
+                        mHandler.post(() -> {
+                            if (installer.isCancelled()) return;
+                            state.phase = phaseText(p);
+                            notifyProgress();
+                            phase.setText(state.phase);
+                        });
+                    }
+
+                    @Override
+                    public void onProgress(long done, long total) {
+                    }
+                });
+            } catch (IOException | RuntimeException e) {
+                error = String.valueOf(e.getMessage());
+            } finally {
+                //noinspection ResultOfMethodCallIgnored
+                archive.delete();
+            }
+            String finalError = error;
+            TerminowLinuxEnv finalEnv = env;
+            mHandler.post(() -> {
+                mInstaller = null;
+                mInstallingAlias = null;
+                sProgress = null;
+                notifyProgress();
+                if (!mActivity.isFinishing()) progress.dismiss();
+                mHost.onChanged();
+                if (finalEnv != null) {
+                    new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                        .setTitle(mActivity.getString(R.string.terminow_linux_installed_title, finalEnv.getTitle()))
+                        .setMessage(R.string.terminow_linux_installed_message)
+                        .setPositiveButton(R.string.terminow_linux_terminal, (d, w) -> mHost.openTerminal(finalEnv, "root", finalEnv.homeOf("root")))
+                        .setNegativeButton(android.R.string.ok, null)
+                        .show();
+                } else {
+                    new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                        .setTitle(installer.isCancelled() ? R.string.terminow_linux_cancelled_title : R.string.terminow_quick_import_failed_title)
+                        .setMessage(mActivity.getString(R.string.terminow_quick_import_failed, finalError))
                         .setPositiveButton(android.R.string.ok, null)
                         .show();
                 }
             });
         });
+    }
+
+    /** Copy the picked archive into the app, at most {@link #IMPORT_MAX_BYTES}, checking that it is gzip. */
+    private void copyPicked(@NonNull android.net.Uri uri, @NonNull File target, @NonNull TerminowLinuxInstaller installer) throws IOException {
+        try (java.io.InputStream in = mActivity.getContentResolver().openInputStream(uri);
+             java.io.OutputStream out = new java.io.FileOutputStream(target)) {
+            if (in == null) throw new IOException("The file could not be opened");
+            byte[] buffer = new byte[64 * 1024];
+            long total = 0;
+            int read;
+            boolean first = true;
+            while ((read = in.read(buffer)) != -1) {
+                if (installer.isCancelled()) throw new IOException("Cancelled");
+                if (first && (read < 2 || (buffer[0] & 0xff) != 0x1f || (buffer[1] & 0xff) != 0x8b))
+                    throw new IOException("This file is not gzip-compressed");
+                first = false;
+                total += read;
+                if (total > IMPORT_MAX_BYTES) throw new IOException("The archive is larger than 8 GB");
+                out.write(buffer, 0, read);
+            }
+            if (first) throw new IOException("The file is empty");
+        }
     }
 
     @NonNull

@@ -108,6 +108,7 @@ public class TerminowHome {
     private static final int PAGE_LOGS = 6;
     private static final int PAGE_MCP = 7;
     private static final int PAGE_FILES = 8;
+    private static final int PAGE_LAUNCH = 9;
 
     private static final Pattern KEY_NAME_PATTERN = Pattern.compile("[A-Za-z0-9_][A-Za-z0-9._-]*");
     private static final int KEY_FILE_MAX_SIZE = 64 * 1024;
@@ -116,6 +117,7 @@ public class TerminowHome {
     private static final int REQUEST_IMPORT_CERTIFICATE = 2002;
     private static final int REQUEST_UPLOAD_TMP = 2003;
     private static final int REQUEST_IMPORT_HOSTS = 2004;
+    private static final int REQUEST_IMPORT_ROOTFS = 2006;
     /** A certificate is one line of some kilobytes. */
     private static final int CERTIFICATE_MAX_SIZE = 64 * 1024;
 
@@ -156,6 +158,8 @@ public class TerminowHome {
     private final TerminowVaultsUi mVaultsUi;
     private final TerminowKeyPanel mKeyPanel;
     private final TerminowLinuxUi mLinuxUi;
+    private TerminowQuickLaunch mQuickLaunch;
+    private View mRailLaunch;
     private final View mLauncherButton;
     private final View mHomeButton;
     private final HorizontalScrollView mTabsScrollView;
@@ -263,13 +267,86 @@ public class TerminowHome {
             @Override
             public void onChanged() {
                 if (mExplorer != null) mExplorer.refresh();
+                if (mQuickLaunch != null) mQuickLaunch.refresh();
             }
         });
         mLauncher.setLinux(mLinuxUi);
         mLauncherButton = activity.findViewById(R.id.terminow_launcher_button);
-        mLauncherButton.setOnClickListener(v -> mLauncher.show());
+        mLauncherButton.setOnClickListener(v -> showQuickLaunch());
         mTerminalToolbar = activity.findViewById(R.id.terminow_terminal_toolbar);
         mLauncher.bindToolbar(mTerminalToolbar);
+        // The tools of a terminal open Quick Launch over it: its sessions keep running
+        mTerminalToolbar.findViewById(R.id.terminow_toolbar_tools).setOnClickListener(v -> showQuickLaunch());
+        mQuickLaunch = new TerminowQuickLaunch(activity, mStore, mLauncher, mLinuxUi, new TerminowQuickLaunch.Host() {
+            @Override
+            public void connect(boolean sftp) {
+                showConnectDialog(sftp);
+            }
+
+            @Override
+            public void addHost() {
+                mHosts = mStore.getHosts();
+                mGroups = mStore.getGroups();
+                showHostDialog(null);
+            }
+
+            @Override
+            public void openLocalFiles() {
+                setPage(PAGE_FILES);
+            }
+
+            @NonNull
+            @Override
+            public List<TerminalSession> sessions() {
+                List<TerminalSession> sessions = new ArrayList<>();
+                TermuxService service = mActivity.getTermuxService();
+                if (service != null)
+                    for (TermuxSession session : service.getTermuxSessions()) sessions.add(session.getTerminalSession());
+                return sessions;
+            }
+
+            @Nullable
+            @Override
+            public TerminalSession currentSession() {
+                return mActivity.getCurrentSession();
+            }
+
+            @Override
+            public void showSession(@NonNull TerminalSession session) {
+                mActivity.getTermuxTerminalSessionClient().setCurrentSession(session);
+                hide();
+            }
+
+            @Override
+            public void closeSession(@NonNull TerminalSession session) {
+                new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                    .setMessage(mActivity.getString(R.string.terminow_quick_close_tab_confirm,
+                        session.mSessionName != null ? session.mSessionName : ""))
+                    .setPositiveButton(R.string.terminow_quick_close_tab, (d, w) -> {
+                        mActivity.getTermuxTerminalSessionClient().closeSession(session);
+                        mHandler.postDelayed(() -> mQuickLaunch.refresh(), 300);
+                    })
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
+            }
+
+            @Override
+            public void renameSession(@NonNull TerminalSession session) {
+                mActivity.getTermuxTerminalSessionClient().renameSession(session);
+            }
+
+            @Override
+            public void pickRootfs() {
+                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("*/*");
+                try {
+                    mActivity.startActivityForResult(intent, REQUEST_IMPORT_ROOTFS);
+                } catch (Exception e) {
+                    mActivity.showToast(String.valueOf(e.getMessage()), true);
+                }
+            }
+        }, activity.findViewById(R.id.terminow_quick_scroll));
         mHomeTitle = activity.findViewById(R.id.terminow_home_title);
         mVaultSyncIcon = activity.findViewById(R.id.terminow_vault_sync_icon);
         mVaultButton = activity.findViewById(R.id.terminow_vault_button);
@@ -294,6 +371,8 @@ public class TerminowHome {
 
         mHomeButton.setOnClickListener(v -> show());
 
+        mRailLaunch = activity.findViewById(R.id.terminow_rail_launch);
+        mRailLaunch.setOnClickListener(v -> setPage(PAGE_LAUNCH));
         mRailHosts.setOnClickListener(v -> setPage(PAGE_HOSTS));
         mRailSnippets.setOnClickListener(v -> setPage(PAGE_SNIPPETS));
         mRailKeychain = activity.findViewById(R.id.terminow_rail_keychain);
@@ -447,6 +526,8 @@ public class TerminowHome {
     public void refresh() {
         // Tabs were added, closed, renamed or switched
         mWorkspace.changed();
+        if (!isVisible()) TerminowQuickLaunch.noteShown(mActivity.getCurrentSession());
+        if (mQuickLaunch != null && isVisible()) mQuickLaunch.refresh();
         // With no terminal session the terminal area is empty, so the home screen is shown
         // instead, whatever closed the last session or started the app (the service may have been
         // started by a RUN_COMMAND of another app before the activity was opened)
@@ -580,9 +661,40 @@ public class TerminowHome {
 
 
 
+    /** Show Quick Launch over the terminals, which keep running as they are. */
+    public void showQuickLaunch() {
+        show();
+        setPage(PAGE_LAUNCH);
+    }
+
     private void setPage(int page) {
         if (mPage == PAGE_FILES && page != PAGE_FILES) mExplorer.onHidden();
+        if (mPage == PAGE_LAUNCH && page != PAGE_LAUNCH && mQuickLaunch != null) mQuickLaunch.hide();
         mPage = page;
+        setRailItemSelected(mRailLaunch, page == PAGE_LAUNCH);
+        if (page == PAGE_LAUNCH) {
+            // Quick Launch has its own title, sections and actions over the whole content area
+            mHeaderView.setVisibility(View.GONE);
+            mSectionTitleView.setVisibility(View.GONE);
+            mGridView.setVisibility(View.GONE);
+            mFabView.setVisibility(View.GONE);
+            mEmptyView.setVisibility(View.GONE);
+            mSettingsScrollView.setVisibility(View.GONE);
+            mMcpScrollView.setVisibility(View.GONE);
+            mExplorerView.setVisibility(View.GONE);
+            mActionsView.setVisibility(View.GONE);
+            setRailItemSelected(mRailHosts, false);
+            setRailItemSelected(mRailSnippets, false);
+            setRailItemSelected(mRailSettings, false);
+            setRailItemSelected(mRailKeychain, false);
+            setRailItemSelected(mRailForwarding, false);
+            setRailItemSelected(mRailKnownHosts, false);
+            setRailItemSelected(mRailLogs, false);
+            setRailItemSelected(mRailMcp, false);
+            setRailItemSelected(mRailFiles, false);
+            mQuickLaunch.show();
+            return;
+        }
         setRailItemSelected(mRailHosts, page == PAGE_HOSTS);
         setRailItemSelected(mRailSnippets, page == PAGE_SNIPPETS);
         setRailItemSelected(mRailSettings, page == PAGE_SETTINGS);
@@ -685,7 +797,7 @@ public class TerminowHome {
     private void updateItems() {
         String query = mSearchView.getText().toString().trim().toLowerCase(Locale.ROOT);
 
-        if (mPage == PAGE_SETTINGS || mPage == PAGE_FILES) {
+        if (mPage == PAGE_SETTINGS || mPage == PAGE_FILES || mPage == PAGE_LAUNCH) {
             mEmptyView.setVisibility(View.GONE);
             return;
         }
@@ -899,26 +1011,32 @@ public class TerminowHome {
         popup.setElevation(dp(8));
         popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
 
-        addMenuItem(menu, popup, R.drawable.ic_terminow_hosts, R.string.terminow_connect, () -> showConnectDialog(false));
-        addMenuItem(menu, popup, R.drawable.ic_terminow_group, R.string.terminow_connect_sftp, () -> showConnectDialog(true));
-        addMenuItem(menu, popup, R.drawable.ic_terminow_terminal, R.string.terminow_local_terminal, this::openLocalTerminal);
-        // Launch profiles: Ubuntu, Claude Code in the chosen project, saved profiles and a new one
-        addMenuItem(menu, popup, R.drawable.ic_terminow_hosts, mActivity.getString(R.string.terminow_tools_ubuntu_terminal), mLauncher::openUbuntuTerminal);
-        addMenuItem(menu, popup, R.drawable.ic_terminow_launch, mLauncher.getClaudeMenuTitle(), mLauncher::openClaudeForProject);
-        List<TerminowLaunchProfile> profiles = mStore.getLaunchProfiles();
-        for (int i = 0; i < Math.min(4, profiles.size()); i++) {
-            TerminowLaunchProfile profile = profiles.get(i);
-            addMenuItem(menu, popup, R.drawable.ic_terminow_snippets, profile.icon + "  " + profile.name, () -> mLauncher.launchProfile(profile));
-        }
-        addMenuItem(menu, popup, R.drawable.ic_terminow_add, mActivity.getString(R.string.terminow_profiles_custom),
-            () -> mLauncher.getProfiles().edit(null, TerminowLaunchPlan.TOOL_CUSTOM));
-        if (!profiles.isEmpty())
-            addMenuItem(menu, popup, R.drawable.ic_terminow_more, mActivity.getString(R.string.terminow_profiles_manage), () -> mLauncher.getProfiles().showManager());
-        // Shared storage is reached with the system file picker, the app has no storage permission
-        addMenuItem(menu, popup, R.drawable.ic_terminow_import, R.string.terminow_files_import, () -> mFiles.importFiles(getCurrentSftpSession()));
-        addMenuItem(menu, popup, R.drawable.ic_terminow_group, R.string.terminow_files_export, mFiles::exportFile);
+        // Compact: environments and profiles are one tap away in Quick Launch, exporting files is in the File Manager
+        addMenuItem(menu, popup, R.drawable.ic_terminow_terminal, R.string.terminow_quick_new_terminal, this::openLocalTerminal);
+        addMenuItem(menu, popup, R.drawable.ic_terminow_launch, R.string.terminow_quick_title, this::showQuickLaunch);
+        addMenuItem(menu, popup, R.drawable.ic_terminow_add, R.string.terminow_quick_add_environment, () -> mQuickLaunch.showAddEnvironment());
+        addMenuItem(menu, popup, R.drawable.ic_terminow_hosts, R.string.terminow_quick_add_ssh_host, () -> {
+            mHosts = mStore.getHosts();
+            mGroups = mStore.getGroups();
+            showHostDialog(null);
+        });
+        addMenuItem(menu, popup, R.drawable.ic_terminow_import, R.string.terminow_quick_import, this::showImportChooser);
 
         popup.showAsDropDown(anchor, 0, dp(4));
+    }
+
+    /** Import: hosts from a file or Termius, or files into the session that is shown. */
+    private void showImportChooser() {
+        CharSequence[] items = {mActivity.getString(R.string.terminow_quick_import_hosts), mActivity.getString(R.string.terminow_files_import)};
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_quick_import)
+            .setItems(items, (d, which) -> {
+                if (which == 0) showImportDialog();
+                // Shared storage is reached with the system file picker, the app has no storage permission
+                else mFiles.importFiles(getCurrentSftpSession());
+            })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
     }
 
     /** Show the new connection picker, in SSH or SFTP mode. The sessions are kept as they are while it is shown. */
@@ -3766,6 +3884,19 @@ public class TerminowHome {
     public boolean onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         if (mExplorer.onActivityResult(requestCode, resultCode, data)) return true;
         if (mFiles.onActivityResult(requestCode, resultCode, data)) return true;
+        if (requestCode == REQUEST_IMPORT_ROOTFS) {
+            if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null) {
+                Uri uri = data.getData();
+                String fileName = uri.getLastPathSegment() != null ? uri.getLastPathSegment() : "";
+                try (Cursor cursor = mActivity.getContentResolver().query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+                    if (cursor != null && cursor.moveToFirst() && !cursor.isNull(0)) fileName = cursor.getString(0);
+                } catch (RuntimeException e) {
+                    // The name of the uri
+                }
+                mLinuxUi.importRootfs(uri, fileName.substring(fileName.lastIndexOf('/') + 1));
+            }
+            return true;
+        }
         if (requestCode == REQUEST_IMPORT_HOSTS) {
             if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null) readImportFile(data.getData());
             return true;

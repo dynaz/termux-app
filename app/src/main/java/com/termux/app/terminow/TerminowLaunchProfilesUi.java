@@ -34,9 +34,10 @@ public class TerminowLaunchProfilesUi {
 
     /** The tools a profile can start, in the order of the editor. */
     private static final String[] TOOLS = {TerminowLaunchPlan.TOOL_SHELL, TerminowLaunchPlan.TOOL_CLAUDE,
-        TerminowLaunchPlan.TOOL_CLAUDE_CONTINUE, TerminowLaunchPlan.TOOL_CLAUDE_RESUME, TerminowLaunchPlan.TOOL_CUSTOM};
+        TerminowLaunchPlan.TOOL_CLAUDE_CONTINUE, TerminowLaunchPlan.TOOL_CLAUDE_RESUME, TerminowLaunchPlan.TOOL_PROGRAM, TerminowLaunchPlan.TOOL_CUSTOM};
     private static final int[] TOOL_LABELS = {R.string.terminow_profiles_tool_shell, R.string.terminow_profiles_tool_claude,
-        R.string.terminow_profiles_tool_claude_continue, R.string.terminow_profiles_tool_claude_resume, R.string.terminow_profiles_tool_custom};
+        R.string.terminow_profiles_tool_claude_continue, R.string.terminow_profiles_tool_claude_resume, R.string.terminow_profiles_tool_program,
+        R.string.terminow_profiles_tool_custom};
     private static final String[] TMUX_MODES = {TerminowLaunchPlan.TMUX_OFF, TerminowLaunchPlan.TMUX_CREATE, TerminowLaunchPlan.TMUX_ATTACH};
     private static final int[] TMUX_LABELS = {R.string.terminow_profiles_tmux_off, R.string.terminow_profiles_tmux_create,
         R.string.terminow_profiles_tmux_attach};
@@ -72,6 +73,15 @@ public class TerminowLaunchProfilesUi {
             if (!other.id.equals(profile.id)) kept.add(other);
         mStore.setLaunchProfiles(kept);
         if (mStore.getDefaultLaunchProfile().equals(profile.id)) mStore.setDefaultLaunchProfile("local");
+        // Out of Quick Launch with it; its environment and its files are not touched
+        List<String> pins = mStore.getQuickPins();
+        if (pins.remove(TerminowQuickModel.profileId(profile.id))) mStore.setQuickPins(pins);
+        mStore.setQuickName(TerminowQuickModel.profileId(profile.id), "");
+    }
+
+    /** Remove a launch profile only, like from its card in Quick Launch. */
+    void remove(@NonNull TerminowLaunchProfile profile) {
+        delete(profile);
     }
 
     // ---------------------------------------------------------------------------------------
@@ -188,7 +198,7 @@ public class TerminowLaunchProfilesUi {
         String env = environment != null ? environment.shortName() :
             mActivity.getString(R.string.terminow_profiles_env_gone, profile.environment);
         String folder = profile.folder.isEmpty() ? "~" : profile.folder;
-        String tool = TerminowLaunchPlan.TOOL_CUSTOM.equals(profile.tool) ? profile.command :
+        String tool = TerminowLaunchPlan.TOOL_CUSTOM.equals(profile.tool) || TerminowLaunchPlan.TOOL_PROGRAM.equals(profile.tool) ? profile.whatRuns() :
             mActivity.getString(TOOL_LABELS[Math.max(0, indexOf(TOOLS, profile.tool))]);
         String text = env + " · " + folder + " · " + tool;
         if (!TerminowLaunchPlan.TMUX_OFF.equals(profile.tmux)) text += " · tmux " + profile.getTmuxName();
@@ -231,16 +241,25 @@ public class TerminowLaunchProfilesUi {
      * chosen in the launcher.
      */
     void edit(@Nullable TerminowLaunchProfile existing, @NonNull String tool) {
+        edit(existing, tool, null, null);
+    }
+
+    /**
+     * Like {@link #edit(TerminowLaunchProfile, String)}, a new one in {@code base} if it is given,
+     * with {@code onSaved} after it is saved.
+     */
+    void edit(@Nullable TerminowLaunchProfile existing, @NonNull String tool, @Nullable TerminowLauncher.Environment base,
+              @Nullable Runnable onSaved) {
         TerminowLaunchProfile profile;
         if (existing != null) {
             profile = TerminowLaunchProfile.fromJson(safeJson(existing));
         } else {
             profile = new TerminowLaunchProfile();
-            TerminowLauncher.Environment environment = mLauncher.currentEnvironment();
+            TerminowLauncher.Environment environment = base != null ? base : mLauncher.currentEnvironment();
             profile.environment = environment.key;
             profile.user = mLauncher.getUser(environment);
             profile.tool = tool;
-            if (TerminowLaunchPlan.TOOL_CUSTOM.equals(tool)) profile.icon = "🛠️";
+            if (TerminowLaunchPlan.TOOL_CUSTOM.equals(tool) || TerminowLaunchPlan.TOOL_PROGRAM.equals(tool)) profile.icon = "🛠️";
             else if (TerminowLaunchPlan.isClaude(tool)) profile.icon = "✳️";
             else if (environment.container != null) profile.icon = "🐧";
         }
@@ -269,6 +288,32 @@ public class TerminowLaunchProfilesUi {
         }
         box.addView(icons, matchWrap());
 
+        // The color of its card in Quick Launch
+        box.addView(label(R.string.terminow_profiles_color));
+        LinearLayout colors = new LinearLayout(mActivity);
+        List<View> colorViews = new ArrayList<>();
+        for (String value : TerminowLaunchProfile.COLORS) {
+            View swatch = new View(mActivity);
+            GradientDrawable dot = new GradientDrawable();
+            dot.setShape(GradientDrawable.OVAL);
+            dot.setColor(android.graphics.Color.parseColor(value));
+            swatch.setBackground(dot);
+            swatch.setContentDescription(value);
+            swatch.setOnClickListener(v -> {
+                profile.color = value;
+                for (View other : colorViews) other.setAlpha(other == v ? 1f : 0.35f);
+            });
+            swatch.setAlpha(value.equals(profile.color) ? 1f : 0.35f);
+            colorViews.add(swatch);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(30), dp(30));
+            params.setMarginEnd(dp(10));
+            params.topMargin = dp(4);
+            colors.addView(swatch, params);
+        }
+        android.widget.HorizontalScrollView colorScroll = new android.widget.HorizontalScrollView(mActivity);
+        colorScroll.addView(colors);
+        box.addView(colorScroll, matchWrap());
+
         box.addView(label(R.string.terminow_launcher_environment));
         TextView environmentChoice = choice();
         box.addView(environmentChoice, matchWrap());
@@ -288,9 +333,43 @@ public class TerminowLaunchProfilesUi {
         command.setHint(R.string.terminow_profiles_command_hint);
         box.addView(command, matchWrap());
 
+        // A program with its arguments, run without a shell: nothing is interpreted
+        TextView executableLabel = label(R.string.terminow_profiles_executable);
+        box.addView(executableLabel);
+        EditText executable = field(profile.executable, true);
+        executable.setHint(R.string.terminow_profiles_executable_hint);
+        box.addView(executable, matchWrap());
+        TextView argumentsLabel = label(R.string.terminow_profiles_arguments);
+        box.addView(argumentsLabel);
+        EditText arguments = field(android.text.TextUtils.join("\n", profile.arguments), true);
+        arguments.setSingleLine(false);
+        arguments.setMinLines(2);
+        arguments.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        arguments.setHint(R.string.terminow_profiles_arguments_hint);
+        box.addView(arguments, matchWrap());
+
+        // The user's command before the shell of the environment
+        TextView startupLabel = label(R.string.terminow_profiles_startup);
+        box.addView(startupLabel);
+        EditText startup = field(profile.startup, true);
+        startup.setHint(R.string.terminow_profiles_startup_hint);
+        box.addView(startup, matchWrap());
+
         box.addView(label(R.string.terminow_profiles_tmux));
         TextView tmuxChoice = choice();
         box.addView(tmuxChoice, matchWrap());
+
+        String quickId = TerminowQuickModel.profileId(profile.id);
+        android.widget.CheckBox pin = new android.widget.CheckBox(mActivity);
+        pin.setText(R.string.terminow_profiles_pin);
+        pin.setTextColor(color(R.color.terminow_text));
+        pin.setChecked(existing == null || mStore.getQuickPins().contains(quickId));
+        box.addView(pin, matchWrap());
+        android.widget.CheckBox makeDefault = new android.widget.CheckBox(mActivity);
+        makeDefault.setText(R.string.terminow_profiles_set_default);
+        makeDefault.setTextColor(color(R.color.terminow_text));
+        makeDefault.setChecked(mStore.getDefaultLaunchProfile().equals(profile.id));
+        box.addView(makeDefault, matchWrap());
 
         TextView error = text("", 13, R.color.terminow_mcp_warn);
         error.setPadding(0, dp(10), 0, 0);
@@ -313,6 +392,12 @@ public class TerminowLaunchProfilesUi {
             boolean custom = TerminowLaunchPlan.TOOL_CUSTOM.equals(profile.tool);
             commandLabel.setVisibility(custom ? View.VISIBLE : View.GONE);
             command.setVisibility(custom ? View.VISIBLE : View.GONE);
+            boolean program = TerminowLaunchPlan.TOOL_PROGRAM.equals(profile.tool);
+            for (View view : new View[]{executableLabel, executable, argumentsLabel, arguments})
+                view.setVisibility(program ? View.VISIBLE : View.GONE);
+            boolean shell = TerminowLaunchPlan.TOOL_SHELL.equals(profile.tool);
+            startupLabel.setVisibility(shell ? View.VISIBLE : View.GONE);
+            startup.setVisibility(shell ? View.VISIBLE : View.GONE);
             tmuxChoice.setText(mActivity.getString(TMUX_LABELS[Math.max(0, indexOf(TMUX_MODES, profile.tmux))]) + "  ▾");
         };
         update[0].run();
@@ -391,13 +476,25 @@ public class TerminowLaunchProfilesUi {
         dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             profile.name = name.getText().toString().trim();
             profile.command = TerminowLaunchPlan.TOOL_CUSTOM.equals(profile.tool) ? command.getText().toString().trim() : "";
+            boolean program = TerminowLaunchPlan.TOOL_PROGRAM.equals(profile.tool);
+            profile.executable = program ? executable.getText().toString().trim() : "";
+            profile.arguments = new ArrayList<>();
+            // One argument per line, each kept as it is, with its spaces and quotes
+            if (program) for (String line : arguments.getText().toString().split("\n", -1)) if (!line.isEmpty()) profile.arguments.add(line);
+            profile.startup = TerminowLaunchPlan.TOOL_SHELL.equals(profile.tool) ? startup.getText().toString().trim() : "";
             String problem = profile.validate();
             if (problem != null) {
                 error.setText(problemText(problem));
                 return;
             }
             save(profile);
+            List<String> pins = mStore.getQuickPins();
+            boolean pinned = pins.contains(quickId);
+            if (pin.isChecked() != pinned) mStore.setQuickPins(TerminowQuickModel.togglePin(pins, quickId));
+            if (makeDefault.isChecked()) mStore.setDefaultLaunchProfile(profile.id);
+            else if (mStore.getDefaultLaunchProfile().equals(profile.id)) mStore.setDefaultLaunchProfile("local");
             dialog.dismiss();
+            if (onSaved != null) onSaved.run();
             mActivity.showToast(mActivity.getString(R.string.terminow_profiles_saved, profile.name), false);
         }));
         dialog.show();
@@ -409,6 +506,7 @@ public class TerminowLaunchProfilesUi {
             case "name": return mActivity.getString(R.string.terminow_profiles_error_name);
             case "command": return mActivity.getString(R.string.terminow_profiles_error_command);
             case "secret": return mActivity.getString(R.string.terminow_profiles_error_secret);
+            case "executable": return mActivity.getString(R.string.terminow_profiles_error_executable);
             case "folder": return mActivity.getString(R.string.terminow_launcher_folder_invalid);
             default: return mActivity.getString(R.string.terminow_profiles_error_environment);
         }

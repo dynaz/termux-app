@@ -23,6 +23,11 @@ public final class TerminowLaunchPlan {
     public static final String TOOL_CLAUDE_RESUME = "claude-resume";
     public static final String TOOL_CLAUDE_LOGIN = "claude-login";
     public static final String TOOL_CUSTOM = "custom";
+    /** A program with its arguments, run directly, without a shell. */
+    public static final String TOOL_PROGRAM = "program";
+
+    /** Runs the user's startup command ($1), then the login shell, which the command can not replace. */
+    static final String STARTUP_SCRIPT = "eval \"$1\"; shift; exec \"$@\"";
 
     public static final String TMUX_OFF = "off";
     public static final String TMUX_CREATE = "create";
@@ -129,6 +134,24 @@ public final class TerminowLaunchPlan {
                                            @NonNull String folder, @NonNull String tool, @NonNull String customCommand,
                                            @NonNull String tmuxMode, @NonNull String tmuxName, boolean localTmuxInstalled,
                                            @NonNull List<String> bindArguments) {
+        return build(prefix, container, user, folder, tool, customCommand, tmuxMode, tmuxName, localTmuxInstalled, bindArguments,
+            "", Collections.emptyList(), "");
+    }
+
+    /**
+     * @param executable For {@link #TOOL_PROGRAM}: the program, run directly with {@code programArguments}.
+     * @param startup For {@link #TOOL_SHELL}: the user's command that runs first, given to the shell as an
+     *                argument, never put into a command line; empty for none.
+     */
+    @NonNull
+    public static TerminowLaunchPlan build(@NonNull String prefix, @NonNull String container, @NonNull String user,
+                                           @NonNull String folder, @NonNull String tool, @NonNull String customCommand,
+                                           @NonNull String tmuxMode, @NonNull String tmuxName, boolean localTmuxInstalled,
+                                           @NonNull List<String> bindArguments, @NonNull String executable,
+                                           @NonNull List<String> programArguments, @NonNull String startup) {
+        if (TOOL_PROGRAM.equals(tool) && !TerminowLaunchProfile.isValidExecutable(executable))
+            throw new IllegalArgumentException("Invalid program");
+        boolean withStartup = TOOL_SHELL.equals(tool) && !startup.trim().isEmpty();
         if (!TerminowMcpTargets.TARGET_TERMINOW.equals(container) && !container.isEmpty()) {
             if (!TerminowMcpTargets.isValidContainerName(container) || !TerminowMcpTargets.isValidUserName(user))
                 throw new IllegalArgumentException("Invalid container or user");
@@ -142,8 +165,15 @@ public final class TerminowLaunchPlan {
         if (local) {
             String bash = prefix + "/bin/bash";
             List<String> program = new ArrayList<>();
-            if (TOOL_SHELL.equals(tool)) {
+            if (withStartup) {
+                program.addAll(Arrays.asList(bash, "-c", STARTUP_SCRIPT, "terminow", startup, bash, "-l"));
+            } else if (TOOL_SHELL.equals(tool)) {
                 program.addAll(Arrays.asList(bash, "-l"));
+            } else if (TOOL_PROGRAM.equals(tool)) {
+                // A name without a path is found in the PATH of the TermiNow shell
+                if (executable.startsWith("/")) program.add(executable);
+                else program.addAll(Arrays.asList("/system/bin/env", executable));
+                program.addAll(programArguments);
             } else if (TOOL_CUSTOM.equals(tool)) {
                 program.addAll(Arrays.asList(bash, "-lc", customCommand));
             } else {
@@ -151,8 +181,9 @@ public final class TerminowLaunchPlan {
                 program.addAll(claudeArguments(tool));
             }
             boolean tmux = !TMUX_OFF.equals(tmuxMode);
-            if (tmux && !localTmuxInstalled) return withoutTmux(program, folder, tool, true);
-            if (!tmux) return withoutTmux(program, folder, tool, false);
+            String plainTool = withStartup ? TOOL_CUSTOM : tool;
+            if (tmux && !localTmuxInstalled) return withoutTmux(program, folder, plainTool, true);
+            if (!tmux) return withoutTmux(program, folder, plainTool, false);
             List<String> args = new ArrayList<>(Arrays.asList("-c", LOCAL_SHELL_SCRIPT, "terminow", bash, prefix + "/bin/tmux", "new-session"));
             if (TMUX_ATTACH.equals(tmuxMode)) args.add("-A");
             args.addAll(Arrays.asList("-s", tmuxName, "-c", folder));
@@ -163,7 +194,14 @@ public final class TerminowLaunchPlan {
         List<String> args = new ArrayList<>(Arrays.asList("login", container, "--user", user, "--work-dir", folder));
         args.addAll(bindArguments);
         List<String> program = new ArrayList<>();
-        if (TOOL_CUSTOM.equals(tool)) {
+        if (withStartup) {
+            program.addAll(Arrays.asList("/bin/sh", "-c", STARTUP_SCRIPT, "terminow", startup, "/bin/sh", "-c",
+                "exec \"${SHELL:-/bin/bash}\" -l"));
+        } else if (TOOL_PROGRAM.equals(tool)) {
+            if (executable.startsWith("/")) program.add(executable);
+            else program.addAll(Arrays.asList("/usr/bin/env", executable));
+            program.addAll(programArguments);
+        } else if (TOOL_CUSTOM.equals(tool)) {
             program.addAll(Arrays.asList("/bin/bash", "-lc", customCommand));
         } else if (isClaude(tool)) {
             program.addAll(Arrays.asList("/bin/sh", "-c", TerminowLauncher.CLAUDE_SCRIPT, "claude"));

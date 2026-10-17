@@ -741,4 +741,100 @@ public class TerminowLinuxTest {
             assertTrue(TerminowPremiumGate.allows(feature, true, 5));
     }
 
+
+    // -------------------------------------------------------------------------------------------
+    // Importing a root filesystem of the user
+    // -------------------------------------------------------------------------------------------
+
+    /** A .tar.gz made by Python, which writes what it is told, with {@code extra} run on the tarfile t. */
+    private File pythonArchive(@NonNull File rootfs, @NonNull String arcname, @NonNull String extra) throws Exception {
+        File out = new File(mFolder.newFolder(), "import.tar.gz");
+        Process process = new ProcessBuilder("python3", "-I", "-c", "import tarfile,sys,io\n" +
+            "t=tarfile.open(sys.argv[1],'w:gz')\n" +
+            "t.add(sys.argv[2],arcname=sys.argv[3])\n" + extra + "\nt.close()\n", out.getPath(), rootfs.getPath(), arcname)
+            .redirectErrorStream(true).start();
+        assertEquals(0, process.waitFor());
+        return out;
+    }
+
+    @Test
+    public void importedRootfsIsInstalledOnlyAfterItsChecks() throws Exception {
+        TerminowLinuxRegistry registry = registry();
+        File rootfs = makeRootfs(new File(mFolder.newFolder(), "rootfs"), "arch", "Arch Linux", "rolling");
+        File archive = pythonArchive(rootfs, ".", "");
+        List<String> seen = new ArrayList<>();
+        MemoryMarker marker = new MemoryMarker();
+        TerminowLinuxInstaller installer = new TerminowLinuxInstaller(registry, mFolder.newFolder("d"), runner(registry, false, seen), marker, mOps);
+        TerminowLinuxEnv env = installer.importArchive(archive, "myarch", "aarch64", Long.MAX_VALUE, QUIET);
+        assertTrue(env.isInstalled());
+        assertEquals("arch", env.distroId);
+        assertEquals("aarch64", env.arch);
+        assertTrue(seen.get(0), seen.get(0).contains("proot-distro install " + archive.getAbsolutePath() + " --name myarch"));
+        assertTrue(seen.get(1).contains("login myarch -- /bin/sh -c echo terminow-ok"));
+        assertNull(marker.alias);
+        // The same name again is refused, nothing is unpacked over it
+        try {
+            installer.importArchive(archive, "myarch", "aarch64", Long.MAX_VALUE, QUIET);
+            fail("imported over an environment");
+        } catch (TerminowLinuxInstaller.InstallException expected) {
+            assertTrue(expected.getMessage().contains("exists already"));
+        }
+    }
+
+    @Test
+    public void importsThatAreNotSafeOrNotForThisPhoneLeaveNothing() throws Exception {
+        TerminowLinuxRegistry registry = registry();
+        File rootfs = makeRootfs(new File(mFolder.newFolder(), "rootfs"), "debian", "Debian", "13");
+        Object[][] cases = {
+            // A link that climbs out of the rootfs
+            {pythonArchive(rootfs, ".", "i=tarfile.TarInfo('usr/escape'); i.type=tarfile.SYMTYPE; i.linkname='../../../../data'; t.addfile(i)"), "leaves it", "aarch64"},
+            // A long link target, in an extended header, that climbs out too
+            {pythonArchive(rootfs, ".", "i=tarfile.TarInfo('usr/x'); i.type=tarfile.SYMTYPE; i.linkname='../'*60+'etc'; t.addfile(i)"), "leaves it", "aarch64"},
+            // A path that leaves the destination
+            {pythonArchive(rootfs, ".", "i=tarfile.TarInfo('../../evil'); d=b'x'; i.size=1; t.addfile(i,io.BytesIO(d))"), "leaves it", "aarch64"},
+            // The root is inside a folder, not at the top
+            {pythonArchive(rootfs, "debian-rootfs", ""), "not the root of a Linux system", "aarch64"},
+            // A system for another architecture
+            {pythonArchive(rootfs, ".", ""), "this phone is x86_64", "x86_64"},
+        };
+        int n = 0;
+        for (Object[] attempt : cases) {
+            String alias = "imp" + (n++);
+            MemoryMarker marker = new MemoryMarker();
+            TerminowLinuxInstaller installer = new TerminowLinuxInstaller(registry, mFolder.newFolder(), runner(registry, false, new ArrayList<>()), marker, mOps);
+            try {
+                installer.importArchive((File) attempt[0], alias, (String) attempt[2], Long.MAX_VALUE, QUIET);
+                fail("imported: " + attempt[1]);
+            } catch (TerminowLinuxInstaller.InstallException expected) {
+                assertTrue(expected.getMessage(), expected.getMessage().contains((String) attempt[1]));
+            }
+            // Nothing of it is left, and it is never an environment, not even an incomplete one
+            assertFalse(new File(registry.getContainersDir(), alias).exists());
+            assertNull(registry.get(alias));
+            assertNull(marker.alias);
+        }
+        // Only gzip tar archives, whose names can be checked first
+        assertFalse(TerminowLinuxInstaller.isImportable("rootfs.tar.xz"));
+        assertFalse(TerminowLinuxInstaller.isImportable("disk.img"));
+        assertTrue(TerminowLinuxInstaller.isImportable("Rootfs.TGZ"));
+    }
+
+    @Test
+    public void linksInsideTheRootfsAreFine() throws Exception {
+        TerminowLinuxInstaller.checkSymlink("bin", "usr/bin");
+        TerminowLinuxInstaller.checkSymlink("etc/os-release", "../usr/lib/os-release");
+        TerminowLinuxInstaller.checkSymlink("./usr/lib/x", "/usr/lib/y");
+        TerminowLinuxInstaller.checkSymlink("usr/share/a/b", "../../../bin/sh");
+        try {
+            TerminowLinuxInstaller.checkSymlink("usr/a", "../../x");
+            fail("a link out of the rootfs");
+        } catch (TerminowLinuxInstaller.InstallException expected) {
+            // Refused
+        }
+        java.util.Set<String> names = new java.util.HashSet<>(Arrays.asList("etc/os-release", "bin/sh"));
+        assertTrue(TerminowLinuxInstaller.looksLikeRootfs(names));
+        assertFalse(TerminowLinuxInstaller.looksLikeRootfs(new java.util.HashSet<>(Arrays.asList("rootfs/etc/os-release", "rootfs/bin/sh"))));
+        assertEquals("etc/os-release", TerminowLinuxInstaller.normalizeEntry("./etc/os-release/"));
+    }
+
 }

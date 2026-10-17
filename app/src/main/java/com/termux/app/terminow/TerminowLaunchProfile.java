@@ -42,6 +42,16 @@ public class TerminowLaunchProfile {
     public String tmux = TerminowLaunchPlan.TMUX_OFF;
     /** The command that the user saw and confirmed, to ask again when it changed. */
     public String confirmedCommand = "";
+    /** For {@link TerminowLaunchPlan#TOOL_PROGRAM}: the program, run without a shell, and its arguments. */
+    public String executable = "";
+    public List<String> arguments = new ArrayList<>();
+    /** A command of the user that runs before the shell of {@link TerminowLaunchPlan#TOOL_SHELL}, empty for none. */
+    public String startup = "";
+    /** The color of the card, one of {@link #COLORS}. */
+    public String color = COLORS[0];
+
+    /** The colors of cards to pick from. */
+    public static final String[] COLORS = {"#2F6FED", "#21C17A", "#E95420", "#A80030", "#8E5CF6", "#F5A623", "#0EA5B7", "#64748B"};
 
     /** Whether text looks like it has a password, key or token, which a profile must not keep. */
     public static boolean looksSecret(@NonNull String text) {
@@ -53,8 +63,17 @@ public class TerminowLaunchProfile {
     public String validate() {
         if (name.trim().isEmpty()) return "name";
         if (TerminowLaunchPlan.TOOL_CUSTOM.equals(tool) && command.trim().isEmpty()) return "command";
-        if (command.contains("\0")) return "command";
-        if (looksSecret(command)) return "secret";
+        if (command.contains("\0") || startup.contains("\0")) return "command";
+        if (looksSecret(command) || looksSecret(startup)) return "secret";
+        if (TerminowLaunchPlan.TOOL_PROGRAM.equals(tool)) {
+            if (!isValidExecutable(executable)) return "executable";
+            if (arguments.size() > 64) return "executable";
+            for (String argument : arguments) {
+                if (argument.contains("\0") || argument.length() > 4096) return "executable";
+                if (looksSecret(argument)) return "secret";
+            }
+        }
+        if (!java.util.Arrays.asList(COLORS).contains(color)) color = COLORS[0];
         if (!environment.equals(TerminowMcpTargets.TARGET_TERMINOW) &&
             (!TerminowMcpTargets.isValidContainerName(environment) || !TerminowMcpTargets.isValidUserName(user)))
             return "environment";
@@ -62,8 +81,31 @@ public class TerminowLaunchProfile {
         return null;
     }
 
+    /** An absolute path, or a name that is looked up in the PATH of the environment, without spaces or shell characters. */
+    public static boolean isValidExecutable(@NonNull String executable) {
+        return executable.matches("/?[A-Za-z0-9._+@-]+(/[A-Za-z0-9._+@-]+)*") && executable.length() <= 512;
+    }
+
+    /**
+     * Whether the user must see what runs before it does: their own shell command, their own
+     * startup command, or a program with its arguments, the first time and after a change.
+     */
     public boolean needsConfirmation() {
-        return TerminowLaunchPlan.TOOL_CUSTOM.equals(tool) && !command.equals(confirmedCommand);
+        String what = whatRuns();
+        return !what.isEmpty() && !what.equals(confirmedCommand);
+    }
+
+    /** What the user wrote that runs, as it is shown to confirm it; empty when it is only a shell or Claude. */
+    @NonNull
+    public String whatRuns() {
+        if (TerminowLaunchPlan.TOOL_CUSTOM.equals(tool)) return command;
+        if (TerminowLaunchPlan.TOOL_PROGRAM.equals(tool)) {
+            StringBuilder line = new StringBuilder(executable);
+            for (String argument : arguments) line.append(' ').append(TerminowStore.shellQuote(argument));
+            return line.toString();
+        }
+        if (TerminowLaunchPlan.TOOL_SHELL.equals(tool) && !startup.trim().isEmpty()) return startup;
+        return "";
     }
 
     /** The tmux session of the profile, the same each time, for attaching to it again. */
@@ -76,7 +118,8 @@ public class TerminowLaunchProfile {
     public JSONObject toJson() throws JSONException {
         return new JSONObject().put("id", id).put("name", name).put("icon", icon).put("environment", environment)
             .put("user", user).put("folder", folder).put("tool", tool).put("command", command).put("tmux", tmux)
-            .put("confirmedCommand", confirmedCommand);
+            .put("confirmedCommand", confirmedCommand).put("executable", executable).put("arguments", new JSONArray(arguments))
+            .put("startup", startup).put("color", color);
     }
 
     @NonNull
@@ -92,6 +135,12 @@ public class TerminowLaunchProfile {
         profile.command = object.optString("command");
         profile.tmux = object.optString("tmux", TerminowLaunchPlan.TMUX_OFF);
         profile.confirmedCommand = object.optString("confirmedCommand");
+        // Fields of later versions; a profile saved before them gets their defaults
+        profile.executable = object.optString("executable");
+        JSONArray arguments = object.optJSONArray("arguments");
+        for (int i = 0; arguments != null && i < arguments.length(); i++) profile.arguments.add(arguments.optString(i));
+        profile.startup = object.optString("startup");
+        profile.color = object.optString("color", COLORS[0]);
         return profile;
     }
 

@@ -29,6 +29,32 @@
             android:paddingTop="20dp">
 
             <LinearLayout
+                android:id="@+id/terminow_rail_launch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="14dp"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <ImageView
+                    android:layout_width="56dp"
+                    android:layout_height="34dp"
+                    android:duplicateParentState="true"
+                    android:padding="6dp"
+                    android:src="@drawable/ic_terminow_launch"
+                    tools:ignore="ContentDescription" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:text="@string/terminow_quick_rail"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <LinearLayout
                 android:id="@+id/terminow_rail_hosts"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -436,6 +462,15 @@
             android:id="@+id/terminow_explorer"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
+            android:visibility="gone" />
+
+        <!-- Quick Launch, built by TerminowQuickLaunch -->
+        <ScrollView
+            android:id="@+id/terminow_quick_scroll"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:scrollbars="none"
             android:visibility="gone" />
 
         <!-- The MCP Servers page, built by TerminowMcpPage -->

@@ -379,4 +379,101 @@ public class TerminowLaunchPlanTest {
         assertNull(TerminowLauncher.findLoginUrl("no link"));
     }
 
+
+    // -------------------------------------------------------------------------------------------
+    // Programs with arguments and startup commands of Quick Launch profiles
+    // -------------------------------------------------------------------------------------------
+
+    @Test
+    public void aProgramGetsItsArgumentsAsTheyAreWithoutAShell() throws Exception {
+        File folder = mFolder.newFolder();
+        List<String> arguments = Arrays.asList("$(touch pwned)", "two words", "it's; rm -rf ~");
+        TerminowLaunchPlan plan = TerminowLaunchPlan.build(PREFIX, "", "root", folder.getPath(), TerminowLaunchPlan.TOOL_PROGRAM, "",
+            TerminowLaunchPlan.TMUX_OFF, "", false, Collections.emptyList(), "/bin/echo", arguments, "");
+        assertEquals("/bin/echo", plan.executable);
+        assertEquals(arguments, plan.arguments);
+        List<String> command = new ArrayList<>();
+        command.add(plan.executable);
+        command.addAll(plan.arguments);
+        assertEquals("$(touch pwned) two words it's; rm -rf ~", run(folder, Collections.emptyMap(), command).trim());
+        assertFalse(new File(folder, "pwned").exists());
+
+        // In an environment: after the arguments of proot-distro, a name is found with env in its PATH
+        TerminowLaunchPlan guest = TerminowLaunchPlan.build(PREFIX, "ubuntu", "root", "/root", TerminowLaunchPlan.TOOL_PROGRAM, "",
+            TerminowLaunchPlan.TMUX_OFF, "", false, Collections.emptyList(), "htop", Collections.singletonList("-d 10"), "");
+        List<String> args = guest.arguments;
+        assertEquals(Arrays.asList("--", "/usr/bin/env", "htop", "-d 10"), args.subList(args.indexOf("--"), args.size()));
+    }
+
+    @Test
+    public void programsThatAreNotAPathOrANameAreRefused() {
+        for (String bad : new String[]{"", "rm -rf /", "a;b", "$(x)", "~/bin/x", "a b"}) {
+            try {
+                TerminowLaunchPlan.build(PREFIX, "", "root", "/", TerminowLaunchPlan.TOOL_PROGRAM, "", TerminowLaunchPlan.TMUX_OFF, "", false,
+                    Collections.emptyList(), bad, Collections.emptyList(), "");
+                throw new AssertionError("accepted " + bad);
+            } catch (IllegalArgumentException expected) {
+                // Refused
+            }
+        }
+        assertTrue(TerminowLaunchProfile.isValidExecutable("/usr/bin/python3.12"));
+        assertTrue(TerminowLaunchProfile.isValidExecutable("node"));
+    }
+
+    @Test
+    public void theStartupCommandRunsFirstAsAnArgumentThenTheShell() throws Exception {
+        File folder = mFolder.newFolder();
+        String startup = "echo \"start in $(basename \"$PWD\")\"; X=1";
+        TerminowLaunchPlan plan = TerminowLaunchPlan.build(PREFIX, "", "root", folder.getPath(), TerminowLaunchPlan.TOOL_SHELL, "",
+            TerminowLaunchPlan.TMUX_OFF, "", false, Collections.emptyList(), "", Collections.emptyList(), startup);
+        // The command is one argument of its own, never put into the script
+        assertTrue(plan.arguments.contains(startup));
+        assertFalse(plan.arguments.get(1).contains("basename"));
+        // The script with a real shell: the startup command, then what follows it, here instead of a login shell
+        String out = run(folder, Collections.emptyMap(), Arrays.asList("sh", "-c", TerminowLaunchPlan.STARTUP_SCRIPT, "terminow", startup,
+            "sh", "-c", "echo shell"));
+        assertEquals("start in " + folder.getName() + "\nshell", out.trim());
+
+        TerminowLaunchPlan guest = TerminowLaunchPlan.build(PREFIX, "ubuntu", "root", "/root", TerminowLaunchPlan.TOOL_SHELL, "",
+            TerminowLaunchPlan.TMUX_OFF, "", false, Collections.emptyList(), "", Collections.emptyList(), "cd /srv");
+        assertTrue(guest.arguments.contains("cd /srv"));
+    }
+
+    @Test
+    public void profilesOfBeforeLoadAndKeepTheirConfirmation() throws Exception {
+        String old = "[{\"id\":\"p1\",\"name\":\"Build\",\"icon\":\"🛠️\",\"environment\":\"terminow\",\"user\":\"root\"," +
+            "\"folder\":\"\",\"tool\":\"custom\",\"command\":\"make\",\"tmux\":\"off\",\"confirmedCommand\":\"make\"}]";
+        List<TerminowLaunchProfile> profiles = TerminowLaunchProfile.listFromJson(old);
+        assertEquals(1, profiles.size());
+        TerminowLaunchProfile profile = profiles.get(0);
+        assertEquals("p1", profile.id);
+        assertEquals("", profile.executable);
+        assertTrue(profile.arguments.isEmpty());
+        assertEquals(TerminowLaunchProfile.COLORS[0], profile.color);
+        // What was confirmed before is still what runs
+        assertFalse(profile.needsConfirmation());
+
+        // A program, saved and read again, and confirmed once
+        TerminowLaunchProfile program = new TerminowLaunchProfile();
+        program.name = "Top";
+        program.tool = TerminowLaunchPlan.TOOL_PROGRAM;
+        program.executable = "htop";
+        program.arguments = new ArrayList<>(Arrays.asList("-d", "10"));
+        program.color = TerminowLaunchProfile.COLORS[2];
+        assertEquals(null, program.validate());
+        assertTrue(program.needsConfirmation());
+        program.confirmedCommand = program.whatRuns();
+        TerminowLaunchProfile read = TerminowLaunchProfile.listFromJson(TerminowLaunchProfile.listToJson(Collections.singletonList(program))).get(0);
+        assertEquals(Arrays.asList("-d", "10"), read.arguments);
+        assertEquals(TerminowLaunchProfile.COLORS[2], read.color);
+        assertFalse(read.needsConfirmation());
+        // A changed argument asks again
+        read.arguments.add("--tree");
+        assertTrue(read.needsConfirmation());
+        // A startup command is never a secret store either
+        read.tool = TerminowLaunchPlan.TOOL_SHELL;
+        read.startup = "export ANTHROPIC_API_KEY=sk-ant-x";
+        assertEquals("secret", read.validate());
+    }
+
 }

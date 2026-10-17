@@ -236,10 +236,22 @@ public class TerminowLinuxInstaller {
      */
     void checkArchivePaths(@NonNull File archive) throws IOException {
         if (!archive.getName().endsWith(".tar.gz") && !archive.getName().endsWith(".tgz")) return;
+        scanArchive(archive, null, false);
+    }
+
+    /**
+     * Read every entry of a .tar.gz: the checks of {@link #checkArchivePaths}, and the names of
+     * its files and links for {@code names}, without the leading "./", if it is not {@code null}.
+     * With {@code checkLinks}, for an archive of the user, a symbolic link may not point out of
+     * the rootfs with ".."; the archives of the catalog are checked by their checksum instead.
+     */
+    void scanArchive(@NonNull File archive, @Nullable java.util.Set<String> names, boolean checkLinks) throws IOException {
         try (InputStream in = new java.util.zip.GZIPInputStream(new java.io.BufferedInputStream(new java.io.FileInputStream(archive)), 65536)) {
             byte[] header = new byte[512];
             String longName = null;
             String paxPath = null;
+            String longLink = null;
+            String paxLink = null;
             int entries = 0;
             while (true) {
                 checkCancelled();
@@ -250,28 +262,127 @@ public class TerminowLinuxInstaller {
                 char type = (char) header[156];
                 long size = parseOctal(header, 124, 12);
                 String name = longName != null ? longName : paxPath != null ? paxPath : headerName(header);
-                String link = cString(header, 157, 100);
-                longName = null;
-                paxPath = null;
-                if (type == 'g' || type == 'K') {
-                    // A global pax header or a long link name, which names nothing itself
+                String link = longLink != null ? longLink : paxLink != null ? paxLink : cString(header, 157, 100);
+                if (type == 'g') {
+                    // A global pax header, which names nothing itself
                     skip(in, size + padding(size));
                     continue;
                 }
-                if (type == 'L' || type == 'x') {
+                if (type == 'L' || type == 'x' || type == 'K') {
                     byte[] data = new byte[(int) Math.min(size, 1024 * 1024)];
                     if (!readFully(in, data)) throw new InstallException("The archive is damaged");
                     skip(in, size - data.length + padding(size));
                     if (type == 'L') longName = cString(data, 0, data.length);
-                    else paxPath = paxValue(new String(data, StandardCharsets.UTF_8), "path");
+                    else if (type == 'K') longLink = cString(data, 0, data.length);
+                    else {
+                        String records = new String(data, StandardCharsets.UTF_8);
+                        paxPath = paxValue(records, "path");
+                        paxLink = paxValue(records, "linkpath");
+                    }
                     continue;
                 }
+                longName = null;
+                paxPath = null;
+                longLink = null;
+                paxLink = null;
                 checkEntryName(name);
                 if (type == '1') checkEntryName(link);
+                if (type == '2' && checkLinks) checkSymlink(name, link);
+                if (names != null) names.add(normalizeEntry(name));
                 skip(in, size + padding(size));
                 if (++entries > 2_000_000) throw new InstallException("The archive has too many entries");
             }
             if (entries == 0) throw new InstallException("The archive is empty");
+        }
+    }
+
+    /** "./etc/os-release" and "etc/os-release/" are "etc/os-release". */
+    @NonNull
+    static String normalizeEntry(@NonNull String name) {
+        String out = name;
+        while (out.startsWith("./")) out = out.substring(2);
+        while (out.endsWith("/")) out = out.substring(0, out.length() - 1);
+        return out;
+    }
+
+    /**
+     * A link with an absolute target points into the rootfs once it is the root of the
+     * environment; a relative one may not climb above the root with "..".
+     */
+    static void checkSymlink(@NonNull String name, @NonNull String target) throws InstallException {
+        if (target.isEmpty() || target.contains("\0")) throw new InstallException("The archive has an invalid link: " + name);
+        if (target.startsWith("/")) return;
+        String[] parts = normalizeEntry(name).split("/");
+        int depth = parts.length - 1;
+        for (String part : target.split("/")) {
+            if (part.isEmpty() || part.equals(".")) continue;
+            if (part.equals("..")) {
+                if (--depth < 0) throw new InstallException("The archive has a link that leaves it: " + name + " -> " + target);
+            } else {
+                depth++;
+            }
+        }
+    }
+
+    /** Whether the names of an archive are the root of a Linux system: os-release and a shell, at the top. */
+    static boolean looksLikeRootfs(@NonNull java.util.Set<String> names) {
+        boolean osRelease = names.contains("etc/os-release") || names.contains("usr/lib/os-release");
+        boolean shell = names.contains("bin/sh") || names.contains("usr/bin/sh") || names.contains("bin/busybox");
+        return osRelease && shell;
+    }
+
+    /** The archives that can be imported: gzip-compressed tar, whose names are all checked before anything is unpacked. */
+    public static boolean isImportable(@NonNull String fileName) {
+        String name = fileName.toLowerCase(Locale.ROOT);
+        return name.endsWith(".tar.gz") || name.endsWith(".tgz");
+    }
+
+    /**
+     * Import a root filesystem archive of the user as a container: its names are checked
+     * (paths, hard and symbolic links, and the layout of a Linux root), then proot-distro unpacks
+     * it, then it is only installed if its shell is for this phone and a login runs a command.
+     * Anything else removes what was unpacked. Blocks.
+     */
+    @NonNull
+    public TerminowLinuxEnv importArchive(@NonNull File archive, @NonNull String alias, @NonNull String deviceArch, long usableBytes,
+                                          @NonNull Listener listener) throws IOException {
+        listener.onPhase(Phase.CHECKING, "");
+        if (!isImportable(archive.getName())) throw new InstallException("Only .tar.gz and .tgz archives can be imported");
+        if (!TerminowLinuxRegistry.isValidAlias(alias)) throw new InstallException("Not a valid name: " + alias);
+        File container = new File(mRegistry.getContainersDir(), alias);
+        if (mOps.lstat(container) != null) throw new InstallException("An environment called " + alias + " exists already");
+        // Unpacked, a rootfs takes a few times its compressed size
+        long needed = archive.length() * 4 + SPACE_MARGIN;
+        if (usableBytes < needed) throw new InstallException("Not enough free space: about " + megabytes(needed) + " is needed");
+        mMarker.set(alias);
+        boolean ok = false;
+        try {
+            listener.onPhase(Phase.VERIFYING, "paths");
+            java.util.Set<String> names = new java.util.HashSet<>();
+            scanArchive(archive, names, true);
+            if (!looksLikeRootfs(names))
+                throw new InstallException("This is not the root of a Linux system: etc/os-release and bin/sh must be at the top of the archive");
+            checkCancelled();
+
+            listener.onPhase(Phase.EXTRACTING, "");
+            runInstall(archive, alias, listener);
+            checkCancelled();
+
+            listener.onPhase(Phase.VALIDATING, "");
+            TerminowLinuxEnv env = mRegistry.get(alias);
+            if (env == null || env.rootfs == null) throw new InstallException("The environment was not created");
+            if (env.status != TerminowLinuxEnv.Status.INSTALLED) throw new InstallException("The imported system has no shell");
+            if (env.arch.isEmpty()) throw new InstallException("The shell of the imported system is not a program TermiNow can run");
+            if (!env.arch.equals(deviceArch)) throw new InstallException("The system is for " + env.arch + ", this phone is " + deviceArch);
+            checkLogin(alias);
+            ok = true;
+            listener.onPhase(Phase.DONE, env.getTitle());
+            return env;
+        } finally {
+            mPid = -1;
+            mProcess = null;
+            if (!ok) removeContainer(alias);
+            mMarker.set(null);
         }
     }
 
@@ -414,6 +525,12 @@ public class TerminowLinuxInstaller {
         if (env == null || env.rootfs == null) throw new InstallException("The environment was not created");
         if (!entry.distroId.equals(env.distroId)) throw new InstallException("The installed system is not " + entry.name);
         if (env.status == TerminowLinuxEnv.Status.INCOMPLETE) throw new InstallException("The installed system has no shell");
+        checkLogin(alias);
+        return env;
+    }
+
+    /** A login of the environment runs a command, or it is not installed. */
+    private void checkLogin(@NonNull String alias) throws IOException {
         Process process = mRunner.start(Arrays.asList(new File(mRegistry.getPrefix(), "bin/proot-distro").getPath(),
             "login", alias, "--", "/bin/sh", "-c", "echo terminow-ok"));
         try {
@@ -435,7 +552,6 @@ public class TerminowLinuxInstaller {
             Thread.currentThread().interrupt();
             throw new InstallException("Interrupted");
         }
-        return env;
     }
 
     private static void drain(@NonNull InputStream stream, @NonNull StringBuilder log) {

@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <!-- Alpine Linux: mountains on its blue -->
+    <path android:fillColor="#0D597F" android:pathData="M24,0a24,24 0,1 1,0 48a24,24 0,1 1,0 -48z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M8,33L19,17L25.5,26.5L29,22L40,33Z" />
+    <path android:fillColor="#0D597F" android:pathData="M17,24.5L19,21.6L21.4,25.1L19.4,27.3Z" />
+</vector>
