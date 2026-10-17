@@ -370,6 +370,9 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         if (mTermuxTerminalSessionActivityClient != null)
             mTermuxTerminalSessionActivityClient.onStop();
 
+        // Android may end the app in the background: the tabs and their output are saved now
+        if (mTerminowHome != null) mTerminowHome.onStop();
+
         if (mTermuxTerminalViewClient != null)
             mTermuxTerminalViewClient.onStop();
 
@@ -445,8 +448,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                         // failsafe session was requested.
                         if (launchFailsafe)
                             mTermuxTerminalSessionActivityClient.addNewSession(true, null);
-                        else
+                        // The tabs that were open when the app was closed, or the home screen
+                        else if (!mTerminowHome.restoreWorkspace())
                             mTerminowHome.show();
+                        mTerminowHome.startWorkspace();
                     } catch (WindowManager.BadTokenException e) {
                         // Activity finished - ignore.
                     }
@@ -456,6 +461,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                 finishActivityIfNotFinishing();
             }
         } else {
+            // The tabs run already, like after the activity was recreated: they are saved as they change
+            mTerminowHome.startWorkspace();
             // If termux was started from launcher "New session" shortcut and activity is recreated,
             // then the original intent will be re-delivered, resulting in a new session being re-added
             // each time.

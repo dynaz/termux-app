@@ -64,6 +64,11 @@ public class TerminowStore {
         public int telnetPort = 23;
         /** Forward the ssh agent of this device to the host, `ssh -A`. */
         public boolean agentForwarding;
+        /**
+         * Keep each terminal of the host in a tmux session on the server, which is attached to
+         * again when the tab reconnects or is restored, see {@link #remoteTmuxCommand(String)}.
+         */
+        public boolean remoteTmux;
         /** The {@link #getKey()} of another host to connect through, empty for none. */
         public String jumpHost = "";
         /** {@link #PROXY_SOCKS5}, {@link #PROXY_HTTP}, or empty for a direct connection. */
@@ -194,14 +199,28 @@ public class TerminowStore {
 
         @NonNull
         public String getCommand(@Nullable Host jump, @NonNull String proxyConnector, int keepAliveInterval, int keepAliveCountMax) {
+            return getCommand(jump, proxyConnector, keepAliveInterval, keepAliveCountMax, "");
+        }
+
+        /**
+         * The command of a new session, in the tmux session {@code tmuxName} on the server when
+         * it is not empty and the host keeps its terminals in tmux; telnet never does.
+         */
+        @NonNull
+        public String getCommand(@Nullable Host jump, @NonNull String proxyConnector, int keepAliveInterval, int keepAliveCountMax,
+                                 @NonNull String tmuxName) {
             if (telnet)
                 return "telnet" + (username.isEmpty() ? "" : " -l " + username) + " " + address + " " + telnetPort;
             String target = getTarget();
             String sshOptions = getSshOptions(keepAliveInterval, keepAliveCountMax);
+            String remote = remoteTmux && isValidRemoteTmuxName(tmuxName) ? shellQuote(remoteTmuxCommand(tmuxName)) : "";
             if (mosh)
                 // Mosh talks to the host itself over UDP, so a jump host, proxy or SetEnv does not apply
-                return "mosh" + (sshOptions.isEmpty() && !agentForwarding ? "" : " --ssh='ssh" + (agentForwarding ? " -A" : "") + sshOptions + "'") + " " + target;
-            return "ssh" + getSessionOptions() + sshOptions + getRouteOptions(jump, proxyConnector, keepAliveInterval, keepAliveCountMax) + " " + target;
+                return "mosh" + (sshOptions.isEmpty() && !agentForwarding ? "" : " --ssh='ssh" + (agentForwarding ? " -A" : "") + sshOptions + "'") + " " + target +
+                    (remote.isEmpty() ? "" : " -- sh -c " + shellQuote(remoteTmuxScript(tmuxName)));
+            // A command needs -t for a terminal on the server, which tmux needs
+            return "ssh" + (remote.isEmpty() ? "" : " -t") + getSessionOptions() + sshOptions +
+                getRouteOptions(jump, proxyConnector, keepAliveInterval, keepAliveCountMax) + " " + target + (remote.isEmpty() ? "" : " " + remote);
         }
 
         /**
@@ -231,6 +250,53 @@ public class TerminowStore {
                 return R.string.terminow_host_telnet_options;
             return null;
         }
+    }
+
+    /** Printed on the server when it has no tmux, for the app to offer installing it. */
+    public static final String REMOTE_TMUX_MISSING = "TERMINOW_NO_TMUX";
+
+    /** A tmux session of a tab on a server: "terminow-" and the id of the tab. */
+    public static boolean isValidRemoteTmuxName(@Nullable String name) {
+        return name != null && name.matches("terminow-[a-z0-9]{8,32}");
+    }
+
+    /**
+     * The POSIX sh script on the server: attach to the tmux session of the tab if it is there,
+     * else create it. Without tmux, it says so and opens the login shell, so the tab still works.
+     * It has no single quotes, so that it can be quoted for any login shell.
+     */
+    @NonNull
+    static String remoteTmuxScript(@NonNull String name) {
+        return "if command -v tmux >/dev/null 2>&1; then" +
+            " if tmux has-session -t =" + name + " 2>/dev/null; then exec tmux attach-session -t =" + name + ";" +
+            " else exec tmux new-session -s " + name + "; fi;" +
+            " else echo \"TermiNow: tmux is not installed on this server [" + REMOTE_TMUX_MISSING + "]\";" +
+            " exec \"${SHELL:-/bin/sh}\" -l; fi";
+    }
+
+    /** What ssh runs on the server for the tab, through sh whatever the login shell is. */
+    @NonNull
+    static String remoteTmuxCommand(@NonNull String name) {
+        return "sh -c " + shellQuote(remoteTmuxScript(name));
+    }
+
+    /**
+     * Install tmux with the package manager of the server, with sudo unless it is root, then
+     * open the tmux session of the tab. Typed into the session only when the user asks.
+     */
+    @NonNull
+    public static String installRemoteTmuxCommand(@NonNull String name) {
+        String script = "S=; [ \"$(id -u)\" = 0 ] || S=sudo;" +
+            " if command -v apt-get >/dev/null 2>&1; then $S apt-get install -y tmux;" +
+            " elif command -v dnf >/dev/null 2>&1; then $S dnf install -y tmux;" +
+            " elif command -v yum >/dev/null 2>&1; then $S yum install -y tmux;" +
+            " elif command -v apk >/dev/null 2>&1; then $S apk add tmux;" +
+            " elif command -v pacman >/dev/null 2>&1; then $S pacman -S --noconfirm tmux;" +
+            " elif command -v zypper >/dev/null 2>&1; then $S zypper --non-interactive install tmux;" +
+            " elif command -v brew >/dev/null 2>&1; then brew install tmux;" +
+            " else echo \"TermiNow: no package manager found, install tmux yourself\"; false; fi" +
+            " && command -v tmux >/dev/null 2>&1 && exec tmux new-session -A -s " + name;
+        return "sh -c " + shellQuote(script);
     }
 
     /** The host with the {@link Host#getKey()}, {@code null} if none. */
@@ -531,6 +597,7 @@ public class TerminowStore {
         object.put("telnet", host.telnet);
         object.put("telnetPort", host.telnetPort);
         object.put("agentForwarding", host.agentForwarding);
+        object.put("remoteTmux", host.remoteTmux);
         object.put("jumpHost", host.jumpHost);
         object.put("proxyType", host.proxyType);
         object.put("proxyHost", host.proxyHost);
@@ -561,6 +628,7 @@ public class TerminowStore {
         host.telnet = object.optBoolean("telnet");
         host.telnetPort = object.optInt("telnetPort", 23);
         host.agentForwarding = object.optBoolean("agentForwarding");
+        host.remoteTmux = object.optBoolean("remoteTmux");
         host.jumpHost = object.optString("jumpHost");
         host.proxyType = object.optString("proxyType");
         host.proxyHost = object.optString("proxyHost");

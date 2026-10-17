@@ -175,6 +175,10 @@ public class TerminowHome {
     private final View mExplorerView;
     private final TerminowExplorer mExplorer;
     private final TerminowLauncher mLauncher;
+    /** The saved tabs, to bring them back after the app was closed. */
+    private final TerminowWorkspace mWorkspace;
+    /** The previous output of the next tab that {@link #startSession} starts, for a restored tab. */
+    @Nullable private byte[] mNextPrelude;
     private final View mHeaderView;
     private final View mGridView;
     private final View mFabView;
@@ -217,6 +221,7 @@ public class TerminowHome {
         activity.findViewById(R.id.terminow_notifications_button).setOnClickListener(v ->
             new TerminowNotifications(mActivity, mStore, this::updateNotificationsBadge).show());
         mTabsView = activity.findViewById(R.id.terminow_tabs);
+        mWorkspace = TerminowWorkspace.of(activity);
         mLauncher = new TerminowLauncher(activity, mStore, new TerminowLauncher.Host() {
             @Nullable
             @Override
@@ -440,6 +445,8 @@ public class TerminowHome {
 
     /** Update the tab bar and the home screen after the sessions or the current session changed. */
     public void refresh() {
+        // Tabs were added, closed, renamed or switched
+        mWorkspace.changed();
         // With no terminal session the terminal area is empty, so the home screen is shown
         // instead, whatever closed the last session or started the app (the service may have been
         // started by a RUN_COMMAND of another app before the activity was opened)
@@ -976,12 +983,15 @@ public class TerminowHome {
             return;
         }
         mSftpSessions.add(session);
+        TerminowWorkspace.Tab tab = hostTab(host, true);
+        tab.title = title;
+        TerminowWorkspace.register(session, tab);
         mLauncher.track(session, new TerminowLauncher.SessionInfo(null, host.getTitle(), "sftp", "", ""));
         String command = route.login.getSftpCommand(route.jump, route.proxyConnector, mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
         mStore.addLog(title, command);
         writeWhenStarted(session, command + "\r", 0);
         writePasswordsWhenAsked(session, getPasswordPrompts(route.login, route.jump), 0);
-        watchConnection(session, host, true, title, 0);
+        watchConnection(session, host, true, title, 0, tab, false);
     }
 
     /** The hosts and modes that a connection is being started to, to not start another one at the same time. */
@@ -1015,7 +1025,7 @@ public class TerminowHome {
      * never while the host asks for a password or to accept its key.
      */
     private void watchConnection(@NonNull TerminalSession session, @NonNull TerminowStore.Host host, boolean sftp,
-                                 @NonNull String title, int check) {
+                                 @NonNull String title, int check, @NonNull TerminowWorkspace.Tab tab, boolean again) {
         String connectingKey = host.getKey() + (sftp ? ":sftp" : ":ssh");
         if (check == 0) {
             session.mSessionName = mActivity.getString(R.string.terminow_connecting_session, title);
@@ -1035,6 +1045,8 @@ public class TerminowHome {
         }
 
         String transcript = session.getPid() > 0 ? ShellUtils.getTerminalSessionTranscriptText(session, false, true) : null;
+        // Only what came after the previous output of a restored tab, or after "Reconnecting"
+        if (transcript != null) transcript = TerminowWorkspace.afterMark(transcript);
         if (transcript != null) {
             String failure = null;
             java.util.regex.Matcher matcher;
@@ -1046,7 +1058,7 @@ public class TerminowHome {
                 failure = matcher.group();
             if (failure != null) {
                 finish.run();
-                showConnectionFailed(session, host, sftp, failure);
+                showConnectionFailed(session, host, sftp, failure, tab);
                 return;
             }
 
@@ -1054,10 +1066,12 @@ public class TerminowHome {
             boolean waitingAtPrompt = CONNECTION_PROMPT_PATTERN.matcher(lastLine).find();
             if ((sftp && transcript.contains("sftp>")) || (!waitingAtPrompt && check >= CONNECTION_MADE_AFTER_CHECKS)) {
                 mStore.addRecentConnection(host, sftp);
-                TerminowStore.Snippet snippet = sftp ? null : mStore.getSnippet(host.startupSnippet);
+                // Never typed into a tmux session that is attached to again: it may run a program
+                TerminowStore.Snippet snippet = sftp || (again && host.remoteTmux) ? null : mStore.getSnippet(host.startupSnippet);
                 if (snippet != null && session.isRunning())
                     session.write(snippet.command + "\r");
                 finish.run();
+                if (!sftp && !host.telnet) watchConnectionLost(session, host, tab);
                 return;
             }
         }
@@ -1066,16 +1080,25 @@ public class TerminowHome {
             finish.run();
             return;
         }
-        mHandler.postDelayed(() -> watchConnection(session, host, sftp, title, check + 1), CONNECTION_CHECK_DELAY_MS);
+        mHandler.postDelayed(() -> watchConnection(session, host, sftp, title, check + 1, tab, again), CONNECTION_CHECK_DELAY_MS);
     }
 
     private void showConnectionFailed(@NonNull TerminalSession session, @NonNull TerminowStore.Host host, boolean sftp,
-                                      @NonNull String reason) {
+                                      @NonNull String reason, @NonNull TerminowWorkspace.Tab tab) {
+        // Also in the tab, for a restored tab that is not shown or a dialog that was closed
+        markSession(session, mActivity.getString(R.string.terminow_restore_failed_line, reason));
         if (!mActivity.isVisible()) return;
+        String message = reason;
+        if (!sftp && host.remoteTmux) message += "\n\n" + mActivity.getString(R.string.terminow_restore_failed_tmux);
         new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
             .setTitle(mActivity.getString(R.string.terminow_connection_failed, host.getTitle()))
-            .setMessage(reason)
+            .setMessage(message)
             .setPositiveButton(R.string.terminow_retry, (dialog, which) -> {
+                if (!sftp && session.isRunning()) {
+                    // In the same tab, at its place, with its tmux session on the server
+                    reconnectInTab(session, host, tab);
+                    return;
+                }
                 // The tab of the failed attempt is replaced by the new one
                 mActivity.getTermuxTerminalSessionClient().closeSession(session);
                 if (sftp)
@@ -1117,7 +1140,11 @@ public class TerminowHome {
         TermuxSession session = executable.isEmpty() ?
             service.createTermuxSession(null, null, null, workingDirectory, false, name) :
             service.createTermuxSession(executable, arguments, null, workingDirectory, false, name);
+        byte[] prelude = mNextPrelude;
+        mNextPrelude = null;
         if (session == null) return null;
+        // Before it is shown, which starts it
+        session.getTerminalSession().mPrelude = prelude;
         mActivity.getTermuxTerminalSessionClient().setCurrentSession(session.getTerminalSession());
         hide();
         return session.getTerminalSession();
@@ -1133,6 +1160,184 @@ public class TerminowHome {
             mCurrentGroup = null;
         refresh();
         if (isVisible()) updateItems();
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Tabs that come back after the app was closed
+
+    /** Start saving the tabs as they change, once the saved ones were restored or there were none. */
+    public void startWorkspace() {
+        mWorkspace.start(new TerminowWorkspace.Source() {
+            @NonNull
+            @Override
+            public List<TerminalSession> sessions() {
+                List<TerminalSession> sessions = new ArrayList<>();
+                TermuxService service = mActivity.getTermuxService();
+                if (service != null)
+                    for (TermuxSession session : service.getTermuxSessions()) sessions.add(session.getTerminalSession());
+                return sessions;
+            }
+
+            @Nullable
+            @Override
+            public TerminalSession current() {
+                return mActivity.getCurrentSession();
+            }
+
+            @NonNull
+            @Override
+            public TerminowWorkspace.Tab describe(@NonNull TerminalSession session) {
+                // A tab that TermiNow did not start itself, like one of the + button, is a local terminal
+                TerminowWorkspace.Tab tab = new TerminowWorkspace.Tab();
+                tab.id = TerminowWorkspace.newId();
+                TerminowLauncher.SessionInfo info = mLauncher.getSessionInfo(session);
+                if (info != null && info.environmentKey != null && !TerminowMcpTargets.TARGET_TERMINOW.equals(info.environmentKey)) {
+                    tab.kind = TerminowWorkspace.KIND_LINUX;
+                    tab.environment = info.environmentKey;
+                    tab.user = info.user;
+                    tab.folder = info.folder;
+                    tab.localTmux = info.tmux;
+                } else if (info != null) {
+                    tab.folder = info.folder;
+                    tab.localTmux = info.tmux;
+                }
+                return tab;
+            }
+
+            @Override
+            public boolean paused() {
+                // While the app shuts down its tabs end, which is not the user closing them
+                return mActivity.getTermuxService() == null || TermuxService.sShuttingDown;
+            }
+        });
+    }
+
+    /** The app goes to the background, where Android may end it: save the tabs and their output now. */
+    public void onStop() {
+        mWorkspace.saveNow();
+    }
+
+    /**
+     * Open the tabs that were open when the app was last closed, in their order, with their
+     * names and folders, and show the one that was shown. Each starts a new shell, a new shell
+     * of its environment, or connects to its host again, showing its previous output as such
+     * until then. Nothing that ran before is typed again.
+     *
+     * @return Whether tabs were restored; else the home screen is shown as before.
+     */
+    public boolean restoreWorkspace() {
+        TerminowWorkspace.State state = mWorkspace.load();
+        TermuxService service = mActivity.getTermuxService();
+        if (state.tabs.isEmpty() || service == null) return false;
+        String when = state.saved > 0 ? android.text.format.DateUtils.formatDateTime(mActivity, state.saved,
+            android.text.format.DateUtils.FORMAT_SHOW_TIME | android.text.format.DateUtils.FORMAT_SHOW_DATE | android.text.format.DateUtils.FORMAT_ABBREV_ALL) : "";
+        TerminalSession active = null;
+        TerminalSession first = null;
+        int restored = 0;
+        for (TerminowWorkspace.Tab tab : state.tabs) {
+            TerminalSession session;
+            try {
+                session = restoreTab(service, tab, when);
+            } catch (RuntimeException e) {
+                Logger.logStackTraceWithMessage(LOG_TAG, "Failed to restore a tab", e);
+                session = null;
+            }
+            if (session == null) continue;
+            restored++;
+            if (first == null) first = session;
+            if (tab.id.equals(state.activeId)) active = session;
+        }
+        if (first == null) return false;
+        mActivity.getTermuxTerminalSessionClient().setCurrentSession(active != null ? active : first);
+        hide();
+        mActivity.showToast(mActivity.getResources().getQuantityString(R.plurals.terminow_restore_done, restored, restored), false);
+        return true;
+    }
+
+    @Nullable
+    private TerminalSession restoreTab(@NonNull TermuxService service, @NonNull TerminowWorkspace.Tab tab, @NonNull String when) {
+        String output = mWorkspace.loadOutput(tab.id);
+        String header = mActivity.getString(R.string.terminow_restore_previous, when);
+        if (TerminowWorkspace.KIND_HOST.equals(tab.kind)) {
+            TerminowStore.Host host = null;
+            for (TerminowStore.Host candidate : mStore.getHostsIn(tab.vault))
+                if (candidate.getKey().equals(tab.hostKey)) host = candidate;
+            if (host == null)
+                return restoreLocal(service, tab, output, header, mActivity.getString(R.string.terminow_restore_host_gone, tab.title));
+            String footer = mActivity.getString(tab.sftp ? R.string.terminow_restore_sftp_again :
+                host.remoteTmux ? R.string.terminow_restore_host_tmux : R.string.terminow_restore_host_again, host.getTitle());
+            String title = tab.sftp ? mActivity.getString(R.string.terminow_sftp_session, host.getTitle()) : host.getTitle();
+            TermuxSession created = service.createTermuxSession(null, null, null, getStartDirectory(), false, title);
+            if (created == null) return null;
+            TerminalSession session = created.getTerminalSession();
+            session.mPrelude = TerminowWorkspace.prelude(output, header, footer);
+            TerminowWorkspace.register(session, tab);
+            TerminowStore.Host target = host;
+            // It connects when the tab is first shown, not all at once in the background
+            session.mOnStarted = () -> {
+                if (tab.sftp) {
+                    mSftpSessions.add(session);
+                    Route route = prepareRoute(target);
+                    if (route == null) return;
+                    mLauncher.track(session, new TerminowLauncher.SessionInfo(null, target.getTitle(), "sftp", "", ""));
+                    String command = route.login.getSftpCommand(route.jump, route.proxyConnector, mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
+                    writeWhenStarted(session, command + "\r", 0);
+                    writePasswordsWhenAsked(session, getPasswordPrompts(route.login, route.jump), 0);
+                    watchConnection(session, target, true, title, 0, tab, true);
+                } else {
+                    startConnection(session, target, tab, true);
+                }
+            };
+            return session;
+        }
+        if (TerminowWorkspace.KIND_LINUX.equals(tab.kind)) {
+            String folder = mLauncher.restorableFolder(tab.environment, tab.user, tab.folder);
+            if (folder == null)
+                return restoreLocal(service, tab, output, header, mActivity.getString(R.string.terminow_restore_environment_gone, tab.environment));
+            String footer = !tab.folder.isEmpty() && !folder.equals(tab.folder) ?
+                mActivity.getString(R.string.terminow_restore_folder_gone, tab.folder) : mActivity.getString(R.string.terminow_restore_new_shell);
+            mNextPrelude = TerminowWorkspace.prelude(output, header, footer);
+            TerminalSession session = mLauncher.restoreLinuxTerminal(tab.environment, tab.user, folder, tab.localTmux, tab.title);
+            mNextPrelude = null;
+            if (session == null) return null;
+            tab.folder = folder;
+            TerminowWorkspace.register(session, tab);
+            return session;
+        }
+        return restoreLocal(service, tab, output, header, null);
+    }
+
+    /** A restored local tab, in its folder if it is still there; {@code note} says why it is not what it was. */
+    @Nullable
+    private TerminalSession restoreLocal(@NonNull TermuxService service, @NonNull TerminowWorkspace.Tab tab, @NonNull String output,
+                                         @NonNull String header, @Nullable String note) {
+        boolean wasLocal = TerminowWorkspace.KIND_LOCAL.equals(tab.kind);
+        String folder = wasLocal ? tab.folder : "";
+        String footer = note;
+        if (folder.isEmpty() || !new File(folder).isDirectory()) {
+            if (footer == null && !folder.isEmpty()) footer = mActivity.getString(R.string.terminow_restore_folder_gone, folder);
+            folder = getStartDirectory();
+        }
+        if (footer == null) footer = mActivity.getString(R.string.terminow_restore_new_shell);
+        TermuxSession created = service.createTermuxSession(null, null, null, folder, false, tab.title.isEmpty() ? null : tab.title);
+        if (created == null) return null;
+        TerminalSession session = created.getTerminalSession();
+        session.mPrelude = TerminowWorkspace.prelude(output, header, footer);
+        // A tab that can not be what it was is a local terminal from now on
+        tab.kind = TerminowWorkspace.KIND_LOCAL;
+        tab.folder = folder;
+        if (!wasLocal) tab.localTmux = "";
+        TerminowWorkspace.register(session, tab);
+        mLauncher.track(session, new TerminowLauncher.SessionInfo(TerminowMcpTargets.TARGET_TERMINOW, "Local", "bash", folder, tab.localTmux));
+        // Its own tmux session, attached to if it still runs, else made in its folder: the usual start of a tab
+        String command = tab.localTmux.isEmpty() ? null : getLocalStartupCommand(tab.localTmux, TerminowStore.shellQuote(folder));
+        if (command != null && command.contains("tmux")) writeWhenStartedShown(session, command + "\r");
+        return session;
+    }
+
+    /** Write to a session once it started, which is when its tab is first shown. */
+    private void writeWhenStartedShown(@NonNull TerminalSession session, @NonNull String text) {
+        session.mOnStarted = () -> writeWhenStarted(session, text, 0);
     }
 
     /** The activity was resumed, for example after a screen of Android settings. */
@@ -1167,6 +1372,10 @@ public class TerminowHome {
         if (session == null) return;
         mLauncher.track(session.getTerminalSession(), new TerminowLauncher.SessionInfo(TerminowMcpTargets.TARGET_TERMINOW, "Local", "bash",
             directory.getAbsolutePath(), ""));
+        TerminowWorkspace.Tab tab = new TerminowWorkspace.Tab();
+        tab.id = TerminowWorkspace.newId();
+        tab.folder = directory.getAbsolutePath();
+        TerminowWorkspace.register(session.getTerminalSession(), tab);
         mActivity.getTermuxTerminalSessionClient().setCurrentSession(session.getTerminalSession());
         hide();
     }
@@ -1191,6 +1400,11 @@ public class TerminowHome {
             writeWhenStarted(session, command + "\r", 0);
         mLauncher.track(session, new TerminowLauncher.SessionInfo(TerminowMcpTargets.TARGET_TERMINOW, "Local", "bash",
             TermuxConstants.TERMUX_HOME_DIR_PATH, command != null && command.contains("tmux") ? tmuxName : ""));
+        TerminowWorkspace.Tab tab = new TerminowWorkspace.Tab();
+        tab.id = TerminowWorkspace.newId();
+        tab.folder = TermuxConstants.TERMUX_HOME_DIR_PATH;
+        tab.localTmux = command != null && command.contains("tmux") ? tmuxName : "";
+        TerminowWorkspace.register(session, tab);
     }
 
     /**
@@ -1201,6 +1415,12 @@ public class TerminowHome {
      */
     @Nullable
     private String getLocalStartupCommand(@NonNull String tmuxSessionName) {
+        return getLocalStartupCommand(tmuxSessionName, "\"$HOME\"");
+    }
+
+    /** Like {@link #getLocalStartupCommand(String)}, a new tmux session starting in {@code folder}, a shell word. */
+    @Nullable
+    private String getLocalStartupCommand(@NonNull String tmuxSessionName, @NonNull String folder) {
         boolean showFolder = mStore.shouldShowFolderOnStartup();
         // Only if tmux is installed, it is not in the system shell that is started without the packages
         boolean tmux = mStore.shouldStartInTmux() && new File(TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH, "tmux").exists();
@@ -1214,7 +1434,7 @@ public class TerminowHome {
         String showFolderKeys = showFolder ? " \\; send-keys -t " + target + ": 'pwd; ls' Enter" : "";
         return "if [ -z \"$TMUX\" ]; then if tmux has-session -t " + target + " 2>/dev/null;" +
             " then tmux attach-session -t " + target + ";" +
-            " else tmux new-session -s " + tmuxSessionName + " -c \"$HOME\"" + showFolderKeys + "; fi; fi";
+            " else tmux new-session -s " + tmuxSessionName + " -c " + folder + showFolderKeys + "; fi; fi";
     }
 
     private void connect(@NonNull TerminowStore.Host host) {
@@ -1224,19 +1444,127 @@ public class TerminowHome {
             mConnectingHosts.remove(host.getKey() + ":ssh");
             return;
         }
+        TerminowWorkspace.Tab tab = hostTab(host, false);
+        TerminowWorkspace.register(session, tab);
+        if (!startConnection(session, host, tab, false)) mConnectingHosts.remove(host.getKey() + ":ssh");
+    }
 
+    /** A new tab of a host, with a new id: its own tmux session on the server. */
+    @NonNull
+    private TerminowWorkspace.Tab hostTab(@NonNull TerminowStore.Host host, boolean sftp) {
+        TerminowWorkspace.Tab tab = new TerminowWorkspace.Tab();
+        tab.id = TerminowWorkspace.newId();
+        tab.kind = TerminowWorkspace.KIND_HOST;
+        tab.hostKey = host.getKey();
+        tab.vault = mStore.getActiveVault();
+        tab.title = host.getTitle();
+        tab.sftp = sftp;
+        return tab;
+    }
+
+    /**
+     * Connect in a session whose shell is ready or about to start: a new tab, a restored one, or
+     * one whose connection was lost. Only the login command is typed, never what ran before; a
+     * host that keeps its terminals in tmux is attached to the tmux session of the tab again.
+     *
+     * @param again Whether the tab was connected before, so its startup snippet is not typed
+     *              into a tmux session that may run a program.
+     */
+    private boolean startConnection(@NonNull TerminalSession session, @NonNull TerminowStore.Host host,
+                                    @NonNull TerminowWorkspace.Tab tab, boolean again) {
         Route route = prepareRoute(host);
-        if (route == null) {
-            mConnectingHosts.remove(host.getKey() + ":ssh");
-            return;
-        }
+        if (route == null) return false;
         applySessionOptions(session, host);
         mLauncher.track(session, new TerminowLauncher.SessionInfo(null, host.getTitle(), host.telnet ? "telnet" : "ssh", "", ""));
-        String command = route.login.getCommand(route.jump, route.proxyConnector, mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
+        String command = route.login.getCommand(route.jump, route.proxyConnector, mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax(),
+            host.remoteTmux ? tab.remoteTmuxName() : "");
         mStore.addLog(host.getTitle(), command);
         writeWhenStarted(session, command + "\r", 0);
         writePasswordsWhenAsked(session, getPasswordPrompts(route.login, route.jump), 0);
-        watchConnection(session, host, false, host.getTitle(), 0);
+        watchConnection(session, host, false, host.getTitle(), 0, tab, again);
+        if (host.remoteTmux && !host.telnet) watchRemoteTmux(session, host, tab, 0);
+        return true;
+    }
+
+    /** Write a line of TermiNow into a tab, after which later checks of its output start. */
+    private void markSession(@NonNull TerminalSession session, @NonNull String text) {
+        if (session.getEmulator() == null) return;
+        byte[] line = TerminowWorkspace.markLine(text);
+        session.getEmulator().append(line, line.length);
+        if (session == mActivity.getCurrentSession()) mActivity.getTerminalView().onScreenUpdated();
+    }
+
+    /** Connect again in the same tab, whose shell is back at its prompt after the connection ended. */
+    private void reconnectInTab(@NonNull TerminalSession session, @NonNull TerminowStore.Host host, @NonNull TerminowWorkspace.Tab tab) {
+        if (!session.isRunning()) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_restore_tab_ended), true);
+            return;
+        }
+        markSession(session, mActivity.getString(R.string.terminow_restore_reconnecting, host.getTitle()));
+        startConnection(session, host, tab, true);
+    }
+
+    private static final Pattern REMOTE_TMUX_MISSING_PATTERN = Pattern.compile("\\[" + TerminowStore.REMOTE_TMUX_MISSING + "\\]");
+    /** A connection that was made and then lost, not one that the user ended. */
+    private static final Pattern CONNECTION_LOST_PATTERN = Pattern.compile(
+        "client_loop: send disconnect|Broken pipe|Connection reset by peer|Timeout, server .* not responding|" +
+            "closed by remote host|packet_write_wait|Software caused connection abort");
+
+    /** The server has no tmux: offer to install it, once per connection. */
+    private void watchRemoteTmux(@NonNull TerminalSession session, @NonNull TerminowStore.Host host, @NonNull TerminowWorkspace.Tab tab, int check) {
+        if (check > 60 || (session.getPid() > 0 && !session.isRunning())) return;
+        String transcript = session.getPid() > 0 ? ShellUtils.getTerminalSessionTranscriptText(session, false, true) : null;
+        if (transcript != null && REMOTE_TMUX_MISSING_PATTERN.matcher(TerminowWorkspace.afterMark(transcript)).find()) {
+            offerRemoteTmux(session, host, tab);
+            return;
+        }
+        mHandler.postDelayed(() -> watchRemoteTmux(session, host, tab, check + 1), 1000);
+    }
+
+    private void offerRemoteTmux(@NonNull TerminalSession session, @NonNull TerminowStore.Host host, @NonNull TerminowWorkspace.Tab tab) {
+        if (!mActivity.isVisible()) return;
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_remote_tmux_missing_title)
+            .setMessage(mActivity.getString(R.string.terminow_remote_tmux_missing_message, host.getTitle()))
+            .setPositiveButton(R.string.terminow_remote_tmux_install, (d, w) -> {
+                // Typed into the shell of the server only now that the user asked for it
+                if (session.isRunning()) session.write(TerminowStore.installRemoteTmuxCommand(tab.remoteTmuxName()) + "\r");
+            })
+            .setNeutralButton(R.string.terminow_remote_tmux_turn_off, (d, w) -> {
+                host.remoteTmux = false;
+                mStore.setHosts(mHosts);
+                updateItems();
+            })
+            .setNegativeButton(R.string.terminow_remote_tmux_not_now, null)
+            .show();
+    }
+
+    /**
+     * After a connection was made: if it is lost, like when the network goes, offer to connect
+     * again in the same tab, to the same tmux session on the server if the host keeps one.
+     */
+    private void watchConnectionLost(@NonNull TerminalSession session, @NonNull TerminowStore.Host host, @NonNull TerminowWorkspace.Tab tab) {
+        if (session.getPid() > 0 && !session.isRunning()) return;
+        if (TerminowWorkspace.tabOf(session) != tab) return;
+        String transcript = session.getPid() > 0 ? ShellUtils.getTerminalSessionTranscriptText(session, false, true) : null;
+        if (transcript != null && CONNECTION_LOST_PATTERN.matcher(TerminowWorkspace.afterMark(transcript)).find()) {
+            // Checked again only after the next connection, which writes its own line
+            markSession(session, mActivity.getString(R.string.terminow_restore_connection_lost, host.getTitle()));
+            showConnectionLost(session, host, tab);
+            return;
+        }
+        mHandler.postDelayed(() -> watchConnectionLost(session, host, tab), 3000);
+    }
+
+    private void showConnectionLost(@NonNull TerminalSession session, @NonNull TerminowStore.Host host, @NonNull TerminowWorkspace.Tab tab) {
+        if (!mActivity.isVisible()) return;
+        String message = mActivity.getString(host.remoteTmux ? R.string.terminow_restore_lost_tmux : R.string.terminow_restore_lost_message);
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(mActivity.getString(R.string.terminow_restore_lost_title, host.getTitle()))
+            .setMessage(message)
+            .setPositiveButton(R.string.terminow_restore_reconnect, (d, w) -> reconnectInTab(session, host, tab))
+            .setNegativeButton(R.string.terminow_close_dialog, null)
+            .show();
     }
 
     /** How a connection reaches its host: the jump host and the proxy connector, if it uses them. */
@@ -1499,6 +1827,7 @@ public class TerminowHome {
         View identityRemoveView = dialog.findViewById(R.id.terminow_host_identity_remove);
         EditText snippetView = dialog.findViewById(R.id.terminow_host_snippet);
         CheckBox agentView = dialog.findViewById(R.id.terminow_host_agent);
+        CheckBox remoteTmuxView = dialog.findViewById(R.id.terminow_host_remote_tmux);
         EditText jumpView = dialog.findViewById(R.id.terminow_host_jump);
         EditText proxyView = dialog.findViewById(R.id.terminow_host_proxy);
         LinearLayout envList = dialog.findViewById(R.id.terminow_host_env);
@@ -1567,6 +1896,7 @@ public class TerminowHome {
             if (existingHost.telnetPort != 23)
                 telnetPortView.setText(String.valueOf(existingHost.telnetPort));
             agentView.setChecked(existingHost.agentForwarding);
+            remoteTmuxView.setChecked(existingHost.remoteTmux);
             draft.jumpHost = existingHost.jumpHost;
             draft.proxyType = existingHost.proxyType;
             draft.proxyHost = existingHost.proxyHost;
@@ -1729,6 +2059,7 @@ public class TerminowHome {
             host.tags.addAll(draft.tags);
             host.backspaceSendsCtrlH = backspaceView.isChecked();
             host.agentForwarding = !host.telnet && agentView.isChecked();
+            host.remoteTmux = !host.telnet && remoteTmuxView.isChecked();
             host.jumpHost = host.telnet ? "" : draft.jumpHost;
             host.proxyType = host.telnet ? "" : draft.proxyType;
             host.proxyHost = host.proxyType.isEmpty() ? "" : draft.proxyHost;

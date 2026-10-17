@@ -386,6 +386,34 @@
                             style="@style/TerminowPanelCheck" />
                     </LinearLayout>
 
+                    <LinearLayout
+                        style="@style/TerminowPanelToggleRow"
+                        android:layout_marginTop="6dp">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                style="@style/TerminowPanelToggleTitle"
+                                android:layout_width="match_parent"
+                                android:text="@string/terminow_host_remote_tmux" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="@string/terminow_host_remote_tmux_summary"
+                                android:textColor="@color/terminow_text_secondary"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+
+                        <CheckBox
+                            android:id="@+id/terminow_host_remote_tmux"
+                            style="@style/TerminowPanelCheck" />
+                    </LinearLayout>
+
                     <LinearLayout style="@style/TerminowPanelFieldRow">
 
                         <EditText

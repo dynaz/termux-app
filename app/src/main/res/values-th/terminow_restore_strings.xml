@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_host_remote_tmux">เก็บเซสชันไว้บนเซิร์ฟเวอร์ (tmux)</string>
+    <string name="terminow_host_remote_tmux_summary">แต่ละแท็บทำงานในเซสชัน tmux ของตัวเองบนเซิร์ฟเวอร์ การเชื่อมต่อใหม่หรือเปิด TermiNow อีกครั้งจะกลับเข้าไปพร้อมโปรแกรมที่ยังทำงานอยู่</string>
+    <string name="terminow_remote_tmux_missing_title">เซิร์ฟเวอร์นี้ไม่มี tmux</string>
+    <string name="terminow_remote_tmux_missing_message">%1$s ไม่มี tmux แท็บนี้จึงเป็นการลงชื่อเข้าใช้ปกติที่จบพร้อมการเชื่อมต่อ\n\nติดตั้ง tmux หรือไม่ TermiNow จะพิมพ์คำสั่งติดตั้งในแท็บนี้ โดยใช้ sudo หากไม่ใช่ root เซิร์ฟเวอร์อาจขอรหัสผ่านของคุณ</string>
+    <string name="terminow_remote_tmux_install">ติดตั้ง tmux</string>
+    <string name="terminow_remote_tmux_turn_off">ปิดสำหรับโฮสต์นี้</string>
+    <string name="terminow_remote_tmux_not_now">ไม่ใช่ตอนนี้</string>
+    <string name="terminow_restore_previous">เอาต์พุตก่อนหน้า บันทึกเมื่อ %1$s ไม่ใช่ข้อมูลสด</string>
+    <string name="terminow_restore_new_shell">สิ้นสุดเอาต์พุตก่อนหน้า เชลล์ใหม่ ไม่มีอะไรถูกรันซ้ำ</string>
+    <string name="terminow_restore_folder_gone">สิ้นสุดเอาต์พุตก่อนหน้า โฟลเดอร์ %1$s ไม่มีแล้ว เปิดในโฮม</string>
+    <string name="terminow_restore_host_again">สิ้นสุดเอาต์พุตก่อนหน้า กำลังเชื่อมต่อ %1$s อีกครั้ง เป็นการลงชื่อเข้าใช้ใหม่</string>
+    <string name="terminow_restore_host_tmux">สิ้นสุดเอาต์พุตก่อนหน้า กำลังเชื่อมต่อ %1$s และเซสชัน tmux ของแท็บ</string>
+    <string name="terminow_restore_sftp_again">สิ้นสุดเอาต์พุตก่อนหน้า กำลังเชื่อมต่อ %1$s ด้วย SFTP อีกครั้ง</string>
+    <string name="terminow_restore_host_gone">สิ้นสุดเอาต์พุตก่อนหน้า โฮสต์ %1$s ไม่อยู่ใน TermiNow แล้ว แท็บนี้เป็นเทอร์มินัลในเครื่อง</string>
+    <string name="terminow_restore_environment_gone">สิ้นสุดเอาต์พุตก่อนหน้า สภาพแวดล้อม %1$s ไม่มีแล้ว แท็บนี้เป็นเทอร์มินัลในเครื่อง</string>
+    <string name="terminow_restore_reconnecting">กำลังเชื่อมต่อ %1$s ใหม่</string>
+    <string name="terminow_restore_connection_lost">การเชื่อมต่อกับ %1$s ขาดหาย</string>
+    <string name="terminow_restore_failed_line">เชื่อมต่อไม่ได้: %1$s</string>
+    <string name="terminow_restore_failed_tmux">เซสชัน tmux ของแท็บนี้ยังอยู่บนเซิร์ฟเวอร์ ลองอีกครั้งจะกลับเข้าไปเมื่อเข้าถึงเซิร์ฟเวอร์ได้และลงชื่อเข้าใช้ได้</string>
+    <string name="terminow_restore_lost_title">การเชื่อมต่อกับ %1$s ขาดหาย</string>
+    <string name="terminow_restore_lost_message">เครือข่ายหรือเซิร์ฟเวอร์ตัดการเชื่อมต่อ เชื่อมต่อใหม่ในแท็บนี้หรือไม่ เป็นการลงชื่อเข้าใช้ใหม่ สิ่งที่รันก่อนหน้าจะไม่ถูกรันซ้ำ</string>
+    <string name="terminow_restore_lost_tmux">เครือข่ายหรือเซิร์ฟเวอร์ตัดการเชื่อมต่อ เซสชัน tmux ของคุณยังทำงานบนเซิร์ฟเวอร์ การเชื่อมต่อใหม่จะกลับเข้าไป</string>
+    <string name="terminow_restore_reconnect">เชื่อมต่อใหม่</string>
+    <string name="terminow_restore_tab_ended">แท็บนี้จบแล้ว เปิดโฮสต์อีกครั้ง</string>
+    <plurals name="terminow_restore_done">
+        <item quantity="other">กู้คืน %d แท็บแล้ว</item>
+    </plurals>
+</resources>

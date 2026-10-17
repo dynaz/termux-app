@@ -138,6 +138,8 @@ public class TerminowLauncher {
         public final String folder;
         /** The tmux session it runs in, empty for none. */
         public final String tmux;
+        /** The user in a Linux environment, empty if not known. */
+        public String user = "";
 
         public SessionInfo(@Nullable String environmentKey, @NonNull String environmentLabel, @NonNull String tool,
                            @NonNull String folder, @NonNull String tmux) {
@@ -878,9 +880,11 @@ public class TerminowLauncher {
         if (environment.container == null) return;
         String folder = getFolder(environment);
         String[] args = ubuntuLoginArgs(environment.container.name, getUser(environment), folder, bindsOf(environment)).toArray(new String[0]);
+        SessionInfo info = new SessionInfo(environment.key, environment.shortName(), "bash", folder, "");
+        info.user = getUser(environment);
         launch("ubuntu|" + environment.key + "|" + folder, new File(mTargets.getPrefixDir(), "bin/proot-distro").getPath(), args,
             TermuxConstants.TERMUX_HOME_DIR_PATH, mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), "bash"), false,
-            new SessionInfo(environment.key, environment.shortName(), "bash", folder, ""));
+            info);
     }
 
     /** The arguments of proot-distro that open a shell of an environment as a user in a folder. */
@@ -1168,8 +1172,10 @@ public class TerminowLauncher {
         }
         boolean tmux = !TerminowLaunchPlan.TMUX_OFF.equals(tmuxMode) && !plan.tmuxMissing &&
             !TerminowLaunchPlan.TOOL_CLAUDE_LOGIN.equals(tool);
+        SessionInfo info = new SessionInfo(environment.key, environment.shortName(), toolLabel, folder, tmux ? tmuxName : "");
+        info.user = user;
         TerminalSession session = launch(key, plan.executable, plan.arguments.toArray(new String[0]), plan.workingDirectory, tabName,
-            alwaysNew, new SessionInfo(environment.key, environment.shortName(), toolLabel, folder, tmux ? tmuxName : ""));
+            alwaysNew, info);
         if (session != null && plan.tmuxMissing)
             mActivity.showToast(mActivity.getString(R.string.terminow_tools_tmux_missing_started, environment.label), true);
         return session;
@@ -1285,6 +1291,36 @@ public class TerminowLauncher {
         }
         launchPlan("linux|" + alias + "|" + user + "|" + System.nanoTime(), environment, user, path, TerminowLaunchPlan.TOOL_SHELL, "",
             TerminowLaunchPlan.TMUX_OFF, "", mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), "bash"), true, "bash");
+    }
+
+    /**
+     * The folder that a restored tab of an environment opens in: its own if it is still there,
+     * else the home of the user. {@code null} when the environment or the user is gone.
+     */
+    @Nullable
+    String restorableFolder(@NonNull String alias, @NonNull String user, @NonNull String folder) {
+        Environment environment = environmentFor(alias);
+        if (environment == null || environment.container == null) return null;
+        String who = user.isEmpty() ? getUser(environment) : user;
+        if (!TerminowMcpTargets.getUsers(environment.container).contains(who)) return null;
+        if (!folder.isEmpty() && resolve(environment, folder) != null) return folder;
+        return homeOf(environment, who);
+    }
+
+    /**
+     * Open a restored tab of an environment again: a new shell of the user in the folder, in its
+     * tmux session if it had one, which is attached to if it still runs. Nothing else is started.
+     */
+    @Nullable
+    TerminalSession restoreLinuxTerminal(@NonNull String alias, @NonNull String user, @NonNull String folder,
+                                         @NonNull String tmuxName, @NonNull String tabName) {
+        Environment environment = environmentFor(alias);
+        if (environment == null || environment.container == null) return null;
+        String who = user.isEmpty() ? getUser(environment) : user;
+        boolean tmux = !tmuxName.isEmpty() && TerminowLaunchPlan.isValidTmuxName(tmuxName);
+        return launchPlan("restore|" + alias + "|" + System.nanoTime(), environment, who, folder, TerminowLaunchPlan.TOOL_SHELL, "",
+            tmux ? TerminowLaunchPlan.TMUX_ATTACH : TerminowLaunchPlan.TMUX_OFF, tmux ? tmuxName : "",
+            tabName.isEmpty() ? mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), "bash") : tabName, true, "bash");
     }
 
     /** The tabs that TermiNow started in an environment and that still run. */

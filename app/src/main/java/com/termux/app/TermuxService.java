@@ -110,6 +110,7 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
     @Override
     public void onCreate() {
         Logger.logVerbose(LOG_TAG, "onCreate");
+        sShuttingDown = false;
 
         // Get Termux app SharedProperties without loading from disk since TermuxApplication handles
         // load and TermuxActivity handles reloads
@@ -171,6 +172,7 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
 
         TermuxShellUtils.clearTermuxTMPDIR(true);
 
+        sShuttingDown = true;
         actionReleaseWakeLock(false);
         if (!mWantsToStop)
             killAllTermuxExecutionCommands();
@@ -219,8 +221,17 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
     }
 
     /** Process action to stop service. */
+    /**
+     * Set while the service shuts down, for whatever reason: the tabs that end then are not
+     * closed by the user, so they are not taken out of the saved tabs of TermiNow.
+     */
+    public static volatile boolean sShuttingDown;
+
     private void actionStopService() {
         mWantsToStop = true;
+        sShuttingDown = true;
+        // Exit on purpose: the tabs do not come back the next time
+        com.termux.app.terminow.TerminowWorkspace.of(this).clear();
         killAllTermuxExecutionCommands();
         requestStopService();
     }

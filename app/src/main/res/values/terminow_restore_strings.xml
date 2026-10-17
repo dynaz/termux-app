@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_host_remote_tmux">Keep session on the server (tmux)</string>
+    <string name="terminow_host_remote_tmux_summary">Each tab runs in its own tmux session on the server. Reconnecting, or opening TermiNow again, attaches to it with its programs still running.</string>
+    <string name="terminow_remote_tmux_missing_title">tmux is not on this server</string>
+    <string name="terminow_remote_tmux_missing_message">%1$s has no tmux, so this tab is a normal login and ends with the connection.\n\nInstall tmux? TermiNow types the install command into this tab, with sudo unless you are root; the server may ask for your password.</string>
+    <string name="terminow_remote_tmux_install">Install tmux</string>
+    <string name="terminow_remote_tmux_turn_off">Turn off for this host</string>
+    <string name="terminow_remote_tmux_not_now">Not now</string>
+    <string name="terminow_restore_previous">Previous output, saved %1$s. Not live</string>
+    <string name="terminow_restore_new_shell">End of previous output. New shell, nothing ran again</string>
+    <string name="terminow_restore_folder_gone">End of previous output. The folder %1$s is gone, opened in home</string>
+    <string name="terminow_restore_host_again">End of previous output. Connecting to %1$s again, a new login</string>
+    <string name="terminow_restore_host_tmux">End of previous output. Connecting to %1$s and its tmux session</string>
+    <string name="terminow_restore_sftp_again">End of previous output. Connecting to %1$s with SFTP again</string>
+    <string name="terminow_restore_host_gone">End of previous output. The host %1$s is not in TermiNow anymore, this is a local terminal</string>
+    <string name="terminow_restore_environment_gone">End of previous output. The environment %1$s is gone, this is a local terminal</string>
+    <string name="terminow_restore_reconnecting">Reconnecting to %1$s</string>
+    <string name="terminow_restore_connection_lost">The connection to %1$s was lost</string>
+    <string name="terminow_restore_failed_line">Could not connect: %1$s</string>
+    <string name="terminow_restore_failed_tmux">The tmux session of this tab stays on the server: Retry attaches to it once the server can be reached and the login works.</string>
+    <string name="terminow_restore_lost_title">Connection to %1$s lost</string>
+    <string name="terminow_restore_lost_message">The network or the server ended the connection. Reconnect in this tab? It is a new login: what ran before does not run again.</string>
+    <string name="terminow_restore_lost_tmux">The network or the server ended the connection. Your tmux session keeps running on the server: reconnecting attaches to it again.</string>
+    <string name="terminow_restore_reconnect">Reconnect</string>
+    <string name="terminow_restore_tab_ended">This tab ended. Open the host again.</string>
+    <plurals name="terminow_restore_done">
+        <item quantity="one">Restored %d tab</item>
+        <item quantity="other">Restored %d tabs</item>
+    </plurals>
+</resources>

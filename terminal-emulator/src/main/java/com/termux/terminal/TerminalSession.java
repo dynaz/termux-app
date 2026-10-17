@@ -119,6 +119,11 @@ public final class TerminalSession extends TerminalOutput {
         return (mEmulator == null) ? null : mEmulator.getTitle();
     }
 
+    /** Shown in the terminal before the output of the process, once, when it is started. */
+    public byte[] mPrelude;
+    /** Run on the main thread once the process is started, which is when the tab is first shown. */
+    public Runnable mOnStarted;
+
     /**
      * Set the terminal emulator's window size and start terminal emulation.
      *
@@ -128,6 +133,11 @@ public final class TerminalSession extends TerminalOutput {
     public void initializeEmulator(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
         mEmulator = new TerminalEmulator(this, columns, rows, cellWidthPixels, cellHeightPixels, mTranscriptRows, mClient);
         if (mColorScheme != null) mEmulator.mColors.setScheme(mColorScheme);
+        // Text shown before anything of the new process, like the previous output of a restored tab
+        if (mPrelude != null) {
+            mEmulator.append(mPrelude, mPrelude.length);
+            mPrelude = null;
+        }
 
         int[] processId = new int[1];
         mTerminalFileDescriptor = JNI.createSubprocess(mShellPath, mCwd, mArgs, mEnv, processId, rows, columns, cellWidthPixels, cellHeightPixels);
@@ -135,6 +145,12 @@ public final class TerminalSession extends TerminalOutput {
         mClient.setTerminalShellPid(this, mShellPid);
 
         final FileDescriptor terminalFileDescriptorWrapped = wrapFileDescriptor(mTerminalFileDescriptor, mClient);
+
+        if (mOnStarted != null) {
+            Runnable onStarted = mOnStarted;
+            mOnStarted = null;
+            mMainThreadHandler.post(onStarted);
+        }
 
         new Thread("TermSessionInputReader[pid=" + mShellPid + "]") {
             @Override
