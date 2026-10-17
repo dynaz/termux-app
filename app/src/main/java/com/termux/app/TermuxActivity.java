@@ -385,6 +385,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         Logger.logDebug(LOG_TAG, "onDestroy");
 
+        if (mTerminowHome != null) mTerminowHome.onDestroy();
+
         if (mIsInvalidState) return;
 
         if (mTermuxService != null) {

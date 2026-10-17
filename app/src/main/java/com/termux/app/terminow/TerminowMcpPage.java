@@ -33,6 +33,7 @@ import com.termux.BuildConfig;
 import com.termux.R;
 import com.termux.app.TermuxActivity;
 import com.termux.app.terminow.mcp.McpException;
+import com.termux.app.terminow.mcp.McpSession;
 import com.termux.app.terminow.mcp.McpTool;
 import com.termux.shared.termux.TermuxConstants;
 
@@ -47,6 +48,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -65,6 +67,7 @@ import java.util.Set;
 public class TerminowMcpPage {
 
     private static final int MAX_HEADERS = 10;
+    private static final int MAX_ENV = 30;
 
     private final TermuxActivity mActivity;
     private final TerminowStore mStore;
@@ -73,6 +76,7 @@ public class TerminowMcpPage {
     private final Handler mHandler = new Handler(Looper.getMainLooper());
 
     private List<TerminowMcpProfile> mProfiles = new ArrayList<>();
+    private final TerminowMcpSessions mSessions;
     /** The tests that are running, by profile id. */
     private final Map<String, TerminowMcpClient> mTests = new HashMap<>();
     /** The profiles whose Claude Code configuration is being checked or changed. */
@@ -84,6 +88,45 @@ public class TerminowMcpPage {
         mStore = store;
         mContainer = container;
         mTargets = new TerminowMcpTargets(new File(TermuxConstants.TERMUX_PREFIX_DIR_PATH), new File(TermuxConstants.TERMUX_HOME_DIR_PATH));
+        mSessions = new TerminowMcpSessions(activity, mTargets);
+        mSessions.addListener((id, snapshot) -> {
+            if (snapshot.state == McpSession.State.READY) rememberTools(id, snapshot);
+            if (mTab == TAB_SERVERS && isPremium()) render();
+        });
+    }
+
+    @NonNull
+    TermuxActivity getActivity() {
+        return mActivity;
+    }
+
+    @NonNull
+    TerminowStore getStore() {
+        return mStore;
+    }
+
+    @NonNull
+    TerminowMcpSessions getSessions() {
+        return mSessions;
+    }
+
+    /** Close the connections to MCP servers, when the activity ends. */
+    public void onDestroy() {
+        mSessions.closeAll();
+    }
+
+    /** Keep the tools of a connection on the profile, to show them before the next one. */
+    private void rememberTools(@NonNull String id, @NonNull McpSession.Snapshot snapshot) {
+        mProfiles = mStore.getMcpProfiles();
+        TerminowMcpProfile stored = findProfile(id);
+        if (stored == null) return;
+        List<String> before = new ArrayList<>();
+        for (McpTool tool : stored.cachedTools) before.add(tool.name);
+        List<String> now = new ArrayList<>();
+        for (McpTool tool : snapshot.tools) now.add(tool.name);
+        if (before.equals(now) && !before.isEmpty()) return;
+        stored.setCachedTools(snapshot.tools, System.currentTimeMillis());
+        mStore.setMcpProfiles(mProfiles);
     }
 
     // ---------------------------------------------------------------------------------------
@@ -116,7 +159,7 @@ public class TerminowMcpPage {
      * Premium. Checked at every action, not only when the page is shown, since Premium can end
      * while the page is open.
      */
-    private void requirePremium(@NonNull Runnable action) {
+    void requirePremium(@NonNull Runnable action) {
         TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.MCP, 0, action);
     }
 
@@ -454,7 +497,7 @@ public class TerminowMcpPage {
         for (TerminowMcpProfile profile : mProfiles) {
             View avatar = avatar(profile, 44);
             avatar.setContentDescription(profile.name);
-            avatar.setOnClickListener(v -> showDetails(profile));
+            avatar.setOnClickListener(v -> showServer(profile));
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(44), dp(44));
             params.setMarginEnd(dp(10));
             strip.addView(avatar, params);
@@ -578,11 +621,21 @@ public class TerminowMcpPage {
         LinearLayout texts = new LinearLayout(mActivity);
         texts.setOrientation(LinearLayout.VERTICAL);
         texts.setPadding(dp(12), 0, dp(8), 0);
+        LinearLayout nameLine = new LinearLayout(mActivity);
+        nameLine.setGravity(Gravity.CENTER_VERTICAL);
         TextView name = text(profile.name, 15, R.color.terminow_text);
         name.setTypeface(Typeface.DEFAULT_BOLD);
         name.setSingleLine(true);
         name.setEllipsize(TextUtils.TruncateAt.END);
-        texts.addView(name, matchWrap());
+        nameLine.addView(name, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        McpSession.Snapshot session = mSessions.getSnapshot(profile.id);
+        TextView sessionChip = chip(getSessionLabel(session));
+        sessionChip.setTextColor(color(statusColor(statusOf(session != null ? session.state : McpSession.State.IDLE))));
+        sessionChip.setSingleLine(true);
+        LinearLayout.LayoutParams chipParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        chipParams.setMarginStart(dp(6));
+        nameLine.addView(sessionChip, chipParams);
+        texts.addView(nameLine, matchWrap());
         TextView endpoint = text(getTransportLabel(profile) + " · " + getEndpointLabel(profile), 13, R.color.terminow_text_secondary);
         endpoint.setSingleLine(true);
         endpoint.setEllipsize(TextUtils.TruncateAt.MIDDLE);
@@ -592,8 +645,6 @@ public class TerminowMcpPage {
 
         boolean testing = mTests.containsKey(profile.id);
         TextView test = actionButton(mActivity.getString(testing ? R.string.terminow_mcp_cancel_short : R.string.terminow_mcp_test), false);
-        test.setEnabled(profile.isHttp());
-        test.setAlpha(test.isEnabled() ? 1f : 0.5f);
         test.setOnClickListener(v -> {
             if (mTests.containsKey(profile.id)) cancelTest(profile);
             else runTest(profile);
@@ -607,8 +658,17 @@ public class TerminowMcpPage {
         more.setOnClickListener(v -> showMoreActions(profile));
         row.addView(more, new LinearLayout.LayoutParams(dp(36), dp(36)));
 
-        row.setOnClickListener(v -> showDetails(profile));
+        row.setOnClickListener(v -> showServer(profile));
         return row;
+    }
+
+    /** The server screen: connect, see the tools, and run them. */
+    private void showServer(@NonNull TerminowMcpProfile profile) {
+        if (!isPremium()) {
+            requirePremium(() -> render());
+            return;
+        }
+        TerminowMcpServerScreen.show(this, profile);
     }
 
     /** One line with the app test, and with Claude Code if it was configured. */
@@ -617,10 +677,7 @@ public class TerminowMcpPage {
         String text;
         boolean secretsMissing = (TerminowMcpProfile.AUTH_BEARER.equals(profile.authType) && profile.bearerToken.isEmpty()) ||
             (TerminowMcpProfile.AUTH_HEADERS.equals(profile.authType) && hasEmptyHeader(profile));
-        if (!profile.isHttp()) {
-            status = Status.NONE;
-            text = mActivity.getString(R.string.terminow_mcp_stdio_unsupported);
-        } else if (mTests.containsKey(profile.id)) {
+        if (mTests.containsKey(profile.id)) {
             status = Status.BUSY;
             text = mActivity.getString(R.string.terminow_mcp_state_testing);
         } else if (secretsMissing) {
@@ -685,20 +742,89 @@ public class TerminowMcpPage {
     }
 
     @NonNull
-    private String getTransportLabel(@NonNull TerminowMcpProfile profile) {
-        return profile.isHttp() ? "HTTP" : profile.transport.toUpperCase(Locale.ROOT);
+    String getTransportLabel(@NonNull TerminowMcpProfile profile) {
+        return profile.isHttp() ? "HTTP" : mActivity.getString(R.string.terminow_mcp_transport_local);
     }
 
     /** The host of the URL, never its path or query, which can carry a key. */
     @NonNull
-    private static String getEndpointLabel(@NonNull TerminowMcpProfile profile) {
-        if (!profile.isHttp()) return profile.command;
+    static String getEndpointLabel(@NonNull TerminowMcpProfile profile) {
+        if (profile.isStdio()) return TextUtils.join(" ", commandLine(profile));
         try {
             URL url = new URL(profile.url);
             return url.getHost() + (url.getPort() == -1 ? "" : ":" + url.getPort());
         } catch (MalformedURLException e) {
             return "";
         }
+    }
+
+    @NonNull
+    private static List<String> commandLine(@NonNull TerminowMcpProfile profile) {
+        List<String> line = new ArrayList<>();
+        line.add(profile.command);
+        line.addAll(profile.args);
+        return line;
+    }
+
+    /** The state of a session in a few words, for the chip of a row. */
+    @NonNull
+    String getSessionLabel(@Nullable McpSession.Snapshot snapshot) {
+        McpSession.State state = snapshot != null ? snapshot.state : McpSession.State.IDLE;
+        switch (state) {
+            case CONNECTING: return mActivity.getString(R.string.terminow_mcp_session_connecting);
+            case READY: return mActivity.getResources().getQuantityString(R.plurals.terminow_mcp_session_ready, snapshot.tools.size(), snapshot.tools.size());
+            case FAILED: return mActivity.getString(R.string.terminow_mcp_session_failed);
+            default: return mActivity.getString(R.string.terminow_mcp_session_none);
+        }
+    }
+
+    @NonNull
+    static Status statusOf(@NonNull McpSession.State state) {
+        switch (state) {
+            case READY: return Status.OK;
+            case CONNECTING: return Status.BUSY;
+            case FAILED: return Status.ERROR;
+            default: return Status.NONE;
+        }
+    }
+
+    /** What a failure means in a sentence, and what to do next, by its kind. */
+    @NonNull
+    static String[] explain(@NonNull Context context, @NonNull McpException.Kind kind) {
+        int[] texts;
+        switch (kind) {
+            case NETWORK: texts = new int[]{R.string.terminow_mcp_error_network, R.string.terminow_mcp_error_network_next}; break;
+            case TLS: texts = new int[]{R.string.terminow_mcp_error_tls, R.string.terminow_mcp_error_tls_next}; break;
+            case TIMEOUT: texts = new int[]{R.string.terminow_mcp_error_timeout, R.string.terminow_mcp_error_timeout_next}; break;
+            case CANCELLED: texts = new int[]{R.string.terminow_mcp_error_cancelled, 0}; break;
+            case OAUTH_REQUIRED: texts = new int[]{R.string.terminow_mcp_error_oauth, R.string.terminow_mcp_error_oauth_next}; break;
+            case AUTH_FAILED: texts = new int[]{R.string.terminow_mcp_error_auth, R.string.terminow_mcp_error_auth_next}; break;
+            case FORBIDDEN: texts = new int[]{R.string.terminow_mcp_error_forbidden, R.string.terminow_mcp_error_forbidden_next}; break;
+            case REDIRECT: texts = new int[]{R.string.terminow_mcp_error_redirect, R.string.terminow_mcp_error_redirect_next}; break;
+            case HTTP_ERROR: texts = new int[]{R.string.terminow_mcp_error_http, R.string.terminow_mcp_error_http_next}; break;
+            case INVALID_RESPONSE: texts = new int[]{R.string.terminow_mcp_error_invalid, R.string.terminow_mcp_error_invalid_next}; break;
+            case UNSUPPORTED_VERSION: texts = new int[]{R.string.terminow_mcp_error_version, R.string.terminow_mcp_error_version_next}; break;
+            case OLD_SSE_TRANSPORT: texts = new int[]{R.string.terminow_mcp_error_old_sse, R.string.terminow_mcp_error_old_sse_next}; break;
+            case SERVER_ERROR: texts = new int[]{R.string.terminow_mcp_error_server, R.string.terminow_mcp_error_server_next}; break;
+            case PROCESS_EXITED: texts = new int[]{R.string.terminow_mcp_error_exited, R.string.terminow_mcp_error_exited_next}; break;
+            case PROCESS_START_FAILED: texts = new int[]{R.string.terminow_mcp_error_start, R.string.terminow_mcp_error_start_next}; break;
+            default: throw new IllegalArgumentException(String.valueOf(kind));
+        }
+        return new String[]{context.getString(texts[0]), texts[1] == 0 ? "" : context.getString(texts[1])};
+    }
+
+    /** The hints of a tool that matter before running it. */
+    static void addToolBadges(@NonNull TerminowMcpPage page, @NonNull LinearLayout parent, @NonNull McpTool tool) {
+        if (tool.isReadOnly()) addBadge(page, parent, R.string.terminow_mcp_badge_read_only, R.color.terminow_panel_accent);
+        if (tool.isDestructive()) addBadge(page, parent, R.string.terminow_mcp_badge_destructive, R.color.terminow_host_ssh);
+    }
+
+    private static void addBadge(@NonNull TerminowMcpPage page, @NonNull LinearLayout parent, int textRes, int colorRes) {
+        TextView badge = page.chip(page.mActivity.getString(textRes));
+        badge.setTextColor(page.color(colorRes));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.setMarginStart(page.dp(6));
+        parent.addView(badge, params);
     }
 
     /** A round avatar with the first letter of the name, in a color that stays the same for it. */
@@ -768,51 +894,91 @@ public class TerminowMcpPage {
 
         EditText nameView = field(form, R.string.terminow_mcp_name, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
         nameView.setHint("github");
-        EditText urlView = field(form, R.string.terminow_mcp_url, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+
+        label(form, R.string.terminow_mcp_transport);
+        RadioGroup transportGroup = new RadioGroup(mActivity);
+        RadioButton transportHttp = radio(transportGroup, R.string.terminow_mcp_transport_http);
+        RadioButton transportStdio = radio(transportGroup, R.string.terminow_mcp_transport_stdio);
+        form.addView(transportGroup);
+
+        // A remote server
+        LinearLayout httpSection = new LinearLayout(mActivity);
+        httpSection.setOrientation(LinearLayout.VERTICAL);
+        form.addView(httpSection, matchWrap());
+        EditText urlView = field(httpSection, R.string.terminow_mcp_url, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         urlView.setHint("https://mcp.example.com/mcp");
 
-        label(form, R.string.terminow_mcp_auth);
+        label(httpSection, R.string.terminow_mcp_auth);
         RadioGroup authGroup = new RadioGroup(mActivity);
         RadioButton authNone = radio(authGroup, R.string.terminow_mcp_auth_none);
         RadioButton authBearer = radio(authGroup, R.string.terminow_mcp_auth_bearer);
         RadioButton authHeaders = radio(authGroup, R.string.terminow_mcp_auth_headers);
-        form.addView(authGroup);
+        httpSection.addView(authGroup);
 
         EditText tokenView = new EditText(mActivity);
         styleField(tokenView, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         tokenView.setHint(R.string.terminow_mcp_token_hint);
-        form.addView(tokenView, matchWrap());
+        httpSection.addView(tokenView, matchWrap());
 
         LinearLayout headersView = new LinearLayout(mActivity);
         headersView.setOrientation(LinearLayout.VERTICAL);
-        form.addView(headersView, matchWrap());
+        httpSection.addView(headersView, matchWrap());
         List<EditText[]> headerRows = new ArrayList<>();
-        TextView addHeader = link(form, R.string.terminow_mcp_add_header);
+        TextView addHeader = link(httpSection, R.string.terminow_mcp_add_header);
         addHeader.setOnClickListener(v -> {
             if (headerRows.size() < MAX_HEADERS) addHeaderRow(headersView, headerRows, "", "", false);
         });
 
         TextView oauthNote = text(mActivity.getString(R.string.terminow_mcp_oauth_note), 12, R.color.terminow_text_secondary);
         oauthNote.setPadding(0, dp(6), 0, 0);
-        form.addView(oauthNote, matchWrap());
+        httpSection.addView(oauthNote, matchWrap());
 
-        // Target environment
+        // A local command
+        LinearLayout stdioSection = new LinearLayout(mActivity);
+        stdioSection.setOrientation(LinearLayout.VERTICAL);
+        form.addView(stdioSection, matchWrap());
+        EditText commandView = field(stdioSection, R.string.terminow_mcp_command, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+        commandView.setHint("npx");
+        EditText argsView = field(stdioSection, R.string.terminow_mcp_arguments,
+            InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+        argsView.setSingleLine(false);
+        argsView.setMinLines(2);
+        argsView.setMaxLines(8);
+        argsView.setHint("-y\n@modelcontextprotocol/server-everything");
+        label(stdioSection, R.string.terminow_mcp_env);
+        LinearLayout envView = new LinearLayout(mActivity);
+        envView.setOrientation(LinearLayout.VERTICAL);
+        stdioSection.addView(envView, matchWrap());
+        List<EditText[]> envRows = new ArrayList<>();
+        TextView addEnv = link(stdioSection, R.string.terminow_mcp_add_env);
+        addEnv.setOnClickListener(v -> {
+            if (envRows.size() < MAX_ENV) addEnvRow(envView, envRows, "", "", false);
+        });
+        EditText workingDirView = field(stdioSection, R.string.terminow_mcp_working_dir, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        TextView stdioNote = text(mActivity.getString(R.string.terminow_mcp_stdio_note), 12, R.color.terminow_text_secondary);
+        stdioNote.setPadding(0, dp(6), 0, 0);
+        stdioSection.addView(stdioNote, matchWrap());
+
+        // Where Claude Code is configured, or where the command runs
         label(form, R.string.terminow_mcp_target);
+        TextView targetLabel = (TextView) form.getChildAt(form.getChildCount() - 1);
         List<TerminowMcpTargets.Container> containers = mTargets.getContainers();
         EditText targetView = picker(form);
         EditText userView = picker(form);
         userView.setVisibility(View.GONE);
-        TextView sshNote = text(mActivity.getString(containers.isEmpty() ? R.string.terminow_mcp_target_no_containers :
-            R.string.terminow_mcp_target_ssh_note), 12, R.color.terminow_text_secondary);
-        form.addView(sshNote, matchWrap());
+        TextView targetNote = text("", 12, R.color.terminow_text_secondary);
+        form.addView(targetNote, matchWrap());
         final String[] targetValue = {TerminowMcpTargets.TARGET_TERMINOW};
         final String[] userValue = {"root"};
 
-        label(form, R.string.terminow_mcp_scope);
-        EditText scopeView = picker(form);
+        LinearLayout scopeSection = new LinearLayout(mActivity);
+        scopeSection.setOrientation(LinearLayout.VERTICAL);
+        form.addView(scopeSection, matchWrap());
+        label(scopeSection, R.string.terminow_mcp_scope);
+        EditText scopeView = picker(scopeSection);
         final String[] scopeValue = {TerminowMcpProfile.SCOPE_USER};
-        EditText projectView = field(form, R.string.terminow_mcp_project_dir, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
-        View projectLabel = form.getChildAt(form.getChildCount() - 2);
+        EditText projectView = field(scopeSection, R.string.terminow_mcp_project_dir, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        View projectLabel = scopeSection.getChildAt(scopeSection.getChildCount() - 2);
 
         Runnable refreshTarget = () -> {
             TerminowMcpTargets.Container container = findContainer(containers, targetValue[0]);
@@ -821,11 +987,13 @@ public class TerminowMcpPage {
                 targetView.setText(R.string.terminow_mcp_target_terminow);
                 userView.setVisibility(View.GONE);
                 projectView.setHint(TermuxConstants.TERMUX_HOME_DIR_PATH + "/project");
+                workingDirView.setHint(TermuxConstants.TERMUX_HOME_DIR_PATH);
             } else {
                 targetView.setText(container.label + " (" + container.name + ")");
                 userView.setVisibility(View.VISIBLE);
                 userView.setText(mActivity.getString(R.string.terminow_mcp_target_user, userValue[0]));
                 projectView.setHint(TerminowMcpTargets.getGuestHome(container, userValue[0]) + "/project");
+                workingDirView.setHint(TerminowMcpTargets.getGuestHome(container, userValue[0]));
             }
             scopeView.setText(getScopeText(scopeValue[0]));
             boolean project = !TerminowMcpProfile.SCOPE_USER.equals(scopeValue[0]);
@@ -837,7 +1005,7 @@ public class TerminowMcpPage {
             names.add(mActivity.getString(R.string.terminow_mcp_target_terminow));
             for (TerminowMcpTargets.Container container : containers) names.add(container.label + " (" + container.name + ")");
             new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
-                .setTitle(R.string.terminow_mcp_target)
+                .setTitle(targetLabel.getText())
                 .setItems(names.toArray(new CharSequence[0]), (d, which) -> {
                     targetValue[0] = which == 0 ? TerminowMcpTargets.TARGET_TERMINOW : containers.get(which - 1).name;
                     userValue[0] = "root";
@@ -876,6 +1044,16 @@ public class TerminowMcpPage {
             if (headers && headerRows.isEmpty()) addHeaderRow(headersView, headerRows, "", "", false);
         };
         authGroup.setOnCheckedChangeListener((group, id) -> refreshAuth.run());
+        Runnable refreshTransport = () -> {
+            boolean stdio = transportGroup.getCheckedRadioButtonId() == transportStdio.getId();
+            httpSection.setVisibility(stdio ? View.GONE : View.VISIBLE);
+            stdioSection.setVisibility(stdio ? View.VISIBLE : View.GONE);
+            scopeSection.setVisibility(stdio ? View.GONE : View.VISIBLE);
+            targetLabel.setText(stdio ? R.string.terminow_mcp_run_in : R.string.terminow_mcp_target);
+            targetNote.setText(stdio ? (containers.isEmpty() ? R.string.terminow_mcp_run_in_no_containers : R.string.terminow_mcp_run_in_note) :
+                (containers.isEmpty() ? R.string.terminow_mcp_target_no_containers : R.string.terminow_mcp_target_ssh_note));
+        };
+        transportGroup.setOnCheckedChangeListener((group, id) -> refreshTransport.run());
 
         if (profile != null) {
             nameView.setText(profile.name);
@@ -883,6 +1061,11 @@ public class TerminowMcpPage {
             if (!profile.bearerToken.isEmpty()) tokenView.setHint(R.string.terminow_mcp_secret_saved);
             for (TerminowMcpProfile.Header header : profile.headers)
                 addHeaderRow(headersView, headerRows, header.name, header.value, true);
+            commandView.setText(profile.command);
+            argsView.setText(TextUtils.join("\n", profile.args));
+            for (Map.Entry<String, String> variable : profile.env.entrySet())
+                addEnvRow(envView, envRows, variable.getKey(), variable.getValue(), true);
+            workingDirView.setText(profile.workingDir);
             targetValue[0] = profile.target;
             userValue[0] = profile.containerUser;
             scopeValue[0] = profile.scope;
@@ -899,8 +1082,10 @@ public class TerminowMcpPage {
         }
         authGroup.check(profile == null || TerminowMcpProfile.AUTH_NONE.equals(profile.authType) ? authNone.getId() :
             TerminowMcpProfile.AUTH_BEARER.equals(profile.authType) ? authBearer.getId() : authHeaders.getId());
+        transportGroup.check(profile != null && profile.isStdio() ? transportStdio.getId() : transportHttp.getId());
         refreshAuth.run();
         refreshTarget.run();
+        refreshTransport.run();
 
         AlertDialog dialog = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
             .setTitle(profile == null ? R.string.terminow_mcp_add : R.string.terminow_mcp_edit)
@@ -910,7 +1095,6 @@ public class TerminowMcpPage {
             .create();
         dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             String name = nameView.getText().toString().trim();
-            String url = urlView.getText().toString().trim();
             if (!TerminowMcpProfile.isValidName(name)) {
                 nameView.setError(mActivity.getString(R.string.terminow_mcp_name_invalid));
                 return;
@@ -919,77 +1103,142 @@ public class TerminowMcpPage {
                 nameView.setError(mActivity.getString(R.string.terminow_mcp_name_taken));
                 return;
             }
-            String urlError = TerminowMcpClient.validateUrl(url, mStore.isMcpLocalHttpAllowed());
-            if (urlError != null) {
-                urlView.setError(urlError);
-                return;
-            }
-
-            int checked = authGroup.getCheckedRadioButtonId();
-            String authType = checked == authBearer.getId() ? TerminowMcpProfile.AUTH_BEARER :
-                checked == authHeaders.getId() ? TerminowMcpProfile.AUTH_HEADERS : TerminowMcpProfile.AUTH_NONE;
-            String token = tokenView.getText().toString().trim();
-            if (token.isEmpty() && profile != null) token = profile.bearerToken;
-            if (TerminowMcpProfile.AUTH_BEARER.equals(authType)) {
-                if (token.toLowerCase(Locale.ROOT).startsWith("bearer ")) token = token.substring(7).trim();
-                String error = token.isEmpty() ? mActivity.getString(R.string.terminow_mcp_token_needed) :
-                    TerminowMcpProfile.validateHeader("Authorization", "Bearer " + token);
-                if (error != null) {
-                    tokenView.setError(error);
+            TerminowMcpProfile target = profile != null ? profile : new TerminowMcpProfile();
+            boolean connectionChanged;
+            if (transportGroup.getCheckedRadioButtonId() == transportStdio.getId()) {
+                String command = commandView.getText().toString().trim();
+                String commandError = TerminowMcpProfile.validateCommand(command);
+                if (commandError != null) {
+                    commandView.setError(commandError);
                     return;
                 }
-            }
-            List<TerminowMcpProfile.Header> headers = new ArrayList<>();
-            Set<String> headerNames = new HashSet<>();
-            if (TerminowMcpProfile.AUTH_HEADERS.equals(authType)) {
-                for (EditText[] row : headerRows) {
-                    String headerName = row[0].getText().toString().trim();
+                List<String> args = new ArrayList<>();
+                for (String line : argsView.getText().toString().split("\n")) {
+                    String arg = line.trim();
+                    if (arg.isEmpty()) continue;
+                    String error = TerminowMcpProfile.validateArgument(arg);
+                    if (error != null) {
+                        argsView.setError(error);
+                        return;
+                    }
+                    args.add(arg);
+                }
+                Map<String, String> env = new LinkedHashMap<>();
+                for (EditText[] row : envRows) {
+                    String variable = row[0].getText().toString().trim();
                     String value = row[1].getText().toString().trim();
                     // An unchanged secret field keeps the saved value
                     if (value.isEmpty() && row[1].getTag() instanceof String) value = (String) row[1].getTag();
-                    if (headerName.isEmpty() && value.isEmpty()) continue;
-                    String error = TerminowMcpProfile.validateHeader(headerName, value);
-                    if (error == null && !headerNames.add(headerName.toLowerCase(Locale.ROOT)))
-                        error = mActivity.getString(R.string.terminow_mcp_header_twice, headerName);
+                    if (variable.isEmpty() && value.isEmpty()) continue;
+                    String error = TerminowMcpProfile.validateEnv(variable, value);
+                    if (error == null && env.containsKey(variable)) error = mActivity.getString(R.string.terminow_mcp_env_twice, variable);
                     if (error != null) {
                         row[0].setError(error);
                         return;
                     }
-                    headers.add(new TerminowMcpProfile.Header(headerName, value));
+                    env.put(variable, value);
                 }
-                if (headers.isEmpty()) {
-                    mActivity.showToast(mActivity.getString(R.string.terminow_mcp_headers_needed), true);
+                String workingDir = workingDirView.getText().toString().trim();
+                String dirError = TerminowMcpProfile.validateWorkingDir(workingDir);
+                if (dirError != null) {
+                    workingDirView.setError(dirError);
                     return;
                 }
-            }
+                connectionChanged = !target.isStdio() || !command.equals(target.command) || !args.equals(target.args) ||
+                    !env.equals(target.env) || !workingDir.equals(target.workingDir) || !targetValue[0].equals(target.target) ||
+                    !userValue[0].equals(target.containerUser);
+                target.transport = TerminowMcpProfile.TRANSPORT_STDIO;
+                target.command = command;
+                target.args.clear();
+                target.args.addAll(args);
+                target.env.clear();
+                target.env.putAll(env);
+                target.workingDir = workingDir;
+                // The fields of a remote server are not kept, nor its secrets
+                target.url = "";
+                target.authType = TerminowMcpProfile.AUTH_NONE;
+                target.bearerToken = "";
+                target.headers.clear();
+            } else {
+                String url = urlView.getText().toString().trim();
+                String urlError = TerminowMcpClient.validateUrl(url, mStore.isMcpLocalHttpAllowed());
+                if (urlError != null) {
+                    urlView.setError(urlError);
+                    return;
+                }
+                int checked = authGroup.getCheckedRadioButtonId();
+                String authType = checked == authBearer.getId() ? TerminowMcpProfile.AUTH_BEARER :
+                    checked == authHeaders.getId() ? TerminowMcpProfile.AUTH_HEADERS : TerminowMcpProfile.AUTH_NONE;
+                String token = tokenView.getText().toString().trim();
+                if (token.isEmpty() && profile != null) token = profile.bearerToken;
+                if (TerminowMcpProfile.AUTH_BEARER.equals(authType)) {
+                    if (token.toLowerCase(Locale.ROOT).startsWith("bearer ")) token = token.substring(7).trim();
+                    String error = token.isEmpty() ? mActivity.getString(R.string.terminow_mcp_token_needed) :
+                        TerminowMcpProfile.validateHeader("Authorization", "Bearer " + token);
+                    if (error != null) {
+                        tokenView.setError(error);
+                        return;
+                    }
+                }
+                List<TerminowMcpProfile.Header> headers = new ArrayList<>();
+                Set<String> headerNames = new HashSet<>();
+                if (TerminowMcpProfile.AUTH_HEADERS.equals(authType)) {
+                    for (EditText[] row : headerRows) {
+                        String headerName = row[0].getText().toString().trim();
+                        String value = row[1].getText().toString().trim();
+                        // An unchanged secret field keeps the saved value
+                        if (value.isEmpty() && row[1].getTag() instanceof String) value = (String) row[1].getTag();
+                        if (headerName.isEmpty() && value.isEmpty()) continue;
+                        String error = TerminowMcpProfile.validateHeader(headerName, value);
+                        if (error == null && !headerNames.add(headerName.toLowerCase(Locale.ROOT)))
+                            error = mActivity.getString(R.string.terminow_mcp_header_twice, headerName);
+                        if (error != null) {
+                            row[0].setError(error);
+                            return;
+                        }
+                        headers.add(new TerminowMcpProfile.Header(headerName, value));
+                    }
+                    if (headers.isEmpty()) {
+                        mActivity.showToast(mActivity.getString(R.string.terminow_mcp_headers_needed), true);
+                        return;
+                    }
+                }
 
-            String scope = scopeValue[0];
-            String projectDir = projectView.getText().toString().trim();
-            while (projectDir.length() > 1 && projectDir.endsWith("/")) projectDir = projectDir.substring(0, projectDir.length() - 1);
-            if (!TerminowMcpProfile.SCOPE_USER.equals(scope) && (!projectDir.startsWith("/") || projectDir.contains("/../") || projectDir.endsWith("/.."))) {
-                projectView.setError(mActivity.getString(R.string.terminow_mcp_project_invalid));
-                return;
+                String scope = scopeValue[0];
+                String projectDir = projectView.getText().toString().trim();
+                while (projectDir.length() > 1 && projectDir.endsWith("/")) projectDir = projectDir.substring(0, projectDir.length() - 1);
+                if (!TerminowMcpProfile.SCOPE_USER.equals(scope) && (!projectDir.startsWith("/") || projectDir.contains("/../") || projectDir.endsWith("/.."))) {
+                    projectView.setError(mActivity.getString(R.string.terminow_mcp_project_invalid));
+                    return;
+                }
+                if (TerminowMcpProfile.SCOPE_PROJECT.equals(scope) && !TerminowMcpProfile.AUTH_NONE.equals(authType)) {
+                    mActivity.showToast(mActivity.getString(R.string.terminow_mcp_shared_no_secrets), true);
+                    return;
+                }
+                connectionChanged = !target.isHttp() || !url.equals(target.url) || !authType.equals(target.authType) ||
+                    !token.equals(target.bearerToken) || !sameHeaders(headers, target.headers);
+                target.transport = TerminowMcpProfile.TRANSPORT_HTTP;
+                target.url = url;
+                target.authType = authType;
+                target.bearerToken = TerminowMcpProfile.AUTH_BEARER.equals(authType) ? token : "";
+                target.headers.clear();
+                target.headers.addAll(headers);
+                target.scope = scope;
+                target.projectDir = TerminowMcpProfile.SCOPE_USER.equals(scope) ? "" : projectDir;
+                // The fields of a local command are not kept, nor its secrets
+                target.command = "";
+                target.args.clear();
+                target.env.clear();
+                target.workingDir = "";
             }
-            if (TerminowMcpProfile.SCOPE_PROJECT.equals(scope) && !TerminowMcpProfile.AUTH_NONE.equals(authType)) {
-                mActivity.showToast(mActivity.getString(R.string.terminow_mcp_shared_no_secrets), true);
-                return;
-            }
-
-            TerminowMcpProfile target = profile != null ? profile : new TerminowMcpProfile();
-            boolean connectionChanged = !url.equals(target.url) || !authType.equals(target.authType) ||
-                !token.equals(target.bearerToken) || !sameHeaders(headers, target.headers);
             target.name = name;
-            target.url = url;
-            target.authType = authType;
-            target.bearerToken = TerminowMcpProfile.AUTH_BEARER.equals(authType) ? token : "";
-            target.headers.clear();
-            target.headers.addAll(headers);
             target.target = targetValue[0];
             target.containerUser = userValue[0];
-            target.scope = scope;
-            target.projectDir = TerminowMcpProfile.SCOPE_USER.equals(scope) ? "" : projectDir;
-            // A test is only valid for what was tested
-            if (connectionChanged) target.forgetServer();
+            // What the app learned is only valid for what it connected to
+            if (connectionChanged) {
+                target.forgetServer();
+                mSessions.remove(target.id);
+            }
             if (profile == null) mProfiles.add(target);
             mStore.setMcpProfiles(mProfiles);
             dialog.dismiss();
@@ -1009,12 +1258,23 @@ public class TerminowMcpPage {
 
     private void addHeaderRow(@NonNull LinearLayout parent, @NonNull List<EditText[]> rows, @NonNull String name,
                               @NonNull String value, boolean saved) {
+        addSecretRow(parent, rows, name, value, saved, R.string.terminow_mcp_header_name, R.string.terminow_mcp_header_value);
+    }
+
+    private void addEnvRow(@NonNull LinearLayout parent, @NonNull List<EditText[]> rows, @NonNull String name,
+                           @NonNull String value, boolean saved) {
+        addSecretRow(parent, rows, name, value, saved, R.string.terminow_mcp_env_name, R.string.terminow_mcp_env_value);
+    }
+
+    /** A name and a secret value, like a header or an environment variable. */
+    private void addSecretRow(@NonNull LinearLayout parent, @NonNull List<EditText[]> rows, @NonNull String name,
+                              @NonNull String value, boolean saved, int nameHint, int valueHint) {
         LinearLayout row = new LinearLayout(mActivity);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         EditText nameView = new EditText(mActivity);
         styleField(nameView, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
-        nameView.setHint(R.string.terminow_mcp_header_name);
+        nameView.setHint(nameHint);
         nameView.setText(name);
         EditText valueView = new EditText(mActivity);
         styleField(valueView, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
@@ -1023,7 +1283,7 @@ public class TerminowMcpPage {
             valueView.setHint(R.string.terminow_mcp_secret_saved);
             valueView.setTag(value);
         } else {
-            valueView.setHint(R.string.terminow_mcp_header_value);
+            valueView.setHint(valueHint);
         }
         TextView remove = new TextView(mActivity);
         remove.setText("✕");
@@ -1057,7 +1317,8 @@ public class TerminowMcpPage {
         List<Runnable> handlers = new ArrayList<>();
         actions.add(mActivity.getString(R.string.terminow_mcp_details));
         handlers.add(() -> showDetails(profile));
-        if (profile.isHttp() && !mBusy.contains(profile.id)) {
+        if (!mBusy.contains(profile.id)) {
+            // A local server says why it can not be configured yet
             actions.add(mActivity.getString(R.string.terminow_mcp_configure));
             handlers.add(() -> startConfigure(profile));
         }
@@ -1067,8 +1328,10 @@ public class TerminowMcpPage {
             actions.add(mActivity.getString(R.string.terminow_mcp_disable));
             handlers.add(() -> startDisable(profile));
         }
-        actions.add(mActivity.getString(R.string.terminow_mcp_manual));
-        handlers.add(() -> showManualSetup(profile, null));
+        if (profile.isHttp()) {
+            actions.add(mActivity.getString(R.string.terminow_mcp_manual));
+            handlers.add(() -> showManualSetup(profile, null));
+        }
         actions.add(mActivity.getString(R.string.terminow_delete));
         handlers.add(() -> confirmDelete(profile));
         new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
@@ -1083,14 +1346,30 @@ public class TerminowMcpPage {
             return;
         }
         StringBuilder text = new StringBuilder();
-        text.append(mActivity.getString(R.string.terminow_mcp_url)).append(": ").append(profile.url).append('\n');
-        text.append(mActivity.getString(R.string.terminow_mcp_auth)).append(": ").append(getAuthLabel(profile)).append('\n');
-        for (Map.Entry<String, String> header : profile.getRequestHeaders().entrySet())
-            text.append("  ").append(header.getKey()).append(": ").append(TerminowMcpRedactor.mask(header.getValue())).append('\n');
-        text.append(mActivity.getString(R.string.terminow_mcp_target)).append(": ").append(getTargetLabel(profile)).append('\n');
-        text.append(mActivity.getString(R.string.terminow_mcp_scope)).append(": ").append(getScopeText(profile.scope));
-        if (!profile.projectDir.isEmpty()) text.append(" — ").append(profile.projectDir);
-        text.append("\n\n");
+        if (profile.isStdio()) {
+            text.append(mActivity.getString(R.string.terminow_mcp_command)).append(": ").append(profile.command).append('\n');
+            if (!profile.args.isEmpty()) {
+                text.append(mActivity.getString(R.string.terminow_mcp_arguments)).append(":\n");
+                for (String arg : profile.args) text.append("  ").append(arg).append('\n');
+            }
+            if (!profile.env.isEmpty()) {
+                text.append(mActivity.getString(R.string.terminow_mcp_env)).append(":\n");
+                for (Map.Entry<String, String> variable : profile.env.entrySet())
+                    text.append("  ").append(variable.getKey()).append('=').append(TerminowMcpRedactor.mask(variable.getValue())).append('\n');
+            }
+            if (!profile.workingDir.isEmpty())
+                text.append(mActivity.getString(R.string.terminow_mcp_working_dir)).append(": ").append(profile.workingDir).append('\n');
+            text.append(mActivity.getString(R.string.terminow_mcp_run_in)).append(": ").append(getTargetLabel(profile)).append("\n\n");
+        } else {
+            text.append(mActivity.getString(R.string.terminow_mcp_url)).append(": ").append(profile.url).append('\n');
+            text.append(mActivity.getString(R.string.terminow_mcp_auth)).append(": ").append(getAuthLabel(profile)).append('\n');
+            for (Map.Entry<String, String> header : profile.getRequestHeaders().entrySet())
+                text.append("  ").append(header.getKey()).append(": ").append(TerminowMcpRedactor.mask(header.getValue())).append('\n');
+            text.append(mActivity.getString(R.string.terminow_mcp_target)).append(": ").append(getTargetLabel(profile)).append('\n');
+            text.append(mActivity.getString(R.string.terminow_mcp_scope)).append(": ").append(getScopeText(profile.scope));
+            if (!profile.projectDir.isEmpty()) text.append(" — ").append(profile.projectDir);
+            text.append("\n\n");
+        }
 
         if (profile.testTime == 0) {
             text.append(mActivity.getString(R.string.terminow_mcp_state_not_tested));
@@ -1103,7 +1382,9 @@ public class TerminowMcpPage {
         }
         TerminowMcpProfile.Applied applied = profile.getApplied();
         text.append("\n\n");
-        if (applied == null) {
+        if (profile.isStdio()) {
+            text.append(mActivity.getString(R.string.terminow_mcp_stdio_unsupported));
+        } else if (applied == null) {
             text.append(mActivity.getString(R.string.terminow_mcp_state_not_configured));
         } else {
             text.append(mActivity.getString(R.string.terminow_mcp_details_applied, applied.destination, getScopeText(applied.scope),
@@ -1129,6 +1410,7 @@ public class TerminowMcpPage {
                 TerminowMcpProfile stored = findProfile(profile.id);
                 if (stored != null) mProfiles.remove(stored);
                 mStore.setMcpProfiles(mProfiles);
+                mSessions.remove(profile.id);
                 render();
             })
             .setNegativeButton(android.R.string.cancel, null)
@@ -1144,17 +1426,24 @@ public class TerminowMcpPage {
             requirePremium(() -> render());
             return;
         }
-        String urlError = TerminowMcpClient.validateUrl(profile.url, mStore.isMcpLocalHttpAllowed());
-        if (urlError != null) {
-            showMessage(profile.name, urlError);
-            return;
-        }
         TerminowMcpClient client;
-        try {
-            client = new TerminowMcpClient(new URL(profile.url), profile.getRequestHeaders(), BuildConfig.VERSION_NAME);
-        } catch (MalformedURLException e) {
-            showMessage(profile.name, String.valueOf(e.getMessage()));
-            return;
+        if (profile.isStdio()) {
+            client = new TerminowMcpClient(TerminowMcpStdio.transportFactory(mActivity, mTargets, profile), McpSession.Handshake.LEGACY_FIRST,
+                profile.getSecrets(), BuildConfig.VERSION_NAME);
+            // A local server may first download its package
+            client.setTimeouts(15000, 180_000);
+        } else {
+            String urlError = TerminowMcpClient.validateUrl(profile.url, mStore.isMcpLocalHttpAllowed());
+            if (urlError != null) {
+                showMessage(profile.name, urlError);
+                return;
+            }
+            try {
+                client = new TerminowMcpClient(new URL(profile.url), profile.getRequestHeaders(), BuildConfig.VERSION_NAME);
+            } catch (MalformedURLException e) {
+                showMessage(profile.name, String.valueOf(e.getMessage()));
+                return;
+            }
         }
         String id = profile.id;
         mTests.put(id, client);
@@ -1604,7 +1893,7 @@ public class TerminowMcpPage {
     // ---------------------------------------------------------------------------------------
 
     @NonNull
-    private String getTargetLabel(@NonNull TerminowMcpProfile profile) {
+    String getTargetLabel(@NonNull TerminowMcpProfile profile) {
         if (TerminowMcpTargets.TARGET_TERMINOW.equals(profile.target))
             return mActivity.getString(R.string.terminow_mcp_target_terminow);
         TerminowMcpTargets.Container container = mTargets.getContainer(profile.target);
@@ -1642,7 +1931,7 @@ public class TerminowMcpPage {
     }
 
     @Nullable
-    private TerminowMcpProfile findProfile(@NonNull String id) {
+    TerminowMcpProfile findProfile(@NonNull String id) {
         for (TerminowMcpProfile profile : mProfiles) if (profile.id.equals(id)) return profile;
         return null;
     }
@@ -1657,18 +1946,16 @@ public class TerminowMcpPage {
     // Views
     // ---------------------------------------------------------------------------------------
 
-    private enum Status { OK, WARN, ERROR, BUSY, NONE }
+    enum Status { OK, WARN, ERROR, BUSY, NONE }
 
-    private void addStatus(@NonNull LinearLayout card, @NonNull Status status, @NonNull String text) {
+    void addStatus(@NonNull LinearLayout card, @NonNull Status status, @NonNull String text) {
         LinearLayout row = new LinearLayout(mActivity);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(0, dp(6), 0, 0);
         View dot = new View(mActivity);
         GradientDrawable shape = new GradientDrawable();
         shape.setShape(GradientDrawable.OVAL);
-        int colorRes = status == Status.OK ? R.color.terminow_panel_accent : status == Status.WARN ? R.color.terminow_mcp_warn :
-            status == Status.ERROR ? R.color.terminow_host_ssh : status == Status.BUSY ? R.color.terminow_accent : R.color.terminow_text_secondary;
-        shape.setColor(color(colorRes));
+        shape.setColor(color(statusColor(status)));
         dot.setBackground(shape);
         LinearLayout.LayoutParams dotParams = new LinearLayout.LayoutParams(dp(8), dp(8));
         dotParams.setMarginEnd(dp(10));
@@ -1680,8 +1967,18 @@ public class TerminowMcpPage {
         card.addView(row, matchWrap());
     }
 
+    private static int statusColor(@NonNull Status status) {
+        switch (status) {
+            case OK: return R.color.terminow_panel_accent;
+            case WARN: return R.color.terminow_mcp_warn;
+            case ERROR: return R.color.terminow_host_ssh;
+            case BUSY: return R.color.terminow_accent;
+            default: return R.color.terminow_text_secondary;
+        }
+    }
+
     @NonNull
-    private LinearLayout card() {
+    LinearLayout card() {
         LinearLayout card = new LinearLayout(mActivity);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setBackgroundResource(R.drawable.terminow_card);
@@ -1690,7 +1987,7 @@ public class TerminowMcpPage {
     }
 
     @NonNull
-    private TextView chip(@NonNull String text) {
+    TextView chip(@NonNull String text) {
         TextView chip = text(text, 11, R.color.terminow_text);
         chip.setTypeface(Typeface.DEFAULT_BOLD);
         GradientDrawable shape = new GradientDrawable();
@@ -1702,7 +1999,7 @@ public class TerminowMcpPage {
     }
 
     @NonNull
-    private TextView actionButton(@NonNull String text, boolean primary) {
+    TextView actionButton(@NonNull String text, boolean primary) {
         TextView button = text(text, 12, primary ? R.color.terminow_bar_home : R.color.terminow_text);
         button.setTypeface(Typeface.DEFAULT_BOLD);
         button.setAllCaps(true);
@@ -1721,14 +2018,14 @@ public class TerminowMcpPage {
     }
 
     @NonNull
-    private LinearLayout.LayoutParams actionParams() {
+    LinearLayout.LayoutParams actionParams() {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(36));
         params.setMarginEnd(dp(8));
         return params;
     }
 
     @NonNull
-    private TextView text(@NonNull String text, int sp, int colorRes) {
+    TextView text(@NonNull String text, int sp, int colorRes) {
         TextView view = new TextView(mActivity);
         view.setText(text);
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
@@ -1736,7 +2033,7 @@ public class TerminowMcpPage {
         return view;
     }
 
-    private void label(@NonNull LinearLayout form, int textRes) {
+    void label(@NonNull LinearLayout form, int textRes) {
         TextView label = text(mActivity.getString(textRes), 12, R.color.terminow_text_secondary);
         label.setPadding(0, dp(14), 0, dp(2));
         form.addView(label);
@@ -1761,7 +2058,7 @@ public class TerminowMcpPage {
         return field;
     }
 
-    private void styleField(@NonNull EditText field, int inputType) {
+    void styleField(@NonNull EditText field, int inputType) {
         field.setInputType(inputType);
         field.setSingleLine(true);
         field.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
@@ -1791,7 +2088,7 @@ public class TerminowMcpPage {
         return link;
     }
 
-    private void showMessage(@NonNull String title, @NonNull String message) {
+    void showMessage(@NonNull String title, @NonNull String message) {
         if (mActivity.isFinishing()) return;
         TextView view = text(message, 14, R.color.terminow_text);
         view.setTextIsSelectable(true);
@@ -1806,15 +2103,15 @@ public class TerminowMcpPage {
     }
 
     @NonNull
-    private static LinearLayout.LayoutParams matchWrap() {
+    static LinearLayout.LayoutParams matchWrap() {
         return new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
     }
 
-    private int color(int res) {
+    int color(int res) {
         return ContextCompat.getColor(mActivity, res);
     }
 
-    private int dp(float dp) {
+    int dp(float dp) {
         return Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, dp, mActivity.getResources().getDisplayMetrics()));
     }
 

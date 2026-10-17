@@ -6,7 +6,7 @@
     <string name="terminow_mcp_edit">Edit MCP server</string>
     <string name="terminow_mcp_empty_title">No MCP servers yet</string>
     <string name="terminow_mcp_empty_body">Save a remote MCP server, test it from TermiNow, then add it to Claude Code in TermiNow or in your Ubuntu. Claude Code keeps using your own login.</string>
-    <string name="terminow_mcp_stdio_unsupported">Local stdio server, not supported in this release</string>
+    <string name="terminow_mcp_stdio_unsupported">Adding a local command server to Claude Code from TermiNow is not supported yet. Add it in Claude Code with claude mcp add NAME -- COMMAND ARGUMENTS.</string>
 
     <string name="terminow_mcp_state_saved">Profile saved</string>
     <string name="terminow_mcp_state_saved_no_secret">Profile saved, but its credentials are missing. Edit it to enter them again</string>
@@ -33,7 +33,7 @@
 
     <string name="terminow_mcp_local_http">Local development HTTP</string>
     <string name="terminow_mcp_local_http_summary">Allow plain HTTP to MCP servers on this device only (localhost and 127.0.0.1), like a server you run in a terminal while developing it. Everything sent over HTTP, including tokens, is unencrypted. Other servers always need HTTPS with a valid certificate.</string>
-    <string name="terminow_mcp_not_in_release">Not in this release: local stdio servers, configuring SSH hosts, and OAuth sign-in from TermiNow. For OAuth servers, add them without credentials and sign in with /mcp in Claude Code.</string>
+    <string name="terminow_mcp_not_in_release">Not in this release: OAuth sign-in from TermiNow, configuring SSH hosts, and adding local command servers to Claude Code. For OAuth servers, add them without credentials and sign in with /mcp in Claude Code.</string>
 
     <string name="terminow_mcp_name">Name</string>
     <string name="terminow_mcp_name_invalid">Use letters, numbers, - and _ only, as Claude Code requires</string>
@@ -163,7 +163,7 @@
     <string name="terminow_mcp_filter_local">Local</string>
     <string name="terminow_mcp_filter_passed">Connected</string>
     <string name="terminow_mcp_filter_needs_login">Needs login</string>
-    <string name="terminow_mcp_empty_short">Add a remote MCP server, test it, then add it to Claude Code.</string>
+    <string name="terminow_mcp_empty_short">Add a remote or local MCP server, connect and run its tools, or add it to Claude Code.</string>
     <string name="terminow_mcp_cancel_short">Cancel</string>
     <string name="terminow_mcp_actions_of">Actions for %1$s</string>
     <string name="terminow_mcp_row_secret_missing">Credentials missing, edit to enter them</string>
@@ -176,11 +176,11 @@
     <string name="terminow_mcp_row_failed">Test failed, see details</string>
     <string name="terminow_mcp_row_in_claude">In Claude Code (%1$s)</string>
     <string name="terminow_mcp_row_in_claude_unverified">Written for Claude Code (%1$s), not confirmed</string>
-    <string name="terminow_mcp_footer">A test checks the connection from this app only, not from Claude Code. Tap a server for its details.</string>
+    <string name="terminow_mcp_footer">Tap a server to connect and run its tools. A test checks the connection from this app only, not from Claude Code.</string>
 
     <!-- Premium -->
     <string name="terminow_mcp_premium_title">MCP Servers are a Premium feature</string>
-    <string name="terminow_mcp_premium_features">• Save remote MCP servers with their credentials encrypted\n• Test them and see their tools\n• Add them to Claude Code in TermiNow or Ubuntu, with a preview and a backup</string>
+    <string name="terminow_mcp_premium_features">• Save remote and local MCP servers with their credentials encrypted\n• Connect, see their tools and run them after a confirmation\n• Add them to Claude Code in TermiNow or Ubuntu, with a preview and a backup</string>
     <string name="terminow_mcp_premium_kept_none">Servers already added to Claude Code keep working there.</string>
     <plurals name="terminow_mcp_premium_kept">
         <item quantity="one">Your %1$d saved server is kept, and servers already added to Claude Code keep working there.</item>
@@ -200,7 +200,7 @@
         <item quantity="one">Connected at %1$s · %2$d tool</item>
         <item quantity="other">Connected at %1$s · %2$d tools</item>
     </plurals>
-    <string name="terminow_mcp_catalog_footer">Endpoints come from the documentation of each provider, checked %1$s. TermiNow connects only to test a server and list its tools; it never runs a tool.</string>
+    <string name="terminow_mcp_catalog_footer">Endpoints come from the documentation of each provider, checked %1$s. TermiNow runs a tool only when you run it yourself and confirm its arguments.</string>
     <string name="terminow_mcp_catalog_local">Local</string>
     <string name="terminow_mcp_catalog_manual">Set up by hand</string>
     <string name="terminow_mcp_catalog_added">Added</string>
@@ -220,4 +220,106 @@
     <string name="terminow_mcp_catalog_add_server">Add server</string>
     <string name="terminow_mcp_catalog_copy_command">Copy command</string>
     <string name="terminow_mcp_catalog_prefilled">From the catalog: %1$s. Sign-in: %2$s. Review the fields before saving.</string>
+
+    <string name="terminow_mcp_transport">Transport</string>
+    <string name="terminow_mcp_transport_http">Remote (HTTP)</string>
+    <string name="terminow_mcp_transport_stdio">Local command (stdio)</string>
+    <string name="terminow_mcp_transport_local">Local</string>
+    <string name="terminow_mcp_command">Command</string>
+    <string name="terminow_mcp_arguments">Arguments, one per line</string>
+    <string name="terminow_mcp_env">Environment variables</string>
+    <string name="terminow_mcp_env_name">NAME</string>
+    <string name="terminow_mcp_env_value">Value</string>
+    <string name="terminow_mcp_add_env">+ Add variable</string>
+    <string name="terminow_mcp_env_twice">%1$s is entered twice</string>
+    <string name="terminow_mcp_working_dir">Working directory (optional)</string>
+    <string name="terminow_mcp_stdio_note">The command and each argument are passed as they are, never through a shell. Variable values are stored encrypted with a key in the Android keystore and are never shown again.</string>
+    <string name="terminow_mcp_run_in">Run in</string>
+    <string name="terminow_mcp_run_in_note">In TermiNow the command runs with the environment of the terminal. In a container it runs as the chosen user, with what is installed there.</string>
+    <string name="terminow_mcp_run_in_no_containers">No container is installed, so the command runs in TermiNow.</string>
+
+    <string name="terminow_mcp_session_none">Not connected</string>
+    <string name="terminow_mcp_session_connecting">Connecting…</string>
+    <plurals name="terminow_mcp_session_ready">
+        <item quantity="one">Connected · %d tool</item>
+        <item quantity="other">Connected · %d tools</item>
+    </plurals>
+    <string name="terminow_mcp_session_failed">Failed</string>
+
+    <string name="terminow_mcp_server_tools">Tools</string>
+    <string name="terminow_mcp_server_search">Search tools</string>
+    <string name="terminow_mcp_server_done">Done</string>
+    <string name="terminow_mcp_server_info">%1$s %2$s · protocol %3$s</string>
+    <string name="terminow_mcp_server_starting">Starting the command. The first start can take a minute while it downloads its package.</string>
+    <string name="terminow_mcp_server_connect">Connect</string>
+    <string name="terminow_mcp_server_disconnect">Disconnect</string>
+    <string name="terminow_mcp_server_reconnect">Reconnect</string>
+    <string name="terminow_mcp_server_cached">From the last connection, %1$s. Connect to run them.</string>
+    <string name="terminow_mcp_server_no_tools">The server has no tools.</string>
+    <string name="terminow_mcp_server_connect_for_tools">Connect to see the tools of this server.</string>
+    <string name="terminow_mcp_server_truncated">The server has more tools than TermiNow shows.</string>
+    <string name="terminow_mcp_server_connect_first">Connect to the server first</string>
+    <string name="terminow_mcp_badge_read_only">Read-only</string>
+    <string name="terminow_mcp_badge_destructive">Destructive</string>
+
+    <string name="terminow_mcp_tool_no_arguments">This tool takes no arguments.</string>
+    <string name="terminow_mcp_tool_timeout">Timeout (seconds)</string>
+    <string name="terminow_mcp_tool_timeout_invalid">Enter 1 to %1$d seconds</string>
+    <string name="terminow_mcp_tool_run">Run</string>
+    <string name="terminow_mcp_tool_close">Close</string>
+    <string name="terminow_mcp_tool_not_set">(not set)</string>
+    <string name="terminow_mcp_tool_default">Default: %1$s</string>
+    <string name="terminow_mcp_tool_running">Running %1$s…</string>
+    <string name="terminow_mcp_tool_cancelled">Cancelled. TermiNow asked the server to stop the tool</string>
+    <string name="terminow_mcp_confirm_title">Run this tool?</string>
+    <string name="terminow_mcp_confirm_server">Server: %1$s</string>
+    <string name="terminow_mcp_confirm_tool">Tool: %1$s</string>
+    <string name="terminow_mcp_confirm_arguments">Arguments, exactly as they are sent (saved secrets are hidden here)</string>
+    <string name="terminow_mcp_confirm_note">The server runs the tool with the credentials of this server profile, and the tool may change data.</string>
+    <string name="terminow_mcp_confirm_read_only">The server says that this tool only reads. It runs with the credentials of this server profile.</string>
+    <string name="terminow_mcp_confirm_destructive">The server says that this tool can delete or overwrite data. Check the arguments before you run it.</string>
+
+    <string name="terminow_mcp_result_title">Result of %1$s</string>
+    <string name="terminow_mcp_result_is_error">The tool reported an error</string>
+    <string name="terminow_mcp_result_empty">The tool returned no content.</string>
+    <string name="terminow_mcp_result_structured">Structured content</string>
+    <string name="terminow_mcp_result_show_raw">Show raw JSON</string>
+    <string name="terminow_mcp_result_hide_raw">Hide raw JSON</string>
+    <string name="terminow_mcp_result_copy">Copy</string>
+    <string name="terminow_mcp_result_copied">Copied</string>
+    <string name="terminow_mcp_result_image_failed">An image (%1$s) that can not be shown</string>
+    <string name="terminow_mcp_result_audio">Audio · %1$s · %2$d KB</string>
+    <string name="terminow_mcp_result_resource">Resource</string>
+    <string name="terminow_mcp_result_binary">Binary content, %1$d bytes</string>
+    <string name="terminow_mcp_result_cut">… %1$d more characters. Copy to get all of it.</string>
+
+    <string name="terminow_mcp_error_network">TermiNow could not reach the server.</string>
+    <string name="terminow_mcp_error_network_next">Check the internet connection and the URL, then reconnect.</string>
+    <string name="terminow_mcp_error_tls">The secure connection to the server failed.</string>
+    <string name="terminow_mcp_error_tls_next">The server needs a valid certificate. TermiNow never skips the check.</string>
+    <string name="terminow_mcp_error_timeout">The server did not answer in time.</string>
+    <string name="terminow_mcp_error_timeout_next">Try again. For a slow tool, raise its timeout.</string>
+    <string name="terminow_mcp_error_cancelled">Cancelled.</string>
+    <string name="terminow_mcp_error_oauth">The server needs an OAuth sign-in, which TermiNow can not do yet.</string>
+    <string name="terminow_mcp_error_oauth_next">Use a token if the server offers one, or use the server from Claude Code and sign in with /mcp there.</string>
+    <string name="terminow_mcp_error_auth">The server rejected the credentials.</string>
+    <string name="terminow_mcp_error_auth_next">Check the token or the header values: edit the server and enter them again.</string>
+    <string name="terminow_mcp_error_forbidden">The server refused access.</string>
+    <string name="terminow_mcp_error_forbidden_next">The token may lack a permission that the server needs.</string>
+    <string name="terminow_mcp_error_redirect">The server sent TermiNow to another URL.</string>
+    <string name="terminow_mcp_error_redirect_next">If you trust the new URL, edit the server and enter it. TermiNow never follows a redirect with your credentials.</string>
+    <string name="terminow_mcp_error_http">The server answered with an HTTP error.</string>
+    <string name="terminow_mcp_error_http_next">Check the URL. If the server restarted or ended the session, reconnect.</string>
+    <string name="terminow_mcp_error_invalid">The server did not answer like an MCP server.</string>
+    <string name="terminow_mcp_error_invalid_next">Check that the URL is the MCP endpoint, or that the command starts an MCP server that speaks stdio.</string>
+    <string name="terminow_mcp_error_version">The server speaks a protocol version that TermiNow does not support.</string>
+    <string name="terminow_mcp_error_version_next">Update the server, or TermiNow.</string>
+    <string name="terminow_mcp_error_old_sse">The server uses the old HTTP+SSE transport.</string>
+    <string name="terminow_mcp_error_old_sse_next">Use its Streamable HTTP endpoint, which often ends in /mcp.</string>
+    <string name="terminow_mcp_error_server">The server answered with an error.</string>
+    <string name="terminow_mcp_error_server_next">The details below are from the server.</string>
+    <string name="terminow_mcp_error_exited">The server process stopped.</string>
+    <string name="terminow_mcp_error_exited_next">Its last output is below. A missing package, API key or argument is a common cause.</string>
+    <string name="terminow_mcp_error_start">The server command could not start.</string>
+    <string name="terminow_mcp_error_start_next">Check the command, and that it is installed where it runs: in TermiNow, or in the container.</string>
 </resources>

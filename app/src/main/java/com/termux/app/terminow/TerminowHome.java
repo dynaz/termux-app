@@ -1146,6 +1146,11 @@ public class TerminowHome {
         });
     }
 
+    /** The activity ends: close what only lives as long as it, like connections to MCP servers. */
+    public void onDestroy() {
+        mMcpPage.onDestroy();
+    }
+
     public void onStoragePermissionResult() {
         mExplorer.onStoragePermissionResult();
     }
