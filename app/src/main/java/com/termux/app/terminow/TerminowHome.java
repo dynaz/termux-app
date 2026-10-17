@@ -799,7 +799,7 @@ public class TerminowHome {
         } else if (item instanceof TerminowStore.Identity) {
             showIdentityDialog((TerminowStore.Identity) item, null);
         } else if (item instanceof KeyItem) {
-            showKeyActions((KeyItem) item);
+            showEditKeyPanel((KeyItem) item);
         } else if (item instanceof TerminowStore.Forward) {
             startForward((TerminowStore.Forward) item);
         } else if (item instanceof KnownHost) {
@@ -813,11 +813,11 @@ public class TerminowHome {
         if (item == null) return false;
 
         if (item instanceof TerminowStore.Identity) {
-            showIdentityActions((TerminowStore.Identity) item);
+            showIdentityDialog((TerminowStore.Identity) item, null);
             return true;
         }
         if (item instanceof KeyItem) {
-            showKeyActions((KeyItem) item);
+            showEditKeyPanel((KeyItem) item);
             return true;
         }
         if (item instanceof KnownHost) {
@@ -2329,8 +2329,8 @@ public class TerminowHome {
             String type = getKeyType(key);
             names.add(key.getTitle() + (type != null ? " (" + type + ")" : ""));
         }
+        names.add(mActivity.getString(R.string.terminow_keypanel_new_item));
         names.add(mActivity.getString(R.string.terminow_key_import));
-        names.add(mActivity.getString(R.string.terminow_key_paste));
         names.add(mActivity.getString(R.string.terminow_key_generate));
 
         new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
@@ -2342,9 +2342,9 @@ public class TerminowHome {
                 }
                 mKeyTarget = new WeakReference<>(keyView);
                 int action = which - keys.size();
-                if (action == 0) pickKeyFile();
-                else if (action == 1) showPasteKeyDialog();
-                else showNewKeyDialog();
+                if (action == 0) showNewKeyPanel(null, null);
+                else if (action == 1) pickKeyFile();
+                else showGenerateKeyPanel();
             })
             .setNegativeButton(android.R.string.cancel, null)
             .show();
@@ -2891,75 +2891,6 @@ public class TerminowHome {
         return hosts;
     }
 
-    private void showKeyActions(@NonNull KeyItem key) {
-        List<TerminowStore.Host> hosts = getHostsUsingKey(key);
-        TerminowSshWire.Certificate certificate = key.readCertificate();
-        CharSequence[] actions = {
-            mActivity.getString(R.string.terminow_key_rename),
-            mActivity.getString(R.string.terminow_key_copy_public),
-            mActivity.getResources().getQuantityString(R.plurals.terminow_key_used_by, hosts.size(), hosts.size()),
-            mActivity.getString(R.string.terminow_delete),
-            mActivity.getString(certificate != null ? R.string.terminow_cert_show : R.string.terminow_cert_add)};
-        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog).setTitle(key.getTitle()).setItems(actions, (dialog, which) -> {
-            if (which == 4) {
-                if (certificate != null) showCertificate(key, certificate);
-                else showCertificateSource(key);
-                return;
-            }
-            if (which == 0) {
-                LinearLayout form = createForm();
-                EditText labelView = addField(form, R.string.terminow_key_label, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
-                labelView.setText(key.label);
-                showFormDialog(R.string.terminow_key_rename, form, () -> {
-                    mStore.setKeyLabel(key.name, labelView.getText().toString().trim());
-                    updateItems();
-                    return true;
-                });
-            } else if (which == 1) {
-                String publicKey = key.publicFile.isFile() ? readFirstLine(key.publicFile) : null;
-                if (publicKey == null || publicKey.isEmpty()) {
-                    mActivity.showToast(mActivity.getString(R.string.terminow_key_no_public), true);
-                    return;
-                }
-                ClipboardManager clipboardManager = (ClipboardManager) mActivity.getSystemService(Context.CLIPBOARD_SERVICE);
-                if (clipboardManager != null) {
-                    clipboardManager.setPrimaryClip(ClipData.newPlainText(key.publicFile.getName(), publicKey));
-                    mActivity.showToast(mActivity.getString(R.string.terminow_key_copied), false);
-                }
-            } else if (which == 2) {
-                showKeyHosts(key, hosts);
-            } else {
-                String message = mActivity.getString(R.string.terminow_key_delete_confirm, key.getTitle());
-                if (!hosts.isEmpty())
-                    message += "\n\n" + mActivity.getResources().getQuantityString(R.plurals.terminow_key_delete_hosts, hosts.size(), hosts.size());
-                new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
-                    .setMessage(message)
-                    .setPositiveButton(R.string.terminow_delete, (confirmDialog, confirmWhich) -> {
-                        if (key.biometricId != null) {
-                            TerminowBiometricKeys.delete(key.biometricId);
-                        } else if (key.fidoId != null) {
-                            TerminowFidoKeys.delete(key.fidoId);
-                        } else {
-                            if (!key.file.delete())
-                                Logger.logError(LOG_TAG, "Failed to delete \"" + key.file + "\"");
-                            if (key.publicFile.isFile() && !key.publicFile.delete())
-                                Logger.logError(LOG_TAG, "Failed to delete \"" + key.publicFile + "\"");
-                            //noinspection ResultOfMethodCallIgnored
-                            key.certificateFile().delete();
-                        }
-                        mStore.setKeyLabel(key.name, "");
-                        // The hosts would fail to log in with a key that does not exist anymore
-                        for (TerminowStore.Host host : hosts)
-                            host.keyPath = "";
-                        if (!hosts.isEmpty()) mStore.setHosts(mHosts);
-                        updateItems();
-                    })
-                    .setNegativeButton(android.R.string.cancel, null)
-                    .show();
-            }
-        }).show();
-    }
-
     /** Show the hosts that use a key, tapping one opens it to edit. */
     private void showKeyHosts(@NonNull KeyItem key, @NonNull List<TerminowStore.Host> hosts) {
         AlertDialog.Builder builder = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog).setTitle(key.getTitle());
@@ -3019,6 +2950,616 @@ public class TerminowHome {
         return null;
     }
 
+    // ---------------------------------------------------------------------------------------
+    // Keychain panels, like the New Key and Edit Key panels of Termius
+
+    /** The private key field of the New Key panel that is open, to fill in a picked file. */
+    @Nullable private WeakReference<EditText> mKeyPanelArea;
+    @Nullable private WeakReference<EditText> mKeyPanelName;
+
+    /**
+     * Add a key: a name, and the private key pasted, picked from a file or typed, which is
+     * checked as it changes: its type and fingerprint, whether it has a passphrase, or why it can
+     * not be used. A PuTTY key is converted; a public key or certificate pasted by mistake says so.
+     */
+    private void showNewKeyPanel(@Nullable String content, @Nullable String suggestedName) {
+        TerminowPanel panel = new TerminowPanel(mActivity, mActivity.getString(R.string.terminow_keypanel_new));
+        LinearLayout card = panel.card();
+        EditText nameView = panel.field(card, mActivity.getString(R.string.terminow_keypanel_name),
+            mActivity.getString(R.string.terminow_keypanel_name_hint), InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        EditText keyView = panel.keyArea(card, mActivity.getString(R.string.terminow_keypanel_private),
+            mActivity.getString(R.string.terminow_keypanel_private_hint));
+        TextView status = panel.status(card);
+        LinearLayout sources = panel.linkRow(card);
+        panel.link(sources, R.drawable.ic_terminow_paste, mActivity.getString(R.string.terminow_keypanel_paste), () -> {
+            String copied = clipboardText();
+            if (copied == null) mActivity.showToast(mActivity.getString(R.string.terminow_keypanel_clipboard_empty), false);
+            else keyView.setText(copied.trim());
+        });
+        TextView fromFile = panel.link(sources, R.drawable.ic_terminow_import, mActivity.getString(R.string.terminow_keypanel_file), this::pickKeyFile);
+        ((LinearLayout.LayoutParams) fromFile.getLayoutParams()).setMarginStart(panel.dp(24));
+
+        // Only for an encrypted PuTTY key, which is converted with it; others keep their passphrase
+        EditText passphraseView = panel.field(card, mActivity.getString(R.string.terminow_key_passphrase), "",
+            InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        View passphraseLabel = card.getChildAt(card.indexOfChild(passphraseView) - 1);
+
+        // What the key is, once it is one
+        LinearLayout summary = panel.content();
+        LinearLayout preview = new LinearLayout(mActivity);
+        preview.setOrientation(LinearLayout.VERTICAL);
+        summary.addView(preview);
+
+        LinearLayout more = panel.card();
+        panel.link(more, R.drawable.ic_terminow_key, mActivity.getString(R.string.terminow_keypanel_generate), () -> {
+            panel.dismiss();
+            showGenerateKeyPanel();
+        });
+        TextView note = panel.text(mActivity.getString(R.string.terminow_keypanel_note), 13, R.color.terminow_text_secondary);
+        more.addView(note);
+
+        final TerminowKeyFormat.Info[] info = {TerminowKeyFormat.analyze("")};
+        final KeyItem[] certificateKey = new KeyItem[1];
+        Runnable check = () -> {
+            info[0] = TerminowKeyFormat.analyze(keyView.getText().toString());
+            TerminowKeyFormat.Info i = info[0];
+            boolean ppkPassphrase = i.kind == TerminowKeyFormat.Kind.PPK && i.encrypted;
+            passphraseView.setVisibility(ppkPassphrase ? View.VISIBLE : View.GONE);
+            passphraseLabel.setVisibility(ppkPassphrase ? View.VISIBLE : View.GONE);
+            preview.removeAllViews();
+            switch (i.kind) {
+                case EMPTY:
+                    panel.setStatus(status, "", R.color.terminow_text_secondary);
+                    break;
+                case PUBLIC_KEY:
+                    panel.setStatus(status, mActivity.getString(R.string.terminow_keypanel_is_public), R.color.terminow_host_ssh);
+                    break;
+                case CERTIFICATE: {
+                    // A certificate is added to the key that it certifies, like from Edit Key
+                    certificateKey[0] = null;
+                    TerminowSshWire.PublicKeyLine line = TerminowSshWire.parseLine(keyView.getText().toString().trim());
+                    TerminowSshWire.Certificate certificate = line != null ? TerminowSshWire.parseCertificate(line.blob) : null;
+                    if (certificate != null)
+                        for (KeyItem item : getKeys())
+                            if (Arrays.equals(item.readPublicBlob(), certificate.keyBlob)) certificateKey[0] = item;
+                    if (certificateKey[0] != null)
+                        panel.setStatus(status, mActivity.getString(R.string.terminow_keypanel_is_certificate, certificateKey[0].getTitle()), R.color.terminow_panel_accent);
+                    else
+                        panel.setStatus(status, mActivity.getString(R.string.terminow_keypanel_certificate_no_key), R.color.terminow_host_ssh);
+                    break;
+                }
+                case UNKNOWN:
+                    panel.setStatus(status, mActivity.getString(R.string.terminow_keypanel_unknown), R.color.terminow_host_ssh);
+                    break;
+                default: {
+                    String type = i.type.isEmpty() ? mActivity.getString(R.string.terminow_keypanel_type_unknown) : i.type;
+                    String what = mActivity.getString(i.kind == TerminowKeyFormat.Kind.PPK ? R.string.terminow_keypanel_ok_ppk :
+                        R.string.terminow_keypanel_ok, type);
+                    if (i.encrypted && i.kind != TerminowKeyFormat.Kind.PPK) what += "\n" + mActivity.getString(R.string.terminow_keypanel_encrypted);
+                    panel.setStatus(status, what, R.color.terminow_panel_accent);
+                    if (i.publicBlob != null)
+                        panel.row(preview, R.drawable.ic_terminow_key, type, TerminowKeyFormat.fingerprint(i.publicBlob), null);
+                }
+            }
+            panel.setSaveEnabled(i.isPrivateKey() || (i.kind == TerminowKeyFormat.Kind.CERTIFICATE && certificateKey[0] != null));
+        };
+        keyView.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) { }
+            @Override public void afterTextChanged(android.text.Editable s) { check.run(); }
+        });
+
+        if (content != null) keyView.setText(content.trim());
+        else {
+            // A key that was copied already is filled in, like in Termius
+            String copied = clipboardKey();
+            if (copied != null) keyView.setText(copied);
+        }
+        if (suggestedName != null) nameView.setText(suggestedName);
+        check.run();
+
+        panel.onSave(() -> {
+            TerminowKeyFormat.Info i = info[0];
+            if (i.kind == TerminowKeyFormat.Kind.CERTIFICATE && certificateKey[0] != null)
+                return saveCertificate(certificateKey[0], keyView.getText().toString());
+            if (!i.isPrivateKey()) return false;
+            String label = nameView.getText().toString().trim().replaceAll("\\p{Cntrl}", " ");
+            if (label.length() > 100) label = label.substring(0, 100);
+            String base = !label.isEmpty() ? label : "id_" + (i.type.isEmpty() ? "key" : i.type.toLowerCase(Locale.ROOT));
+            String name = getNewKeyName(base);
+            if (!isValidNewKeyName(name)) {
+                mActivity.showToast(mActivity.getString(R.string.terminow_key_invalid), true);
+                return false;
+            }
+            if (!label.isEmpty() && !label.equals(name)) mStore.setKeyLabel(name, label);
+            String text = keyView.getText().toString();
+            if (i.kind == TerminowKeyFormat.Kind.PPK) {
+                String passphrase = passphraseView.getText().toString();
+                if (i.encrypted && passphrase.isEmpty()) {
+                    passphraseView.setError(mActivity.getString(R.string.terminow_key_passphrase_needed));
+                    return false;
+                }
+                convertPpk(name, text.replace("\r\n", "\n").trim() + "\n", i.encrypted ? passphrase : null);
+                return true;
+            }
+            String publicLine = i.publicBlob != null ? TerminowSshWire.publicKeyLine(i.publicBlob, label.isEmpty() ? name : label) + "\n" : null;
+            if (!saveKey(name, text, publicLine)) return false;
+            // A key whose public part is not in it, like an EC key in PEM: ssh-keygen makes it
+            if (publicLine == null && !i.encrypted) derivePublicKey(name, "");
+            return true;
+        });
+        panel.getDialog().setOnDismissListener(d -> {
+            mKeyPanelArea = null;
+            mKeyPanelName = null;
+        });
+        mKeyPanelArea = new WeakReference<>(keyView);
+        mKeyPanelName = new WeakReference<>(nameView);
+        panel.show();
+    }
+
+    /** Any text on the clipboard, {@code null} if there is none. */
+    @Nullable
+    private String clipboardText() {
+        ClipboardManager clipboardManager = (ClipboardManager) mActivity.getSystemService(Context.CLIPBOARD_SERVICE);
+        ClipData clip = clipboardManager != null ? clipboardManager.getPrimaryClip() : null;
+        if (clip == null || clip.getItemCount() == 0) return null;
+        CharSequence text = clip.getItemAt(0).coerceToText(mActivity);
+        return text == null || text.toString().trim().isEmpty() ? null : text.toString();
+    }
+
+    /**
+     * Make the public key file of a key with ssh-keygen, in the background, for a key whose
+     * public part is not in the private key file: with the passphrase if it has one.
+     */
+    private void derivePublicKey(@NonNull String name, @NonNull String passphrase) {
+        File key = new File(getSshDir(), name);
+        File publicFile = new File(getSshDir(), name + ".pub");
+        new Thread(() -> {
+            String error = null;
+            String line = null;
+            try {
+                Process process = TerminowClaudeSetup.startInTerminal(mActivity, Arrays.asList("ssh-keygen", "-y", "-P", passphrase, "-f", key.getPath()),
+                    Collections.emptyMap(), getSshDir());
+                process.getOutputStream().close();
+                String out = readAll(process.getInputStream());
+                String err = readAll(process.getErrorStream());
+                if (!process.waitFor(30, java.util.concurrent.TimeUnit.SECONDS)) {
+                    process.destroy();
+                    error = "ssh-keygen did not finish";
+                } else if (process.exitValue() != 0 || TerminowSshWire.parseLine(out) == null) {
+                    error = err.trim().isEmpty() ? "ssh-keygen failed" : err.trim();
+                } else {
+                    line = out.trim() + "\n";
+                }
+            } catch (IOException | InterruptedException e) {
+                error = String.valueOf(e.getMessage());
+            }
+            String finalLine = line;
+            String finalError = error;
+            mActivity.runOnUiThread(() -> {
+                if (finalLine != null) {
+                    try (FileOutputStream out = new FileOutputStream(publicFile)) {
+                        out.write(finalLine.getBytes(StandardCharsets.UTF_8));
+                    } catch (IOException e) {
+                        mActivity.showToast(String.valueOf(e.getMessage()), true);
+                        return;
+                    }
+                    updateItems();
+                } else if (!passphrase.isEmpty()) {
+                    mActivity.showToast(mActivity.getString(R.string.terminow_keypanel_public_failed, finalError), true);
+                }
+            });
+        }, "TerminowPublicKey").start();
+    }
+
+    @NonNull
+    private static String readAll(@NonNull InputStream in) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int read;
+        while ((read = in.read(buffer)) != -1) {
+            out.write(buffer, 0, read);
+            if (out.size() > KEY_FILE_MAX_SIZE) break;
+        }
+        return new String(out.toByteArray(), StandardCharsets.UTF_8);
+    }
+
+    /** Generate a key with ssh-keygen in the background: its type, name and an optional passphrase. */
+    private void showGenerateKeyPanel() {
+        TerminowPanel panel = new TerminowPanel(mActivity, mActivity.getString(R.string.terminow_keypanel_generate_title));
+        LinearLayout card = panel.card();
+        EditText nameView = panel.field(card, mActivity.getString(R.string.terminow_keypanel_name),
+            mActivity.getString(R.string.terminow_keypanel_name_hint), InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        panel.label(card, mActivity.getString(R.string.terminow_keypanel_type));
+        android.widget.RadioGroup types = new android.widget.RadioGroup(mActivity);
+        String[][] choices = {{"ed25519", "ED25519", mActivity.getString(R.string.terminow_keypanel_type_ed25519)},
+            {"rsa", "RSA 4096", mActivity.getString(R.string.terminow_keypanel_type_rsa)},
+            {"ecdsa", "ECDSA P-256", mActivity.getString(R.string.terminow_keypanel_type_ecdsa)}};
+        for (int i = 0; i < choices.length; i++) {
+            android.widget.RadioButton button = new android.widget.RadioButton(mActivity);
+            button.setId(View.generateViewId());
+            button.setTag(choices[i][0]);
+            button.setText(choices[i][1] + "  ·  " + choices[i][2]);
+            button.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
+            button.setButtonTintList(android.content.res.ColorStateList.valueOf(ContextCompat.getColor(mActivity, R.color.terminow_panel_accent)));
+            types.addView(button);
+            if (i == 0) button.setChecked(true);
+        }
+        card.addView(types);
+        EditText passphraseView = panel.field(card, mActivity.getString(R.string.terminow_keypanel_passphrase_optional), "",
+            InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        EditText againView = panel.field(card, mActivity.getString(R.string.terminow_keypanel_passphrase_again), "",
+            InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        card.addView(panel.text(mActivity.getString(R.string.terminow_keypanel_generate_note), 13, R.color.terminow_text_secondary));
+        panel.onSave(() -> {
+            String passphrase = passphraseView.getText().toString();
+            if (!passphrase.equals(againView.getText().toString())) {
+                againView.setError(mActivity.getString(R.string.terminow_password_mismatch));
+                return false;
+            }
+            if (!passphrase.isEmpty() && passphrase.length() < 5) {
+                passphraseView.setError(mActivity.getString(R.string.terminow_keypanel_passphrase_short));
+                return false;
+            }
+            View checked = types.findViewById(types.getCheckedRadioButtonId());
+            String type = checked != null ? String.valueOf(checked.getTag()) : "ed25519";
+            String label = nameView.getText().toString().trim().replaceAll("\\p{Cntrl}", " ");
+            String name = getNewKeyName(label.isEmpty() ? "id_" + type : label);
+            if (!isValidNewKeyName(name)) {
+                mActivity.showToast(mActivity.getString(R.string.terminow_key_invalid), true);
+                return false;
+            }
+            generateKey(name, label, type, passphrase);
+            return true;
+        });
+        panel.show();
+    }
+
+    private void generateKey(@NonNull String name, @NonNull String label, @NonNull String type, @NonNull String passphrase) {
+        File directory = getSshDir();
+        try {
+            if (!directory.isDirectory() && !directory.mkdirs()) throw new IOException("Failed to create \"" + directory + "\"");
+            Os.chmod(directory.getPath(), 0700);
+        } catch (IOException | ErrnoException e) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_key_import_failed, e.getMessage()), true);
+            return;
+        }
+        List<String> command = new ArrayList<>(Arrays.asList("ssh-keygen", "-q", "-t", type, "-N", passphrase,
+            "-C", label.isEmpty() ? name : label, "-f", new File(directory, name).getPath()));
+        if (type.equals("rsa")) command.addAll(Arrays.asList("-b", "4096"));
+        if (type.equals("ecdsa")) command.addAll(Arrays.asList("-b", "256"));
+        mActivity.showToast(mActivity.getString(R.string.terminow_keypanel_generating), false);
+        new Thread(() -> {
+            String error = null;
+            try {
+                Process process = TerminowClaudeSetup.startInTerminal(mActivity, command, Collections.emptyMap(), directory);
+                process.getOutputStream().close();
+                readAll(process.getInputStream());
+                String err = readAll(process.getErrorStream());
+                if (!process.waitFor(120, java.util.concurrent.TimeUnit.SECONDS)) {
+                    process.destroy();
+                    error = "ssh-keygen did not finish";
+                } else if (process.exitValue() != 0) {
+                    error = err.trim().isEmpty() ? "ssh-keygen failed" : err.trim();
+                }
+            } catch (IOException | InterruptedException e) {
+                error = String.valueOf(e.getMessage());
+            }
+            String finalError = error;
+            mActivity.runOnUiThread(() -> {
+                if (finalError != null) {
+                    mActivity.showToast(mActivity.getString(R.string.terminow_key_import_failed, finalError), true);
+                    return;
+                }
+                if (!label.isEmpty() && !label.equals(name)) mStore.setKeyLabel(name, label);
+                mActivity.showToast(mActivity.getString(R.string.terminow_key_saved, label.isEmpty() ? name : label), false);
+                setKeyTarget(name);
+                updateItems();
+            });
+        }, "TerminowKeygen").start();
+    }
+
+    /**
+     * A key: its type and fingerprint, its name, its public key to copy or share, its
+     * certificate, and the hosts and identities that log in with it.
+     */
+    private void showEditKeyPanel(@NonNull KeyItem key) {
+        TerminowPanel panel = new TerminowPanel(mActivity, mActivity.getString(R.string.terminow_keypanel_edit));
+        byte[] blob = key.readPublicBlob();
+        if (blob == null && key.biometricId == null && key.fidoId == null) {
+            // The public part of an OpenSSH key is in the private key file, even with a passphrase
+            try {
+                if (key.file.length() <= KEY_FILE_MAX_SIZE) {
+                    TerminowKeyFormat.Info info = TerminowKeyFormat.analyze(new String(java.nio.file.Files.readAllBytes(key.file.toPath()), StandardCharsets.UTF_8));
+                    blob = info.publicBlob;
+                    if (blob != null && !key.publicFile.exists()) {
+                        try (FileOutputStream out = new FileOutputStream(key.publicFile)) {
+                            out.write((TerminowSshWire.publicKeyLine(blob, key.getTitle()) + "\n").getBytes(StandardCharsets.UTF_8));
+                        }
+                    }
+                }
+            } catch (IOException e) {
+                blob = null;
+            }
+        }
+        String type = getKeyType(key);
+        String kind = key.biometricId != null ? mActivity.getString(R.string.terminow_keypanel_kind_biometric) :
+            key.fidoId != null ? mActivity.getString(R.string.terminow_keypanel_kind_fido) : null;
+        String title = (type != null ? type : mActivity.getString(R.string.terminow_keypanel_type_unknown)) + (kind != null ? "  ·  " + kind : "");
+        String fingerprint = blob != null ? TerminowKeyFormat.fingerprint(blob) : mActivity.getString(R.string.terminow_keypanel_no_fingerprint);
+        LinearLayout top = panel.card();
+        String fingerprintText = fingerprint;
+        LinearLayout keyRow = panel.row(top, R.drawable.ic_terminow_key, title, fingerprint, null);
+        if (blob != null) panel.rowButton(keyRow, R.drawable.ic_terminow_copy, mActivity.getString(R.string.terminow_keypanel_copy_fingerprint),
+            () -> copyText(key.getTitle(), fingerprintText));
+
+        EditText nameView = panel.field(top, mActivity.getString(R.string.terminow_keypanel_name),
+            key.name, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        nameView.setText(key.label);
+        top.addView(panel.text(mActivity.getString(R.string.terminow_keypanel_file_path, key.getPath()), 12, R.color.terminow_text_secondary));
+
+        String publicLine = key.publicFile.isFile() ? readFirstLine(key.publicFile) : null;
+        panel.label(top, mActivity.getString(R.string.terminow_keypanel_public));
+        if (publicLine != null && !publicLine.isEmpty()) {
+            LinearLayout publicRow = new LinearLayout(mActivity);
+            publicRow.setGravity(Gravity.CENTER_VERTICAL);
+            TextView publicView = panel.text(publicLine, 14, R.color.terminow_text);
+            publicView.setTypeface(Typeface.MONOSPACE);
+            publicView.setSingleLine(true);
+            publicView.setEllipsize(TextUtils.TruncateAt.END);
+            publicRow.addView(publicView, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+            panel.rowButton(publicRow, R.drawable.ic_terminow_copy, mActivity.getString(R.string.terminow_key_copy_public),
+                () -> copyText(key.publicFile.getName(), publicLine));
+            top.addView(publicRow);
+            panel.primaryButton(top, mActivity.getString(R.string.terminow_keypanel_share), () -> {
+                Intent share = new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, publicLine)
+                    .putExtra(Intent.EXTRA_SUBJECT, key.getTitle() + ".pub");
+                try {
+                    mActivity.startActivity(Intent.createChooser(share, mActivity.getString(R.string.terminow_keypanel_share)));
+                } catch (Exception e) {
+                    copyText(key.publicFile.getName(), publicLine);
+                }
+            });
+        } else {
+            top.addView(panel.text(mActivity.getString(R.string.terminow_keypanel_no_public), 13, R.color.terminow_text_secondary));
+            if (key.biometricId == null && key.fidoId == null)
+                panel.link(top, R.drawable.ic_terminow_key, mActivity.getString(R.string.terminow_keypanel_make_public), () -> {
+                    LinearLayout form = createForm();
+                    EditText passphraseView = addField(form, R.string.terminow_key_passphrase, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+                    showFormDialog(R.string.terminow_keypanel_make_public, form, () -> {
+                        panel.dismiss();
+                        derivePublicKey(key.name, passphraseView.getText().toString());
+                        return true;
+                    });
+                });
+        }
+
+        // The certificate of the key, which ssh uses with it
+        TerminowSshWire.Certificate certificate = key.readCertificate();
+        if (certificate != null) {
+            panel.row(top, R.drawable.ic_terminow_certificate, mActivity.getString(R.string.terminow_keypanel_certificate),
+                describeCertificateShort(certificate), () -> showCertificate(key, certificate));
+        } else if (blob != null || publicLine != null) {
+            panel.link(top, R.drawable.ic_terminow_certificate, mActivity.getString(R.string.terminow_cert_add), () -> {
+                panel.dismiss();
+                showCertificateSource(key);
+            });
+        }
+
+        // The hosts and identities that log in with the key
+        List<TerminowStore.Host> hosts = getHostsUsingKey(key);
+        List<TerminowStore.Identity> identities = new ArrayList<>();
+        for (TerminowStore.Identity identity : mStore.getIdentities())
+            if (identity.keyPath.equals(key.getPath()) || identity.keyPath.equals(key.file.getAbsolutePath())) identities.add(identity);
+        LinearLayout attached = panel.expandable(mActivity.getString(R.string.terminow_keypanel_attached, hosts.size() + identities.size()), false);
+        if (hosts.isEmpty() && identities.isEmpty())
+            attached.addView(panel.text(mActivity.getString(R.string.terminow_key_no_hosts), 13, R.color.terminow_text_secondary));
+        for (TerminowStore.Host host : hosts)
+            panel.row(attached, R.drawable.ic_terminow_hosts, host.getTitle(), host.username + "@" + host.address, () -> {
+                panel.dismiss();
+                showHostDialog(host);
+            });
+        for (TerminowStore.Identity identity : identities)
+            panel.row(attached, R.drawable.ic_terminow_person_add, identity.getTitle(), describeIdentity(identity), () -> {
+                panel.dismiss();
+                showIdentityDialog(identity, null);
+            });
+
+        boolean hasPublic = blob != null || publicLine != null;
+        panel.onMenu(anchor -> {
+            android.widget.PopupMenu menu = new android.widget.PopupMenu(mActivity, anchor);
+            if (publicLine != null) menu.getMenu().add(0, 1, 0, R.string.terminow_key_copy_public);
+            if (certificate == null && hasPublic) menu.getMenu().add(0, 2, 0, R.string.terminow_cert_add);
+            menu.getMenu().add(0, 3, 0, R.string.terminow_delete);
+            menu.setOnMenuItemClickListener(item -> {
+                if (item.getItemId() == 1 && publicLine != null) copyText(key.publicFile.getName(), publicLine);
+                else if (item.getItemId() == 2) {
+                    panel.dismiss();
+                    showCertificateSource(key);
+                } else if (item.getItemId() == 3) confirmDeleteKey(key, panel::dismiss);
+                return true;
+            });
+            menu.show();
+        });
+        panel.onSave(() -> {
+            String label = nameView.getText().toString().trim().replaceAll("\\p{Cntrl}", " ");
+            if (!label.equals(key.label)) {
+                mStore.setKeyLabel(key.name, label);
+                updateItems();
+            }
+            return true;
+        });
+        panel.show();
+    }
+
+    private void copyText(@NonNull String label, @NonNull String text) {
+        ClipboardManager clipboardManager = (ClipboardManager) mActivity.getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboardManager == null) return;
+        clipboardManager.setPrimaryClip(ClipData.newPlainText(label, text));
+        mActivity.showToast(mActivity.getString(R.string.terminow_key_copied), false);
+    }
+
+    /** Delete a key, after asking, taking it out of the hosts that log in with it. */
+    private void confirmDeleteKey(@NonNull KeyItem key, @Nullable Runnable onDeleted) {
+        List<TerminowStore.Host> hosts = getHostsUsingKey(key);
+        String message = mActivity.getString(R.string.terminow_key_delete_confirm, key.getTitle());
+        if (!hosts.isEmpty())
+            message += "\n\n" + mActivity.getResources().getQuantityString(R.plurals.terminow_key_delete_hosts, hosts.size(), hosts.size());
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setMessage(message)
+            .setPositiveButton(R.string.terminow_delete, (confirmDialog, confirmWhich) -> {
+                if (key.biometricId != null) {
+                    TerminowBiometricKeys.delete(key.biometricId);
+                } else if (key.fidoId != null) {
+                    TerminowFidoKeys.delete(key.fidoId);
+                } else {
+                    if (!key.file.delete())
+                        Logger.logError(LOG_TAG, "Failed to delete \"" + key.file + "\"");
+                    if (key.publicFile.isFile() && !key.publicFile.delete())
+                        Logger.logError(LOG_TAG, "Failed to delete \"" + key.publicFile + "\"");
+                    //noinspection ResultOfMethodCallIgnored
+                    key.certificateFile().delete();
+                }
+                mStore.setKeyLabel(key.name, "");
+                // The hosts would fail to log in with a key that does not exist anymore
+                for (TerminowStore.Host host : hosts)
+                    host.keyPath = "";
+                if (!hosts.isEmpty()) mStore.setHosts(mHosts);
+                updateItems();
+                if (onDeleted != null) onDeleted.run();
+            })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    /**
+     * Add or edit an identity in a panel: a name, a username, a password and a key, and the
+     * hosts that log in with it. {@code onSaved} gets the id of the identity.
+     */
+    private void showIdentityDialog(@Nullable TerminowStore.Identity existing, @Nullable java.util.function.Consumer<String> onSaved) {
+        TerminowPanel panel = new TerminowPanel(mActivity, mActivity.getString(existing != null ? R.string.terminow_identity_edit : R.string.terminow_identity_new));
+        LinearLayout card = panel.card();
+        EditText labelView = panel.field(card, mActivity.getString(R.string.terminow_identity_label), "",
+            InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        EditText usernameView = panel.field(card, mActivity.getString(R.string.terminow_host_username), "",
+            InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+        EditText passwordView = panel.field(card, mActivity.getString(R.string.terminow_host_password), "",
+            InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        LinearLayout keyCard = panel.card();
+        panel.label(keyCard, mActivity.getString(R.string.terminow_host_key_field));
+        EditText keyView = new EditText(mActivity);
+        keyView.setVisibility(View.GONE);
+        keyCard.addView(keyView);
+        LinearLayout keyHolder = new LinearLayout(mActivity);
+        keyHolder.setOrientation(LinearLayout.VERTICAL);
+        keyCard.addView(keyHolder);
+        Runnable showKey = () -> {
+            keyHolder.removeAllViews();
+            String path = keyView.getText().toString().trim();
+            if (path.isEmpty()) {
+                panel.link(keyHolder, R.drawable.ic_terminow_key, mActivity.getString(R.string.terminow_keypanel_choose_key), () -> showKeyPicker(keyView));
+                return;
+            }
+            KeyItem chosen = null;
+            for (KeyItem item : getKeys()) if (item.getPath().equals(path) || item.file.getAbsolutePath().equals(path)) chosen = item;
+            String type = chosen != null ? getKeyType(chosen) : null;
+            LinearLayout row = panel.row(keyHolder, R.drawable.ic_terminow_key, chosen != null ? chosen.getTitle() : path,
+                type != null ? type : path, () -> showKeyPicker(keyView));
+            panel.rowButton(row, R.drawable.ic_terminow_close, mActivity.getString(R.string.terminow_host_key_remove), () -> keyView.setText(""));
+        };
+        keyView.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) { }
+            @Override public void afterTextChanged(android.text.Editable s) { showKey.run(); }
+        });
+        if (existing != null) {
+            labelView.setText(existing.label);
+            usernameView.setText(existing.username);
+            passwordView.setText(existing.password);
+            keyView.setText(existing.keyPath);
+        }
+        showKey.run();
+        keyCard.addView(panel.text(mActivity.getString(R.string.terminow_keypanel_identity_note), 13, R.color.terminow_text_secondary));
+
+        if (existing != null) {
+            List<TerminowStore.Host> hosts = getHostsUsingIdentity(existing);
+            LinearLayout attached = panel.expandable(mActivity.getString(R.string.terminow_keypanel_attached, hosts.size()), false);
+            if (hosts.isEmpty()) attached.addView(panel.text(mActivity.getString(R.string.terminow_key_no_hosts), 13, R.color.terminow_text_secondary));
+            for (TerminowStore.Host host : hosts)
+                panel.row(attached, R.drawable.ic_terminow_hosts, host.getTitle(), host.username + "@" + host.address, () -> {
+                    panel.dismiss();
+                    showHostDialog(host);
+                });
+            panel.onMenu(anchor -> {
+                android.widget.PopupMenu menu = new android.widget.PopupMenu(mActivity, anchor);
+                menu.getMenu().add(0, 1, 0, R.string.terminow_delete);
+                menu.setOnMenuItemClickListener(item -> {
+                    confirmDeleteIdentity(existing, panel::dismiss);
+                    return true;
+                });
+                menu.show();
+            });
+        }
+
+        panel.onSave(() -> {
+            TerminowStore.Identity identity = new TerminowStore.Identity();
+            identity.id = existing != null ? existing.id : Long.toString(System.currentTimeMillis(), 36) +
+                Integer.toString((int) (Math.random() * 1296), 36);
+            identity.created = existing != null ? existing.created : System.currentTimeMillis();
+            identity.label = labelView.getText().toString().trim();
+            identity.username = usernameView.getText().toString().trim();
+            identity.password = passwordView.getText().toString();
+            identity.keyPath = keyView.getText().toString().trim();
+            if (identity.username.isEmpty() && identity.password.isEmpty() && identity.keyPath.isEmpty()) {
+                mActivity.showToast(mActivity.getString(R.string.terminow_identity_empty), true);
+                return false;
+            }
+            if (!TerminowStore.isValidUsername(identity.username)) {
+                usernameView.setError(mActivity.getString(R.string.terminow_host_invalid_username));
+                return false;
+            }
+            if (!identity.isValid()) {
+                mActivity.showToast(mActivity.getString(R.string.terminow_host_invalid_key), true);
+                return false;
+            }
+            List<TerminowStore.Identity> identities = mStore.getIdentities();
+            boolean replaced = false;
+            for (int i = 0; i < identities.size(); i++) {
+                if (identities.get(i).id.equals(identity.id)) {
+                    identities.set(i, identity);
+                    replaced = true;
+                }
+            }
+            if (!replaced) identities.add(identity);
+            mStore.setIdentities(identities);
+            updateItems();
+            if (onSaved != null) onSaved.accept(identity.id);
+            return true;
+        });
+        panel.show();
+    }
+
+    private void confirmDeleteIdentity(@NonNull TerminowStore.Identity identity, @Nullable Runnable onDeleted) {
+        List<TerminowStore.Host> hosts = getHostsUsingIdentity(identity);
+        String message = mActivity.getString(R.string.terminow_identity_delete_confirm, identity.getTitle());
+        if (!hosts.isEmpty())
+            message += "\n\n" + mActivity.getResources().getQuantityString(R.plurals.terminow_identity_delete_hosts, hosts.size(), hosts.size());
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setMessage(message)
+            .setPositiveButton(R.string.terminow_delete, (d, w) -> {
+                List<TerminowStore.Identity> identities = mStore.getIdentities();
+                identities.removeIf(other -> other.id.equals(identity.id));
+                mStore.setIdentities(identities);
+                // The hosts log in with their own username, password and key again
+                for (TerminowStore.Host host : hosts) host.identity = "";
+                if (!hosts.isEmpty()) mStore.setHosts(mHosts);
+                updateItems();
+                if (onDeleted != null) onDeleted.run();
+            })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
     /** Show the menu to add a key above the add button, like the keychain menu of Termius. */
     private void showKeyMenu(@NonNull View anchor) {
         LinearLayout menu = new LinearLayout(mActivity);
@@ -3030,14 +3571,12 @@ public class TerminowHome {
         popup.setElevation(dp(8));
         popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
 
-        addMenuItem(menu, popup, R.drawable.ic_terminow_person_add, R.string.terminow_identity_new, () -> showIdentityDialog(null, null));
-        addMenuDivider(menu);
-        addMenuItem(menu, popup, R.drawable.ic_terminow_paste, R.string.terminow_key_paste, this::showPasteKeyDialog);
+        // Like the + of the keychain of Termius: a key first, then an identity, then the keys bound to a device
+        addMenuItem(menu, popup, R.drawable.ic_terminow_key, R.string.terminow_keypanel_new_item, () -> showNewKeyPanel(null, null));
         addMenuItem(menu, popup, R.drawable.ic_terminow_import, R.string.terminow_key_import, this::pickKeyFile);
-        addMenuItem(menu, popup, R.drawable.ic_terminow_key, R.string.terminow_key_generate, this::showNewKeyDialog);
+        addMenuItem(menu, popup, R.drawable.ic_terminow_generate, R.string.terminow_key_generate, this::showGenerateKeyPanel);
         addMenuDivider(menu);
-        addMenuItem(menu, popup, R.drawable.ic_terminow_paste, R.string.terminow_cert_paste, () -> pickKeyForCertificate(false));
-        addMenuItem(menu, popup, R.drawable.ic_terminow_import, R.string.terminow_cert_import, () -> pickKeyForCertificate(true));
+        addMenuItem(menu, popup, R.drawable.ic_terminow_person_add, R.string.terminow_identity_new, () -> showIdentityDialog(null, null));
         addMenuDivider(menu);
         addMenuItem(menu, popup, R.drawable.ic_terminow_lock, R.string.terminow_key_biometric_new, this::showNewBiometricKeyDialog);
         addMenuItem(menu, popup, R.drawable.ic_terminow_sdcard, R.string.terminow_key_fido_new, this::showNewFidoKeyDialog);
@@ -3103,6 +3642,11 @@ public class TerminowHome {
      * {@code false} and shows why if it is not a private key that ssh can use.
      */
     private boolean saveKey(@NonNull String name, @NonNull String content) {
+        return saveKey(name, content, null);
+    }
+
+    /** Like {@link #saveKey(String, String)}, with the line of its public key file if it is known. */
+    private boolean saveKey(@NonNull String name, @NonNull String content, @Nullable String publicContent) {
         // Windows line endings and a missing line end make ssh fail to load a key
         content = content.replace("\r\n", "\n").replace('\r', '\n').trim() + "\n";
         if (TerminowPpk.isPpk(content)) {
@@ -3124,7 +3668,7 @@ public class TerminowHome {
             mActivity.showToast(mActivity.getString(R.string.terminow_key_content_invalid), true);
             return false;
         }
-        return writeKey(name, content, null);
+        return writeKey(name, content, publicContent);
     }
 
     /** Ask for the passphrase of an encrypted PuTTY key, which is only kept to convert it. */
@@ -3206,36 +3750,6 @@ public class TerminowHome {
         return true;
     }
 
-    /** Show a dialog to save a private key that is pasted from the clipboard. */
-    private void showPasteKeyDialog() {
-        LinearLayout form = createForm();
-        EditText nameView = addField(form, R.string.terminow_key_name, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
-        EditText contentView = addField(form, R.string.terminow_key_content,
-            InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        contentView.setMaxLines(6);
-        contentView.setTextSize(12);
-        nameView.setText(getNewKeyName("id_key"));
-
-        // Fill in the key if it was copied already
-        ClipboardManager clipboardManager = (ClipboardManager) mActivity.getSystemService(Context.CLIPBOARD_SERVICE);
-        ClipData clip = clipboardManager != null ? clipboardManager.getPrimaryClip() : null;
-        if (clip != null && clip.getItemCount() > 0) {
-            CharSequence text = clip.getItemAt(0).coerceToText(mActivity);
-            if (text != null && ((text.toString().trim().startsWith("-----BEGIN ") && text.toString().contains("PRIVATE KEY-----")) ||
-                TerminowPpk.isPpk(text.toString().trim())))
-                contentView.setText(text.toString().trim());
-        }
-
-        showFormDialog(R.string.terminow_key_paste, form, () -> {
-            String name = nameView.getText().toString().trim();
-            if (!isValidNewKeyName(name)) {
-                mActivity.showToast(mActivity.getString(R.string.terminow_key_invalid), true);
-                return false;
-            }
-            return saveKey(name, contentView.getText().toString());
-        });
-    }
-
     /** Show the file picker of the device to import a private key file. */
     private void pickKeyFile() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
@@ -3313,36 +3827,21 @@ public class TerminowHome {
                     fileName = cursor.getString(0);
             }
             if (fileName == null) fileName = "";
-            saveKey(getNewKeyName(fileName.substring(fileName.lastIndexOf('/') + 1)), content);
+            String suggested = fileName.substring(fileName.lastIndexOf('/') + 1).replaceAll("\\.(pem|key|txt|ppk)$", "");
+            // Checked and named in the New Key panel before it is saved
+            EditText area = mKeyPanelArea != null ? mKeyPanelArea.get() : null;
+            EditText nameField = mKeyPanelName != null ? mKeyPanelName.get() : null;
+            if (area != null && area.isAttachedToWindow()) {
+                area.setText(content.trim());
+                if (nameField != null && nameField.getText().toString().trim().isEmpty()) nameField.setText(suggested);
+            } else {
+                showNewKeyPanel(content, suggested);
+            }
         } catch (Exception e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Failed to import key from \"" + uri + "\"", e);
             mActivity.showToast(mActivity.getString(R.string.terminow_key_import_failed, e.getMessage()), true);
         }
         return true;
-    }
-
-    /** Ask for the file name of a new key and generate it with `ssh-keygen` in a local terminal. */
-    private void showNewKeyDialog() {
-        LinearLayout form = createForm();
-        EditText nameView = addField(form, R.string.terminow_key_name, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
-        if (!new File(getSshDir(), "id_ed25519").exists())
-            nameView.setText("id_ed25519");
-
-        showFormDialog(R.string.terminow_key_new, form, () -> {
-            String name = nameView.getText().toString().trim();
-            if (!isValidNewKeyName(name)) {
-                mActivity.showToast(mActivity.getString(R.string.terminow_key_invalid), true);
-                return false;
-            }
-
-            // ssh-keygen asks for the passphrase of the key in the terminal
-            TerminalSession session = addSession(null);
-            if (session != null)
-                writeWhenStarted(session, "mkdir -p ~/.ssh && chmod 700 ~/.ssh && ssh-keygen -t ed25519 -f ~/.ssh/" + name + "\r", 0);
-            // The key is created in the terminal, with the path that the host will use
-            setKeyTarget(name);
-            return true;
-        });
     }
 
     /** Get the hosts whose keys are saved in `~/.ssh/known_hosts`. */
@@ -3703,107 +4202,6 @@ public class TerminowHome {
         return hosts;
     }
 
-    /**
-     * Add or edit an identity: a name, a username, a password and a key. {@code onSaved} gets
-     * the id of the identity, like for the host form that asked for a new one.
-     */
-    private void showIdentityDialog(@Nullable TerminowStore.Identity existing, @Nullable java.util.function.Consumer<String> onSaved) {
-        LinearLayout form = createForm();
-        EditText labelView = addField(form, R.string.terminow_identity_label, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
-        EditText usernameView = addField(form, R.string.terminow_host_username, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
-        EditText passwordView = addField(form, R.string.terminow_host_password, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        EditText keyView = addField(form, R.string.terminow_host_key_field, InputType.TYPE_NULL);
-        keyView.setFocusable(false);
-        keyView.setCursorVisible(false);
-        keyView.setOnClickListener(v -> showKeyPicker(keyView));
-        TextView keyClear = new TextView(form.getContext());
-        keyClear.setText(R.string.terminow_host_key_remove);
-        keyClear.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_panel_accent));
-        keyClear.setPadding(0, dp(4), 0, dp(8));
-        keyClear.setOnClickListener(v -> keyView.setText(""));
-        form.addView(keyClear);
-        if (existing != null) {
-            labelView.setText(existing.label);
-            usernameView.setText(existing.username);
-            passwordView.setText(existing.password);
-            keyView.setText(existing.keyPath);
-        }
-        showFormDialog(existing != null ? R.string.terminow_identity_edit : R.string.terminow_identity_new, form, () -> {
-            TerminowStore.Identity identity = new TerminowStore.Identity();
-            identity.id = existing != null ? existing.id : Long.toString(System.currentTimeMillis(), 36) +
-                Integer.toString((int) (Math.random() * 1296), 36);
-            identity.created = existing != null ? existing.created : System.currentTimeMillis();
-            identity.label = labelView.getText().toString().trim();
-            identity.username = usernameView.getText().toString().trim();
-            identity.password = passwordView.getText().toString();
-            identity.keyPath = keyView.getText().toString().trim();
-            if (identity.username.isEmpty() && identity.password.isEmpty() && identity.keyPath.isEmpty()) {
-                mActivity.showToast(mActivity.getString(R.string.terminow_identity_empty), true);
-                return false;
-            }
-            if (!TerminowStore.isValidUsername(identity.username)) {
-                mActivity.showToast(mActivity.getString(R.string.terminow_host_invalid_username), true);
-                return false;
-            }
-            if (!identity.isValid()) {
-                mActivity.showToast(mActivity.getString(R.string.terminow_host_invalid_key), true);
-                return false;
-            }
-            List<TerminowStore.Identity> identities = mStore.getIdentities();
-            boolean replaced = false;
-            for (int i = 0; i < identities.size(); i++) {
-                if (identities.get(i).id.equals(identity.id)) {
-                    identities.set(i, identity);
-                    replaced = true;
-                }
-            }
-            if (!replaced) identities.add(identity);
-            mStore.setIdentities(identities);
-            updateItems();
-            if (onSaved != null) onSaved.accept(identity.id);
-            return true;
-        });
-    }
-
-    private void showIdentityActions(@NonNull TerminowStore.Identity identity) {
-        List<TerminowStore.Host> hosts = getHostsUsingIdentity(identity);
-        CharSequence[] actions = {mActivity.getString(R.string.terminow_identity_edit),
-            mActivity.getResources().getQuantityString(R.plurals.terminow_key_used_by, hosts.size(), hosts.size()),
-            mActivity.getString(R.string.terminow_delete)};
-        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog).setTitle(identity.getTitle()).setItems(actions, (dialog, which) -> {
-            if (which == 0) {
-                showIdentityDialog(identity, null);
-            } else if (which == 1) {
-                AlertDialog.Builder builder = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog).setTitle(identity.getTitle());
-                if (hosts.isEmpty()) {
-                    builder.setMessage(R.string.terminow_key_no_hosts);
-                } else {
-                    CharSequence[] names = new CharSequence[hosts.size()];
-                    for (int i = 0; i < hosts.size(); i++) names[i] = hosts.get(i).getTitle();
-                    builder.setItems(names, (d, w) -> showHostDialog(hosts.get(w)));
-                }
-                builder.setPositiveButton(android.R.string.ok, null).show();
-            } else {
-                String message = mActivity.getString(R.string.terminow_identity_delete_confirm, identity.getTitle());
-                if (!hosts.isEmpty())
-                    message += "\n\n" + mActivity.getResources().getQuantityString(R.plurals.terminow_identity_delete_hosts, hosts.size(), hosts.size());
-                new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
-                    .setMessage(message)
-                    .setPositiveButton(R.string.terminow_delete, (d, w) -> {
-                        List<TerminowStore.Identity> identities = mStore.getIdentities();
-                        identities.removeIf(other -> other.id.equals(identity.id));
-                        mStore.setIdentities(identities);
-                        // The hosts log in with their own username, password and key again
-                        for (TerminowStore.Host host : hosts) host.identity = "";
-                        if (!hosts.isEmpty()) mStore.setHosts(mHosts);
-                        updateItems();
-                    })
-                    .setNegativeButton(android.R.string.cancel, null)
-                    .show();
-            }
-        }).show();
-    }
-
     /** Pick an identity for a host form, or make a new one. */
     private void showIdentityPicker(@NonNull java.util.function.Consumer<String> onPicked) {
         List<TerminowStore.Identity> identities = mStore.getIdentities();
@@ -3853,29 +4251,6 @@ public class TerminowHome {
                 key.certificateFile().delete();
                 updateItems();
             })
-            .show();
-    }
-
-    /** Pick the key that a certificate is for, then paste it or pick its file. */
-    private void pickKeyForCertificate(boolean fromFile) {
-        List<KeyItem> keys = new ArrayList<>();
-        for (KeyItem key : getKeys()) if (key.readPublicBlob() != null) keys.add(key);
-        if (keys.isEmpty()) {
-            new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
-                .setMessage(R.string.terminow_cert_no_keys)
-                .setPositiveButton(android.R.string.ok, null)
-                .show();
-            return;
-        }
-        CharSequence[] names = new CharSequence[keys.size()];
-        for (int i = 0; i < keys.size(); i++) names[i] = keys.get(i).getTitle();
-        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
-            .setTitle(R.string.terminow_cert_pick_key)
-            .setItems(names, (dialog, which) -> {
-                if (fromFile) pickCertificateFile(keys.get(which));
-                else showPasteCertificateDialog(keys.get(which));
-            })
-            .setNegativeButton(android.R.string.cancel, null)
             .show();
     }
 
