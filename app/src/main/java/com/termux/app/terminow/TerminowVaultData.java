@@ -13,7 +13,9 @@ import java.util.Map;
 
 /**
  * The content of a vault as it is encrypted and synced: hosts (with their passwords), groups,
- * snippets and port forwards, in the same fields as {@link TerminowStore} keeps them.
+ * snippets and port forwards, in the same fields as {@link TerminowStore} keeps them. The
+ * Personal vault also has the private keys of ~/.ssh and the identities when "Sync keys and
+ * identities" is on ("syncKeys", changed at "syncKeysChanged" in milliseconds).
  *
  * When this phone and another one both changed a vault, the two are merged item by item: an
  * item that is on both is taken from this phone, items of either one are kept. An item that one
@@ -22,7 +24,7 @@ import java.util.Map;
 public final class TerminowVaultData {
 
     public static final int FORMAT = 1;
-    static final String[] LISTS = {"hosts", "groups", "snippets", "forwards"};
+    static final String[] LISTS = {"hosts", "groups", "snippets", "forwards", "keys", "identities"};
 
     private TerminowVaultData() {}
 
@@ -59,6 +61,10 @@ public final class TerminowVaultData {
                 return o.optString("name") + "|" + o.optString("command");
             case "forwards":
                 return o.optString("label") + "|" + o.optString("type") + "|" + o.optString("host") + "|" + o.optInt("port");
+            case "keys":
+                return o.optString("name");
+            case "identities":
+                return o.optString("id");
             default:
                 return o.toString();
         }
@@ -79,6 +85,15 @@ public final class TerminowVaultData {
             JSONArray out = new JSONArray();
             for (Object item : items.values()) out.put(item);
             merged.put(list, out);
+        }
+        // Whether keys are synced is what was chosen last, on either phone
+        boolean remoteNewer = remote.optLong("syncKeysChanged") > local.optLong("syncKeysChanged");
+        JSONObject chosen = remoteNewer ? remote : local;
+        merged.put("syncKeys", chosen.optBoolean("syncKeys"));
+        merged.put("syncKeysChanged", chosen.optLong("syncKeysChanged"));
+        if (!merged.optBoolean("syncKeys")) {
+            merged.put("keys", new JSONArray());
+            merged.put("identities", new JSONArray());
         }
         return merged;
     }

@@ -388,6 +388,7 @@ public class TerminowVaults {
      */
     public boolean sync(@NonNull Info info) throws VaultException {
         String scope = info.scope();
+        if (scope.isEmpty()) mStore.checkKeyFiles();
         for (int attempt = 0; attempt < 3; attempt++) {
             JSONObject remote = call(request("vault.get", "id", info.id));
             String wrapped = remote.isNull("wrappedKey") ? null : remote.optString("wrappedKey");

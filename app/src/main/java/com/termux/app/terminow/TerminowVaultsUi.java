@@ -249,6 +249,23 @@ public class TerminowVaultsUi {
         mHandler.postDelayed(mSyncSoon, SYNC_DELAY_MS);
     }
 
+    /** Whether the Personal vault syncs with the server, else it is only on this phone. */
+    public boolean isPersonalSynced() {
+        return mVaults.getPersonal() != null;
+    }
+
+    /** Set up syncing of the Personal vault, with the vault password, like in the vault settings. */
+    public void startPersonalSync() {
+        ready(this::enablePersonalSync);
+    }
+
+    /** Sync the Personal vault a little later, after a change that is not in the vault that is shown. */
+    public void syncPersonalSoon() {
+        if (!canSync() || mVaults.getPersonal() == null) return;
+        mHandler.removeCallbacks(mSyncSoon);
+        mHandler.postDelayed(mSyncSoon, SYNC_DELAY_MS);
+    }
+
     /** Sync everything when the app is shown again, at most once a minute. */
     public void onResume() {
         if (canSync() && System.currentTimeMillis() - mLastSync > RESUME_SYNC_INTERVAL_MS) syncQuietly(false);

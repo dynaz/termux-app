@@ -3,7 +3,6 @@
     <string name="terminow_import_from_config">From ~/.ssh/config of TermiNow</string>
     <string name="terminow_import_from_file">From a file on this phone (SSH config or CSV)</string>
     <string name="terminow_import_termius">From Termius</string>
-    <string name="terminow_import_termius_message">Termius has no export of its own, so TermiNow can not read its data directly. What works:\n\n• An SSH config file your Termius hosts came from, like ~/.ssh/config of a computer.\n• A CSV with the columns of the Termius CSV import (Groups, Label, Tags, Hostname, Protocol, Port, Username, Password), which some tools export.\n\nKeys are imported separately in Keychain → + → Import SSH key from file. Passwords in a CSV are encrypted on this phone when they are saved; delete the CSV afterwards.</string>
     <string name="terminow_import_failed">The file could not be imported: %1$s</string>
     <string name="terminow_import_read_csv">Read as CSV.</string>
     <string name="terminow_import_read_config">Read as an SSH config.</string>

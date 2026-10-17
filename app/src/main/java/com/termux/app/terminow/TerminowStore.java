@@ -716,9 +716,13 @@ public class TerminowStore {
 
     public void setAccount(@Nullable TerminowAccount.Session session) {
         if (session == null) {
-            mPreferences.edit().remove(KEY_ACCOUNT).remove(KEY_PREMIUM).remove(KEY_PLAY_ENTITLEMENT).remove(KEY_PLAY_PURCHASE_STATUS).apply();
+            mPreferences.edit().remove(KEY_ACCOUNT).remove(KEY_PREMIUM).remove(KEY_PLAY_ENTITLEMENT).remove(KEY_PLAY_PURCHASE_STATUS)
+                .remove(KEY_ACCOUNT_DEVICE).apply();
             return;
         }
+        // Each sign in is a new device of the account, so a device signed out from another one stays signed out
+        if (mPreferences.getString(KEY_ACCOUNT_DEVICE, "").isEmpty())
+            mPreferences.edit().putString(KEY_ACCOUNT_DEVICE, newDeviceId()).apply();
         try {
             JSONObject object = new JSONObject()
                 .put("uid", session.uid)
@@ -731,6 +735,35 @@ public class TerminowStore {
         } catch (JSONException e) {
             Logger.logError(LOG_TAG, "Failed to save the account");
         }
+    }
+
+    private static final String KEY_ACCOUNT_DEVICE = "account_device_id";
+    private static final String KEY_INSTALL_ID = "install_id";
+
+    /** The id of this sign in in the devices of the account, empty when signed out. */
+    @NonNull
+    public String getAccountDeviceId() {
+        return mPreferences.getString(KEY_ACCOUNT_DEVICE, "");
+    }
+
+    /** The id of the app on this device, the same for every sign in. */
+    @NonNull
+    public String getInstallId() {
+        String id = mPreferences.getString(KEY_INSTALL_ID, "");
+        if (id.isEmpty()) {
+            id = newDeviceId();
+            mPreferences.edit().putString(KEY_INSTALL_ID, id).apply();
+        }
+        return id;
+    }
+
+    @NonNull
+    private static String newDeviceId() {
+        byte[] bytes = new byte[16];
+        new java.security.SecureRandom().nextBytes(bytes);
+        StringBuilder id = new StringBuilder();
+        for (byte b : bytes) id.append(String.format(Locale.ROOT, "%02x", b & 0xff));
+        return id.toString();
     }
 
     /** The last known Premium status, {@code null} if never checked. */
@@ -1218,6 +1251,15 @@ public class TerminowStore {
      */
     @NonNull
     public static List<Host> readSshConfigHosts(@NonNull java.io.Reader in) throws IOException {
+        return readSshConfigHosts(in, null);
+    }
+
+    /**
+     * Like {@link #readSshConfigHosts(java.io.Reader)}, also giving the `IdentityFile` of each
+     * host as it is written, like a path of another computer that is not used here.
+     */
+    @NonNull
+    public static List<Host> readSshConfigHosts(@NonNull java.io.Reader in, @Nullable Map<Host, String> identityFiles) throws IOException {
         List<Host> hosts = new ArrayList<>();
         List<Host> currentHosts = new ArrayList<>();
         // The ProxyJump of each host, resolved against the aliases once all are read
@@ -1276,6 +1318,7 @@ public class TerminowStore {
         // Only return the hosts that could also have been saved from the host form
         List<Host> validHosts = new ArrayList<>();
         for (Host host : hosts) {
+            if (identityFiles != null && !host.keyPath.isEmpty()) identityFiles.put(host, host.keyPath);
             if (!isValidKeyPath(host.keyPath))
                 host.keyPath = "";
             if (isValidAddress(host.address) && isValidUsername(host.username) && isValidPort(host.port))
@@ -1368,6 +1411,26 @@ public class TerminowStore {
             return;
         }
         mPreferences.edit().putString(KEY_IDENTITIES, array.toString()).apply();
+        if (!Boolean.TRUE.equals(sImporting.get())) onKeysChanged();
+    }
+
+    /** An identity as it is synced, with its password in clear: the vault is encrypted as a whole. */
+    @NonNull
+    private static JSONObject identityToJson(@NonNull Identity identity) throws JSONException {
+        return new JSONObject().put("id", identity.id).put("label", identity.label).put("username", identity.username)
+            .put("password", identity.password).put("keyPath", identity.keyPath).put("created", identity.created);
+    }
+
+    @NonNull
+    private static Identity identityFromJson(@NonNull JSONObject object) {
+        Identity identity = new Identity();
+        identity.id = object.optString("id");
+        identity.label = object.optString("label");
+        identity.username = object.optString("username");
+        identity.password = object.optString("password");
+        identity.keyPath = object.optString("keyPath");
+        identity.created = object.optLong("created");
+        return identity;
     }
 
     @Nullable
@@ -1423,6 +1486,7 @@ public class TerminowStore {
             if (label.isEmpty()) labels.remove(fileName);
             else labels.put(fileName, label);
             mPreferences.edit().putString(KEY_KEY_LABELS, labels.toString()).apply();
+            if (!Boolean.TRUE.equals(sImporting.get())) onKeysChanged();
         } catch (JSONException e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Failed to save key label", e);
         }
@@ -1523,6 +1587,18 @@ public class TerminowStore {
                     .put("port", forward.port).put("bindAddress", forward.bindAddress)
                     .put("destinationAddress", forward.destinationAddress).put("destinationPort", forward.destinationPort));
             }
+            if (scope.isEmpty()) {
+                data.put("syncKeys", isSyncKeys()).put("syncKeysChanged", mPreferences.getLong(KEY_SYNC_KEYS_CHANGED, 0));
+                if (isSyncKeys()) {
+                    JSONArray keys = data.getJSONArray("keys");
+                    for (SyncedKey key : sKeyFiles.list()) {
+                        keys.put(new JSONObject().put("name", key.name).put("label", getKeyLabel(key.name))
+                            .put("private", key.privateKey).put("public", key.publicKey).put("certificate", key.certificate));
+                    }
+                    JSONArray identities = data.getJSONArray("identities");
+                    for (Identity identity : getIdentities()) identities.put(identityToJson(identity));
+                }
+            }
             return data;
         } finally {
             sVaultScope.set(previous);
@@ -1577,11 +1653,216 @@ public class TerminowStore {
                 forwards.add(forward);
             }
             setForwards(forwards);
+            if (scope.isEmpty()) importKeys(data);
         } finally {
             sImporting.set(false);
             sVaultScope.set(previous);
         }
     }
+
+    /**
+     * Take the keys and identities of the Personal vault, and whether they are synced. A key file
+     * is only ever added: one of this phone with the same name is kept, and a key that another
+     * phone deleted stays here. Identities of this phone that the vault does not have yet are
+     * kept, and synced the next time, when another phone just turned syncing on.
+     */
+    private void importKeys(@NonNull JSONObject data) throws JSONException {
+        boolean wasOn = isSyncKeys();
+        if (!data.has("syncKeys")) {
+            // Saved by a TermiNow that does not sync keys: they are put back the next time
+            if (wasOn) markPersonalChanged();
+            return;
+        }
+        boolean on = data.optBoolean("syncKeys");
+        long changed = data.optLong("syncKeysChanged");
+        if (on != wasOn || changed > mPreferences.getLong(KEY_SYNC_KEYS_CHANGED, 0))
+            mPreferences.edit().putBoolean(KEY_SYNC_KEYS, on).putLong(KEY_SYNC_KEYS_CHANGED, changed).apply();
+        if (!on) return;
+        JSONArray keys = data.optJSONArray("keys");
+        for (int i = 0; keys != null && i < keys.length(); i++) {
+            JSONObject object = keys.optJSONObject(i);
+            if (object == null) continue;
+            SyncedKey key = new SyncedKey();
+            key.name = object.optString("name");
+            key.privateKey = object.optString("private");
+            key.publicKey = object.optString("public");
+            key.certificate = object.optString("certificate");
+            if (!isValidSyncedKey(key)) continue;
+            if (sKeyFiles.add(key) && getKeyLabel(key.name).isEmpty() && !object.optString("label").isEmpty())
+                setKeyLabel(key.name, object.optString("label"));
+        }
+        List<Identity> identities = new ArrayList<>();
+        JSONArray array = data.optJSONArray("identities");
+        for (int i = 0; array != null && i < array.length(); i++) {
+            JSONObject object = array.optJSONObject(i);
+            Identity identity = object != null ? identityFromJson(object) : null;
+            if (identity != null && identity.isValid()) identities.add(identity);
+        }
+        boolean extra = false;
+        if (!wasOn) {
+            for (Identity local : getIdentities()) {
+                if (findIdentity(identities, local.id) == null) {
+                    identities.add(local);
+                    extra = true;
+                }
+            }
+        }
+        setIdentities(identities);
+        if (extra) markPersonalChanged();
+        // The keys that were just added are not a change of this phone
+        mPreferences.edit().putString(KEY_SYNC_KEYS_HASH, keyFilesHash()).apply();
+    }
+
+    private static final String KEY_SYNC_KEYS = "sync_keys";
+    private static final String KEY_SYNC_KEYS_CHANGED = "sync_keys_changed";
+
+    /** Whether the private keys and identities are synced in the Personal vault, end-to-end encrypted. */
+    public boolean isSyncKeys() {
+        return mPreferences.getBoolean(KEY_SYNC_KEYS, false);
+    }
+
+    /** Turn syncing keys on or off for the account: the Personal vault takes it to the other phones. */
+    public void setSyncKeys(boolean on) {
+        mPreferences.edit().putBoolean(KEY_SYNC_KEYS, on).putLong(KEY_SYNC_KEYS_CHANGED, System.currentTimeMillis()).apply();
+        markPersonalChanged();
+    }
+
+    /** Count a change of the Personal vault, like a key that was added, so that it is synced. */
+    public synchronized void markPersonalChanged() {
+        mPreferences.edit().putInt("vault_change:", mPreferences.getInt("vault_change:", 0) + 1).apply();
+    }
+
+    /** A key label or an identity changed: synced the next time if keys are synced. */
+    public void onKeysChanged() {
+        if (isSyncKeys()) markPersonalChanged();
+    }
+
+    private static final String KEY_SYNC_KEYS_HASH = "sync_keys_hash";
+
+    /**
+     * Before the Personal vault is synced: count a change if the key files changed since the last
+     * time, however they changed, like a key made with ssh-keygen in a terminal.
+     */
+    public void checkKeyFiles() {
+        if (!isSyncKeys()) return;
+        String hash = keyFilesHash();
+        if (hash.equals(mPreferences.getString(KEY_SYNC_KEYS_HASH, ""))) return;
+        mPreferences.edit().putString(KEY_SYNC_KEYS_HASH, hash).apply();
+        markPersonalChanged();
+    }
+
+    @NonNull
+    private static String keyFilesHash() {
+        try {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            for (SyncedKey key : sKeyFiles.list()) {
+                for (String part : new String[]{key.name, key.privateKey, key.publicKey, key.certificate}) {
+                    digest.update(part.getBytes(StandardCharsets.UTF_8));
+                    digest.update((byte) 0);
+                }
+            }
+            StringBuilder hex = new StringBuilder();
+            for (byte b : digest.digest()) hex.append(String.format(Locale.ROOT, "%02x", b & 0xff));
+            return hex.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** A private key of ~/.ssh as it is synced, with its public key and certificate if there are. */
+    public static class SyncedKey {
+        public String name = "";
+        public String privateKey = "";
+        public String publicKey = "";
+        public String certificate = "";
+    }
+
+    /** The private key files that are synced. Tests use their own. */
+    public interface KeyFiles {
+        @NonNull List<SyncedKey> list();
+
+        /** Add a key that is not on this phone; {@code false} if a file of that name is there already. */
+        boolean add(@NonNull SyncedKey key);
+    }
+
+    static final int SYNCED_KEY_MAX_SIZE = 64 * 1024;
+
+    static boolean isValidSyncedKey(@NonNull SyncedKey key) {
+        String text = key.privateKey.trim();
+        return key.name.matches("[A-Za-z0-9_][A-Za-z0-9._-]{0,99}") && !key.name.endsWith(".pub") &&
+            !key.name.equals("config") && !key.name.equals("authorized_keys") && !key.name.equals("environment") &&
+            !key.name.startsWith("known_hosts") && key.privateKey.length() <= SYNCED_KEY_MAX_SIZE &&
+            key.publicKey.length() <= SYNCED_KEY_MAX_SIZE && key.certificate.length() <= SYNCED_KEY_MAX_SIZE &&
+            ((text.startsWith("-----BEGIN ") && text.contains("PRIVATE KEY-----")) || text.startsWith("PuTTY-User-Key-File-"));
+    }
+
+    /** The key files of ~/.ssh of TermiNow. */
+    static KeyFiles sKeyFiles = new KeyFiles() {
+        private File dir() {
+            return new File(com.termux.shared.termux.TermuxConstants.TERMUX_HOME_DIR_PATH, ".ssh");
+        }
+
+        @NonNull
+        @Override
+        public List<SyncedKey> list() {
+            List<SyncedKey> keys = new ArrayList<>();
+            File[] files = dir().listFiles();
+            if (files == null) return keys;
+            for (File file : files) {
+                if (!file.isFile() || file.length() > SYNCED_KEY_MAX_SIZE) continue;
+                SyncedKey key = new SyncedKey();
+                key.name = file.getName();
+                key.privateKey = read(file);
+                key.publicKey = read(new File(file.getPath() + ".pub"));
+                key.certificate = read(new File(file.getPath() + "-cert.pub"));
+                // Only private keys: biometric and FIDO2 keys are bound to their device and have none
+                if (isValidSyncedKey(key)) keys.add(key);
+            }
+            return keys;
+        }
+
+        @Override
+        public boolean add(@NonNull SyncedKey key) {
+            File dir = dir();
+            File file = new File(dir, key.name);
+            if (file.exists()) return false;
+            try {
+                if (!dir.isDirectory() && !dir.mkdirs()) return false;
+                android.system.Os.chmod(dir.getPath(), 0700);
+                write(file, key.privateKey, 0600);
+                if (!key.publicKey.isEmpty() && !new File(file.getPath() + ".pub").exists())
+                    write(new File(file.getPath() + ".pub"), key.publicKey, 0644);
+                if (!key.certificate.isEmpty() && !new File(file.getPath() + "-cert.pub").exists())
+                    write(new File(file.getPath() + "-cert.pub"), key.certificate, 0644);
+                return true;
+            } catch (IOException | android.system.ErrnoException e) {
+                Logger.logStackTraceWithMessage(LOG_TAG, "Failed to save the synced key " + key.name, e);
+                return false;
+            }
+        }
+
+        private void write(@NonNull File file, @NonNull String content, int mode) throws IOException, android.system.ErrnoException {
+            // Created with the mode before anything is written, so a private key is never readable by others
+            try (java.io.FileOutputStream out = new java.io.FileOutputStream(file)) {
+                android.system.Os.chmod(file.getPath(), mode);
+                out.write(content.getBytes(StandardCharsets.UTF_8));
+            }
+        }
+
+        @NonNull
+        private String read(@NonNull File file) {
+            if (!file.isFile() || file.length() > SYNCED_KEY_MAX_SIZE) return "";
+            try (FileInputStream in = new FileInputStream(file)) {
+                java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = in.read(buffer)) != -1) out.write(buffer, 0, read);
+                return new String(out.toByteArray(), StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                return "";
+            }
+        }
+    };
 
     /** Remove the copy of a team vault from this phone, after leaving it or when it was deleted. */
     public void deleteVaultData(@NonNull String id) {

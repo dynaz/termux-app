@@ -9,12 +9,14 @@
  * - onPlayNotification (Pub/Sub): Real-time Developer Notifications of Google Play.
  * - reconcilePlayPurchases (scheduled): purchases that are due, failed acknowledgements.
  * - syncWhmcs (Firestore trigger) and retryWhmcsSync (scheduled): the WHMCS outbox.
+ * - accountDevices (callable): the devices signed in to the account, and signing them out.
  *
  * See firebase/README.md for the configuration and the setup.
  */
 
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
+const { getAuth } = require('firebase-admin/auth');
 const { setGlobalOptions } = require('firebase-functions/v2');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onMessagePublished } = require('firebase-functions/v2/pubsub');
@@ -28,6 +30,7 @@ const { PlayClient } = require('./src/play');
 const { WhmcsClient } = require('./src/whmcs');
 const { Service } = require('./src/service');
 const { TermiNowError, redact } = require('./src/errors');
+const { Devices } = require('./src/devices');
 
 // Configuration, set in functions/.env.<project id> (not secret) and Secret Manager (secret)
 const FUNCTIONS_REGION = defineString('FUNCTIONS_REGION', { description: 'Region of the functions, like asia-southeast1' });
@@ -56,14 +59,14 @@ function service() {
 }
 
 /** A sanitized error for the app: a stable code and a message without secrets. */
-function toHttpsError(e) {
+function toHttpsError(e, fallback = 'The purchase could not be checked, try again later') {
   if (e instanceof TermiNowError) {
     const kind = e.transient ? 'unavailable' : e.code === 'SIGN_IN_REQUIRED' ? 'unauthenticated' :
       e.code === 'PURCHASE_OF_ANOTHER_ACCOUNT' ? 'permission-denied' : e.code === 'BACKEND_NOT_CONFIGURED' ? 'failed-precondition' : 'invalid-argument';
     return new HttpsError(kind, e.message, { code: e.code, transient: e.transient });
   }
   logger.error('Unexpected error: ' + redact(e && e.stack ? e.stack : e));
-  return new HttpsError('internal', 'The purchase could not be checked, try again later', { code: 'INTERNAL', transient: true });
+  return new HttpsError('internal', fallback, { code: 'INTERNAL', transient: true });
 }
 
 exports.verifyPlayPurchase = onCall({ secrets: [WHMCS_SYNC_SECRET], enforceAppCheck: false }, async (request) => {
@@ -82,6 +85,15 @@ exports.linkWhmcsAccount = onCall({ secrets: [WHMCS_SYNC_SECRET] }, async (reque
     return await service().linkWhmcs(request.auth.uid, request.data && request.data.code);
   } catch (e) {
     throw toHttpsError(e);
+  }
+});
+
+exports.accountDevices = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in to TermiNow first', { code: 'SIGN_IN_REQUIRED' });
+  try {
+    return await new Devices({ db: getFirestore(), auth: getAuth() }).handle(request.auth.uid, request.data || {});
+  } catch (e) {
+    throw toHttpsError(e, 'The devices could not be read, try again later');
   }
 });
 

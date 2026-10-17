@@ -120,4 +120,24 @@ public class TerminowHostImportTest {
         assertEquals(Arrays.asList("last"), rows.get(2));
     }
 
+
+    @Test
+    public void hostsRememberTheKeyTheyWaitFor() throws Exception {
+        String csv = "Label,Hostname,Username,Key\n" +
+            "web,web.example.com,root,Work key\n" +
+            "db,db.example.com,root,Work key\n" +
+            "known,k.example.com,root,id_ed25519\n" +
+            "none,n.example.com,root,\n";
+        TerminowHostImport.Result result = TerminowHostImport.read(csv, KEYS);
+        assertEquals(4, result.hosts.size());
+        assertEquals("Work key", result.waitingForKey.get(result.hosts.get(0)));
+        assertEquals("Work key", result.waitingForKey.get(result.hosts.get(1)));
+        assertEquals(2, result.waitingForKey.size());
+        assertEquals(Arrays.asList("Work key"), new java.util.ArrayList<>(result.missingKeys));
+
+        String config = "Host jump\n  HostName j.example.com\n  User me\n  IdentityFile C:\\Users\\me\\.ssh\\laptop_key\n";
+        result = TerminowHostImport.read(config, KEYS);
+        assertEquals("laptop_key", result.waitingForKey.get(result.hosts.get(0)));
+    }
+
 }

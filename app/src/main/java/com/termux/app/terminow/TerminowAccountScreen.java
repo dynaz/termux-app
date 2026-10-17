@@ -66,9 +66,14 @@ public class TerminowAccountScreen {
         loadPlansIfUseful();
     };
 
-    public TerminowAccountScreen(@NonNull TermuxActivity activity, @NonNull TerminowAccountUi accountUi) {
+    @Nullable private final TerminowVaultsUi mVaultsUi;
+    private final TerminowAccountSecurity mSecurity;
+
+    public TerminowAccountScreen(@NonNull TermuxActivity activity, @NonNull TerminowAccountUi accountUi, @Nullable TerminowVaultsUi vaultsUi) {
         mActivity = activity;
         mAccountUi = accountUi;
+        mVaultsUi = vaultsUi;
+        mSecurity = new TerminowAccountSecurity(activity, accountUi, this::render);
     }
 
     public void show() {
@@ -138,8 +143,10 @@ public class TerminowAccountScreen {
         }
         renderPlan(content, store, session);
         if (session != null) {
+            renderSecurity(content, store);
             renderPlans(content);
             renderActions(content, store, session);
+            mSecurity.load(false);
         }
     }
 
@@ -174,8 +181,10 @@ public class TerminowAccountScreen {
             texts.addView(name);
         }
         texts.addView(text(session.email, 14, session.displayName.isEmpty() ? R.color.terminow_text : R.color.terminow_text_secondary));
-        TextView verified = text(mActivity.getString(session.emailVerified ? R.string.terminow_account_verified : R.string.terminow_account_not_verified),
-            12, session.emailVerified ? R.color.terminow_text_secondary : R.color.terminow_mcp_warn);
+        String status = mActivity.getString(session.emailVerified ? R.string.terminow_account_verified : R.string.terminow_account_not_verified);
+        Boolean mfa = mSecurity.isMfaOn();
+        if (mfa != null) status += " · " + mActivity.getString(mfa ? R.string.terminow_mfa_on : R.string.terminow_mfa_off);
+        TextView verified = text(status, 12, session.emailVerified ? R.color.terminow_text_secondary : R.color.terminow_mcp_warn);
         if (!session.emailVerified) verified.setOnClickListener(v -> mAccountUi.showVerify(session));
         texts.addView(verified);
         row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
@@ -184,6 +193,90 @@ public class TerminowAccountScreen {
         row.addView(signOut, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)));
         card.addView(row);
         content.addView(card);
+    }
+
+    /** Account security, like the one of Termius: 2FA, syncing keys, the password and the devices. */
+    private void renderSecurity(@NonNull LinearLayout content, @NonNull TerminowStore store) {
+        LinearLayout card = card(null);
+        TextView title = text(mActivity.getString(R.string.terminow_security_title), 15, R.color.terminow_text);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setPadding(0, 0, 0, dp(4));
+        card.addView(title);
+        TerminowAccount.Details details = mSecurity.getDetails();
+
+        String mfaSummary;
+        if (details != null) mfaSummary = mActivity.getString(details.factors.isEmpty() ? R.string.terminow_mfa_off_summary : R.string.terminow_mfa_on_summary);
+        else if (mSecurity.isLoading()) mfaSummary = mActivity.getString(R.string.terminow_account_premium_checking);
+        else mfaSummary = String.valueOf(mSecurity.getDetailsError());
+        card.addView(action(mActivity.getString(R.string.terminow_mfa_title), mfaSummary, () -> {
+            if (mSecurity.getDetails() != null) mSecurity.showMfa();
+            else mSecurity.load(true);
+        }));
+
+        card.addView(syncKeysRow(store));
+
+        if (details != null && details.hasPassword)
+            card.addView(action(mActivity.getString(R.string.terminow_password_change), mActivity.getString(R.string.terminow_password_change_summary),
+                mSecurity::showChangePassword));
+        else if (details != null)
+            card.addView(detail(mActivity.getString(R.string.terminow_password_google)));
+
+        card.addView(action(mActivity.getString(R.string.terminow_devices_title), mActivity.getString(R.string.terminow_devices_summary),
+            mSecurity::showDevices));
+        content.addView(card);
+    }
+
+    /** "Sync keys and identities", a switch: end-to-end encrypted in the Personal vault. */
+    @NonNull
+    private View syncKeysRow(@NonNull TerminowStore store) {
+        boolean on = store.isSyncKeys();
+        boolean vaultSynced = mVaultsUi != null && mVaultsUi.isPersonalSynced();
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(dp(48));
+        row.setPadding(0, dp(8), 0, dp(8));
+        row.setBackgroundResource(R.drawable.terminow_action);
+        LinearLayout texts = new LinearLayout(mActivity);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        texts.addView(text(mActivity.getString(R.string.terminow_sync_keys), 15, R.color.terminow_text));
+        texts.addView(text(mActivity.getString(!on ? R.string.terminow_sync_keys_off : vaultSynced ? R.string.terminow_sync_keys_on :
+            R.string.terminow_sync_keys_waiting), 12, R.color.terminow_text_secondary));
+        row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        android.widget.Switch toggle = new android.widget.Switch(mActivity);
+        toggle.setChecked(on);
+        toggle.setClickable(false);
+        toggle.setFocusable(false);
+        row.addView(toggle);
+        row.setOnClickListener(v -> {
+            if (store.isSyncKeys()) {
+                new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                    .setTitle(R.string.terminow_sync_keys)
+                    .setMessage(R.string.terminow_sync_keys_turn_off_message)
+                    .setPositiveButton(R.string.terminow_sync_keys_turn_off, (d, w) -> {
+                        store.setSyncKeys(false);
+                        if (mVaultsUi != null) mVaultsUi.syncPersonalSoon();
+                        render();
+                    })
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
+                return;
+            }
+            new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setTitle(R.string.terminow_sync_keys)
+                .setMessage(mActivity.getString(R.string.terminow_sync_keys_turn_on_message) +
+                    (mVaultsUi != null && !mVaultsUi.isPersonalSynced() ? "\n\n" + mActivity.getString(R.string.terminow_sync_keys_needs_vault) : ""))
+                .setPositiveButton(R.string.terminow_sync_keys_turn_on, (d, w) -> {
+                    store.setSyncKeys(true);
+                    if (mVaultsUi != null) {
+                        if (mVaultsUi.isPersonalSynced()) mVaultsUi.syncPersonalSoon();
+                        else mVaultsUi.startPersonalSync();
+                    }
+                    render();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+        });
+        return row;
     }
 
     /** The current plan: Free or Premium, where it comes from, and what the server says about it. */
@@ -415,15 +508,20 @@ public class TerminowAccountScreen {
 
     @NonNull
     private View action(int titleRes, int summaryRes, @NonNull Runnable onClick) {
+        return action(mActivity.getString(titleRes), mActivity.getString(summaryRes), onClick);
+    }
+
+    @NonNull
+    private View action(@NonNull String titleText, @NonNull String summary, @NonNull Runnable onClick) {
         LinearLayout row = new LinearLayout(mActivity);
         row.setOrientation(LinearLayout.VERTICAL);
         row.setMinimumHeight(dp(48));
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(0, dp(8), 0, dp(8));
         row.setBackgroundResource(R.drawable.terminow_action);
-        TextView title = text(mActivity.getString(titleRes), 15, R.color.terminow_text);
+        TextView title = text(titleText, 15, R.color.terminow_text);
         row.addView(title);
-        row.addView(text(mActivity.getString(summaryRes), 12, R.color.terminow_text_secondary));
+        row.addView(text(summary, 12, R.color.terminow_text_secondary));
         row.setOnClickListener(v -> onClick.run());
         return row;
     }

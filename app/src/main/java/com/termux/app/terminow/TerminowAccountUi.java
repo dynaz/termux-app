@@ -135,6 +135,136 @@ public class TerminowAccountUi {
         return mStore;
     }
 
+    @NonNull
+    TerminowAccount getAccount() {
+        return mAccount;
+    }
+
+    /** Tell everything that shows the account that it changed. */
+    void notifyChanged() {
+        mOnChanged.run();
+    }
+
+    /** How often this device tells the server that it is active, when the app comes back. */
+    private static final long DEVICE_REGISTER_INTERVAL_MS = 10 * 60 * 1000;
+    private static long sDeviceRegistered;
+    private static String sDeviceRegisteredId = "";
+
+    /**
+     * Tell the server that this device is signed in, for the Devices of the account, at most
+     * every few minutes unless {@code force}. A device that was signed out from another one is
+     * signed out here.
+     */
+    void registerDevice(boolean force) {
+        TerminowAccount.Session session = mStore.getAccount();
+        String deviceId = mStore.getAccountDeviceId();
+        if (session == null || deviceId.isEmpty() || !mAccount.hasFirebaseBackend()) return;
+        long now = System.currentTimeMillis();
+        if (!force && deviceId.equals(sDeviceRegisteredId) && now - sDeviceRegistered < DEVICE_REGISTER_INTERVAL_MS) return;
+        sDeviceRegistered = now;
+        sDeviceRegisteredId = deviceId;
+        String installId = mStore.getInstallId();
+        String name = deviceName();
+        String kind = mActivity.getPackageManager().hasSystemFeature(android.content.pm.PackageManager.FEATURE_TELEPHONY) ? "phone" : "tablet";
+        new Thread(() -> {
+            boolean signedIn;
+            try {
+                signedIn = mAccount.registerDevice(session, deviceId, installId, name, kind, BuildConfig.VERSION_NAME);
+            } catch (TerminowAccount.AccountException e) {
+                // Offline, or the server is not there yet: the next time
+                sDeviceRegistered = 0;
+                return;
+            }
+            mHandler.post(() -> {
+                // Only the same sign in: one that started meanwhile is not touched
+                if (!deviceId.equals(mStore.getAccountDeviceId())) return;
+                if (mStore.getAccount() != null) mStore.setAccount(session);
+                if (signedIn) return;
+                mStore.setAccount(null);
+                mPremiumError = null;
+                mOnChanged.run();
+                showMessage(R.string.terminow_account_sign_out, mActivity.getString(R.string.terminow_devices_signed_out_here));
+            });
+        }, "TerminowDevice").start();
+    }
+
+    /** Like "Samsung SM-F946B", as the devices of the account show it. */
+    @NonNull
+    static String deviceName() {
+        String maker = android.os.Build.MANUFACTURER == null ? "" : android.os.Build.MANUFACTURER.trim();
+        String model = android.os.Build.MODEL == null ? "" : android.os.Build.MODEL.trim();
+        if (!maker.isEmpty()) maker = maker.substring(0, 1).toUpperCase(java.util.Locale.ROOT) + maker.substring(1);
+        if (model.toLowerCase(java.util.Locale.ROOT).startsWith(maker.toLowerCase(java.util.Locale.ROOT))) return model;
+        return (maker + " " + model).trim();
+    }
+
+    /**
+     * Sign out on this device only: it is removed from the devices of the account first, if the
+     * server can be reached. Everything on the device stays.
+     */
+    void signOutHere() {
+        TerminowAccount.Session session = mStore.getAccount();
+        String deviceId = mStore.getAccountDeviceId();
+        mStore.setAccount(null);
+        mPremiumError = null;
+        mOnChanged.run();
+        if (session == null || deviceId.isEmpty() || !mAccount.hasFirebaseBackend()) return;
+        new Thread(() -> {
+            try {
+                mAccount.forgetDevice(session, deviceId);
+            } catch (TerminowAccount.AccountException e) {
+                // It stays in the list until it is signed out from another device
+            }
+        }, "TerminowDeviceForget").start();
+    }
+
+    /**
+     * Ask for the code of the authenticator app to finish a sign in that needs 2FA, then save the
+     * session like any sign in.
+     */
+    void askMfaCode(@NonNull TerminowAccount.MfaRequiredException pending, @Nullable AlertDialog signInDialog) {
+        LinearLayout form = form();
+        TextView note = new TextView(mActivity);
+        note.setText(pending.factorName.isEmpty() ? mActivity.getString(R.string.terminow_mfa_code_message) :
+            mActivity.getString(R.string.terminow_mfa_code_message_named, pending.factorName));
+        note.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+        note.setPadding(0, 0, 0, dp(8));
+        form.addView(note);
+        EditText codeView = field(form, R.string.terminow_mfa_code, InputType.TYPE_CLASS_NUMBER);
+        AlertDialog dialog = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_mfa_title)
+            .setView(form)
+            .setPositiveButton(R.string.terminow_account_sign_in_button, null)
+            .setNegativeButton(android.R.string.cancel, null)
+            .create();
+        dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String code = codeView.getText().toString().trim();
+            if (!code.matches("[0-9]{6,8}")) {
+                codeView.setError(mActivity.getString(R.string.terminow_mfa_code_invalid));
+                return;
+            }
+            final TerminowAccount.Session[] result = new TerminowAccount.Session[1];
+            run(() -> result[0] = mAccount.finishMfaSignIn(pending, code), () -> {
+                dialog.dismiss();
+                if (signInDialog != null) signInDialog.dismiss();
+                onSignedIn(result[0]);
+            });
+        }));
+        dialog.show();
+    }
+
+    /** Save a new session, then show and check what it has. */
+    private void onSignedIn(@NonNull TerminowAccount.Session session) {
+        mStore.setAccount(session);
+        mPremiumError = null;
+        mOnChanged.run();
+        registerDevice(true);
+        if (!session.emailVerified)
+            showMessage(R.string.terminow_account_verify_title, mActivity.getString(R.string.terminow_account_verify_sent, session.email));
+        else
+            checkPremiumNow();
+    }
+
     /** Whether accounts can be used in this build, with its Firebase project. */
     boolean isConfigured() {
         return mAccount.isConfigured();
@@ -155,6 +285,7 @@ public class TerminowAccountUi {
      * few minutes, so that a purchase whose check failed or a renewal is picked up.
      */
     public void recoverPurchases(@Nullable Runnable onDone) {
+        registerDevice(false);
         TerminowAccount.Session session = mStore.getAccount();
         if (session == null || !session.emailVerified || mBusy) return;
         mPurchases.recover(false, error -> {
@@ -393,19 +524,27 @@ public class TerminowAccountUi {
                     }
                     String token = idToken;
                     final TerminowAccount.Session[] result = new TerminowAccount.Session[1];
+                    final TerminowAccount.MfaRequiredException[] mfa = new TerminowAccount.MfaRequiredException[1];
                     // Signing in gives no Premium: that is only what the server verified
-                    runThen(() -> result[0] = mAccount.signInWithGoogle(token), error -> {
+                    runThen(() -> {
+                        try {
+                            result[0] = mAccount.signInWithGoogle(token);
+                        } catch (TerminowAccount.MfaRequiredException e) {
+                            mfa[0] = e;
+                        }
+                    }, error -> {
                         done.run();
                         if (error != null) {
                             showMessage(R.string.terminow_account_google_failed_title, error);
                             return;
                         }
-                        mStore.setAccount(result[0]);
-                        mPremiumError = null;
+                        if (mfa[0] != null) {
+                            askMfaCode(mfa[0], dialog);
+                            return;
+                        }
                         if (dialog != null) dialog.dismiss();
-                        mOnChanged.run();
                         // The Premium of this account, from the server
-                        checkPremiumNow();
+                        onSignedIn(result[0]);
                     });
                 }
 
@@ -441,13 +580,20 @@ public class TerminowAccountUi {
             return;
         }
         final TerminowAccount.Session[] result = new TerminowAccount.Session[1];
-        run(() -> result[0] = create ? mAccount.signUp(email, password) : mAccount.signIn(email, password), () -> {
-            mStore.setAccount(result[0]);
-            mPremiumError = null;
+        final TerminowAccount.MfaRequiredException[] mfa = new TerminowAccount.MfaRequiredException[1];
+        run(() -> {
+            try {
+                result[0] = create ? mAccount.signUp(email, password) : mAccount.signIn(email, password);
+            } catch (TerminowAccount.MfaRequiredException e) {
+                mfa[0] = e;
+            }
+        }, () -> {
+            if (mfa[0] != null) {
+                askMfaCode(mfa[0], dialog);
+                return;
+            }
             dialog.dismiss();
-            mOnChanged.run();
-            if (!result[0].emailVerified)
-                showMessage(R.string.terminow_account_verify_title, mActivity.getString(R.string.terminow_account_verify_sent, result[0].email));
+            onSignedIn(result[0]);
         });
     }
 
@@ -816,11 +962,7 @@ public class TerminowAccountUi {
     void confirmSignOut() {
         new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
             .setMessage(R.string.terminow_account_sign_out_confirm)
-            .setPositiveButton(R.string.terminow_account_sign_out, (d, w) -> {
-                mStore.setAccount(null);
-                mPremiumError = null;
-                mOnChanged.run();
-            })
+            .setPositiveButton(R.string.terminow_account_sign_out, (d, w) -> signOutHere())
             .setNegativeButton(android.R.string.cancel, null)
             .show();
     }

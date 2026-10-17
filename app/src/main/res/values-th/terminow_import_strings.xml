@@ -3,7 +3,6 @@
     <string name="terminow_import_from_config">จาก ~/.ssh/config ของ TermiNow</string>
     <string name="terminow_import_from_file">จากไฟล์ในโทรศัพท์นี้ (SSH config หรือ CSV)</string>
     <string name="terminow_import_termius">จาก Termius</string>
-    <string name="terminow_import_termius_message">Termius ไม่มีการส่งออกข้อมูลของตัวเอง TermiNow จึงอ่านข้อมูลของ Termius โดยตรงไม่ได้ สิ่งที่ใช้ได้:\n\n• ไฟล์ SSH config ที่เป็นที่มาของโฮสต์ใน Termius เช่น ~/.ssh/config ของคอมพิวเตอร์\n• ไฟล์ CSV ที่มีคอลัมน์แบบการนำเข้า CSV ของ Termius (Groups, Label, Tags, Hostname, Protocol, Port, Username, Password) ซึ่งเครื่องมือบางตัวส่งออกได้\n\nนำเข้าคีย์แยกต่างหากที่ พวงกุญแจ → + → นำเข้าคีย์ SSH จากไฟล์ รหัสผ่านใน CSV จะถูกเข้ารหัสบนโทรศัพท์นี้เมื่อบันทึก ลบไฟล์ CSV หลังนำเข้า</string>
     <string name="terminow_import_failed">นำเข้าไฟล์ไม่สำเร็จ: %1$s</string>
     <string name="terminow_import_read_csv">อ่านเป็น CSV</string>
     <string name="terminow_import_read_config">อ่านเป็น SSH config</string>

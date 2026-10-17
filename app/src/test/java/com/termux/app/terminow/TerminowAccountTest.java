@@ -31,6 +31,9 @@ public class TerminowAccountTest {
         final ServerSocket server;
         volatile boolean emailVerified;
         volatile boolean premium = true;
+        /** Whether the account has an authenticator app as its second factor. */
+        volatile boolean mfa;
+        volatile String password = "correct-horse";
 
         FakeServer() throws IOException {
             server = new ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"));
@@ -85,12 +88,44 @@ public class TerminowAccountTest {
                     }
                 } else if (path.startsWith("/auth/accounts:signInWithPassword")) {
                     JSONObject request = new JSONObject(text);
-                    if (!request.getString("password").equals("correct-horse")) {
+                    if (!request.getString("password").equals(password)) {
                         status = 400;
                         response = "{\"error\":{\"code\":400,\"message\":\"INVALID_LOGIN_CREDENTIALS\"}}";
+                    } else if (mfa) {
+                        response = "{\"localId\":\"uid1\",\"email\":\"" + request.getString("email") + "\",\"mfaPendingCredential\":\"pending-1\"," +
+                            "\"mfaInfo\":[{\"mfaEnrollmentId\":\"factor-1\",\"displayName\":\"Authenticator app\",\"totpInfo\":{}}]}";
                     } else {
                         response = signIn(request.getString("email"));
                     }
+                } else if (path.startsWith("/auth/accounts/mfaSignIn:finalize")) {
+                    JSONObject request = new JSONObject(text);
+                    if (!request.getString("mfaPendingCredential").equals("pending-1") || !request.getString("mfaEnrollmentId").equals("factor-1") ||
+                        !request.getJSONObject("totpVerificationInfo").getString("verificationCode").equals("123456")) {
+                        status = 400;
+                        response = "{\"error\":{\"code\":400,\"message\":\"INVALID_CODE\"}}";
+                    } else {
+                        response = "{\"idToken\":\"id-mfa\",\"refreshToken\":\"refresh-mfa\"}";
+                    }
+                } else if (path.startsWith("/auth/accounts/mfaEnrollment:start")) {
+                    response = "{\"totpSessionInfo\":{\"sharedSecretKey\":\"JBSWY3DPEHPK3PXP\",\"verificationCodeLength\":6," +
+                        "\"hashingAlgorithm\":\"SHA1\",\"periodSec\":30,\"sessionInfo\":\"enroll-1\"}}";
+                } else if (path.startsWith("/auth/accounts/mfaEnrollment:finalize")) {
+                    JSONObject request = new JSONObject(text);
+                    if (!request.getJSONObject("totpVerificationInfo").getString("sessionInfo").equals("enroll-1") ||
+                        !request.getJSONObject("totpVerificationInfo").getString("verificationCode").equals("654321")) {
+                        status = 400;
+                        response = "{\"error\":{\"code\":400,\"message\":\"INVALID_CODE\"}}";
+                    } else {
+                        mfa = true;
+                        response = "{\"idToken\":\"id-enrolled\",\"refreshToken\":\"refresh-enrolled\"}";
+                    }
+                } else if (path.startsWith("/auth/accounts/mfaEnrollment:withdraw")) {
+                    mfa = false;
+                    response = "{\"idToken\":\"id-withdrawn\",\"refreshToken\":\"refresh-withdrawn\"}";
+                } else if (path.startsWith("/auth/accounts:update")) {
+                    JSONObject request = new JSONObject(text);
+                    password = request.getString("password");
+                    response = "{\"localId\":\"uid1\",\"idToken\":\"id-updated\",\"refreshToken\":\"refresh-updated\",\"expiresIn\":\"3600\"}";
                 } else if (path.startsWith("/auth/accounts:signInWithIdp")) {
                     JSONObject request = new JSONObject(text);
                     if (!request.getString("postBody").equals("id_token=google-id-token&providerId=google.com") ||
@@ -104,7 +139,10 @@ public class TerminowAccountTest {
                 } else if (path.startsWith("/auth/accounts:sendOobCode")) {
                     response = "{\"email\":\"x\"}";
                 } else if (path.startsWith("/auth/accounts:lookup")) {
-                    response = "{\"users\":[{\"localId\":\"uid1\",\"email\":\"member@example.com\",\"emailVerified\":" + emailVerified + "}]}";
+                    response = "{\"users\":[{\"localId\":\"uid1\",\"email\":\"member@example.com\",\"emailVerified\":" + emailVerified +
+                        ",\"providerUserInfo\":[{\"providerId\":\"password\"}]" +
+                        (mfa ? ",\"mfaInfo\":[{\"mfaEnrollmentId\":\"factor-1\",\"displayName\":\"Authenticator app\",\"totpInfo\":{}," +
+                            "\"enrolledAt\":\"2026-10-17T01:02:03.456Z\"}]" : "") + "}]}";
                 } else if (path.startsWith("/auth/accounts:delete")) {
                     response = "{}";
                 } else if (path.startsWith("/token")) {
@@ -217,6 +255,90 @@ public class TerminowAccountTest {
             assertFalse(premium.premium);
             assertNull(premium.nextDueDate);
         }
+    }
+
+    @Test
+    public void twoFactorEnrollSignInChangePasswordAndRemove() throws Exception {
+        try (FakeServer server = new FakeServer()) {
+            server.emailVerified = true;
+            TerminowAccount account = account(server);
+            TerminowAccount.Session session = account.signIn("member@example.com", "correct-horse");
+            TerminowAccount.Details details = account.getDetails(session);
+            assertTrue(details.hasPassword);
+            assertFalse(details.hasGoogle);
+            assertTrue(details.factors.isEmpty());
+
+            TerminowAccount.TotpSetup setup = account.startTotpEnrollment(session);
+            assertEquals("JBSWY3DPEHPK3PXP", setup.secret);
+            assertEquals(6, setup.digits);
+            try {
+                account.finishTotpEnrollment(session, setup, "000000", "Authenticator app");
+                fail("A wrong code turned on 2FA");
+            } catch (TerminowAccount.AccountException expected) {
+                assertEquals("INVALID_CODE", expected.code);
+                assertTrue(expected.getMessage(), expected.getMessage().startsWith("Wrong code"));
+            }
+            account.finishTotpEnrollment(session, setup, "654321", "Authenticator app");
+            // Firebase gives new tokens after the change
+            assertEquals("refresh-enrolled", session.refreshToken);
+            details = account.getDetails(session);
+            assertEquals(1, details.factors.size());
+            assertTrue(details.factors.get(0).totp);
+            assertEquals(java.time.Instant.parse("2026-10-17T01:02:03Z").toEpochMilli(), details.factors.get(0).enrolledAt);
+
+            // Signing in now needs the code
+            TerminowAccount.MfaRequiredException pending = null;
+            try {
+                account.signIn("member@example.com", "correct-horse");
+                fail("Signed in without the second factor");
+            } catch (TerminowAccount.MfaRequiredException e) {
+                pending = e;
+            }
+            assertEquals("factor-1", pending.enrollmentId);
+            try {
+                account.finishMfaSignIn(pending, "111111");
+                fail("Signed in with a wrong code");
+            } catch (TerminowAccount.MfaRequiredException e) {
+                fail("Wrong exception");
+            } catch (TerminowAccount.AccountException expected) {
+                assertEquals("INVALID_CODE", expected.code);
+            }
+            TerminowAccount.Session signedIn = account.finishMfaSignIn(pending, "123456");
+            assertEquals("uid1", signedIn.uid);
+            assertEquals("member@example.com", signedIn.email);
+            assertTrue(signedIn.emailVerified);
+
+            // Changing the password asks for the code too
+            try {
+                account.changePassword(signedIn, "correct-horse", "battery-staple", null);
+                fail("The password changed without the code");
+            } catch (TerminowAccount.MfaRequiredException expected) {
+                assertEquals("correct-horse", server.password);
+            }
+            try {
+                account.changePassword(signedIn, "wrong", "battery-staple", "123456");
+                fail("The password changed with a wrong current one");
+            } catch (TerminowAccount.AccountException expected) {
+                assertEquals("INVALID_LOGIN_CREDENTIALS", expected.code);
+            }
+            account.changePassword(signedIn, "correct-horse", "battery-staple", "123456");
+            assertEquals("battery-staple", server.password);
+            assertEquals("refresh-updated", signedIn.refreshToken);
+            String update = null;
+            for (String request : server.requests) if (request.startsWith("/auth/accounts:update")) update = request;
+            assertTrue(update, update.contains("\"idToken\":\"id-mfa\""));
+
+            account.removeFactor(signedIn, "factor-1");
+            assertTrue(account.getDetails(signedIn).factors.isEmpty());
+            assertEquals("member@example.com", account.signIn("member@example.com", "battery-staple").email);
+        }
+    }
+
+    @Test
+    public void totpSecretIsShownInGroupsOfFour() {
+        TerminowAccount.TotpSetup setup = new TerminowAccount.TotpSetup();
+        setup.secret = "JBSWY3DPEHPK3PXP";
+        assertEquals("JBSW Y3DP EHPK 3PXP", TerminowAccountSecurity.groups(setup.secret));
     }
 
     @Test

@@ -2116,14 +2116,9 @@ public class TerminowHome {
             });
         }
         items.add(mActivity.getString(R.string.terminow_import_from_file));
-        actions.add(this::pickImportFile);
+        actions.add(() -> pickImportFile(false));
         items.add(mActivity.getString(R.string.terminow_import_termius));
-        actions.add(() -> new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
-            .setTitle(R.string.terminow_import_termius)
-            .setMessage(R.string.terminow_import_termius_message)
-            .setPositiveButton(R.string.terminow_import_from_file, (d, w) -> pickImportFile())
-            .setNegativeButton(android.R.string.cancel, null)
-            .show());
+        actions.add(this::showTermiusImport);
         new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
             .setTitle(R.string.terminow_import_title)
             .setItems(items.toArray(new CharSequence[0]), (dialog, which) -> actions.get(which).run())
@@ -2131,8 +2126,150 @@ public class TerminowHome {
             .show();
     }
 
+    /** Whether the file that is picked is for the import from Termius, which then asks for the keys. */
+    private boolean mImportFromTermius;
+
+    /**
+     * Move hosts and keys from Termius, which can not export them: the hosts from a file, then
+     * each key pasted from the Keychain of Termius and given to the hosts that name it.
+     */
+    private void showTermiusImport() {
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_import_termius)
+            .setMessage(R.string.terminow_termius_message)
+            .setPositiveButton(R.string.terminow_termius_hosts, (d, w) -> pickImportFile(true))
+            .setNeutralButton(R.string.terminow_termius_keys, (d, w) -> showTermiusKey(null, new ArrayList<>(), new java.util.IdentityHashMap<>()))
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    /**
+     * Paste one key copied from the Keychain of Termius. With {@code wanted}, the key that
+     * imported hosts name; the next ones of {@code rest} are asked for after it.
+     */
+    private void showTermiusKey(@Nullable String wanted, @NonNull List<String> rest, @NonNull Map<TerminowStore.Host, String> waiting) {
+        LinearLayout form = createForm();
+        int users = 0;
+        if (wanted != null) for (String name : waiting.values()) if (name.equals(wanted)) users++;
+        TextView note = new TextView(mActivity);
+        note.setText(wanted != null ? mActivity.getResources().getQuantityString(R.plurals.terminow_termius_key_for, users, wanted, users) :
+            mActivity.getString(R.string.terminow_termius_key_any));
+        note.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+        note.setPadding(0, 0, 0, dp(8));
+        form.addView(note);
+        EditText labelView = addField(form, R.string.terminow_termius_key_label, InputType.TYPE_CLASS_TEXT);
+        EditText contentView = addField(form, R.string.terminow_key_content,
+            InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        contentView.setMaxLines(6);
+        contentView.setTextSize(12);
+        if (wanted != null) labelView.setText(wanted);
+        TextView paste = new TextView(mActivity);
+        paste.setText(R.string.terminow_termius_paste);
+        paste.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_panel_accent));
+        paste.setMinHeight(dp(48));
+        paste.setGravity(Gravity.CENTER_VERTICAL);
+        Runnable fill = () -> {
+            String text = clipboardKey();
+            if (text != null) contentView.setText(text);
+            else mActivity.showToast(mActivity.getString(R.string.terminow_termius_no_key_copied), false);
+        };
+        paste.setOnClickListener(v -> fill.run());
+        form.addView(paste);
+        String copied = clipboardKey();
+        if (copied != null) contentView.setText(copied);
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_termius_key_title)
+            .setView(form)
+            .setPositiveButton(R.string.terminow_termius_key_save, null)
+            .setNegativeButton(R.string.terminow_termius_done, null);
+        if (wanted != null) builder.setNeutralButton(R.string.terminow_termius_skip, null);
+        AlertDialog dialog = builder.create();
+        dialog.setOnShowListener(d -> {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                String label = labelView.getText().toString().trim().replaceAll("\\p{Cntrl}", " ");
+                if (label.length() > 100) label = label.substring(0, 100);
+                String name = getNewKeyName(label.isEmpty() ? "termius_key" : label);
+                if (!isValidNewKeyName(name)) {
+                    mActivity.showToast(mActivity.getString(R.string.terminow_key_invalid), true);
+                    return;
+                }
+                if (!saveKey(name, contentView.getText().toString())) return;
+                if (!label.isEmpty() && !label.equals(name)) mStore.setKeyLabel(name, label);
+                // The hosts that named this key log in with it now
+                int given = 0;
+                for (Map.Entry<TerminowStore.Host, String> entry : waiting.entrySet()) {
+                    if (!entry.getValue().equalsIgnoreCase(wanted != null ? wanted : label)) continue;
+                    entry.getKey().keyPath = "~/.ssh/" + name;
+                    given++;
+                }
+                if (given > 0) {
+                    mStore.setHosts(mHosts);
+                    updateItems();
+                    mActivity.showToast(mActivity.getResources().getQuantityString(R.plurals.terminow_termius_key_given, given, name, given), true);
+                }
+                dialog.dismiss();
+                nextTermiusKey(wanted, rest, waiting);
+            });
+            if (wanted != null)
+                dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
+                    dialog.dismiss();
+                    nextTermiusKey(wanted, rest, waiting);
+                });
+        });
+        dialog.show();
+        // Copying a key in Termius and coming back fills it in, without tapping Paste
+        form.getViewTreeObserver().addOnWindowFocusChangeListener(hasFocus -> {
+            if (hasFocus && contentView.getText().toString().trim().isEmpty()) {
+                String text = clipboardKey();
+                if (text != null) contentView.setText(text);
+            }
+        });
+    }
+
+    /** The next key that imported hosts wait for, or the end with what is still missing. */
+    private void nextTermiusKey(@Nullable String done, @NonNull List<String> rest, @NonNull Map<TerminowStore.Host, String> waiting) {
+        if (done != null) {
+            List<TerminowStore.Host> given = new ArrayList<>();
+            for (Map.Entry<TerminowStore.Host, String> entry : waiting.entrySet())
+                if (!entry.getKey().keyPath.isEmpty()) given.add(entry.getKey());
+            for (TerminowStore.Host host : given) waiting.remove(host);
+        }
+        if (!rest.isEmpty()) {
+            String next = rest.remove(0);
+            showTermiusKey(next, rest, waiting);
+            return;
+        }
+        if (done == null) {
+            // Keys without hosts that wait for them: one after the other, until Done
+            showTermiusKey(null, rest, waiting);
+            return;
+        }
+        java.util.Set<String> missing = new java.util.LinkedHashSet<>(waiting.values());
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_import_termius)
+            .setMessage(missing.isEmpty() ? mActivity.getString(R.string.terminow_termius_all_done) :
+                mActivity.getString(R.string.terminow_termius_still_missing, TextUtils.join(", ", missing)))
+            .setPositiveButton(android.R.string.ok, null)
+            .setNeutralButton(R.string.terminow_termius_more_keys, (d, w) -> showTermiusKey(null, new ArrayList<>(), waiting))
+            .show();
+    }
+
+    /** A private key on the clipboard, like one copied in Termius, {@code null} if there is none. */
+    @Nullable
+    private String clipboardKey() {
+        ClipboardManager clipboardManager = (ClipboardManager) mActivity.getSystemService(Context.CLIPBOARD_SERVICE);
+        ClipData clip = clipboardManager != null ? clipboardManager.getPrimaryClip() : null;
+        if (clip == null || clip.getItemCount() == 0) return null;
+        CharSequence text = clip.getItemAt(0).coerceToText(mActivity);
+        if (text == null) return null;
+        String value = text.toString().trim();
+        return (value.startsWith("-----BEGIN ") && value.contains("PRIVATE KEY-----")) || TerminowPpk.isPpk(value) ? value : null;
+    }
+
     /** Pick an ssh config or a CSV of hosts anywhere on the phone. */
-    private void pickImportFile() {
+    private void pickImportFile(boolean termius) {
+        mImportFromTermius = termius;
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("*/*");
@@ -2174,9 +2311,14 @@ public class TerminowHome {
     private void previewImport(@NonNull String text) {
         TerminowHostImport.Result result;
         try {
+            List<KeyItem> keys = getKeys();
             result = TerminowHostImport.read(text, name -> {
                 File key = new File(getSshDir(), name);
-                return key.isFile() && !name.endsWith(".pub") ? "~/.ssh/" + name : null;
+                if (key.isFile() && !name.endsWith(".pub")) return "~/.ssh/" + name;
+                // A key of Termius is named by its label, like the one given when it was pasted
+                for (KeyItem item : keys)
+                    if (item.label.equalsIgnoreCase(name) && item.biometricId == null && item.fidoId == null) return item.getPath();
+                return null;
             });
         } catch (IOException e) {
             mActivity.showToast(mActivity.getString(R.string.terminow_import_failed, e.getMessage()), true);
@@ -2199,8 +2341,11 @@ public class TerminowHome {
             for (int i = 0; i < Math.min(5, result.skipped.size()); i++) message.append("\n  · ").append(result.skipped.get(i));
             if (result.skipped.size() > 5) message.append("\n  …");
         }
+        boolean termius = mImportFromTermius;
+        mImportFromTermius = false;
         if (!result.missingKeys.isEmpty())
-            message.append("\n\n").append(mActivity.getString(R.string.terminow_import_missing_keys, TextUtils.join(", ", result.missingKeys)));
+            message.append("\n\n").append(termius ? mActivity.getString(R.string.terminow_termius_keys_next, TextUtils.join(", ", result.missingKeys)) :
+                mActivity.getString(R.string.terminow_import_missing_keys, TextUtils.join(", ", result.missingKeys)));
         if (fresh.isEmpty()) {
             new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
                 .setTitle(R.string.terminow_import_title)
@@ -2213,7 +2358,19 @@ public class TerminowHome {
             .setTitle(R.string.terminow_import_title)
             .setMessage(message.toString())
             .setPositiveButton(mActivity.getResources().getQuantityString(R.plurals.terminow_import_button, fresh.size(), fresh.size()),
-                (d, w) -> importHosts(fresh, result.groups))
+                (d, w) -> {
+                    importHosts(fresh, result.groups);
+                    if (!termius) return;
+                    // Then the keys that the new hosts name, pasted from the Keychain of Termius
+                    Map<TerminowStore.Host, String> waiting = new java.util.IdentityHashMap<>();
+                    for (TerminowStore.Host host : fresh) {
+                        String key = result.waitingForKey.get(host);
+                        if (key != null) waiting.put(host, key);
+                    }
+                    List<String> names = new ArrayList<>(new java.util.LinkedHashSet<>(waiting.values()));
+                    if (names.isEmpty()) showTermiusKey(null, names, waiting);
+                    else showTermiusKey(names.remove(0), names, waiting);
+                })
             .setNegativeButton(android.R.string.cancel, null)
             .show();
     }
@@ -2965,7 +3122,7 @@ public class TerminowHome {
 
     /** Open Account & Premium: sign in, the plan, and buying or managing Premium. */
     public void openAccountScreen() {
-        new TerminowAccountScreen(mActivity, mSettings.getAccountUi()).show();
+        new TerminowAccountScreen(mActivity, mSettings.getAccountUi(), mVaultsUi).show();
     }
 
     /**

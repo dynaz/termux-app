@@ -32,6 +32,8 @@ public final class TerminowHostImport {
         public final List<String> skipped = new ArrayList<>();
         /** Keys that the file names but that are not in ~/.ssh of TermiNow, to import separately. */
         public final Set<String> missingKeys = new LinkedHashSet<>();
+        /** The missing key of each host that names one, to give it the key once it is imported. */
+        public final Map<TerminowStore.Host, String> waitingForKey = new java.util.IdentityHashMap<>();
         /** Whether the file was read as CSV, else as an ssh config. */
         public boolean csv;
     }
@@ -50,8 +52,11 @@ public final class TerminowHostImport {
         List<List<String>> rows = parseCsv(text);
         if (!rows.isEmpty() && column(header(rows.get(0)), ADDRESS) >= 0) return fromCsv(rows, keys);
         Result result = new Result();
-        for (TerminowStore.Host host : TerminowStore.readSshConfigHosts(new StringReader(text))) {
-            host.keyPath = resolveKey(host.keyPath, keys, result);
+        Map<TerminowStore.Host, String> identityFiles = new java.util.IdentityHashMap<>();
+        for (TerminowStore.Host host : TerminowStore.readSshConfigHosts(new StringReader(text), identityFiles)) {
+            String named = identityFiles.containsKey(host) ? identityFiles.get(host) : host.keyPath;
+            host.keyPath = resolveKey(named, keys, result);
+            if (host.keyPath.isEmpty() && !keyName(named).isEmpty()) result.waitingForKey.put(host, keyName(named));
             result.hosts.add(host);
         }
         return result;
@@ -173,7 +178,8 @@ public final class TerminowHostImport {
                 }
             }
 
-            if (!host.telnet) host.keyPath = resolveKey(cell(row, key), keys, result);
+            String keyNamed = cell(row, key);
+            if (!host.telnet) host.keyPath = resolveKey(keyNamed, keys, result);
 
             if (!TerminowStore.isValidAddress(host.address)) {
                 result.skipped.add(line + "the hostname " + host.address + " is not valid");
@@ -188,6 +194,7 @@ public final class TerminowHostImport {
                 continue;
             }
             if (!host.group.isEmpty()) result.groups.add(host.group);
+            if (!host.telnet && host.keyPath.isEmpty() && !keyName(keyNamed).isEmpty()) result.waitingForKey.put(host, keyName(keyNamed));
             result.hosts.add(host);
         }
         return result;
@@ -196,16 +203,22 @@ public final class TerminowHostImport {
     /** The key of a host, if the file it names is in ~/.ssh of TermiNow; a missing one is reported. */
     @NonNull
     private static String resolveKey(@NonNull String value, @NonNull KeyResolver keys, @NonNull Result result) {
-        String path = value.trim();
-        if (path.isEmpty()) return "";
-        // Like "C:\\Users\\me\\.ssh\\id_rsa", "~/.ssh/id_rsa" or "/home/me/keys/server.pem"
-        String name = path.replace('\\', '/');
-        name = name.substring(name.lastIndexOf('/') + 1);
+        String name = keyName(value);
         if (name.isEmpty()) return "";
         String resolved = keys.resolve(name);
         if (resolved != null && TerminowStore.isValidKeyPath(resolved)) return resolved;
         result.missingKeys.add(name);
         return "";
+    }
+
+    /**
+     * The file name of a key that a file names, like "id_rsa" for "C:\\Users\\me\\.ssh\\id_rsa",
+     * "~/.ssh/id_rsa" or "/home/me/keys/id_rsa"; or the label of a key of Termius, like "Work key".
+     */
+    @NonNull
+    static String keyName(@NonNull String value) {
+        String name = value.trim().replace('\\', '/');
+        return name.substring(name.lastIndexOf('/') + 1).trim();
     }
 
     /**

@@ -50,4 +50,7 @@ test('backend collections are closed to clients', async () => {
   await assertFails(getDoc(doc(alice, 'whmcsOutbox/alice')));
   await assertFails(setDoc(doc(alice, 'playAccounts/x'), { uid: 'alice' }));
   await assertFails(setDoc(doc(alice, 'whmcsLinks/alice'), { clientId: 1 }));
+  // The devices of an account are only changed by accountDevices, which checks the caller
+  await assertFails(getDocs(collection(alice, 'devices/alice/sessions')));
+  await assertFails(setDoc(doc(alice, 'devices/alice/sessions/aaaaaaaaaaaaaaaa'), { signedOut: false }));
 });
