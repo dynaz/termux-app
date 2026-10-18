@@ -98,4 +98,6 @@
     <string name="terminow_tools_tmux_end_title">ปิด %1$s?</string>
     <string name="terminow_tools_tmux_end_message">ทุกโปรแกรมในเซสชันจะถูกปิด และสิ่งที่ยังไม่ได้บันทึกจะหายไป</string>
     <string name="terminow_tools_tmux_failed">tmux ทำไม่ได้: %1$s</string>
+    <string name="terminow_linux_runtime_missing_title">ตั้งค่า Ubuntu ก่อน</string>
+    <string name="terminow_linux_runtime_missing">%1$s ทำงานบนรันไทม์ Linux ของ TermiNow (proot-distro) ซึ่งยังไม่ได้ติดตั้ง การตั้งค่า Ubuntu จะติดตั้งรันไทม์นี้พร้อม Ubuntu จากนั้นเพิ่ม %1$s อีกครั้ง</string>
 </resources>

@@ -74,6 +74,9 @@ public class TerminowLinuxUi {
 
         /** The environments changed: installed, uninstalled, settings. */
         void onChanged();
+
+        /** The automatic Ubuntu setup, which also makes the runtime ready: proot-distro, proot and python. */
+        void startUbuntuSetup();
     }
 
     private final TermuxActivity mActivity;
@@ -432,6 +435,11 @@ public class TerminowLinuxUi {
             mActivity.showToast(mActivity.getString(R.string.terminow_linux_install_busy), true);
             return;
         }
+        if (!isRuntimeReady()) {
+            if (browse != null) browse.dismiss();
+            needRuntime(entry.name, "ubuntu".equals(entry.distroId));
+            return;
+        }
         TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.MULTIPLE_ENVIRONMENTS, installedCount(), () -> {
             TerminowLinuxInstaller probe = newInstaller();
             String alias = probe.freeAlias(entry.distroId);
@@ -451,6 +459,30 @@ public class TerminowLinuxUi {
             });
             builder.show();
         });
+    }
+
+    /**
+     * Whether the runtime that every Linux environment runs on is installed. It is not part of
+     * the app: the Ubuntu setup installs it with apt, so after the data of the app was cleared
+     * an install of its own would fail with "proot-distro: No such file or directory".
+     */
+    private boolean isRuntimeReady() {
+        File prefix = mRegistry.getPrefix();
+        return new File(prefix, "bin/proot-distro").isFile() && new File(prefix, "bin/proot").isFile();
+    }
+
+    /** Ubuntu: its setup, which makes the runtime ready and installs it. Anything else: ask to set up Ubuntu once first. */
+    private void needRuntime(@NonNull String name, boolean ubuntu) {
+        if (ubuntu) {
+            mHost.startUbuntuSetup();
+            return;
+        }
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_linux_runtime_missing_title)
+            .setMessage(mActivity.getString(R.string.terminow_linux_runtime_missing, name))
+            .setPositiveButton(R.string.terminow_launcher_ubuntu_setup, (d, w) -> mHost.startUbuntuSetup())
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
     }
 
     private long usableBytes() {
@@ -580,6 +612,10 @@ public class TerminowLinuxUi {
     public void importRootfs(@NonNull android.net.Uri uri, @NonNull String fileName) {
         if (isBusy()) {
             mActivity.showToast(mActivity.getString(R.string.terminow_linux_install_busy), true);
+            return;
+        }
+        if (!isRuntimeReady()) {
+            needRuntime(fileName, false);
             return;
         }
         if (!TerminowLinuxInstaller.isImportable(fileName)) {

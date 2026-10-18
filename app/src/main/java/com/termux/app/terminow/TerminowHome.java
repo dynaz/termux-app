@@ -267,6 +267,11 @@ public class TerminowHome {
             }
 
             @Override
+            public void startUbuntuSetup() {
+                mLauncher.confirmUbuntuSetup();
+            }
+
+            @Override
             public void onChanged() {
                 if (mExplorer != null) mExplorer.refresh();
                 if (mQuickLaunch != null) mQuickLaunch.refresh();

@@ -992,7 +992,7 @@ public class TerminowLauncher {
     }
 
     /** Show the steps of installing Ubuntu, and run them in a new tab only if the user confirms. */
-    private void confirmUbuntuSetup() {
+    void confirmUbuntuSetup() {
         if (mLinux == null) return;
         dismiss();
         new TerminowUbuntuSetupUi(mActivity, mLinux, this::openEnvironment).show();
