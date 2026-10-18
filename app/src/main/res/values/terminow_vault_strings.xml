@@ -116,4 +116,13 @@
     <string name="terminow_vault_notification_ok">Vault synced</string>
     <string name="terminow_vault_notification_failed">Vault sync failed</string>
     <string name="terminow_theme_not_applied">The colors were not applied: %1$s</string>
+    <string name="terminow_team_invite_title">Invite your team</string>
+    <string name="terminow_team_invite_message">Invite your teammates to share hosts, keys and snippets through a team vault, end-to-end encrypted.</string>
+    <string name="terminow_team_invite_message_team">Invite your teammates to share the hosts, keys and snippets of %1$s, end-to-end encrypted.</string>
+    <string name="terminow_team_invite_members">Invite team members</string>
+    <string name="terminow_team_invite_note_new">Inviting creates a team vault that you own. Team vaults sync with TermiNow Premium.</string>
+    <string name="terminow_team_invite_note_member">Only the owner, %1$s, invites and removes members.</string>
+    <string name="terminow_team_you">You</string>
+    <string name="terminow_team_load_failed">Could not load the members: %1$s</string>
+    <string name="terminow_team_retry">Try again</string>
 </resources>

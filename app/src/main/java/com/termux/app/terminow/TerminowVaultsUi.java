@@ -377,7 +377,7 @@ public class TerminowVaultsUi {
             }
             addRow(menu, popup, info.name, info.id.equals(active), R.drawable.ic_terminow_person_add,
                 mActivity.getString(info.isOwner() ? R.string.terminow_vault_invite : R.string.terminow_vault_members), true,
-                () -> switchTo(info.id), () -> ready(() -> showMembers(info)));
+                () -> switchTo(info.id), () -> ready(() -> showInviteTeam(info)));
         }
         if (!anyTeam) {
             addRow(menu, popup, mActivity.getString(R.string.terminow_vault_team), false, R.drawable.ic_terminow_person_add,
@@ -606,7 +606,7 @@ public class TerminowVaultsUi {
                 work(R.string.terminow_vault_creating, () -> new JSONObject().put("id", mVaults.createTeam(value)), r -> {
                     switchTo(r.optString("id"));
                     TerminowVaults.Info info = mVaults.get(r.optString("id"));
-                    if (info != null) showMembers(info);
+                    if (info != null) showInviteTeam(info);
                 });
             })
             .setNegativeButton(android.R.string.cancel, null)
@@ -619,62 +619,350 @@ public class TerminowVaultsUi {
             return;
         }
         message(R.string.terminow_vault_waiting, mActivity.getString(R.string.terminow_vault_waiting_message, info.name, info.owner,
-            mVaults.getFingerprint()), R.string.terminow_vault_leave, () -> confirmLeave(info));
+            mVaults.getFingerprint()), R.string.terminow_vault_leave, () -> confirmLeave(info, () -> { }));
     }
 
-    /** The members of a team, with invite, give access and remove for the owner. */
-    private void showMembers(@NonNull TerminowVaults.Info info) {
-        work(R.string.terminow_vault_loading_members, () -> new JSONObject().put("members", mVaults.getMembers(info.id)), result -> {
-            JSONArray members = result.optJSONArray("members");
-            LinearLayout box = box();
-            AlertDialog[] dialog = new AlertDialog[1];
-            for (int i = 0; members != null && i < members.length(); i++) {
-                JSONObject member = members.optJSONObject(i);
-                if (member == null) continue;
-                String email = member.optString("email");
-                String status = member.optString("status");
-                String publicKey = member.isNull("publicKey") ? "" : member.optString("publicKey");
-                LinearLayout row = new LinearLayout(mActivity);
-                row.setOrientation(LinearLayout.VERTICAL);
-                row.setPadding(0, dp(10), 0, dp(10));
-                TextView title = text(email, 15, R.color.terminow_text);
-                title.setTypeface(Typeface.DEFAULT_BOLD);
-                row.addView(title, matchWrap());
-                String state;
-                switch (status) {
-                    case "active": state = mActivity.getString("owner".equals(member.optString("role")) ?
-                        R.string.terminow_vault_member_owner : R.string.terminow_vault_member_active); break;
-                    case "waiting": state = mActivity.getString(R.string.terminow_vault_member_waiting, TerminowVaultCrypto.fingerprint(publicKey)); break;
-                    default: state = mActivity.getString(R.string.terminow_vault_member_invited); break;
-                }
-                row.addView(text(state, 12, "waiting".equals(status) ? R.color.terminow_mcp_warn : R.color.terminow_text_secondary), matchWrap());
-                if (info.isOwner() && "waiting".equals(status)) {
-                    TextView grant = link(mActivity.getString(R.string.terminow_vault_grant));
-                    grant.setOnClickListener(v -> confirmGrant(info, email, publicKey, dialog[0]));
-                    row.addView(grant);
-                }
-                if (info.isOwner() && !"owner".equals(member.optString("role"))) {
-                    TextView remove = link(mActivity.getString(R.string.terminow_vault_remove));
-                    remove.setTextColor(color(R.color.terminow_mcp_warn));
-                    remove.setOnClickListener(v -> confirmRemove(info, email, dialog[0]));
-                    row.addView(remove);
-                }
-                box.addView(row, matchWrap());
+    // ---------------------------------------------------------------------------------------
+    // Invite your team, like Termius: the members of the team, the owner with a crown, and
+    // Invite team members. The chip of the hosts shows their initials and opens it.
+    // ---------------------------------------------------------------------------------------
+
+    /** The members of each team as the server last listed them, for the chip. */
+    private final java.util.Map<String, JSONArray> mMembers = new java.util.HashMap<>();
+    @Nullable private LinearLayout mTeamChip;
+    private static final int[] AVATAR_COLORS = {0xFFF8B4E6, 0xFF8FC7FF, 0xFF9BE3B5, 0xFFFFD08A, 0xFFC7B6FF, 0xFFFFA8A0};
+
+    /**
+     * The team that inviting is for: the one that is shown, else the first that this account
+     * owns, else the first one; {@code null} without a team.
+     */
+    @Nullable
+    private TerminowVaults.Info inviteTeam() {
+        TerminowVaults.Info active = mVaults.get(mStore.getActiveVault());
+        if (active != null && !active.isPersonal()) return active;
+        TerminowVaults.Info first = null;
+        for (TerminowVaults.Info info : mVaults.getVaults()) {
+            if (info.isPersonal()) continue;
+            if (info.isOwner()) return info;
+            if (first == null) first = info;
+        }
+        return first;
+    }
+
+    /** The chip at the end of the actions of the hosts: initials of the team, then +. */
+    public void bindTeamChip(@NonNull LinearLayout chip) {
+        mTeamChip = chip;
+        chip.setOnClickListener(v -> showInviteTeam(null));
+        renderTeamChip();
+    }
+
+    /** After the vault that is shown, the account or the teams changed. */
+    public void refreshTeamChip() {
+        renderTeamChip();
+    }
+
+    private void renderTeamChip() {
+        LinearLayout chip = mTeamChip;
+        if (chip == null) return;
+        chip.removeAllViews();
+        List<String> emails = new java.util.ArrayList<>();
+        TerminowVaults.Info team = inviteTeam();
+        JSONArray members = team != null ? mMembers.get(team.id) : null;
+        for (int i = 0; members != null && i < members.length() && emails.size() < 3; i++) {
+            JSONObject member = members.optJSONObject(i);
+            if (member != null) emails.add(member.optString("email"));
+        }
+        TerminowAccount.Session session = mStore.getAccount();
+        if (emails.isEmpty() && session != null) emails.add(session.email);
+        for (int i = 0; i < emails.size(); i++) {
+            TextView avatar = avatar(emails.get(i), 32, 16);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(32), dp(32));
+            // Overlapping a little, like the faces of Termius
+            if (i > 0) params.setMarginStart(-dp(8));
+            chip.addView(avatar, params);
+        }
+        TextView plus = text("+", 18, R.color.terminow_text_secondary);
+        plus.setGravity(Gravity.CENTER);
+        android.graphics.drawable.GradientDrawable circle = new android.graphics.drawable.GradientDrawable();
+        circle.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        circle.setColor(color(R.color.terminow_field));
+        plus.setBackground(circle);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(32), dp(32));
+        if (!emails.isEmpty()) params.setMarginStart(-dp(6));
+        chip.addView(plus, params);
+    }
+
+    /** A rounded square with the first letter of an email, in a color of that email. */
+    @NonNull
+    private TextView avatar(@NonNull String email, int sizeDp, int textSp) {
+        String letter = email.isEmpty() ? "?" : email.substring(0, 1).toUpperCase(java.util.Locale.ROOT);
+        TextView avatar = text(letter, textSp, R.color.terminow_text);
+        avatar.setTextColor(Color.WHITE);
+        avatar.setTypeface(Typeface.DEFAULT_BOLD);
+        avatar.setGravity(Gravity.CENTER);
+        android.graphics.drawable.GradientDrawable shape = new android.graphics.drawable.GradientDrawable();
+        shape.setColor(AVATAR_COLORS[Math.abs(email.toLowerCase(java.util.Locale.ROOT).hashCode() % AVATAR_COLORS.length)]);
+        shape.setCornerRadius(dp(sizeDp * 0.28f));
+        shape.setStroke(dp(2), color(R.color.terminow_panel_accent));
+        avatar.setBackground(shape);
+        return avatar;
+    }
+
+    /**
+     * Invite your team: the members of {@code team}, or of the team that inviting is for when
+     * it is {@code null}. Without a team, Invite team members creates one first.
+     */
+    public void showInviteTeam(@Nullable TerminowVaults.Info team) {
+        TerminowVaults.Info info = team != null ? team : inviteTeam();
+        android.app.Dialog dialog = new android.app.Dialog(mActivity, R.style.TerminowPanelDialog);
+        android.widget.FrameLayout root = new android.widget.FrameLayout(mActivity);
+        root.setBackgroundColor(color(R.color.terminow_panel_scrim));
+        root.setOnClickListener(v -> dialog.dismiss());
+
+        LinearLayout sheet = new LinearLayout(mActivity);
+        sheet.setOrientation(LinearLayout.VERTICAL);
+        sheet.setClickable(true);
+        android.graphics.drawable.GradientDrawable background = new android.graphics.drawable.GradientDrawable();
+        background.setColor(color(R.color.terminow_panel));
+        background.setCornerRadius(dp(28));
+        sheet.setBackground(background);
+        sheet.setPadding(dp(16), dp(12), dp(16), dp(24));
+
+        android.widget.ImageButton back = new android.widget.ImageButton(mActivity);
+        back.setImageResource(R.drawable.ic_terminow_back);
+        back.setColorFilter(color(R.color.terminow_text));
+        back.setBackgroundResource(android.R.color.transparent);
+        back.setContentDescription(mActivity.getString(R.string.terminow_rdp_back));
+        back.setOnClickListener(v -> dialog.dismiss());
+        sheet.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
+
+        ScrollView scroll = new ScrollView(mActivity);
+        scroll.setVerticalScrollBarEnabled(false);
+        LinearLayout content = new LinearLayout(mActivity);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setGravity(Gravity.CENTER_HORIZONTAL);
+        scroll.addView(content);
+        sheet.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+
+        ImageView icon = new ImageView(mActivity);
+        icon.setImageResource(R.drawable.ic_terminow_team);
+        content.addView(icon, new LinearLayout.LayoutParams(dp(96), dp(96)));
+        TextView title = text(mActivity.getString(R.string.terminow_team_invite_title), 26, R.color.terminow_text);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setGravity(Gravity.CENTER);
+        title.setPadding(0, dp(16), 0, dp(10));
+        content.addView(title, matchWrap());
+        TextView about = text(info != null ? mActivity.getString(R.string.terminow_team_invite_message_team, info.name) :
+            mActivity.getString(R.string.terminow_team_invite_message), 15, R.color.terminow_text);
+        about.setGravity(Gravity.CENTER);
+        about.setLineSpacing(0, 1.25f);
+        about.setPadding(dp(8), 0, dp(8), dp(20));
+        content.addView(about, matchWrap());
+
+        LinearLayout card = new LinearLayout(mActivity);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackgroundResource(R.drawable.terminow_panel_card);
+        content.addView(card, matchWrap());
+        TextView note = text("", 12, R.color.terminow_text_secondary);
+        note.setPadding(dp(8), dp(14), dp(8), 0);
+        content.addView(note, matchWrap());
+        TextView leave = link("");
+        leave.setTextColor(color(R.color.terminow_mcp_warn));
+        leave.setPadding(dp(8), dp(14), dp(8), dp(4));
+        content.addView(leave);
+        leave.setVisibility(View.GONE);
+
+        Runnable[] load = new Runnable[1];
+        load[0] = () -> {
+            card.removeAllViews();
+            if (info == null) {
+                // No team yet: this account would be its owner
+                TerminowAccount.Session session = mStore.getAccount();
+                String me = session != null ? session.email : mActivity.getString(R.string.terminow_team_you);
+                memberRow(card, me, true, null, null);
+                inviteRow(card, () -> {
+                    dialog.dismiss();
+                    ready(this::createTeam);
+                });
+                note.setText(R.string.terminow_team_invite_note_new);
+                return;
             }
-            box.addView(text(mActivity.getString(R.string.terminow_vault_members_note), 12, R.color.terminow_text_secondary), matchWrap());
-            ScrollView scroll = new ScrollView(mActivity);
-            scroll.addView(box);
-            AlertDialog.Builder builder = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
-                .setTitle(info.name)
-                .setView(scroll)
-                .setNegativeButton(R.string.terminow_profiles_close, null)
-                .setNeutralButton(info.isOwner() ? R.string.terminow_vault_delete_team : R.string.terminow_vault_leave, (d, w) -> confirmLeave(info));
-            if (info.isOwner()) builder.setPositiveButton(R.string.terminow_vault_invite, (d, w) -> invite(info));
-            dialog[0] = builder.show();
+            ProgressBar spinner = new ProgressBar(mActivity);
+            LinearLayout.LayoutParams spinnerParams = new LinearLayout.LayoutParams(dp(32), dp(32));
+            spinnerParams.gravity = Gravity.CENTER_HORIZONTAL;
+            spinnerParams.setMargins(0, dp(20), 0, dp(20));
+            card.addView(spinner, spinnerParams);
+            mExecutor.execute(() -> {
+                JSONArray members = null;
+                String error = null;
+                try {
+                    members = mVaults.getMembers(info.id);
+                } catch (TerminowVaults.VaultException e) {
+                    error = e.status == 402 ? mActivity.getString(R.string.terminow_vault_premium_needed) : e.getMessage();
+                } catch (Exception e) {
+                    error = String.valueOf(e.getMessage());
+                }
+                JSONArray finalMembers = members;
+                String finalError = error;
+                mHandler.post(() -> {
+                    if (!dialog.isShowing()) return;
+                    card.removeAllViews();
+                    if (finalMembers == null) {
+                        TextView failed = text(mActivity.getString(R.string.terminow_team_load_failed, finalError), 14, R.color.terminow_mcp_warn);
+                        failed.setPadding(dp(16), dp(16), dp(16), 0);
+                        card.addView(failed, matchWrap());
+                        TextView retry = link(mActivity.getString(R.string.terminow_team_retry));
+                        retry.setPadding(dp(16), dp(8), dp(16), dp(16));
+                        retry.setOnClickListener(v -> load[0].run());
+                        card.addView(retry);
+                        return;
+                    }
+                    mMembers.put(info.id, finalMembers);
+                    renderTeamChip();
+                    for (int i = 0; i < finalMembers.length(); i++) {
+                        JSONObject member = finalMembers.optJSONObject(i);
+                        if (member == null) continue;
+                        String email = member.optString("email");
+                        boolean owner = "owner".equals(member.optString("role"));
+                        String status = member.optString("status");
+                        String publicKey = member.isNull("publicKey") ? "" : member.optString("publicKey");
+                        String state = owner ? null : "active".equals(status) ? mActivity.getString(R.string.terminow_vault_member_active) :
+                            "waiting".equals(status) ? mActivity.getString(R.string.terminow_vault_member_waiting, TerminowVaultCrypto.fingerprint(publicKey)) :
+                            mActivity.getString(R.string.terminow_vault_member_invited);
+                        Runnable manage = !info.isOwner() || owner ? null : () -> manageMember(info, email, status, publicKey, load[0]);
+                        memberRow(card, email, owner, state, manage);
+                    }
+                    if (info.isOwner()) inviteRow(card, () -> invite(info, load[0]));
+                    note.setText(info.isOwner() ? mActivity.getString(R.string.terminow_vault_members_note) :
+                        mActivity.getString(R.string.terminow_team_invite_note_member, info.owner));
+                    leave.setText(info.isOwner() ? R.string.terminow_vault_delete_team : R.string.terminow_vault_leave);
+                    leave.setVisibility(View.VISIBLE);
+                    leave.setOnClickListener(v -> confirmLeave(info, dialog::dismiss));
+                });
+            });
+        };
+        load[0].run();
+
+        android.widget.FrameLayout.LayoutParams sheetParams = new android.widget.FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER);
+        root.addView(sheet, sheetParams);
+        // A card in the middle like Termius, with the room of the screen around it on a large screen
+        root.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            int width = Math.min(right - left - dp(32), dp(640));
+            int height = Math.min(bottom - top - dp(48), dp(760));
+            ViewGroup.LayoutParams params = sheet.getLayoutParams();
+            if (params.width != width || params.height != height) {
+                params.width = width;
+                params.height = height;
+                sheet.post(() -> sheet.setLayoutParams(params));
+            }
         });
+        dialog.setContentView(root);
+        android.view.Window window = dialog.getWindow();
+        if (window != null) window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+        dialog.show();
     }
 
-    private void invite(@NonNull TerminowVaults.Info info) {
+    private void memberRow(@NonNull LinearLayout card, @NonNull String email, boolean owner, @Nullable String state,
+                           @Nullable Runnable onClick) {
+        if (card.getChildCount() > 0) divider(card);
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(14), dp(12), dp(14), dp(12));
+        row.addView(avatar(email, 52, 22), new LinearLayout.LayoutParams(dp(52), dp(52)));
+        LinearLayout texts = new LinearLayout(mActivity);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        texts.setPadding(dp(14), 0, dp(8), 0);
+        LinearLayout line = new LinearLayout(mActivity);
+        line.setGravity(Gravity.CENTER_VERTICAL);
+        TextView name = text(email, 16, R.color.terminow_text);
+        name.setSingleLine(true);
+        name.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+        line.addView(name, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        if (owner) {
+            // The crown of the owner, in a dark badge
+            ImageView crown = new ImageView(mActivity);
+            crown.setImageResource(R.drawable.ic_terminow_crown);
+            crown.setColorFilter(color(R.color.terminow_text_secondary));
+            crown.setPadding(dp(6), dp(3), dp(6), dp(3));
+            android.graphics.drawable.GradientDrawable badge = new android.graphics.drawable.GradientDrawable();
+            badge.setColor(color(R.color.terminow_bar_home));
+            badge.setCornerRadius(dp(6));
+            crown.setBackground(badge);
+            crown.setContentDescription(mActivity.getString(R.string.terminow_vault_member_owner));
+            LinearLayout.LayoutParams crownParams = new LinearLayout.LayoutParams(dp(36), dp(24));
+            crownParams.setMarginStart(dp(8));
+            line.addView(crown, crownParams);
+            // The name takes only its room, so the crown is next to it
+            name.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0f));
+        }
+        texts.addView(line, matchWrap());
+        if (state != null) {
+            TextView sub = text(state, 13, R.color.terminow_text_secondary);
+            sub.setPadding(0, dp(2), 0, 0);
+            texts.addView(sub, matchWrap());
+        }
+        row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        if (onClick != null) {
+            ImageView more = new ImageView(mActivity);
+            more.setImageResource(R.drawable.ic_terminow_more);
+            more.setColorFilter(color(R.color.terminow_text_secondary));
+            row.addView(more, new LinearLayout.LayoutParams(dp(24), dp(24)));
+            selectable(row);
+            row.setOnClickListener(v -> onClick.run());
+        }
+        card.addView(row, matchWrap());
+    }
+
+    private void inviteRow(@NonNull LinearLayout card, @NonNull Runnable onClick) {
+        if (card.getChildCount() > 0) divider(card);
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(14), dp(12), dp(14), dp(12));
+        TextView plus = text("+", 30, R.color.terminow_panel_accent);
+        plus.setGravity(Gravity.CENTER);
+        android.graphics.drawable.GradientDrawable tile = new android.graphics.drawable.GradientDrawable();
+        tile.setColor(color(R.color.terminow_field));
+        tile.setCornerRadius(dp(14));
+        plus.setBackground(tile);
+        row.addView(plus, new LinearLayout.LayoutParams(dp(52), dp(52)));
+        TextView label = text(mActivity.getString(R.string.terminow_team_invite_members), 16, R.color.terminow_panel_accent);
+        label.setPadding(dp(14), 0, 0, 0);
+        row.addView(label, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        selectable(row);
+        row.setOnClickListener(v -> onClick.run());
+        card.addView(row, matchWrap());
+    }
+
+    /** Give access to a member that is waiting for it, or remove a member, for the owner. */
+    private void manageMember(@NonNull TerminowVaults.Info info, @NonNull String email, @NonNull String status,
+                              @NonNull String publicKey, @NonNull Runnable then) {
+        List<CharSequence> actions = new java.util.ArrayList<>();
+        boolean waiting = "waiting".equals(status);
+        if (waiting) actions.add(mActivity.getString(R.string.terminow_vault_grant));
+        actions.add(mActivity.getString(R.string.terminow_vault_remove));
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(email)
+            .setItems(actions.toArray(new CharSequence[0]), (d, which) -> {
+                if (waiting && which == 0) confirmGrant(info, email, publicKey, then);
+                else confirmRemove(info, email, then);
+            })
+            .show();
+    }
+
+    private void divider(@NonNull LinearLayout card) {
+        View divider = new View(mActivity);
+        divider.setBackgroundColor(color(R.color.terminow_field));
+        card.addView(divider, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)));
+    }
+
+    private void selectable(@NonNull View view) {
+        TypedValue value = new TypedValue();
+        mActivity.getTheme().resolveAttribute(android.R.attr.selectableItemBackground, value, true);
+        view.setForeground(ContextCompat.getDrawable(mActivity, value.resourceId));
+    }
+
+    private void invite(@NonNull TerminowVaults.Info info, @NonNull Runnable then) {
         LinearLayout box = box();
         box.addView(text(mActivity.getString(R.string.terminow_vault_invite_message), 13, R.color.terminow_text_secondary), matchWrap());
         EditText email = new EditText(mActivity);
@@ -690,42 +978,36 @@ public class TerminowVaultsUi {
             .setPositiveButton(R.string.terminow_vault_invite, (d, w) -> work(R.string.terminow_vault_inviting, () -> {
                 mVaults.invite(info.id, email.getText().toString());
                 return new JSONObject();
-            }, r -> showMembers(info)))
+            }, r -> then.run()))
             .setNegativeButton(android.R.string.cancel, null)
             .show();
     }
 
-    private void confirmGrant(@NonNull TerminowVaults.Info info, @NonNull String email, @NonNull String publicKey, @Nullable AlertDialog parent) {
+    private void confirmGrant(@NonNull TerminowVaults.Info info, @NonNull String email, @NonNull String publicKey, @NonNull Runnable then) {
         new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
             .setTitle(R.string.terminow_vault_grant)
             .setMessage(mActivity.getString(R.string.terminow_vault_grant_message, email, TerminowVaultCrypto.fingerprint(publicKey), info.name))
-            .setPositiveButton(R.string.terminow_vault_grant, (d, w) -> {
-                if (parent != null) parent.dismiss();
-                work(R.string.terminow_vault_granting, () -> {
-                    mVaults.grant(info.id, email, publicKey);
-                    return new JSONObject();
-                }, r -> showMembers(info));
-            })
+            .setPositiveButton(R.string.terminow_vault_grant, (d, w) -> work(R.string.terminow_vault_granting, () -> {
+                mVaults.grant(info.id, email, publicKey);
+                return new JSONObject();
+            }, r -> then.run()))
             .setNegativeButton(android.R.string.cancel, null)
             .show();
     }
 
-    private void confirmRemove(@NonNull TerminowVaults.Info info, @NonNull String email, @Nullable AlertDialog parent) {
+    private void confirmRemove(@NonNull TerminowVaults.Info info, @NonNull String email, @NonNull Runnable then) {
         new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
             .setTitle(mActivity.getString(R.string.terminow_vault_remove_title, email))
             .setMessage(R.string.terminow_vault_remove_message)
-            .setPositiveButton(R.string.terminow_vault_remove, (d, w) -> {
-                if (parent != null) parent.dismiss();
-                work(R.string.terminow_vault_removing, () -> {
-                    mVaults.removeMember(info.id, email);
-                    return new JSONObject();
-                }, r -> showMembers(info));
-            })
+            .setPositiveButton(R.string.terminow_vault_remove, (d, w) -> work(R.string.terminow_vault_removing, () -> {
+                mVaults.removeMember(info.id, email);
+                return new JSONObject();
+            }, r -> then.run()))
             .setNegativeButton(android.R.string.cancel, null)
             .show();
     }
 
-    private void confirmLeave(@NonNull TerminowVaults.Info info) {
+    private void confirmLeave(@NonNull TerminowVaults.Info info, @NonNull Runnable then) {
         new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
             .setTitle(info.isOwner() ? mActivity.getString(R.string.terminow_vault_delete_team_title, info.name) :
                 mActivity.getString(R.string.terminow_vault_leave_title, info.name))
@@ -734,7 +1016,12 @@ public class TerminowVaultsUi {
                 work(R.string.terminow_vault_working, () -> {
                     mVaults.leaveOrDelete(info);
                     return new JSONObject();
-                }, r -> mListener.onVaultChanged()))
+                }, r -> {
+                    mMembers.remove(info.id);
+                    mListener.onVaultChanged();
+                    renderTeamChip();
+                    then.run();
+                }))
             .setNegativeButton(android.R.string.cancel, null)
             .show();
     }

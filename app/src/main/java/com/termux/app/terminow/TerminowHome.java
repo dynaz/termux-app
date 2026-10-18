@@ -361,6 +361,8 @@ public class TerminowHome {
         mVaultButton = activity.findViewById(R.id.terminow_vault_button);
         mVaultsUi = new TerminowVaultsUi(activity, mStore, this::reloadVault);
         mVaultButton.setOnClickListener(v -> mVaultsUi.showSwitcher(v));
+        // The members of the team at the end of the actions of the hosts, like Termius
+        mVaultsUi.bindTeamChip(activity.findViewById(R.id.terminow_team_chip));
         // The cloud says whether the vault is synced, a tap says why and offers to sync
         mVaultSyncIcon.setOnClickListener(v -> mVaultsUi.showStatus());
         mVaultSyncIcon.setContentDescription(activity.getString(R.string.terminow_vault_status));
@@ -1385,6 +1387,7 @@ public class TerminowHome {
         mForwards = mStore.getForwards();
         if (mCurrentGroup != null && !mGroups.contains(mCurrentGroup))
             mCurrentGroup = null;
+        if (mVaultsUi != null) mVaultsUi.refreshTeamChip();
         refresh();
         if (isVisible()) updateItems();
     }

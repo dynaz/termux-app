@@ -114,4 +114,13 @@
     <string name="terminow_vault_notification_ok">ซิงก์ห้องนิรภัยแล้ว</string>
     <string name="terminow_vault_notification_failed">ซิงก์ห้องนิรภัยไม่สำเร็จ</string>
     <string name="terminow_theme_not_applied">ใช้สีไม่ได้: %1$s</string>
+    <string name="terminow_team_invite_title">เชิญทีมของคุณ</string>
+    <string name="terminow_team_invite_message">เชิญเพื่อนร่วมทีมเพื่อแชร์โฮสต์ คีย์ และสนิปเป็ตผ่านห้องนิรภัยของทีม ที่เข้ารหัสตั้งแต่ต้นทางถึงปลายทาง</string>
+    <string name="terminow_team_invite_message_team">เชิญเพื่อนร่วมทีมเพื่อแชร์โฮสต์ คีย์ และสนิปเป็ตของ %1$s ที่เข้ารหัสตั้งแต่ต้นทางถึงปลายทาง</string>
+    <string name="terminow_team_invite_members">เชิญสมาชิกทีม</string>
+    <string name="terminow_team_invite_note_new">การเชิญจะสร้างห้องนิรภัยของทีมที่คุณเป็นเจ้าของ ห้องนิรภัยของทีมซิงค์ได้ด้วย TermiNow Premium</string>
+    <string name="terminow_team_invite_note_member">เฉพาะเจ้าของ %1$s เท่านั้นที่เชิญและนำสมาชิกออกได้</string>
+    <string name="terminow_team_you">คุณ</string>
+    <string name="terminow_team_load_failed">โหลดสมาชิกไม่ได้: %1$s</string>
+    <string name="terminow_team_retry">ลองอีกครั้ง</string>
 </resources>

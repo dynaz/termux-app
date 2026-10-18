@@ -373,11 +373,19 @@
                     tools:ignore="HardcodedText" />
             </LinearLayout>
 
-            <HorizontalScrollView
+            <!-- The actions of the hosts, and at the end the members of the team, like Termius -->
+            <LinearLayout
                 android:id="@+id/terminow_actions"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="14dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+            <HorizontalScrollView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
                 android:overScrollMode="never"
                 android:scrollbars="none">
 
@@ -402,6 +410,18 @@
                         android:text="@string/terminow_action_import" />
                 </LinearLayout>
             </HorizontalScrollView>
+
+                <!-- Filled with the initials of the members and a + -->
+                <LinearLayout
+                    android:id="@+id/terminow_team_chip"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:layout_marginStart="8dp"
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/terminow_team_invite_title"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal" />
+            </LinearLayout>
         </LinearLayout>
 
         <TextView
