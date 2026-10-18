@@ -698,7 +698,14 @@ JNIEXPORT jboolean JNICALL NATIVE(nativeConfigure)(JNIEnv* env, jclass cls, jlon
 	          freerdp_settings_set_bool(settings, FreeRDP_GfxH264, FALSE) &&
 	          freerdp_settings_set_bool(settings, FreeRDP_GfxAVC444, FALSE) &&
 	          freerdp_settings_set_bool(settings, FreeRDP_GfxAVC444v2, FALSE) &&
-	          freerdp_settings_set_bool(settings, FreeRDP_NetworkAutoDetect, TRUE) &&
+	          /* These need the rdpdr channel, which then also loads rdpsnd: neither is in this
+	           * build, and the connection would fail before it starts */
+	          freerdp_settings_set_bool(settings, FreeRDP_NetworkAutoDetect, FALSE) &&
+	          freerdp_settings_set_bool(settings, FreeRDP_SupportHeartbeatPdu, FALSE) &&
+	          freerdp_settings_set_bool(settings, FreeRDP_SupportMultitransport, FALSE) &&
+	          freerdp_settings_set_bool(settings, FreeRDP_DeviceRedirection, FALSE) &&
+	          freerdp_settings_set_bool(settings, FreeRDP_AudioPlayback, FALSE) &&
+	          freerdp_settings_set_bool(settings, FreeRDP_AudioCapture, FALSE) &&
 	          freerdp_settings_set_uint32(settings, FreeRDP_KeyboardLayout, 0x00000409) &&
 	          freerdp_settings_set_bool(settings, FreeRDP_UnicodeInput, TRUE);
 	rdp->clipboard = clipboard ? TRUE : FALSE;

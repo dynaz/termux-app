@@ -276,6 +276,7 @@ public final class TerminowRdpSession {
             setState(State.FAILED, "CONFIG|" + mConfigDir);
             return;
         }
+        useSystemCertificates(mConfigDir);
         long handle = TerminowRdpNative.nativeCreate(new Callbacks());
         if (handle == 0) {
             setState(State.FAILED, "CREATE|");
@@ -295,6 +296,42 @@ public final class TerminowRdpSession {
         }
         mHandle = handle;
         if (mStopped) TerminowRdpNative.nativeStop(handle);
+    }
+
+    private static boolean sCertificatesSet;
+
+    /**
+     * The CAs that Android trusts, for the engine to verify certificates with, like a browser:
+     * OpenSSL can not read the folder of Android, whose files are named by the old hash of
+     * OpenSSL, so they are written to one PEM file once a process. Only the CAs of the system,
+     * not ones the user added, as for any app. Without them every certificate asks the user.
+     */
+    private static synchronized void useSystemCertificates(@NonNull File configDir) {
+        if (sCertificatesSet) return;
+        File file = new File(configDir, "cacerts.pem");
+        File temporary = new File(configDir, "cacerts.pem.tmp");
+        try {
+            java.security.KeyStore store = java.security.KeyStore.getInstance("AndroidCAStore");
+            store.load(null, null);
+            StringBuilder pem = new StringBuilder();
+            for (String alias : Collections.list(store.aliases())) {
+                if (!alias.startsWith("system:")) continue;
+                java.security.cert.Certificate certificate = store.getCertificate(alias);
+                if (certificate == null) continue;
+                pem.append("-----BEGIN CERTIFICATE-----\n")
+                    .append(android.util.Base64.encodeToString(certificate.getEncoded(), android.util.Base64.DEFAULT))
+                    .append("-----END CERTIFICATE-----\n");
+            }
+            try (java.io.FileOutputStream out = new java.io.FileOutputStream(temporary)) {
+                out.write(pem.toString().getBytes(StandardCharsets.US_ASCII));
+            }
+            if (!temporary.renameTo(file)) throw new IOException("rename " + temporary);
+            android.system.Os.setenv("SSL_CERT_FILE", file.getAbsolutePath(), true);
+            sCertificatesSet = true;
+        } catch (Exception e) {
+            // Not fatal: certificates are then all shown to the user to accept or refuse
+            android.util.Log.w("TerminowRdp", "System certificates not available: " + e);
+        }
     }
 
     /** The callbacks of the engine, on its client thread. */
