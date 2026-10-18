@@ -193,6 +193,24 @@
             android:textColor="@color/terminow_text_secondary"
             android:textSize="13sp" />
 
+        <!-- Install tools: the label goes when the toolbar is narrow, the tooltip stays -->
+        <TextView
+            android:id="@+id/terminow_toolbar_install"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/terminow_tab_idle"
+            android:contentDescription="@string/terminow_install_title"
+            android:drawableStart="@drawable/ic_terminow_download"
+            android:drawablePadding="6dp"
+            android:drawableTint="@color/terminow_text"
+            android:gravity="center_vertical"
+            android:maxLines="1"
+            android:paddingHorizontal="10dp"
+            android:text="@string/terminow_install_button"
+            android:textColor="@color/terminow_text"
+            android:textSize="13sp" />
+
         <TextView
             android:id="@+id/terminow_toolbar_tools"
             android:layout_width="wrap_content"

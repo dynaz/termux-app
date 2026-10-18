@@ -111,6 +111,13 @@ public class TerminowLauncher {
     /** Starts Claude Code with the arguments after `$0`, from the folder the session starts in. */
     static final String CLAUDE_SCRIPT = "PATH=\"$HOME/.local/bin:$PATH\"; export PATH; exec claude \"$@\"";
 
+    /** {@link #CLAUDE_SCRIPT}, after saying how to sign in. */
+    static final String CLAUDE_SIGN_IN_HELP_SCRIPT = "PATH=\"$HOME/.local/bin:$PATH\"; export PATH; " +
+        "echo 'TermiNow: Claude Code is starting. If it asks you to sign in, pick a login method and open the link it shows;'; " +
+        "echo 'TermiNow offers to open it in the browser. TermiNow never signs in for you or sees your password.'; " +
+        "echo 'TermiNow: later, run /login in Claude Code to sign in again, or claude in any Ubuntu tab to start it.'; echo; " +
+        "exec claude \"$@\"";
+
 
     /** The sign-in pages of Claude Code that a login session may print, nothing else is offered. */
     private static final Pattern LOGIN_URL = Pattern.compile(
@@ -436,6 +443,39 @@ public class TerminowLauncher {
             }
         }
         return best;
+    }
+
+    @Nullable private TerminowToolSheet mToolSheet;
+
+    /** Install tools into the environment of the tab, as its user. */
+    void showInstallTools() {
+        TerminalSession session = mActivity.getCurrentSession();
+        SessionInfo info = session != null ? mInfo.get(session) : null;
+        Environment environment = info != null && info.environmentKey != null ? environmentFor(info.environmentKey) : null;
+        if (environment == null) environment = currentEnvironment();
+        if (mToolSheet == null) mToolSheet = new TerminowToolSheet(mActivity, this, mTargets.getPrefixDir());
+        mToolSheet.show(environment, info != null && environment.key.equals(info.environmentKey) && !info.user.isEmpty() ? info.user : null);
+    }
+
+    @Nullable
+    TerminowLinuxEnv linuxEnvOf(@NonNull Environment environment) {
+        return linuxOf(environment);
+    }
+
+    /** What was known about a tool in the environment is found out again. */
+    void onToolInstalled(@NonNull Environment environment, @NonNull TerminowToolInstaller.Tool tool) {
+        if (tool == TerminowToolInstaller.Tool.CLAUDE) mClaude.remove(stateKey(environment));
+        if (tool == TerminowToolInstaller.Tool.TMUX) mTmux.remove(stateKey(environment));
+    }
+
+    /**
+     * Claude Code in a new tab of the environment, in its folder, after it was installed: the
+     * tab first says how signing in works. Nothing is signed in for the user and no credential
+     * is asked for here; a sign-in link that Claude Code prints is offered to be opened.
+     */
+    void openClaudeWithSignInHelp(@NonNull Environment environment, @NonNull String user) {
+        TerminalSession session = launchClaude(environment, new String[0], false, CLAUDE_SIGN_IN_HELP_SCRIPT, user);
+        if (session != null) watchLogin(session, environment, null);
     }
 
     /** A new shell tab of an environment, in its folder, also when one is open already. */
@@ -1080,19 +1120,25 @@ public class TerminowLauncher {
      * session of its own, after which the status is checked again.
      */
     private void launchClaude(@NonNull Environment environment, @NonNull String[] claudeArgs, boolean login) {
+        launchClaude(environment, claudeArgs, login, CLAUDE_SCRIPT, getUser(environment));
+    }
+
+    @Nullable
+    private TerminalSession launchClaude(@NonNull Environment environment, @NonNull String[] claudeArgs, boolean login,
+                                         @NonNull String script, @NonNull String user) {
         String folder = getFolder(environment);
         String executable;
         List<String> args = new ArrayList<>();
         String workingDirectory;
         if (environment.isLocal()) {
             executable = new File(mTargets.getPrefixDir(), "bin/bash").getPath();
-            args.addAll(Arrays.asList("-c", CLAUDE_SCRIPT, "claude"));
+            args.addAll(Arrays.asList("-c", script, "claude"));
             workingDirectory = folder;
         } else {
             executable = new File(mTargets.getPrefixDir(), "bin/proot-distro").getPath();
-            args.addAll(Arrays.asList("login", environment.key, "--user", getUser(environment), "--work-dir", folder));
+            args.addAll(Arrays.asList("login", environment.key, "--user", user, "--work-dir", folder));
             args.addAll(bindsOf(environment));
-            args.addAll(Arrays.asList("--", "/bin/sh", "-c", CLAUDE_SCRIPT, "claude"));
+            args.addAll(Arrays.asList("--", "/bin/sh", "-c", script, "claude"));
             workingDirectory = TermuxConstants.TERMUX_HOME_DIR_PATH;
         }
         args.addAll(Arrays.asList(claudeArgs));
@@ -1101,6 +1147,7 @@ public class TerminowLauncher {
             args.toArray(new String[0]), workingDirectory, mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), tool), login,
             new SessionInfo(environment.key, environment.shortName(), tool, folder, ""));
         if (session != null && login) watchLogin(session, environment, null);
+        return session;
     }
 
     /**
@@ -1551,6 +1598,18 @@ public class TerminowLauncher {
         mToolbarEnvironment.setOnClickListener(v -> switchEnvironment());
         mToolbarFolder.setOnClickListener(v -> changeFolder());
         toolbar.findViewById(R.id.terminow_toolbar_tools).setOnClickListener(v -> show());
+        TextView install = toolbar.findViewById(R.id.terminow_toolbar_install);
+        install.setOnClickListener(v -> showInstallTools());
+        androidx.appcompat.widget.TooltipCompat.setTooltipText(install, mActivity.getString(R.string.terminow_install_title));
+        // Only the icon when the toolbar is narrow, like a phone held upright with a long folder
+        toolbar.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            boolean compact = right - left < dp(520);
+            CharSequence label = compact ? "" : mActivity.getString(R.string.terminow_install_button);
+            if (!TextUtils.equals(install.getText(), label)) install.post(() -> {
+                install.setText(label);
+                install.setCompoundDrawablePadding(compact ? 0 : dp(6));
+            });
+        });
         toolbar.findViewById(R.id.terminow_toolbar_more).setOnClickListener(this::showToolbarMenu);
     }
 
