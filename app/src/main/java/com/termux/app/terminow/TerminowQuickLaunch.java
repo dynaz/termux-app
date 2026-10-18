@@ -71,6 +71,9 @@ public class TerminowQuickLaunch {
 
         /** Connect again to the saved host with the key, like tapping its card. */
         void reconnectHost(@NonNull String hostKey);
+
+        /** Back up a Linux environment to one of the saved hosts. */
+        void backupEnvironment(@NonNull String alias, @NonNull String title);
     }
 
     private final TermuxActivity mActivity;
@@ -119,6 +122,14 @@ public class TerminowQuickLaunch {
         if (session == null) return;
         synchronized (sLastUsed) {
             sLastUsed.put(session.mHandle, System.currentTimeMillis());
+        }
+    }
+
+    /** When a tab was last shown, 0 if not since TermiNow started. */
+    public static long lastShown(@NonNull TerminalSession session) {
+        synchronized (sLastUsed) {
+            Long used = sLastUsed.get(session.mHandle);
+            return used != null ? used : 0;
         }
     }
 
@@ -478,8 +489,10 @@ public class TerminowQuickLaunch {
         menu.getMenu().add(0, 4, 0, R.string.terminow_quick_launch_settings);
         menu.getMenu().add(0, 5, 0, R.string.terminow_quick_new_profile_here);
         menu.getMenu().add(0, 6, 0, R.string.terminow_quick_files);
+        menu.getMenu().add(0, 9, 0, R.string.terminow_quick_new_tab);
         TerminowLinuxEnv linux = linuxOf(environment);
         if (linux != null) menu.getMenu().add(0, 7, 0, R.string.terminow_quick_manage);
+        if (linux != null) menu.getMenu().add(0, 8, 0, R.string.terminow_backup_menu);
         menu.setOnMenuItemClickListener(item -> {
             switch (item.getItemId()) {
                 case 1: rename(id, nameOf(id, environment.isLocal() ? mActivity.getString(R.string.terminow_quick_local_name) : environment.shortName())); break;
@@ -492,6 +505,8 @@ public class TerminowQuickLaunch {
                     else mHost.openLocalFiles();
                     break;
                 case 7: if (linux != null) mLinux.showDetails(linux); break;
+                case 8: if (linux != null) mHost.backupEnvironment(linux.alias, environment.shortName()); break;
+                case 9: mLauncher.openNewTerminal(environment); break;
                 default: break;
             }
             return true;
@@ -857,7 +872,7 @@ public class TerminowQuickLaunch {
                     .setTitle(session.name)
                     .setMessage(R.string.terminow_quick_ended_message)
                     .setPositiveButton(R.string.terminow_quick_show_tab, (d, w) -> mHost.showSession(tab))
-                    .setNeutralButton(R.string.terminow_quick_new_session, environment != null ? (d, w) -> mLauncher.openTerminal(environment) : null)
+                    .setNeutralButton(R.string.terminow_quick_new_session, environment != null ? (d, w) -> mLauncher.openNewTerminal(environment) : null)
                     .setNegativeButton(android.R.string.cancel, null)
                     .show();
                 return;
@@ -878,7 +893,7 @@ public class TerminowQuickLaunch {
             .setMessage(mActivity.getString(messageRes, session.environmentLabel))
             .setNegativeButton(android.R.string.cancel, null);
         if (environment != null)
-            builder.setPositiveButton(R.string.terminow_quick_new_session, (d, w) -> mLauncher.openTerminal(environment));
+            builder.setPositiveButton(R.string.terminow_quick_new_session, (d, w) -> mLauncher.openNewTerminal(environment));
         builder.show();
         render();
     }
@@ -915,7 +930,7 @@ public class TerminowQuickLaunch {
                         .setNegativeButton(android.R.string.cancel, null)
                         .show();
                     break;
-                case 6: if (environment != null) mLauncher.openTerminal(environment); break;
+                case 6: if (environment != null) mLauncher.openNewTerminal(environment); break;
                 case 7: {
                     String id = session.key.substring(session.key.indexOf(':') + 1);
                     com.termux.app.terminow.rdp.TerminowRdpSession rdp = com.termux.app.terminow.rdp.TerminowRdpSession.get(id);

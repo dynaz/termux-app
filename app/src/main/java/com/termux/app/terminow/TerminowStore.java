@@ -275,6 +275,17 @@ public class TerminowStore {
                 getRouteOptions(jump, proxyConnector, keepAliveInterval, keepAliveCountMax) + " " + target + (remote.isEmpty() ? "" : " " + remote);
         }
 
+        /**
+         * The options of ssh for another program that connects to the host, like a backup, and
+         * the user@host to connect to: the key, port, keep alive and route, never mosh or a
+         * terminal. The options are quoted for bash.
+         */
+        @NonNull
+        public String[] getTransport(@Nullable Host jump, @NonNull String proxyConnector, int keepAliveInterval, int keepAliveCountMax) {
+            return new String[]{(getSshOptions(keepAliveInterval, keepAliveCountMax) +
+                getRouteOptions(jump, proxyConnector, keepAliveInterval, keepAliveCountMax)).trim(), getTarget()};
+        }
+
         /** The program and ports of the mosh server as options of mosh, empty for its defaults. */
         @NonNull
         private String getMoshServerOptions() {
@@ -501,6 +512,7 @@ public class TerminowStore {
     private static final String KEY_GROUPS = "groups";
     private static final String KEY_KEY_LABELS = "key_labels";
     private static final String KEY_KEY_PASSPHRASES = "key_passphrases";
+    private static final String KEY_BACKUPS = "environment_backups";
     private static final String KEY_IDENTITIES = "identities";
     private static final String KEY_KEYCHAIN_SORT = "keychain_sort";
     private static final String KEY_MCP_PROFILES = "mcp_profiles";
@@ -1741,6 +1753,26 @@ public class TerminowStore {
             return low >= 1 && high <= 65535 && low <= high;
         } catch (NumberFormatException e) {
             return false;
+        }
+    }
+
+    /** How a Linux environment was last backed up to a server, as JSON, empty if never. */
+    @NonNull
+    public String getBackupSettings(@NonNull String alias) {
+        try {
+            return new JSONObject(mPreferences.getString(KEY_BACKUPS, "{}")).optString(alias);
+        } catch (JSONException e) {
+            return "";
+        }
+    }
+
+    public void setBackupSettings(@NonNull String alias, @NonNull String settings) {
+        try {
+            JSONObject backups = new JSONObject(mPreferences.getString(KEY_BACKUPS, "{}"));
+            backups.put(alias, settings);
+            mPreferences.edit().putString(KEY_BACKUPS, backups.toString()).apply();
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to save backup settings", e);
         }
     }
 

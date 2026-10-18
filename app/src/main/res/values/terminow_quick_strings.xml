@@ -103,4 +103,5 @@
     <string name="terminow_profiles_pin">Pin to Quick Launch</string>
     <string name="terminow_profiles_set_default">Open this for new terminals</string>
     <string name="terminow_profiles_error_executable">Give a program: a path or a name without spaces, and at most 64 arguments.</string>
+    <string name="terminow_quick_new_tab">New tab</string>
 </resources>

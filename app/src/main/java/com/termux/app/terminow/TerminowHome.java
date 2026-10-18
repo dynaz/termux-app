@@ -48,6 +48,7 @@ import android.widget.LinearLayout;
 import android.widget.PopupWindow;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
+import android.widget.ScrollView;
 import android.widget.Switch;
 import android.widget.TextView;
 
@@ -334,6 +335,11 @@ public class TerminowHome {
             @Override
             public void renameSession(@NonNull TerminalSession session) {
                 mActivity.getTermuxTerminalSessionClient().renameSession(session);
+            }
+
+            @Override
+            public void backupEnvironment(@NonNull String alias, @NonNull String title) {
+                showBackupDialog(alias, title);
             }
 
             @Override
@@ -1186,6 +1192,143 @@ public class TerminowHome {
         }
         mStore.addRecentConnection(host, false);
         com.termux.app.terminow.winrm.TerminowWinrmActivity.show(mActivity, com.termux.app.terminow.winrm.TerminowWinrmSession.start(mActivity, target));
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Backing up a Linux environment to a saved host, see TerminowBackup
+
+    /** Where to, what, and how: remembered for the environment, so the next backup is two taps. */
+    private void showBackupDialog(@NonNull String alias, @NonNull String title) {
+        mHosts = mStore.getHosts();
+        List<TerminowStore.Host> servers = new ArrayList<>();
+        for (TerminowStore.Host host : mHosts) if (host.isTerminal() && !host.telnet) servers.add(host);
+        if (servers.isEmpty()) {
+            new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setTitle(mActivity.getString(R.string.terminow_backup_title, title))
+                .setMessage(R.string.terminow_backup_no_hosts)
+                .setPositiveButton(R.string.terminow_new_host, (d, w) -> showHostDialog(null))
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+            return;
+        }
+        org.json.JSONObject saved;
+        try {
+            String stored = mStore.getBackupSettings(alias);
+            saved = stored.isEmpty() ? new org.json.JSONObject() : new org.json.JSONObject(stored);
+        } catch (org.json.JSONException e) {
+            saved = new org.json.JSONObject();
+        }
+        TerminowStore.Host[] server = {TerminowStore.findHost(servers, saved.optString("host"))};
+        if (server[0] == null) server[0] = servers.get(0);
+
+        LinearLayout form = createForm();
+        TextView serverLabel = new TextView(form.getContext());
+        serverLabel.setText(R.string.terminow_backup_server);
+        serverLabel.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+        form.addView(serverLabel);
+        EditText serverView = addField(form, R.string.terminow_backup_server, InputType.TYPE_NULL);
+        serverView.setFocusable(false);
+        serverView.setCursorVisible(false);
+        Runnable showServer = () -> serverView.setText(server[0].getTitle() + "  ·  " + server[0].username + "@" + server[0].address);
+        showServer.run();
+        serverView.setOnClickListener(v -> {
+            CharSequence[] names = new CharSequence[servers.size()];
+            for (int i = 0; i < servers.size(); i++) names[i] = servers.get(i).getTitle() + "  ·  " + servers.get(i).address;
+            new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setTitle(R.string.terminow_backup_server)
+                .setItems(names, (d, which) -> {
+                    server[0] = servers.get(which);
+                    showServer.run();
+                })
+                .show();
+        });
+        TextView dirLabel = new TextView(form.getContext());
+        dirLabel.setText(R.string.terminow_backup_remote_dir);
+        dirLabel.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+        dirLabel.setPadding(0, dp(10), 0, 0);
+        form.addView(dirLabel);
+        EditText dirView = addField(form, R.string.terminow_backup_remote_dir, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+        dirView.setText(saved.optString("dir", "terminow-backups/" + alias));
+
+        RadioGroup modes = new RadioGroup(form.getContext());
+        RadioButton folders = new RadioButton(form.getContext());
+        folders.setId(View.generateViewId());
+        folders.setText(R.string.terminow_backup_mode_folders);
+        RadioButton system = new RadioButton(form.getContext());
+        system.setId(View.generateViewId());
+        system.setText(R.string.terminow_backup_mode_system);
+        modes.addView(folders);
+        modes.addView(system);
+        modes.setPadding(0, dp(10), 0, 0);
+        form.addView(modes);
+        EditText foldersView = addField(form, R.string.terminow_backup_folders, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+        foldersView.setText(saved.optString("folders", "/root /home"));
+        CheckBox install = new CheckBox(form.getContext());
+        install.setText(mActivity.getString(R.string.terminow_backup_install_rsync, title));
+        install.setChecked(saved.optBoolean("installRsync"));
+        form.addView(install);
+        TextView note = new TextView(form.getContext());
+        note.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+        note.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        note.setPadding(0, dp(8), 0, dp(8));
+        form.addView(note);
+        Runnable showMode = () -> {
+            boolean rsync = folders.isChecked();
+            foldersView.setVisibility(rsync ? View.VISIBLE : View.GONE);
+            install.setVisibility(rsync ? View.VISIBLE : View.GONE);
+            note.setText(mActivity.getString(rsync ? R.string.terminow_backup_note_folders : R.string.terminow_backup_note_system, title));
+        };
+        modes.setOnCheckedChangeListener((group, id) -> showMode.run());
+        modes.check(TerminowBackup.MODE_SYSTEM.equals(saved.optString("mode")) ? system.getId() : folders.getId());
+        showMode.run();
+
+        ScrollView scroll = new ScrollView(mActivity);
+        scroll.addView(form);
+        AlertDialog dialog = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(mActivity.getString(R.string.terminow_backup_title, title))
+            .setView(scroll)
+            .setPositiveButton(R.string.terminow_backup_run, null)
+            .setNegativeButton(android.R.string.cancel, null)
+            .create();
+        dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String dir = dirView.getText().toString().trim();
+            if (!TerminowBackup.isValidRemoteDir(dir)) {
+                dirView.setError(mActivity.getString(R.string.terminow_backup_invalid_dir));
+                return;
+            }
+            boolean rsync = folders.isChecked();
+            List<String> list = TerminowBackup.parseFolders(foldersView.getText().toString());
+            if (rsync && list == null) {
+                foldersView.setError(mActivity.getString(R.string.terminow_backup_invalid_folders));
+                return;
+            }
+            try {
+                mStore.setBackupSettings(alias, new org.json.JSONObject().put("host", server[0].getKey()).put("dir", dir)
+                    .put("mode", rsync ? TerminowBackup.MODE_FOLDERS : TerminowBackup.MODE_SYSTEM)
+                    .put("folders", foldersView.getText().toString().trim()).put("installRsync", install.isChecked()).toString());
+            } catch (org.json.JSONException ignored) {
+            }
+            dialog.dismiss();
+            runBackup(alias, title, server[0], dir, rsync ? list : null, install.isChecked());
+        }));
+        dialog.show();
+    }
+
+    /** In a tab of its own, so its progress, prompts and result are shown; saved passwords and passphrases are typed in. */
+    private void runBackup(@NonNull String alias, @NonNull String title, @NonNull TerminowStore.Host host, @NonNull String dir,
+                           @Nullable List<String> folders, boolean installRsync) {
+        Route route = prepareRoute(host);
+        if (route == null) return;
+        String[] transport = route.login.getTransport(route.jump, route.proxyConnector, mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
+        String command = folders != null ?
+            TerminowBackup.foldersCommand(TermuxConstants.TERMUX_PREFIX_DIR_PATH, TermuxConstants.TERMUX_HOME_DIR_PATH, alias, transport, dir, folders, installRsync) :
+            TerminowBackup.systemCommand(TermuxConstants.TERMUX_PREFIX_DIR_PATH, alias, transport, dir, TerminowBackup.archiveName(alias, System.currentTimeMillis()));
+        String name = mActivity.getString(R.string.terminow_backup_tab, title, host.getTitle());
+        TerminalSession session = addSession(name);
+        if (session == null) return;
+        mStore.addLog(name, command);
+        writeWhenStarted(session, command + "\r", 0);
+        writePasswordsWhenAsked(session, getLoginPrompts(route.login, route.jump), 0);
     }
 
     /** Start a session to transfer files to and from a host with sftp. */

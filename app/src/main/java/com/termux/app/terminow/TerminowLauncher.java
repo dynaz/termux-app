@@ -398,7 +398,48 @@ public class TerminowLauncher {
      * Open terminal of a card: always a new session in the environment, as its user, in its
      * folder, in its tmux session if the user chose that. Nothing else runs.
      */
+    /**
+     * Go to the terminal of an environment: the shell tab of it that was used last and still
+     * runs, as it is, in its folder; a new one only if there is none. Each tap opening another
+     * tab started another Linux each time, which made the phone run out of memory.
+     */
     void openTerminal(@NonNull Environment environment) {
+        TerminalSession running = lastShellOf(environment);
+        if (running != null) {
+            dismiss();
+            mHost.showSession(running);
+            return;
+        }
+        openNewTerminal(environment);
+    }
+
+    /** The shell tab of an environment that was shown last and still runs, {@code null} if none. */
+    @Nullable
+    TerminalSession lastShellOf(@NonNull Environment environment) {
+        return lastShellOf(environment, null);
+    }
+
+    /** The same, of the user if it is not {@code null}. */
+    @Nullable
+    TerminalSession lastShellOf(@NonNull Environment environment, @Nullable String user) {
+        TerminalSession best = null;
+        long bestShown = -1;
+        for (Map.Entry<TerminalSession, SessionInfo> entry : mInfo.entrySet()) {
+            TerminalSession session = entry.getKey();
+            SessionInfo info = entry.getValue();
+            if (session == null || !session.isRunning() || !environment.key.equals(info.environmentKey) || !"bash".equals(info.tool)) continue;
+            if (user != null && !user.equals(info.user)) continue;
+            long shown = TerminowQuickLaunch.lastShown(session);
+            if (shown > bestShown) {
+                best = session;
+                bestShown = shown;
+            }
+        }
+        return best;
+    }
+
+    /** A new shell tab of an environment, in its folder, also when one is open already. */
+    void openNewTerminal(@NonNull Environment environment) {
         String user = getUser(environment);
         String tmux = tmuxPreferenceOf(environment);
         boolean useTmux = TerminowLaunchPlan.TMUX_ATTACH.equals(tmux);
@@ -1435,6 +1476,13 @@ public class TerminowLauncher {
             showFailure(environment.shortName(), mActivity.getString(R.string.terminow_profiles_user_missing, user, environment.label));
             return;
         }
+        // Its terminal that runs already, like the card of Quick Launch
+        TerminalSession running = lastShellOf(environment, user);
+        if (running != null) {
+            dismiss();
+            mHost.showSession(running);
+            return;
+        }
         String path = folder.isEmpty() ? homeOf(environment, user) : folder;
         if (resolve(environment, path) == null) {
             showFailure(environment.shortName(), mActivity.getString(R.string.terminow_profiles_folder_missing, path));
@@ -1547,11 +1595,8 @@ public class TerminowLauncher {
                 Environment environment = environments.get(which);
                 setEnvironment(environment.key);
                 TerminalSession current = mActivity.getCurrentSession();
-                for (Map.Entry<TerminalSession, SessionInfo> entry : mInfo.entrySet()) {
-                    TerminalSession session = entry.getKey();
-                    SessionInfo info = entry.getValue();
-                    if (session == null || !session.isRunning() || !environment.key.equals(info.environmentKey) ||
-                        !"bash".equals(info.tool)) continue;
+                TerminalSession session = lastShellOf(environment);
+                if (session != null) {
                     if (session == current) {
                         mActivity.showToast(mActivity.getString(R.string.terminow_toolbar_already_in, environment.label), false);
                     } else {
