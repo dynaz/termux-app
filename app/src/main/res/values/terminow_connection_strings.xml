@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_connection_key_failed">The key of this host could not be used. Check the key in the host, or its file in Keychain.</string>
+    <string name="terminow_connection_host_key_changed">The key of this host changed since it was saved. That happens after the server is reinstalled, but also when someone is between you and the server. If you know why it changed, remove the host from Known hosts and connect again.</string>
+    <string name="terminow_connection_address_failed">The address of the host could not be found. Check the address and the network.</string>
+    <string name="terminow_connection_refused">The host refused the connection on port %1$d. Check the port, and that the SSH server runs.</string>
+    <string name="terminow_connection_network_failed">The host can not be reached from this network. Check the address, the network and any VPN.</string>
+    <string name="terminow_connection_mosh_server">Mosh could not start its server on the host. Install mosh on the host (like apt install mosh), or set the path of mosh-server in the host.</string>
+    <string name="terminow_connection_mosh_ports">The mosh server did not accept its ports (%1$s). Set a port or a range like 60000:60010 in the host.</string>
+    <string name="terminow_connection_mosh_udp">Mosh logged in, but nothing comes back over UDP. Let UDP ports %1$s in through the firewall of the host and of its network, or turn Mosh off for this host.</string>
+    <string name="terminow_connection_reason">%1$s\n\nThe host said: %2$s</string>
+    <string name="terminow_connection_edit_host">Edit host</string>
+    <string name="terminow_host_mosh_server">Mosh server command</string>
+    <string name="terminow_host_mosh_server_default">mosh-server new</string>
+    <string name="terminow_host_mosh_server_default_ports">mosh-server new -p 60000:60010</string>
+    <string name="terminow_host_mosh_server_note">The program and the UDP ports of the server, like mosh-server new -p 60000:60010. The firewall of the host must let these ports in.</string>
+    <string name="terminow_host_invalid_mosh_server">The mosh server command can be the program, new, and -p with a port or a range like 60000:60010</string>
+    <string name="terminow_keypanel_passphrase_hint">Typed in when the key asks for it</string>
+</resources>

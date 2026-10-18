@@ -113,7 +113,7 @@ public class TerminowWorkspaceTest {
         host.address = "web.example.com";
         host.username = "root";
         String name = "terminow-abcdef123456";
-        assertEquals("ssh root@web.example.com", host.getCommand(null, "", 0, 3, name).replaceAll(" +", " ").trim());
+        assertEquals("ssh -o StrictHostKeyChecking=accept-new root@web.example.com", host.getCommand(null, "", 0, 3, name).replaceAll(" +", " ").trim());
 
         host.remoteTmux = true;
         String ssh = host.getCommand(null, "", 0, 3, name);
@@ -124,7 +124,7 @@ public class TerminowWorkspaceTest {
         // Attaching is tried before creating
         assertTrue(ssh.indexOf("attach-session") < ssh.indexOf("new-session"));
         // Never another name, like one with shell characters
-        assertEquals("ssh root@web.example.com", host.getCommand(null, "", 0, 3, "terminow-x;rm -rf ~").replaceAll(" +", " ").trim());
+        assertEquals("ssh -o StrictHostKeyChecking=accept-new root@web.example.com", host.getCommand(null, "", 0, 3, "terminow-x;rm -rf ~").replaceAll(" +", " ").trim());
 
         host.mosh = true;
         String mosh = host.getCommand(null, "", 0, 3, name);

@@ -39,8 +39,8 @@ public class TerminowHostOptionsTest {
     @Test
     public void plainHostIsUnchanged() {
         TerminowStore.Host host = host("root", "example.com", 22);
-        assertEquals("ssh root@example.com", host.getCommand(0, 3));
-        assertEquals("ssh -p 2222 root@example.com", host("root", "example.com", 2222).getCommand(0, 3));
+        assertEquals("ssh -o StrictHostKeyChecking=accept-new root@example.com", host.getCommand(0, 3));
+        assertEquals("ssh -p 2222 -o StrictHostKeyChecking=accept-new root@example.com", host("root", "example.com", 2222).getCommand(0, 3));
     }
 
     @Test
@@ -49,7 +49,7 @@ public class TerminowHostOptionsTest {
         host.agentForwarding = true;
         host.env.put("LANG", "en_US.UTF-8");
         host.env.put("GREETING", "it's a \"test\"");
-        assertEquals("ssh -A -o 'SetEnv=LANG=en_US.UTF-8' -o 'SetEnv=GREETING=\"it'\\''s a \\\"test\\\"\"' root@example.com",
+        assertEquals("ssh -A -o 'SetEnv=LANG=en_US.UTF-8' -o 'SetEnv=GREETING=\"it'\\''s a \\\"test\\\"\"' -o StrictHostKeyChecking=accept-new root@example.com",
             host.getCommand(0, 3));
     }
 
@@ -59,10 +59,10 @@ public class TerminowHostOptionsTest {
         jump.keyPath = "~/.ssh/bastion";
         TerminowStore.Host host = host("root", "10.0.0.5", 22);
         host.jumpHost = jump.getKey();
-        assertEquals("ssh -o 'ProxyCommand=ssh -i ~/.ssh/bastion -p 2200 -W %h:%p admin@bastion.example.com' root@10.0.0.5",
+        assertEquals("ssh -o StrictHostKeyChecking=accept-new -o 'ProxyCommand=ssh -i ~/.ssh/bastion -p 2200 -o StrictHostKeyChecking=accept-new -W %h:%p admin@bastion.example.com' root@10.0.0.5",
             host.getCommand(jump, "", 0, 3));
         // sftp and port forwards go the same way
-        assertEquals("sftp -o 'ProxyCommand=ssh -i ~/.ssh/bastion -p 2200 -W %h:%p admin@bastion.example.com' root@10.0.0.5",
+        assertEquals("sftp -o StrictHostKeyChecking=accept-new -o 'ProxyCommand=ssh -i ~/.ssh/bastion -p 2200 -o StrictHostKeyChecking=accept-new -W %h:%p admin@bastion.example.com' root@10.0.0.5",
             host.getSftpCommand(jump, "", 0, 3));
     }
 
@@ -72,7 +72,7 @@ public class TerminowHostOptionsTest {
         host.proxyType = TerminowStore.Host.PROXY_SOCKS5;
         host.proxyHost = "127.0.0.1";
         host.proxyPort = 1080;
-        assertEquals("ssh -o 'ProxyCommand=bash /p/libexec/terminow/proxy-connect socks5 127.0.0.1 1080 %h %p' root@example.com",
+        assertEquals("ssh -o StrictHostKeyChecking=accept-new -o 'ProxyCommand=bash /p/libexec/terminow/proxy-connect socks5 127.0.0.1 1080 %h %p' root@example.com",
             host.getCommand(null, "/p/libexec/terminow/proxy-connect", 0, 3));
     }
 
@@ -85,7 +85,7 @@ public class TerminowHostOptionsTest {
         TerminowStore.Host mosh = host("root", "example.com", 22);
         mosh.mosh = true;
         mosh.agentForwarding = true;
-        assertEquals("mosh --ssh='ssh -A' root@example.com", mosh.getCommand(0, 3));
+        assertEquals("mosh --ssh='ssh -A -o StrictHostKeyChecking=accept-new' root@example.com", mosh.getCommand(0, 3));
     }
 
     @Test
@@ -172,7 +172,7 @@ public class TerminowHostOptionsTest {
         assertTrue(old.tags.isEmpty());
         assertFalse(old.telnet);
         assertEquals(23, old.telnetPort);
-        assertEquals("ssh me@old.example.com", old.getCommand(0, 3));
+        assertEquals("ssh -o StrictHostKeyChecking=accept-new me@old.example.com", old.getCommand(0, 3));
     }
 
     @Test

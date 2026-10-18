@@ -1219,7 +1219,7 @@ public class TerminowHome {
         String command = route.login.getSftpCommand(route.jump, route.proxyConnector, mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
         mStore.addLog(title, command);
         writeWhenStarted(session, command + "\r", 0);
-        writePasswordsWhenAsked(session, getPasswordPrompts(route.login, route.jump), 0);
+        writePasswordsWhenAsked(session, getLoginPrompts(route.login, route.jump), 0);
         watchConnection(session, host, true, title, 0, tab, false);
     }
 
@@ -1231,13 +1231,78 @@ public class TerminowHome {
     private static final int CONNECTION_CHECK_DELAY_MS = 500;
     /** A connection that did not fail for this long and does not wait at a prompt is taken as made. */
     private static final int CONNECTION_MADE_AFTER_CHECKS = 16;
-    private static final Pattern CONNECTION_AUTH_FAILED_PATTERN = Pattern.compile(
-        "Permission denied \\(|Too many authentication failures|Authentication failed");
-    private static final Pattern CONNECTION_TIMEOUT_PATTERN = Pattern.compile(
-        "Connection timed out|Operation timed out|timed out during banner exchange", Pattern.CASE_INSENSITIVE);
-    private static final Pattern CONNECTION_FAILED_PATTERN = Pattern.compile(
-        "Could not resolve hostname|Connection refused|No route to host|Network is unreachable|" +
-            "Host key verification failed|Connection closed by|Connection reset by|kex_exchange_identification");
+    /** Why a connection failed, in the order they are looked for: the first that matches is the reason. */
+    enum FailureKind {
+        AUTH("Permission denied \\(|Too many authentication failures|Authentication failed", R.string.terminow_connection_auth_failed),
+        KEY("Load key \"[^\"]*\": [^\\n]*|no such identity: [^\\n]*|Identity file [^\\n]* not accessible[^\\n]*", R.string.terminow_connection_key_failed),
+        HOST_KEY_CHANGED("REMOTE HOST IDENTIFICATION HAS CHANGED|Host key verification failed", R.string.terminow_connection_host_key_changed),
+        TIMEOUT("(?i)Connection timed out|Operation timed out|timed out during banner exchange", R.string.terminow_connection_timeout),
+        ADDRESS("Could not resolve hostname[^\\n]*", R.string.terminow_connection_address_failed),
+        REFUSED("Connection refused", R.string.terminow_connection_refused),
+        NETWORK("No route to host|Network is unreachable", R.string.terminow_connection_network_failed),
+        MOSH_SERVER("mosh-server: (command )?not found|Did not find mosh server startup message[^\\n]*", R.string.terminow_connection_mosh_server),
+        MOSH_PORTS("(?i)mosh-server[^\\n]*(bad|invalid)[^\\n]*port[^\\n]*|(?i)(bad|invalid) (UDP )?port( range)?[^\\n]*", R.string.terminow_connection_mosh_ports),
+        MOSH_UDP("Nothing received from server on UDP port[^\\n]*", R.string.terminow_connection_mosh_udp),
+        OTHER("Connection closed by[^\\n]*|Connection reset by[^\\n]*|kex_exchange_identification[^\\n]*|" +
+            "Bad configuration option[^\\n]*|Unsupported option[^\\n]*|command-line line [^\\n]*", 0);
+
+        final Pattern pattern;
+        final int messageRes;
+
+        FailureKind(@NonNull String pattern, int messageRes) {
+            this.pattern = Pattern.compile(pattern);
+            this.messageRes = messageRes;
+        }
+    }
+
+    /** A failure of a connection: why, and the line that ssh or mosh printed about it. */
+    static class Failure {
+        final FailureKind kind;
+        final String line;
+
+        Failure(@NonNull FailureKind kind, @NonNull String line) {
+            this.kind = kind;
+            this.line = line;
+        }
+    }
+
+    /** The failure that the output of a connection shows, {@code null} if it shows none. */
+    @Nullable
+    static Failure findConnectionFailure(@NonNull String transcript) {
+        for (FailureKind kind : FailureKind.values()) {
+            java.util.regex.Matcher matcher = kind.pattern.matcher(transcript);
+            if (!matcher.find()) continue;
+            // The whole line it is in, which says what ssh or mosh tried
+            int start = transcript.lastIndexOf('\n', matcher.start()) + 1;
+            int end = transcript.indexOf('\n', matcher.end());
+            String line = transcript.substring(start, end < 0 ? transcript.length() : end).trim();
+            if (line.length() > 300) line = line.substring(0, 300) + "…";
+            return new Failure(kind, line);
+        }
+        return null;
+    }
+
+    /** What the user reads: why in words, what ssh or mosh said, and what to check in the host. */
+    @NonNull
+    private String describeFailure(@NonNull Failure failure, @NonNull TerminowStore.Host host) {
+        String reason;
+        switch (failure.kind) {
+            case REFUSED:
+                reason = mActivity.getString(R.string.terminow_connection_refused, host.port);
+                break;
+            case MOSH_UDP:
+            case MOSH_PORTS: {
+                String[] server = TerminowStore.parseMoshServer(host.moshServer);
+                String ports = server != null && !server[1].isEmpty() ? server[1] : "60000:61000";
+                reason = mActivity.getString(failure.kind.messageRes, ports);
+                break;
+            }
+            default:
+                reason = failure.kind.messageRes != 0 ? mActivity.getString(failure.kind.messageRes) : failure.line;
+        }
+        return failure.kind.messageRes != 0 && !failure.line.isEmpty() ?
+            mActivity.getString(R.string.terminow_connection_reason, reason, failure.line) : reason;
+    }
     /** A prompt that a connection waits at for the user, like for a password or to accept the key of a new host. */
     private static final Pattern CONNECTION_PROMPT_PATTERN = Pattern.compile(
         "(password|passphrase|\\(yes/no[^)]*\\)\\?|Verification code)[^\\n]*:?\\s*$", Pattern.CASE_INSENSITIVE);
@@ -1277,14 +1342,8 @@ public class TerminowHome {
         // Only what came after the previous output of a restored tab, or after "Reconnecting"
         if (transcript != null) transcript = TerminowWorkspace.afterMark(transcript);
         if (transcript != null) {
-            String failure = null;
-            java.util.regex.Matcher matcher;
-            if ((matcher = CONNECTION_AUTH_FAILED_PATTERN.matcher(transcript)).find())
-                failure = mActivity.getString(R.string.terminow_connection_auth_failed);
-            else if ((matcher = CONNECTION_TIMEOUT_PATTERN.matcher(transcript)).find())
-                failure = mActivity.getString(R.string.terminow_connection_timeout);
-            else if ((matcher = CONNECTION_FAILED_PATTERN.matcher(transcript)).find())
-                failure = matcher.group();
+            Failure found = findConnectionFailure(transcript);
+            String failure = found != null ? describeFailure(found, host) : null;
             if (failure != null) {
                 finish.run();
                 showConnectionFailed(session, host, sftp, failure, tab);
@@ -1334,6 +1393,19 @@ public class TerminowHome {
                     connectSftp(host);
                 else
                     connect(host);
+            })
+            .setNeutralButton(R.string.terminow_connection_edit_host, (dialog, which) -> {
+                // Correct what failed, then connect again with the saved host
+                TerminowStore.Host saved = TerminowStore.findHost(mHosts, host.getKey());
+                if (saved == null) {
+                    mActivity.showToast(mActivity.getString(R.string.terminow_rdp_host_gone), true);
+                    return;
+                }
+                showHostDialog(saved, null, edited -> {
+                    mActivity.getTermuxTerminalSessionClient().closeSession(session);
+                    if (sftp) connectSftp(edited);
+                    else connect(edited);
+                });
             })
             .setNegativeButton(R.string.terminow_close_dialog, null)
             .show();
@@ -1512,7 +1584,7 @@ public class TerminowHome {
                     mLauncher.track(session, new TerminowLauncher.SessionInfo(null, target.getTitle(), "sftp", "", ""));
                     String command = route.login.getSftpCommand(route.jump, route.proxyConnector, mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
                     writeWhenStarted(session, command + "\r", 0);
-                    writePasswordsWhenAsked(session, getPasswordPrompts(route.login, route.jump), 0);
+                    writePasswordsWhenAsked(session, getLoginPrompts(route.login, route.jump), 0);
                     watchConnection(session, target, true, title, 0, tab, true);
                 } else {
                     startConnection(session, target, tab, true);
@@ -1718,7 +1790,7 @@ public class TerminowHome {
             host.remoteTmux ? tab.remoteTmuxName() : "");
         mStore.addLog(host.getTitle(), command);
         writeWhenStarted(session, command + "\r", 0);
-        writePasswordsWhenAsked(session, getPasswordPrompts(route.login, route.jump), 0);
+        writePasswordsWhenAsked(session, getLoginPrompts(route.login, route.jump), 0);
         watchConnection(session, host, false, host.getTitle(), 0, tab, again);
         if (host.remoteTmux && !host.telnet) watchRemoteTmux(session, host, tab, 0);
         return true;
@@ -1785,6 +1857,13 @@ public class TerminowHome {
         if (session.getPid() > 0 && !session.isRunning()) return;
         if (TerminowWorkspace.tabOf(session) != tab) return;
         String transcript = session.getPid() > 0 ? ShellUtils.getTerminalSessionTranscriptText(session, false, true) : null;
+        if (transcript != null && host.mosh) {
+            Failure failure = findConnectionFailure(TerminowWorkspace.afterMark(transcript));
+            if (failure != null && failure.kind == FailureKind.MOSH_UDP) {
+                showConnectionFailed(session, host, false, describeFailure(failure, host), tab);
+                return;
+            }
+        }
         if (transcript != null && CONNECTION_LOST_PATTERN.matcher(TerminowWorkspace.afterMark(transcript)).find()) {
             // Checked again only after the next connection, which writes its own line
             markSession(session, mActivity.getString(R.string.terminow_restore_connection_lost, host.getTitle()));
@@ -1881,6 +1960,36 @@ public class TerminowHome {
         return prompts;
     }
 
+    /** The passwords of a connection, and the passphrases that the keychain has for its keys. */
+    @NonNull
+    private List<PasswordPrompt> getLoginPrompts(@NonNull TerminowStore.Host host, @Nullable TerminowStore.Host jump) {
+        List<PasswordPrompt> prompts = getPasswordPrompts(host, jump);
+        if (host.telnet) return prompts;
+        for (TerminowStore.Host login : jump == null ? java.util.Collections.singletonList(host) : java.util.Arrays.asList(jump, host)) {
+            String fileName = keyFileName(login.keyPath);
+            if (fileName == null) continue;
+            String passphrase = mStore.getKeyPassphrase(fileName);
+            if (!passphrase.isEmpty()) prompts.add(new PasswordPrompt(keyPassphrasePrompt(fileName), passphrase));
+        }
+        return prompts;
+    }
+
+    /** The name of a key file of `~/.ssh` that a host logs in with, {@code null} for none or another one. */
+    @Nullable
+    static String keyFileName(@NonNull String keyPath) {
+        if (keyPath.isEmpty() || TerminowBiometricKeys.isAgentKeyPath(keyPath)) return null;
+        String prefix = keyPath.startsWith("~/.ssh/") ? "~/.ssh/" : TermuxConstants.TERMUX_HOME_DIR_PATH + "/.ssh/";
+        if (!keyPath.startsWith(prefix)) return null;
+        String name = keyPath.substring(prefix.length());
+        return name.isEmpty() || name.contains("/") ? null : name;
+    }
+
+    /** What ssh asks for the passphrase of a key file, like `Enter passphrase for key '/…/.ssh/id_ed25519': `. */
+    @NonNull
+    static Pattern keyPassphrasePrompt(@NonNull String fileName) {
+        return Pattern.compile("Enter passphrase for key '[^']*/" + Pattern.quote(fileName) + "':\\s*$");
+    }
+
     @NonNull
     private static Pattern hostPasswordPrompt(@NonNull TerminowStore.Host host) {
         return Pattern.compile("@" + Pattern.quote(host.address) + "'s password:\\s*$", Pattern.CASE_INSENSITIVE);
@@ -1912,7 +2021,7 @@ public class TerminowHome {
         String command = route.login.getForwardCommand(forward, route.jump, route.proxyConnector, mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
         mStore.addLog(forward.getTitle(), command);
         writeWhenStarted(session, command + "\r", 0);
-        writePasswordsWhenAsked(session, getPasswordPrompts(route.login, route.jump), 0);
+        writePasswordsWhenAsked(session, getLoginPrompts(route.login, route.jump), 0);
     }
 
     /**
@@ -2231,6 +2340,7 @@ public class TerminowHome {
             winrmOptions.setVisibility(winrm ? View.VISIBLE : View.GONE);
             sshRow.setVisibility(windows ? View.GONE : View.VISIBLE);
             moshRow.setVisibility(windows ? View.GONE : View.VISIBLE);
+            dialog.findViewById(R.id.terminow_host_mosh_options).setVisibility(!windows && moshView.isChecked() ? View.VISIBLE : View.GONE);
             telnetCard.setVisibility(windows ? View.GONE : View.VISIBLE);
             keyRowView.setVisibility(windows ? View.GONE : View.VISIBLE);
             // RDP keeps only the jump host of the session options: its SSH tunnel
@@ -2257,8 +2367,16 @@ public class TerminowHome {
             else moshView.setChecked(false);
             showProtocol.run();
         });
+        EditText moshServerView = dialog.findViewById(R.id.terminow_host_mosh_server);
+        View moshOptions = dialog.findViewById(R.id.terminow_host_mosh_options);
+        if (existingHost != null) moshServerView.setText(existingHost.moshServer);
+        moshOptions.setVisibility(moshView.isChecked() ? View.VISIBLE : View.GONE);
         moshView.setOnCheckedChangeListener((button, checked) -> {
             if (checked) sshView.setChecked(true);
+            moshOptions.setVisibility(checked ? View.VISIBLE : View.GONE);
+            // Turning Mosh on starts from the usual ports, which the firewall of the host must let in
+            if (checked && moshServerView.getText().toString().trim().isEmpty())
+                moshServerView.setText(mActivity.getString(R.string.terminow_host_mosh_server_default_ports));
         });
         telnetView.setOnCheckedChangeListener((button, checked) -> {
             if (checked) sshView.setChecked(false);
@@ -2399,6 +2517,12 @@ public class TerminowHome {
             host.startupSnippet = snippetView.getText().toString();
             host.telnet = telnetView.isChecked();
             host.mosh = !host.telnet && moshView.isChecked();
+            host.moshServer = host.mosh ? moshServerView.getText().toString().trim().replaceAll("\\s+", " ") : "";
+            if (host.mosh && TerminowStore.parseMoshServer(host.moshServer) == null) {
+                mActivity.showToast(mActivity.getString(R.string.terminow_host_invalid_mosh_server), true);
+                moshServerView.requestFocus();
+                return;
+            }
             host.telnetPort = telnetPort;
             host.tags.addAll(draft.tags);
             host.backspaceSendsCtrlH = backspaceView.isChecked();
@@ -2416,6 +2540,7 @@ public class TerminowHome {
                 // What only SSH has is not kept for a Windows host
                 host.telnet = false;
                 host.mosh = false;
+                host.moshServer = "";
                 host.agentForwarding = false;
                 host.remoteTmux = false;
                 host.startupSnippet = "";
@@ -3351,7 +3476,7 @@ public class TerminowHome {
         TextView fromFile = panel.link(sources, R.drawable.ic_terminow_import, mActivity.getString(R.string.terminow_keypanel_file), this::pickKeyFile);
         ((LinearLayout.LayoutParams) fromFile.getLayoutParams()).setMarginStart(panel.dp(24));
 
-        // Only for an encrypted PuTTY key, which is converted with it; others keep their passphrase
+        // For an encrypted key: a PuTTY key is converted with it, others keep it and it is typed in when ssh asks
         EditText passphraseView = panel.field(card, mActivity.getString(R.string.terminow_key_passphrase), "",
             InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         View passphraseLabel = card.getChildAt(card.indexOfChild(passphraseView) - 1);
@@ -3375,9 +3500,9 @@ public class TerminowHome {
         Runnable check = () -> {
             info[0] = TerminowKeyFormat.analyze(keyView.getText().toString());
             TerminowKeyFormat.Info i = info[0];
-            boolean ppkPassphrase = i.kind == TerminowKeyFormat.Kind.PPK && i.encrypted;
-            passphraseView.setVisibility(ppkPassphrase ? View.VISIBLE : View.GONE);
-            passphraseLabel.setVisibility(ppkPassphrase ? View.VISIBLE : View.GONE);
+            boolean askPassphrase = i.encrypted && i.isPrivateKey();
+            passphraseView.setVisibility(askPassphrase ? View.VISIBLE : View.GONE);
+            passphraseLabel.setVisibility(askPassphrase ? View.VISIBLE : View.GONE);
             preview.removeAllViews();
             switch (i.kind) {
                 case EMPTY:
@@ -3456,8 +3581,10 @@ public class TerminowHome {
             }
             String publicLine = i.publicBlob != null ? TerminowSshWire.publicKeyLine(i.publicBlob, label.isEmpty() ? name : label) + "\n" : null;
             if (!saveKey(name, text, publicLine)) return false;
+            String passphrase = i.encrypted ? passphraseView.getText().toString() : "";
+            if (!passphrase.isEmpty()) mStore.setKeyPassphrase(name, passphrase);
             // A key whose public part is not in it, like an EC key in PEM: ssh-keygen makes it
-            if (publicLine == null && !i.encrypted) derivePublicKey(name, "");
+            if (publicLine == null && (!i.encrypted || !passphrase.isEmpty())) derivePublicKey(name, passphrase);
             return true;
         });
         panel.getDialog().setOnDismissListener(d -> {
@@ -3683,6 +3810,15 @@ public class TerminowHome {
         nameView.setText(key.label);
         top.addView(panel.text(mActivity.getString(R.string.terminow_keypanel_file_path, key.getPath()), 12, R.color.terminow_text_secondary));
 
+        // Typed in when ssh asks for the passphrase of this key, like the Passphrase of Termius
+        EditText storedPassphraseView = null;
+        if (key.biometricId == null && key.fidoId == null) {
+            storedPassphraseView = panel.field(top, mActivity.getString(R.string.terminow_key_passphrase),
+                mActivity.getString(R.string.terminow_keypanel_passphrase_hint), InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+            storedPassphraseView.setText(mStore.getKeyPassphrase(key.name));
+        }
+        EditText finalPassphraseView = storedPassphraseView;
+
         String publicLine = key.publicFile.isFile() ? readFirstLine(key.publicFile) : null;
         panel.label(top, mActivity.getString(R.string.terminow_keypanel_public));
         if (publicLine != null && !publicLine.isEmpty()) {
@@ -3772,6 +3908,7 @@ public class TerminowHome {
                 mStore.setKeyLabel(key.name, label);
                 updateItems();
             }
+            if (finalPassphraseView != null) mStore.setKeyPassphrase(key.name, finalPassphraseView.getText().toString());
             return true;
         });
         panel.show();
@@ -3806,6 +3943,7 @@ public class TerminowHome {
                     key.certificateFile().delete();
                 }
                 mStore.setKeyLabel(key.name, "");
+                mStore.setKeyPassphrase(key.name, "");
                 // The hosts would fail to log in with a key that does not exist anymore
                 for (TerminowStore.Host host : hosts)
                     host.keyPath = "";

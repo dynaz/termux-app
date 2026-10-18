@@ -325,7 +325,7 @@ public class TerminowKeychainTest {
         assertEquals("~/.ssh/deploy", login.keyPath);
         // The identity has no password: the host's is kept
         assertEquals("hostpw", login.password);
-        assertEquals("ssh -i ~/.ssh/deploy deploy@web.example.com", login.getCommand(0, 0));
+        assertEquals("ssh -i ~/.ssh/deploy -o StrictHostKeyChecking=accept-new deploy@web.example.com", login.getCommand(0, 0));
         // The saved host is not changed, and still known by its own key
         assertEquals("old", host.username);
         assertEquals("old@web.example.com:22", host.getKey());
@@ -506,11 +506,11 @@ public class TerminowKeychainTest {
         host.keyPath = "~/.ssh/terminow-bio-abcdefgh12.pub";
         String command = host.getCommand(0, 0);
         assertEquals("ssh -i ~/.ssh/terminow-bio-abcdefgh12.pub -o IdentitiesOnly=yes -o IdentityAgent=" +
-            TerminowBiometricKeys.AGENT_SOCKET + " root@server", command);
+            TerminowBiometricKeys.AGENT_SOCKET + " -o StrictHostKeyChecking=accept-new root@server", command);
         host.keyPath = "~/.ssh/terminow-fido-abcdefgh12.pub";
         assertTrue(host.getCommand(0, 0).contains("-o IdentityAgent="));
         host.keyPath = "~/.ssh/id_ed25519";
-        assertEquals("ssh -i ~/.ssh/id_ed25519 root@server", host.getCommand(0, 0));
+        assertEquals("ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new root@server", host.getCommand(0, 0));
 
         ECPublicKey publicKey = (ECPublicKey) mKeyPair.getPublic();
         byte[] skBlob = TerminowSshWire.skEcdsaBlob(unsigned32(publicKey.getW().getAffineX()), unsigned32(publicKey.getW().getAffineY()), "ssh:");

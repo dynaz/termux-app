@@ -47,6 +47,11 @@ public class TerminowStore {
         public int port = 22;
         public String username = "";
         public boolean mosh;
+        /**
+         * How mosh starts its server, like "mosh-server new -p 60000:60010": the program and the
+         * UDP ports, see {@link #parseMoshServer}. Empty for the defaults of mosh.
+         */
+        public String moshServer = "";
         /** The password typed in when the host asks for it, empty to be asked in the terminal. */
         public String password = "";
         /** The path of the private key file to log in with, empty to use the default keys. */
@@ -151,8 +156,14 @@ public class TerminowStore {
 
         @NonNull
         private String getSshOptions(int keepAliveInterval, int keepAliveCountMax) {
-            return getKeyOptions() + (port == 22 ? "" : " -p " + port) + getKeepAliveOptions(keepAliveInterval, keepAliveCountMax);
+            return getKeyOptions() + (port == 22 ? "" : " -p " + port) + ACCEPT_NEW_HOST_KEYS + getKeepAliveOptions(keepAliveInterval, keepAliveCountMax);
         }
+
+        /**
+         * The key of a host that was never connected to is saved without asking, like Termius
+         * does; a host whose key changed is still refused, which is shown as why it failed.
+         */
+        static final String ACCEPT_NEW_HOST_KEYS = " -o StrictHostKeyChecking=accept-new";
 
         /**
          * The key: a key file, or the public key of a biometric or FIDO2 key, whose private key ssh uses
@@ -209,7 +220,7 @@ public class TerminowStore {
         @NonNull
         public String getSftpCommand(@Nullable Host jump, @NonNull String proxyConnector, int keepAliveInterval, int keepAliveCountMax) {
             // The option for the port of sftp is upper case
-            return "sftp" + getKeyOptions() + (port == 22 ? "" : " -P " + port) +
+            return "sftp" + getKeyOptions() + (port == 22 ? "" : " -P " + port) + ACCEPT_NEW_HOST_KEYS +
                 getKeepAliveOptions(keepAliveInterval, keepAliveCountMax) +
                 getRouteOptions(jump, proxyConnector, keepAliveInterval, keepAliveCountMax) + " " + getTarget();
         }
@@ -257,11 +268,19 @@ public class TerminowStore {
             String remote = remoteTmux && isValidRemoteTmuxName(tmuxName) ? shellQuote(remoteTmuxCommand(tmuxName)) : "";
             if (mosh)
                 // Mosh talks to the host itself over UDP, so a jump host, proxy or SetEnv does not apply
-                return "mosh" + (sshOptions.isEmpty() && !agentForwarding ? "" : " --ssh='ssh" + (agentForwarding ? " -A" : "") + sshOptions + "'") + " " + target +
+                return "mosh" + getMoshServerOptions() + " --ssh='ssh" + (agentForwarding ? " -A" : "") + sshOptions + "'" + " " + target +
                     (remote.isEmpty() ? "" : " -- sh -c " + shellQuote(remoteTmuxScript(tmuxName)));
             // A command needs -t for a terminal on the server, which tmux needs
             return "ssh" + (remote.isEmpty() ? "" : " -t") + getSessionOptions() + sshOptions +
                 getRouteOptions(jump, proxyConnector, keepAliveInterval, keepAliveCountMax) + " " + target + (remote.isEmpty() ? "" : " " + remote);
+        }
+
+        /** The program and ports of the mosh server as options of mosh, empty for its defaults. */
+        @NonNull
+        private String getMoshServerOptions() {
+            String[] server = parseMoshServer(moshServer);
+            if (server == null) return "";
+            return (server[0].equals("mosh-server") ? "" : " --server=" + server[0]) + (server[1].isEmpty() ? "" : " --port=" + server[1]);
         }
 
         /**
@@ -287,6 +306,7 @@ public class TerminowStore {
             if (!jumpHost.isEmpty() && !proxyType.isEmpty()) return R.string.terminow_host_jump_and_proxy;
             if (mosh && (!jumpHost.isEmpty() || !proxyType.isEmpty())) return R.string.terminow_host_mosh_route;
             if (mosh && !env.isEmpty()) return R.string.terminow_host_mosh_env;
+            if (mosh && !moshServer.trim().isEmpty() && parseMoshServer(moshServer) == null) return R.string.terminow_host_invalid_mosh_server;
             if (telnet && (mosh || agentForwarding || !jumpHost.isEmpty() || !proxyType.isEmpty() || !env.isEmpty() || !keyPath.isEmpty()))
                 return R.string.terminow_host_telnet_options;
             return null;
@@ -480,6 +500,7 @@ public class TerminowStore {
     private static final String KEY_SNIPPETS = "snippets";
     private static final String KEY_GROUPS = "groups";
     private static final String KEY_KEY_LABELS = "key_labels";
+    private static final String KEY_KEY_PASSPHRASES = "key_passphrases";
     private static final String KEY_IDENTITIES = "identities";
     private static final String KEY_KEYCHAIN_SORT = "keychain_sort";
     private static final String KEY_MCP_PROFILES = "mcp_profiles";
@@ -630,6 +651,7 @@ public class TerminowStore {
         object.put("port", host.port);
         object.put("username", host.username);
         object.put("mosh", host.mosh);
+        if (!host.moshServer.isEmpty()) object.put("moshServer", host.moshServer);
         object.put("keyPath", host.keyPath);
         object.put("group", host.group);
         object.put("startupSnippet", host.startupSnippet);
@@ -668,6 +690,7 @@ public class TerminowStore {
         host.port = object.optInt("port", 22);
         host.username = object.optString("username");
         host.mosh = object.optBoolean("mosh");
+        host.moshServer = object.optString("moshServer");
         host.keyPath = object.optString("keyPath");
         host.group = object.optString("group");
         host.startupSnippet = object.optString("startupSnippet");
@@ -1679,6 +1702,70 @@ public class TerminowStore {
             return new JSONObject(mPreferences.getString(KEY_KEY_LABELS, "{}")).optString(fileName);
         } catch (JSONException e) {
             return "";
+        }
+    }
+
+    /**
+     * The command of the mosh server of a host, like "mosh-server new -p 60000:60010", as the
+     * program and the ports for the options of mosh: mosh itself adds "new" and its other
+     * options. {@code null} if it is not one that mosh can run, {"mosh-server", ""} if empty.
+     */
+    @Nullable
+    public static String[] parseMoshServer(@NonNull String command) {
+        String[] words = command.trim().split("\\s+");
+        if (command.trim().isEmpty()) return new String[]{"mosh-server", ""};
+        String program = words[0];
+        if (!program.matches("[A-Za-z0-9_./~+-]+")) return null;
+        String ports = "";
+        for (int i = 1; i < words.length; i++) {
+            String word = words[i];
+            if (word.equals("new") && i == 1) continue;
+            String value;
+            if ((word.equals("-p") || word.equals("--port")) && i + 1 < words.length) value = words[++i];
+            else if (word.startsWith("--port=")) value = word.substring("--port=".length());
+            else if (word.startsWith("-p") && word.length() > 2) value = word.substring(2);
+            else return null;
+            if (!isValidMoshPorts(value)) return null;
+            ports = value;
+        }
+        return new String[]{program, ports};
+    }
+
+    /** A UDP port, or a range of them like "60000:60010". */
+    static boolean isValidMoshPorts(@NonNull String value) {
+        String[] range = value.split(":", -1);
+        if (range.length > 2) return false;
+        try {
+            int low = Integer.parseInt(range[0]);
+            int high = range.length == 2 ? Integer.parseInt(range[1]) : low;
+            return low >= 1 && high <= 65535 && low <= high;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
+    /**
+     * The passphrase of a key file of `~/.ssh`, typed in when ssh asks for it, encrypted like
+     * the passwords of hosts; empty if none was set. It stays on this phone.
+     */
+    @NonNull
+    public String getKeyPassphrase(@NonNull String fileName) {
+        try {
+            String encrypted = new JSONObject(mPreferences.getString(KEY_KEY_PASSPHRASES, "{}")).optString(fileName);
+            return encrypted.isEmpty() ? "" : decryptPassword(encrypted);
+        } catch (JSONException e) {
+            return "";
+        }
+    }
+
+    public void setKeyPassphrase(@NonNull String fileName, @NonNull String passphrase) {
+        try {
+            JSONObject passphrases = new JSONObject(mPreferences.getString(KEY_KEY_PASSPHRASES, "{}"));
+            if (passphrase.isEmpty()) passphrases.remove(fileName);
+            else passphrases.put(fileName, encryptPassword(passphrase));
+            mPreferences.edit().putString(KEY_KEY_PASSPHRASES, passphrases.toString()).apply();
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to save key passphrase", e);
         }
     }
 

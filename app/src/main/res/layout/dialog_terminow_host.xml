@@ -239,6 +239,35 @@
                             style="@style/TerminowPanelCheck" />
                     </LinearLayout>
 
+                    <!-- How mosh starts its server, shown with Mosh -->
+                    <LinearLayout
+                        android:id="@+id/terminow_host_mosh_options"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <TextView
+                            style="@style/TerminowPanelLabel"
+                            android:labelFor="@+id/terminow_host_mosh_server"
+                            android:text="@string/terminow_host_mosh_server" />
+
+                        <EditText
+                            android:id="@+id/terminow_host_mosh_server"
+                            style="@style/TerminowPanelField"
+                            android:fontFamily="monospace"
+                            android:hint="@string/terminow_host_mosh_server_default"
+                            android:inputType="textVisiblePassword" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:text="@string/terminow_host_mosh_server_note"
+                            android:textColor="@color/terminow_text_secondary"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+
                     <TextView
                         style="@style/TerminowPanelLabel"
                         android:layout_marginTop="4dp"

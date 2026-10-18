@@ -45,7 +45,7 @@ public class TerminowHostImportTest {
         assertEquals("deploy", web.username);
         // Commas and quotes in a quoted cell
         assertEquals("p@ss, \"quoted\"", web.password);
-        assertEquals("ssh -p 2222 deploy@web1.example.com", web.getCommand(0, 0));
+        assertEquals("ssh -p 2222 -o StrictHostKeyChecking=accept-new deploy@web1.example.com", web.getCommand(0, 0));
 
         TerminowStore.Host router = find(result.hosts, "192.168.1.1");
         assertTrue(router.telnet);
@@ -109,7 +109,7 @@ public class TerminowHostImportTest {
         assertTrue(result.missingKeys.contains("missing_key"));
         // The command goes through the jump host
         String command = app.getCommand(bastion, "", 0, 0);
-        assertTrue(command, command.contains("ProxyCommand=ssh -i ~/.ssh/id_ed25519 -W %h:%p jump@bastion.example.com"));
+        assertTrue(command, command.contains("ProxyCommand=ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -W %h:%p jump@bastion.example.com"));
     }
 
     @Test
