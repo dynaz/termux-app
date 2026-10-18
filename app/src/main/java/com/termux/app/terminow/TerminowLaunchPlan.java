@@ -29,6 +29,18 @@ public final class TerminowLaunchPlan {
     /** Runs the user's startup command ($1), then the login shell, which the command can not replace. */
     static final String STARTUP_SCRIPT = "eval \"$1\"; shift; exec \"$@\"";
 
+    /**
+     * The login shell of a Linux environment, with Ctrl+S and Ctrl+Q given to programs instead
+     * of pausing and resuming the terminal, which looks like it froze.
+     */
+    static final String NO_XOFF_SHELL = "stty -ixon 2>/dev/null; exec \"${SHELL:-/bin/bash}\" -l";
+
+    /** The arguments that start {@link #NO_XOFF_SHELL}. */
+    @NonNull
+    public static List<String> interactiveShell() {
+        return Arrays.asList("/bin/sh", "-c", NO_XOFF_SHELL);
+    }
+
     public static final String TMUX_OFF = "off";
     public static final String TMUX_CREATE = "create";
     public static final String TMUX_ATTACH = "attach";
@@ -195,8 +207,8 @@ public final class TerminowLaunchPlan {
         args.addAll(bindArguments);
         List<String> program = new ArrayList<>();
         if (withStartup) {
-            program.addAll(Arrays.asList("/bin/sh", "-c", STARTUP_SCRIPT, "terminow", startup, "/bin/sh", "-c",
-                "exec \"${SHELL:-/bin/bash}\" -l"));
+            program.addAll(Arrays.asList("/bin/sh", "-c", STARTUP_SCRIPT, "terminow", startup));
+            program.addAll(interactiveShell());
         } else if (TOOL_PROGRAM.equals(tool)) {
             if (executable.startsWith("/")) program.add(executable);
             else program.addAll(Arrays.asList("/usr/bin/env", executable));
@@ -206,8 +218,9 @@ public final class TerminowLaunchPlan {
         } else if (isClaude(tool)) {
             program.addAll(Arrays.asList("/bin/sh", "-c", TerminowLauncher.CLAUDE_SCRIPT, "claude"));
             program.addAll(claudeArguments(tool));
-        } else if (!TMUX_OFF.equals(tmuxMode)) {
-            program.addAll(Arrays.asList("/bin/bash", "-l"));
+        } else {
+            // A shell, in tmux or not
+            program.addAll(interactiveShell());
         }
         if (!TMUX_OFF.equals(tmuxMode)) {
             args.addAll(Arrays.asList("--", "/bin/sh", "-c", CONTAINER_TMUX_SCRIPT, "terminow", tmuxMode, tmuxName, tmuxSocket(false, user)));

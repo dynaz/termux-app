@@ -1029,6 +1029,8 @@ public class TerminowLauncher {
     static List<String> ubuntuLoginArgs(@NonNull String alias, @NonNull String user, @NonNull String folder, @NonNull List<String> binds) {
         List<String> login = new ArrayList<>(Arrays.asList("login", alias, "--user", user, "--work-dir", folder));
         login.addAll(binds);
+        login.add("--");
+        login.addAll(TerminowLaunchPlan.interactiveShell());
         return login;
     }
 

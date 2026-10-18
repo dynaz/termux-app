@@ -96,7 +96,9 @@ public class TerminowLaunchPlanTest {
         TerminowLaunchPlan plan = TerminowLaunchPlan.build(PREFIX, "ubuntu", "dev", "/home/dev/my project", TerminowLaunchPlan.TOOL_SHELL, "",
             TerminowLaunchPlan.TMUX_OFF, "", true);
         assertEquals(PREFIX + "/bin/proot-distro", plan.executable);
-        assertEquals(Arrays.asList("login", "ubuntu", "--user", "dev", "--work-dir", "/home/dev/my project"), plan.arguments);
+        // The login shell of the user, which $SHELL is, without Ctrl+S pausing it
+        assertEquals(Arrays.asList("login", "ubuntu", "--user", "dev", "--work-dir", "/home/dev/my project",
+            "--", "/bin/sh", "-c", TerminowLaunchPlan.NO_XOFF_SHELL), plan.arguments);
         assertEquals("/data/data/com.terminow/files/home", plan.workingDirectory);
     }
 
@@ -285,7 +287,7 @@ public class TerminowLaunchPlanTest {
             TerminowLaunchPlan.TMUX_ATTACH, "work", true, Arrays.asList("--bind", "/storage/emulated/0/Projects:/mnt/projects"));
         assertEquals(Arrays.asList("login", "debian", "--user", "alice", "--work-dir", "/home/alice/src", "--bind",
             "/storage/emulated/0/Projects:/mnt/projects", "--", "/bin/sh", "-c", TerminowLaunchPlan.CONTAINER_TMUX_SCRIPT, "terminow",
-            "attach", "work", "terminow-alice", "/bin/bash", "-l"), plan.arguments);
+            "attach", "work", "terminow-alice", "/bin/sh", "-c", TerminowLaunchPlan.NO_XOFF_SHELL), plan.arguments);
         assertEquals(PREFIX + "/bin/proot-distro", plan.executable);
     }
 
@@ -476,4 +478,14 @@ public class TerminowLaunchPlanTest {
         assertEquals("secret", read.validate());
     }
 
+
+    @Test
+    public void ubuntuShellsDoNotPauseOnCtrlS() {
+        // Ctrl+S goes to the program, it does not stop the output until Ctrl+Q
+        assertTrue(TerminowLaunchPlan.NO_XOFF_SHELL.startsWith("stty -ixon 2>/dev/null; exec "));
+        TerminowLaunchPlan plain = TerminowLaunchPlan.build(PREFIX, "ubuntu", "root", "/root", TerminowLaunchPlan.TOOL_SHELL, "",
+            TerminowLaunchPlan.TMUX_OFF, "", true);
+        List<String> args = plain.arguments;
+        assertEquals(Arrays.asList("--", "/bin/sh", "-c", TerminowLaunchPlan.NO_XOFF_SHELL), args.subList(args.indexOf("--"), args.size()));
+    }
 }
