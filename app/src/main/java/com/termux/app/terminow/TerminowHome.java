@@ -3466,6 +3466,19 @@ public class TerminowHome {
         panel.show();
     }
 
+    /**
+     * A key or certificate from the clipboard, like Paste SSH key in Termius: shown in the New
+     * Key panel, which says what it is (ED25519, RSA, ECDSA, PuTTY, a certificate) before it is saved.
+     */
+    private void pasteKey() {
+        String copied = clipboardText();
+        if (copied == null) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_keypanel_clipboard_empty), false);
+            return;
+        }
+        showNewKeyPanel(copied, null);
+    }
+
     /** Any text on the clipboard, {@code null} if there is none. */
     @Nullable
     private String clipboardText() {
@@ -3942,8 +3955,13 @@ public class TerminowHome {
 
         // Like the + of the keychain of Termius: a key first, then an identity, then the keys bound to a device
         addMenuItem(menu, popup, R.drawable.ic_terminow_key, R.string.terminow_keypanel_new_item, () -> showNewKeyPanel(null, null));
+        addMenuItem(menu, popup, R.drawable.ic_terminow_paste, R.string.terminow_key_paste, this::pasteKey);
         addMenuItem(menu, popup, R.drawable.ic_terminow_import, R.string.terminow_key_import, this::pickKeyFile);
         addMenuItem(menu, popup, R.drawable.ic_terminow_generate, R.string.terminow_key_generate, this::showGenerateKeyPanel);
+        addMenuDivider(menu);
+        // A certificate goes to the key it certifies: the New Key panel finds it
+        addMenuItem(menu, popup, R.drawable.ic_terminow_paste, R.string.terminow_key_paste_certificate, this::pasteKey);
+        addMenuItem(menu, popup, R.drawable.ic_terminow_import, R.string.terminow_key_import_certificate, this::pickKeyFile);
         addMenuDivider(menu);
         addMenuItem(menu, popup, R.drawable.ic_terminow_person_add, R.string.terminow_identity_new, () -> showIdentityDialog(null, null));
         addMenuDivider(menu);

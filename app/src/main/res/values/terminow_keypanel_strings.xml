@@ -45,4 +45,6 @@
     <string name="terminow_keypanel_attached">Attached to (%1$d)</string>
     <string name="terminow_keypanel_choose_key">Choose a key</string>
     <string name="terminow_keypanel_identity_note">Hosts that use this identity log in with its username, password and key.</string>
+    <string name="terminow_key_paste_certificate">Paste certificate</string>
+    <string name="terminow_key_import_certificate">Import certificate from file</string>
 </resources>

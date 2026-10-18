@@ -45,4 +45,7 @@
     <string name="terminow_keypanel_attached">ใช้กับ (%1$d)</string>
     <string name="terminow_keypanel_choose_key">เลือกคีย์</string>
     <string name="terminow_keypanel_identity_note">โฮสต์ที่ใช้ข้อมูลประจำตัวนี้จะลงชื่อเข้าใช้ด้วยชื่อผู้ใช้ รหัสผ่าน และคีย์ของข้อมูลนี้</string>
+    <string name="terminow_key_paste">วางคีย์ SSH</string>
+    <string name="terminow_key_paste_certificate">วางใบรับรอง</string>
+    <string name="terminow_key_import_certificate">นำเข้าใบรับรองจากไฟล์</string>
 </resources>
