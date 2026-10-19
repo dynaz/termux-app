@@ -60,7 +60,7 @@ public final class TerminowLaunchPlan {
         "t=\n" +
         "for d in ${TERMINOW_TMUX_DIRS:-/usr/local/bin /usr/bin /bin}; do if [ -x \"$d/tmux\" ]; then t=\"$d/tmux\"; break; fi; done\n" +
         "if [ -z \"$t\" ]; then\n" +
-        "  echo \"TermiNow: tmux is not installed in this environment. Install it from Open tools.\"\n" +
+        "  echo \"TermiNow: tmux is not installed in this environment. Install it with Install in the toolbar.\"\n" +
         "  echo \"TermiNow: starting without tmux\"\n" +
         "  exec \"$@\"\n" +
         "fi\n" +

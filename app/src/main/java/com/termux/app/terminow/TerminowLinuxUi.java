@@ -197,8 +197,10 @@ public class TerminowLinuxUi {
         return sLiveInstall;
     }
 
-    TerminowLinuxInstaller newInstaller() {
-        return new TerminowLinuxInstaller(mRegistry, new File(mActivity.getCacheDir(), "linux-install"), new TerminowLinuxInstaller.Runner() {
+    /** Runs proot-distro and other programs of TermiNow with the environment of the terminal. */
+    @NonNull
+    TerminowLinuxInstaller.Runner newRunner() {
+        return new TerminowLinuxInstaller.Runner() {
             @NonNull
             @Override
             public Process start(@NonNull List<String> command) throws IOException {
@@ -210,7 +212,11 @@ public class TerminowLinuxUi {
             public void interrupt(int pid) {
                 android.os.Process.sendSignal(pid, 2);
             }
-        }, new TerminowLinuxInstaller.Marker() {
+        };
+    }
+
+    TerminowLinuxInstaller newInstaller() {
+        return new TerminowLinuxInstaller(mRegistry, new File(mActivity.getCacheDir(), "linux-install"), newRunner(), new TerminowLinuxInstaller.Marker() {
             @Nullable
             @Override
             public String getAlias() {

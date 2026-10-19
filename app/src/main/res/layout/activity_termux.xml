@@ -223,7 +223,7 @@
             android:gravity="center_vertical"
             android:maxLines="1"
             android:paddingHorizontal="10dp"
-            android:text="@string/terminow_tools_title"
+            android:text="@string/terminow_quick_title"
             android:textColor="@color/terminow_text"
             android:textSize="13sp" />
 

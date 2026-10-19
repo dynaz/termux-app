@@ -84,7 +84,7 @@
     <string name="terminow_profiles_error_secret">ดูเหมือนมีรหัสผ่าน คีย์ หรือโทเค็น โปรไฟล์ไม่เก็บข้อมูลลับ ให้โปรแกรมถามเอง หรือใช้การเข้าสู่ระบบของโปรแกรม</string>
     <string name="terminow_profiles_error_environment">ไม่ได้ติดตั้งสภาพแวดล้อมหรือผู้ใช้นี้</string>
     <string name="terminow_profiles_env_gone">%1$s (ไม่ได้ติดตั้ง)</string>
-    <string name="terminow_profiles_env_missing">ไม่ได้ติดตั้งสภาพแวดล้อม %1$s ตั้งค่าได้ใน เปิดเครื่องมือ หรือแก้ไขโปรไฟล์</string>
+    <string name="terminow_profiles_env_missing">ไม่ได้ติดตั้งสภาพแวดล้อม %1$s ตั้งค่าได้ใน เปิดด่วน หรือแก้ไขโปรไฟล์</string>
     <string name="terminow_profiles_user_missing">ไม่มีผู้ใช้ %1$s ใน %2$s แก้ไขโปรไฟล์</string>
     <string name="terminow_profiles_folder_missing">ไม่มีโฟลเดอร์ %1$s แล้ว แก้ไขโปรไฟล์</string>
     <string name="terminow_profiles_confirm_title">เรียกใช้ %1$s?</string>

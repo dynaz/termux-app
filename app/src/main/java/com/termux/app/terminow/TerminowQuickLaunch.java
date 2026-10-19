@@ -74,6 +74,9 @@ public class TerminowQuickLaunch {
 
         /** Back up a Linux environment to one of the saved hosts. */
         void backupEnvironment(@NonNull String alias, @NonNull String title);
+
+        /** Back up a Linux environment to a file on the phone, in a folder that the user picks. */
+        void backupToPhone(@NonNull String alias, @NonNull String title);
     }
 
     private final TermuxActivity mActivity;
@@ -303,6 +306,9 @@ public class TerminowQuickLaunch {
                     () -> mLauncher.openClaude(environment)), weighted());
             secondary.addView(secondaryButton(R.drawable.ic_terminow_folder, mActivity.getString(R.string.terminow_quick_files),
                 () -> mLauncher.openFilesOf(environment)), weighted());
+            if (linux != null)
+                secondary.addView(secondaryButton(R.drawable.ic_terminow_download, mActivity.getString(R.string.terminow_quick_backup),
+                    () -> chooseBackup(linux.alias, environment.shortName())), weighted());
         } else {
             secondary.addView(secondaryButton(R.drawable.ic_terminow_folder, mActivity.getString(R.string.terminow_quick_files),
                 mHost::openLocalFiles), weighted());
@@ -492,6 +498,7 @@ public class TerminowQuickLaunch {
         menu.getMenu().add(0, 9, 0, R.string.terminow_quick_new_tab);
         TerminowLinuxEnv linux = linuxOf(environment);
         if (linux != null) menu.getMenu().add(0, 7, 0, R.string.terminow_quick_manage);
+        if (linux != null) menu.getMenu().add(0, 10, 0, R.string.terminow_phone_backup_menu);
         if (linux != null) menu.getMenu().add(0, 8, 0, R.string.terminow_backup_menu);
         menu.setOnMenuItemClickListener(item -> {
             switch (item.getItemId()) {
@@ -507,11 +514,24 @@ public class TerminowQuickLaunch {
                 case 7: if (linux != null) mLinux.showDetails(linux); break;
                 case 8: if (linux != null) mHost.backupEnvironment(linux.alias, environment.shortName()); break;
                 case 9: mLauncher.openNewTerminal(environment); break;
+                case 10: if (linux != null) mHost.backupToPhone(linux.alias, environment.shortName()); break;
                 default: break;
             }
             return true;
         });
         menu.show();
+    }
+
+    /** Where to back up an environment to: a file on the phone, or a server. */
+    private void chooseBackup(@NonNull String alias, @NonNull String title) {
+        CharSequence[] places = {mActivity.getString(R.string.terminow_phone_backup_menu), mActivity.getString(R.string.terminow_backup_menu)};
+        new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(mActivity.getString(R.string.terminow_backup_title, title))
+            .setItems(places, (d, which) -> {
+                if (which == 0) mHost.backupToPhone(alias, title);
+                else mHost.backupEnvironment(alias, title);
+            })
+            .show();
     }
 
     private void profileMenu(@NonNull View anchor, @NonNull String id, @NonNull TerminowLaunchProfile profile, @NonNull List<String> pins) {

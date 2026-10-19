@@ -42,7 +42,7 @@
     <string name="terminow_linux_phase_cancelling">กำลังยกเลิกและเก็บกวาด…</string>
     <string name="terminow_linux_downloaded">%1$s จาก %2$s</string>
     <string name="terminow_linux_installed_title">ติดตั้ง %1$s แล้ว</string>
-    <string name="terminow_linux_installed_message">อยู่ในสภาพแวดล้อม Linux ของตัวจัดการไฟล์ และใน เปิดเครื่องมือ</string>
+    <string name="terminow_linux_installed_message">อยู่ในสภาพแวดล้อม Linux ของตัวจัดการไฟล์ และใน เปิดด่วน</string>
     <string name="terminow_linux_cancelled_title">ยกเลิกการติดตั้งแล้ว</string>
     <string name="terminow_linux_cancelled_message">ลบไฟล์ดาวน์โหลดและไฟล์ที่ยังไม่เสร็จแล้ว (%1$s)</string>
     <string name="terminow_linux_failed_title">ติดตั้งไม่สำเร็จ</string>

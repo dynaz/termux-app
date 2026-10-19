@@ -120,6 +120,7 @@ public class TerminowHome {
     private static final int REQUEST_UPLOAD_TMP = 2003;
     private static final int REQUEST_IMPORT_HOSTS = 2004;
     private static final int REQUEST_IMPORT_ROOTFS = 2006;
+    private static final int REQUEST_PHONE_BACKUP = 2007;
     /** A certificate is one line of some kilobytes. */
     private static final int CERTIFICATE_MAX_SIZE = 64 * 1024;
 
@@ -345,6 +346,11 @@ public class TerminowHome {
             @Override
             public void backupEnvironment(@NonNull String alias, @NonNull String title) {
                 showBackupDialog(alias, title);
+            }
+
+            @Override
+            public void backupToPhone(@NonNull String alias, @NonNull String title) {
+                pickPhoneBackupFile(alias, title);
             }
 
             @Override
@@ -1317,6 +1323,103 @@ public class TerminowHome {
             runBackup(alias, title, server[0], dir, rsync ? list : null, install.isChecked());
         }));
         dialog.show();
+    }
+
+    /** The environment (alias, title) whose backup file is being picked. */
+    @Nullable private String[] mPhoneBackupPending;
+    @Nullable private AlertDialog mPhoneBackupDialog;
+    private final Runnable mOnPhoneBackup = this::showPhoneBackupState;
+
+    /**
+     * The file picker of Android, to save the backup in any folder of the phone, also a new one
+     * like termux. A backup that runs already is shown instead.
+     */
+    private void pickPhoneBackupFile(@NonNull String alias, @NonNull String title) {
+        if (TerminowPhoneBackup.isRunning()) {
+            showPhoneBackup();
+            return;
+        }
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/gzip");
+        intent.putExtra(Intent.EXTRA_TITLE, TerminowPhoneBackup.fileName(alias, System.currentTimeMillis()));
+        mPhoneBackupPending = new String[]{alias, title};
+        try {
+            mActivity.startActivityForResult(intent, REQUEST_PHONE_BACKUP);
+        } catch (Exception e) {
+            mPhoneBackupPending = null;
+            mActivity.showToast(String.valueOf(e.getMessage()), true);
+        }
+    }
+
+    private void startPhoneBackup(@NonNull String alias, @NonNull String title, @NonNull Uri uri) {
+        String fileName = uri.getLastPathSegment() != null ? uri.getLastPathSegment() : "";
+        try (Cursor cursor = mActivity.getContentResolver().query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst() && !cursor.isNull(0)) fileName = cursor.getString(0);
+        } catch (RuntimeException e) {
+            // The name of the uri
+        }
+        if (TerminowPhoneBackup.start(mActivity, mLinuxUi.newRunner(), TermuxConstants.TERMUX_PREFIX_DIR_PATH, alias, title, uri,
+            fileName.substring(fileName.lastIndexOf('/') + 1)) == null) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_phone_backup_busy), true);
+        } else {
+            // Its end is told also when the progress is hidden
+            Runnable[] onEnd = new Runnable[1];
+            onEnd[0] = () -> {
+                TerminowPhoneBackup.Job job = TerminowPhoneBackup.current();
+                if (job == null || job.state == TerminowPhoneBackup.State.RUNNING) return;
+                TerminowPhoneBackup.removeListener(onEnd[0]);
+                if (mPhoneBackupDialog == null || !mPhoneBackupDialog.isShowing())
+                    mActivity.showToast(mActivity.getString(job.state == TerminowPhoneBackup.State.SUCCEEDED ?
+                        R.string.terminow_phone_backup_done_toast : R.string.terminow_phone_backup_failed_toast, job.title, job.fileName), true);
+            };
+            TerminowPhoneBackup.addListener(onEnd[0]);
+        }
+        showPhoneBackup();
+    }
+
+    /** The progress of the backup, which keeps running when this is hidden. */
+    private void showPhoneBackup() {
+        if (TerminowPhoneBackup.current() == null) return;
+        if (mPhoneBackupDialog != null && mPhoneBackupDialog.isShowing()) return;
+        AlertDialog dialog = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_phone_backup_menu)
+            .setMessage(" ")
+            .setPositiveButton(R.string.terminow_phone_backup_hide, null)
+            .setNegativeButton(R.string.terminow_phone_backup_cancel, null)
+            .create();
+        dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(v ->
+            new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setMessage(R.string.terminow_phone_backup_cancel_confirm)
+                .setPositiveButton(R.string.terminow_phone_backup_cancel, (c, w) -> TerminowPhoneBackup.cancel(mLinuxUi.newRunner()))
+                .setNegativeButton(R.string.terminow_phone_backup_keep, null)
+                .show()));
+        dialog.setOnDismissListener(d -> {
+            TerminowPhoneBackup.removeListener(mOnPhoneBackup);
+            if (mPhoneBackupDialog == dialog) mPhoneBackupDialog = null;
+        });
+        mPhoneBackupDialog = dialog;
+        TerminowPhoneBackup.addListener(mOnPhoneBackup);
+        dialog.show();
+        showPhoneBackupState();
+    }
+
+    private void showPhoneBackupState() {
+        AlertDialog dialog = mPhoneBackupDialog;
+        TerminowPhoneBackup.Job job = TerminowPhoneBackup.current();
+        if (dialog == null || !dialog.isShowing() || job == null) return;
+        String size = android.text.format.Formatter.formatShortFileSize(mActivity, job.bytes);
+        String message;
+        switch (job.state) {
+            case RUNNING: message = mActivity.getString(R.string.terminow_phone_backup_running, job.title, job.fileName, size); break;
+            case SUCCEEDED: message = mActivity.getString(R.string.terminow_phone_backup_done, job.title, job.fileName, size); break;
+            case CANCELLED: message = mActivity.getString(R.string.terminow_phone_backup_cancelled, job.fileName); break;
+            default: message = mActivity.getString(R.string.terminow_phone_backup_failed, job.title, job.error); break;
+        }
+        dialog.setMessage(message);
+        boolean running = job.state == TerminowPhoneBackup.State.RUNNING;
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setVisibility(running ? View.VISIBLE : View.GONE);
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setText(running ? R.string.terminow_phone_backup_hide : android.R.string.ok);
     }
 
     /** In a tab of its own, so its progress, prompts and result are shown; saved passwords and passphrases are typed in. */
@@ -4453,6 +4556,13 @@ public class TerminowHome {
                 }
                 mLinuxUi.importRootfs(uri, fileName.substring(fileName.lastIndexOf('/') + 1));
             }
+            return true;
+        }
+        if (requestCode == REQUEST_PHONE_BACKUP) {
+            String[] pending = mPhoneBackupPending;
+            mPhoneBackupPending = null;
+            if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null && pending != null)
+                startPhoneBackup(pending[0], pending[1], data.getData());
             return true;
         }
         if (requestCode == REQUEST_IMPORT_HOSTS) {

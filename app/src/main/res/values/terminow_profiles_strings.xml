@@ -87,7 +87,7 @@
     <string name="terminow_profiles_error_secret">This looks like it has a password, key or token. Profiles do not keep secrets: let the program ask for it, or use its own login.</string>
     <string name="terminow_profiles_error_environment">This environment or user is not installed</string>
     <string name="terminow_profiles_env_gone">%1$s (not installed)</string>
-    <string name="terminow_profiles_env_missing">The environment %1$s is not installed. Set it up in Open tools, or edit the profile.</string>
+    <string name="terminow_profiles_env_missing">The environment %1$s is not installed. Set it up in Quick Launch, or edit the profile.</string>
     <string name="terminow_profiles_user_missing">The user %1$s does not exist in %2$s. Edit the profile.</string>
     <string name="terminow_profiles_folder_missing">The folder %1$s does not exist any more. Edit the profile.</string>
     <string name="terminow_profiles_confirm_title">Run %1$s?</string>

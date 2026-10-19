@@ -15,4 +15,17 @@
     <string name="terminow_backup_no_hosts">เพิ่มเซิร์ฟเวอร์ที่จะสำรองข้อมูลเป็นโฮสต์ SSH ก่อน พร้อมคีย์หรือรหัสผ่าน</string>
     <string name="terminow_backup_invalid_dir">โฟลเดอร์ เช่น terminow-backups/ubuntu หรือ ~/backups ไม่มีช่องว่างหรือ ..</string>
     <string name="terminow_backup_invalid_folders">โฟลเดอร์ที่ขึ้นต้นด้วย / คั่นด้วยช่องว่าง เช่น /root /home</string>
+    <string name="terminow_quick_backup">สำรอง</string>
+    <string name="terminow_phone_backup_menu">สำรองไปยังที่เก็บข้อมูลในโทรศัพท์…</string>
+    <string name="terminow_phone_backup_busy">กำลังสำรองไปยังโทรศัพท์อยู่แล้ว</string>
+    <string name="terminow_phone_backup_hide">ซ่อน</string>
+    <string name="terminow_phone_backup_cancel">หยุดสำรอง</string>
+    <string name="terminow_phone_backup_keep">ทำต่อ</string>
+    <string name="terminow_phone_backup_cancel_confirm">หยุดการสำรองหรือไม่ ไฟล์ที่ยังไม่เสร็จจะถูกลบ</string>
+    <string name="terminow_phone_backup_running">กำลังสำรอง %1$s ด้วย proot-distro backup ลงใน %2$s\n\nเก็บแล้ว %3$s ยังทำงานต่อแม้ซ่อนหน้าต่างนี้ แท็บที่เปิดอยู่ของ %1$s ยังทำงานต่อ ไฟล์ที่เปลี่ยนระหว่างสำรองอาจถูกบันทึกไม่ครบ</string>
+    <string name="terminow_phone_backup_done">สำรอง %1$s ไว้ใน %2$s แล้ว (%3$s ก่อนบีบอัด)\n\nกู้คืนด้วย proot-distro restore กับไฟล์นี้</string>
+    <string name="terminow_phone_backup_cancelled">หยุดการสำรองแล้ว และลบ %1$s แล้ว</string>
+    <string name="terminow_phone_backup_failed">สำรอง %1$s ไม่สำเร็จ และลบไฟล์ที่ยังไม่เสร็จแล้ว\n\n%2$s</string>
+    <string name="terminow_phone_backup_done_toast">สำรอง %1$s ไว้ใน %2$s แล้ว</string>
+    <string name="terminow_phone_backup_failed_toast">สำรอง %1$s ไปยัง %2$s ไม่เสร็จ เปิด สำรอง เพื่อดูสาเหตุ</string>
 </resources>
