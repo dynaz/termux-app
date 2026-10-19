@@ -257,4 +257,16 @@ public class TerminowToolInstallerTest {
         assertEquals(Arrays.asList("/p/usr/bin/proot-distro", "login", "ubuntu", "--user", "dev", "--", "/bin/sh", "-c", "SCRIPT",
             "terminow-setup", "claude"), command);
     }
+
+    @Test
+    public void theFoldersOfTermiNowAreNotOnThePath() throws Exception {
+        assumeTrue(new File("/bin/sh").exists());
+        ProcessBuilder builder = new ProcessBuilder("/bin/sh", "-c", TerminowToolInstaller.OWN_PATH + "echo \"$PATH\"");
+        builder.environment().put("PATH", "/usr/local/bin:/usr/bin:/data/data/com.terminow/files/usr/bin:/bin");
+        builder.environment().put("HOME", "/home/u");
+        Process process = builder.start();
+        String path = new String(readAll(process.getInputStream()), StandardCharsets.UTF_8).trim();
+        assertTrue(process.waitFor(10, TimeUnit.SECONDS));
+        assertEquals("/home/u/.local/bin:/usr/local/bin:/usr/bin:/bin", path);
+    }
 }

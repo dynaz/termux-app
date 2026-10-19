@@ -196,11 +196,20 @@ public final class TerminowToolInstaller {
     static final String NETWORK_EXIT_CODES = "6|7|28|35|52|56";
 
     /**
+     * The PATH of the environment itself, with ~/.local/bin first. proot-distro adds the folders
+     * of TermiNow (Android programs under /data) at the end, so without this, the git and curl of
+     * TermiNow were reported as installed in Ubuntu, and were used, before Ubuntu had its own.
+     */
+    static final String OWN_PATH =
+        "p=; IFS=:; for d in $PATH; do case $d in /data/*) ;; *) p=\"$p${p:+:}$d\";; esac; done; unset IFS\n" +
+        "PATH=\"$HOME/.local/bin:$p\"; export PATH\n";
+
+    /**
      * What the user has: its uid, the CPU, apt and sudo, and the version of each tool. Claude
      * Code may be in `~/.local/bin`, where its installer puts it, which is not always on the PATH.
      */
     static final String DETECT_SCRIPT =
-        "PATH=\"$HOME/.local/bin:$PATH\"; export PATH\n" +
+        OWN_PATH +
         "echo \"TERMINOW_UID=$(id -u)\"\n" +
         "echo \"TERMINOW_ARCH=$(uname -m)\"\n" +
         "command -v apt-get >/dev/null 2>&1 && echo TERMINOW_APT=yes\n" +
@@ -223,7 +232,7 @@ public final class TerminowToolInstaller {
         "first() { printf '%s\\n' \"$1\" | head -n 1; }\n" +
         "tool=\"$1\"\n" +
         "stage checking\n" +
-        "PATH=\"$HOME/.local/bin:$PATH\"; export PATH\n" +
+        OWN_PATH +
         "uid=$(id -u)\n" +
         "echo \"TermiNow: installing $tool as $(id -un 2>/dev/null || echo \"$uid\") (uid $uid) on $(uname -m)\"\n" +
         "missing() { m=; for p in \"$@\"; do dpkg-query -W -f='${Status}' \"$p\" 2>/dev/null | grep -q 'install ok installed' || m=\"$m $p\"; done; echo \"$m\"; }\n" +

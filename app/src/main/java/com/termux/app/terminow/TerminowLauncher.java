@@ -17,6 +17,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.PersistableBundle;
+import android.os.SystemClock;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -38,7 +39,7 @@ import androidx.core.content.ContextCompat;
 import com.termux.R;
 import com.termux.app.terminow.linux.TerminowLinuxEnv;
 import com.termux.app.TermuxActivity;
-import com.termux.shared.shell.ShellUtils;
+import com.termux.terminal.TerminalEmulator;
 import com.termux.shared.termux.TermuxConstants;
 import com.termux.terminal.TerminalSession;
 
@@ -109,6 +110,9 @@ public class TerminowLauncher {
         "esac\n";
 
     /** Starts Claude Code with the arguments after `$0`, from the folder the session starts in. */
+    /** How long a Claude Code tab opened after an install is watched for a sign-in link. */
+    private static final long SIGN_IN_HELP_WATCH_MS = 10 * 60 * 1000;
+
     static final String CLAUDE_SCRIPT = "PATH=\"$HOME/.local/bin:$PATH\"; export PATH; exec claude \"$@\"";
 
     /** {@link #CLAUDE_SCRIPT}, after saying how to sign in. */
@@ -475,7 +479,7 @@ public class TerminowLauncher {
      */
     void openClaudeWithSignInHelp(@NonNull Environment environment, @NonNull String user) {
         TerminalSession session = launchClaude(environment, new String[0], false, CLAUDE_SIGN_IN_HELP_SCRIPT, user);
-        if (session != null) watchLogin(session, environment, null);
+        if (session != null) watchLogin(session, environment, null, SystemClock.uptimeMillis() + SIGN_IN_HELP_WATCH_MS);
     }
 
     /** A new shell tab of an environment, in its folder, also when one is open already. */
@@ -1146,7 +1150,7 @@ public class TerminowLauncher {
         TerminalSession session = launch("claude|" + environment.key + "|" + folder + "|" + TextUtils.join(" ", claudeArgs), executable,
             args.toArray(new String[0]), workingDirectory, mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), tool), login,
             new SessionInfo(environment.key, environment.shortName(), tool, folder, ""));
-        if (session != null && login) watchLogin(session, environment, null);
+        if (session != null && login) watchLogin(session, environment, null, Long.MAX_VALUE);
         return session;
     }
 
@@ -1202,21 +1206,25 @@ public class TerminowLauncher {
      * While the login session runs, offer to open the sign-in link that Claude Code printed in it
      * in a browser or to copy it. The link is only read from this session that the launcher
      * started for the login, and it is never logged or kept. When the session ends, the login
-     * status of the environment is checked again.
+     * status of the environment is checked again. Only the screen is read, never the scrollback,
+     * since this runs on the thread that draws the terminals and takes the keys: reading all of a
+     * long Claude Code tab each second made it stop responding.
+     *
+     * @param readUntil Until when, in {@link SystemClock#uptimeMillis()}, the screen is read for a link.
      */
-    private void watchLogin(@NonNull TerminalSession session, @NonNull Environment environment, @Nullable String offered) {
+    private void watchLogin(@NonNull TerminalSession session, @NonNull Environment environment, @Nullable String offered, long readUntil) {
         mHandler.postDelayed(() -> {
             if (session.getPid() <= 0 || session.isRunning()) {
                 String shown = offered;
-                if (session.isRunning()) {
-                    String transcript = ShellUtils.getTerminalSessionTranscriptText(session, true, false);
-                    String url = transcript != null ? findLoginUrl(transcript) : null;
+                if (session.isRunning() && SystemClock.uptimeMillis() < readUntil) {
+                    String screen = screenTextOf(session);
+                    String url = screen != null ? findLoginUrl(screen) : null;
                     if (url != null && !url.equals(offered)) {
                         offerLoginLink(url);
                         shown = url;
                     }
                 }
-                watchLogin(session, environment, shown);
+                watchLogin(session, environment, shown, readUntil);
                 return;
             }
             String key = stateKey(environment);
@@ -1238,6 +1246,14 @@ public class TerminowLauncher {
                 });
             });
         }, 1000);
+    }
+
+    /** The text on the screen of a session, with wrapped lines joined so that a long link stays whole. */
+    @Nullable
+    private static String screenTextOf(@NonNull TerminalSession session) {
+        TerminalEmulator emulator = session.getEmulator();
+        if (emulator == null) return null;
+        return emulator.getScreen().getSelectedText(0, 0, emulator.mColumns, emulator.mRows, true, true);
     }
 
     private void offerLoginLink(@NonNull String url) {
