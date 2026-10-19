@@ -258,7 +258,9 @@ public final class TerminalView extends View {
         });
         mScroller = new Scroller(context);
         AccessibilityManager am = (AccessibilityManager) context.getSystemService(Context.ACCESSIBILITY_SERVICE);
-        mAccessibilityEnabled = am.isEnabled();
+        // Only a screen reader reads the text of the view: any other accessibility service, like a
+        // password manager, got an event for every bit of output, which made busy terminals hang
+        mAccessibilityEnabled = am.isTouchExplorationEnabled();
     }
 
 
@@ -496,7 +498,11 @@ public final class TerminalView extends View {
         mEmulator.clearScrollCounter();
 
         invalidate();
-        if (mAccessibilityEnabled) setContentDescription(getText());
+        if (mAccessibilityEnabled && !mDescriptionPending) {
+            // At most twice a second, not for every bit of output
+            mDescriptionPending = true;
+            postDelayed(mUpdateDescription, 500);
+        }
     }
 
     /** This must be called by the hosting activity in {@link Activity#onContextMenuClosed(Menu)}
@@ -981,8 +987,23 @@ public final class TerminalView extends View {
      */
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
-        updateSize();
+        if (mEmulator == null) {
+            updateSize();
+            return;
+        }
+        // Applied once the size settled: the keyboard coming or going can change it a few times,
+        // and each change made programs like Claude Code draw all they show again
+        removeCallbacks(mApplySize);
+        postDelayed(mApplySize, RESIZE_SETTLE_MS);
     }
+
+    private static final long RESIZE_SETTLE_MS = 100;
+    private final Runnable mApplySize = this::updateSize;
+    private boolean mDescriptionPending;
+    private final Runnable mUpdateDescription = () -> {
+        mDescriptionPending = false;
+        if (mEmulator != null) setContentDescription(getText());
+    };
 
     /** Check if the terminal size in rows and columns should be updated. */
     public void updateSize() {

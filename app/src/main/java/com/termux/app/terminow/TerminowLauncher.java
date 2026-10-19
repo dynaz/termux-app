@@ -1265,8 +1265,12 @@ public class TerminowLauncher {
         TerminowLaunchState.Launch launch = LAUNCHES.begin(target, session, mStore.getUbuntuStartTimeoutSeconds() * 1000L, inExistingTab);
         launch.retry = retry;
         // Said in the new tab until Linux prints anything itself, after the output a restored tab shows
-        if (!inExistingTab && session.getEmulator() == null) {
-            byte[] line = (mActivity.getString(R.string.terminow_launch_starting_line, label) + "\r\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] line = (mActivity.getString(R.string.terminow_launch_starting_line, label) + "\r\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        if (!inExistingTab && session.getEmulator() != null) {
+            // The tab was shown at once, its screen is there already
+            session.getEmulator().append(line, line.length);
+            if (mActivity.getCurrentSession() == session) mActivity.getTerminalView().onScreenUpdated();
+        } else if (!inExistingTab) {
             byte[] before = session.mPrelude;
             if (before == null) {
                 session.mPrelude = line;
