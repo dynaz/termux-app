@@ -248,6 +248,12 @@ public class TerminowPtyService extends Service {
         private final int mFd;
         private final int mPid;
         private final FileOutputStream mPtyOut;
+        /**
+         * The duplicates of the pty master that the streams use, kept until the process exited:
+         * a {@link ParcelFileDescriptor} that is dropped closes its duplicate when it is finalized.
+         */
+        private final ParcelFileDescriptor mPtyOutDescriptor;
+        private final ParcelFileDescriptor mPtyInDescriptor;
         private final byte[] mReplay = new byte[REPLAY_BUFFER_SIZE];
         private int mReplayStart = 0;
         private int mReplayLength = 0;
@@ -261,7 +267,9 @@ public class TerminowPtyService extends Service {
             mId = id;
             mFd = fd;
             mPid = pid;
-            mPtyOut = new FileOutputStream(ParcelFileDescriptor.fromFd(fd).getFileDescriptor());
+            mPtyOutDescriptor = ParcelFileDescriptor.fromFd(fd);
+            mPtyInDescriptor = ParcelFileDescriptor.fromFd(fd);
+            mPtyOut = new FileOutputStream(mPtyOutDescriptor.getFileDescriptor());
         }
 
         static PtySession start(@NonNull TerminowPtyService service, @NonNull String id, @NonNull String executable,
@@ -303,7 +311,7 @@ public class TerminowPtyService extends Service {
         private void startThreads() {
             Thread reader = new Thread(() -> {
                 byte[] buffer = new byte[16 * 1024];
-                try (InputStream in = new FileInputStream(ParcelFileDescriptor.fromFd(mFd).getFileDescriptor())) {
+                try (InputStream in = new FileInputStream(mPtyInDescriptor.getFileDescriptor())) {
                     int read;
                     while ((read = in.read(buffer)) > 0) onOutput(Arrays.copyOf(buffer, read));
                 } catch (IOException ignored) {
@@ -478,6 +486,8 @@ public class TerminowPtyService extends Service {
             }
             try { mPtyOut.close(); } catch (IOException ignored) {}
             PtyProcess.close(mFd);
+            try { mPtyOutDescriptor.close(); } catch (IOException ignored) {}
+            try { mPtyInDescriptor.close(); } catch (IOException ignored) {}
             // Kept for a while, so that an app that lost the connection still gets the exit code
             new Thread(() -> {
                 try { Thread.sleep(60_000); } catch (InterruptedException ignored) {}

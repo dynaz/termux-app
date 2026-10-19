@@ -1410,10 +1410,26 @@ public class TerminowLauncher {
         builder.show();
     }
 
-    /** What happened to the starts of this session of the app: when, where, which state and how long. */
+    /**
+     * The I/O of each tab, by its session id and pid, and what happened to the starts of Linux:
+     * states, times and byte counts, never what a tab shows or what was typed.
+     */
     void showLaunchDiagnostics() {
+        StringBuilder tabs = new StringBuilder();
+        com.termux.app.TermuxService service = mActivity.getTermuxService();
+        TerminalSession current = mActivity.getCurrentSession();
+        if (service != null) {
+            for (com.termux.shared.termux.shell.command.runner.terminal.TermuxSession termuxSession : service.getTermuxSessions()) {
+                TerminalSession session = termuxSession.getTerminalSession();
+                SessionInfo info = mInfo.get(session);
+                tabs.append(session == current ? "▶ " : "  ").append(session.mHandle)
+                    .append(info != null ? "  " + info.environmentLabel + " · " + info.tool : "").append('\n')
+                    .append("  ").append(session.getIoDiagnostics()).append("\n\n");
+            }
+        }
         List<String> lines = LAUNCHES.diagnostics();
-        String text = lines.isEmpty() ? mActivity.getString(R.string.terminow_launch_no_diagnostics) : TextUtils.join("\n", lines);
+        String text = tabs + mActivity.getString(R.string.terminow_launch_diagnostics_starts) + "\n" +
+            (lines.isEmpty() ? mActivity.getString(R.string.terminow_launch_no_diagnostics) : TextUtils.join("\n", lines));
         TextView view = new TextView(mActivity);
         view.setText(text);
         view.setTextIsSelectable(true);
@@ -2185,8 +2201,10 @@ public class TerminowLauncher {
         menu.getMenu().add(0, 2, 1, R.string.terminow_profiles_open_from);
         menu.getMenu().add(0, 3, 2, R.string.terminow_profiles_manage);
         menu.getMenu().add(0, 4, 3, R.string.terminow_toolbar_copy_folder);
+        menu.getMenu().add(0, 5, 4, R.string.terminow_launch_diagnostics_title);
         menu.setOnMenuItemClickListener(item -> {
             switch (item.getItemId()) {
+                case 5: showLaunchDiagnostics(); return true;
                 case 1: showSessionDetails(); return true;
                 case 2: mProfiles.pickAndLaunch(); return true;
                 case 3: mProfiles.showManager(); return true;

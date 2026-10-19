@@ -12,6 +12,11 @@ final class ByteQueue {
         mBuffer = new byte[size];
     }
 
+    /** The bytes that wait to be read. */
+    public synchronized int size() {
+        return mStoredBytes;
+    }
+
     public synchronized void close() {
         mOpen = false;
         notify();

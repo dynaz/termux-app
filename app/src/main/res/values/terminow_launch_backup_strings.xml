@@ -12,7 +12,7 @@
     <string name="terminow_launch_still_stopping">Still stopping the last start, try again in a moment</string>
     <string name="terminow_launch_close_tab">Close tab</string>
     <string name="terminow_launch_no_diagnostics">Nothing was started since TermiNow opened.</string>
-    <string name="terminow_launch_diagnostics_title">Starts of Linux</string>
+    <string name="terminow_launch_diagnostics_title">Terminal diagnostics</string>
     <string name="terminow_launch_how_title">Open %1$s</string>
     <string name="terminow_launch_use_current">Use current tab</string>
     <string name="terminow_launch_open_new">Open new tab</string>
@@ -119,4 +119,5 @@
         <item quantity="one">%1$d tab runs in %2$s. Programs there may be using files that are replaced. Restore anyway?</item>
         <item quantity="other">%1$d tabs run in %2$s. Programs there may be using files that are replaced. Restore anyway?</item>
     </plurals>
+    <string name="terminow_launch_diagnostics_starts">Starts of Linux:</string>
 </resources>
