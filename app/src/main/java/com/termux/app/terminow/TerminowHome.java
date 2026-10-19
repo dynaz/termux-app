@@ -120,6 +120,7 @@ public class TerminowHome {
     private static final int REQUEST_UPLOAD_TMP = 2003;
     private static final int REQUEST_IMPORT_HOSTS = 2004;
     private static final int REQUEST_IMPORT_ROOTFS = 2006;
+    private static final int REQUEST_SAVE_DEBUG_LOG = 2009;
     /** A certificate is one line of some kilobytes. */
     private static final int CERTIFICATE_MAX_SIZE = 64 * 1024;
 
@@ -475,6 +476,33 @@ public class TerminowHome {
         mFabView = activity.findViewById(R.id.terminow_fab);
         mSettingsScrollView = activity.findViewById(R.id.terminow_settings_scroll);
         mSettings = new TerminowSettings(activity, mStore, activity.findViewById(R.id.terminow_settings));
+        mSettings.setDebugActions(new TerminowSettings.DebugActions() {
+            @Override
+            public void showDiagnostics() {
+                mLauncher.showLaunchDiagnostics();
+            }
+
+            @Override
+            public void setRecording(boolean recording) {
+                TerminowDebugLog.setRecording(mActivity, recording, TerminowHome.this::allSessions);
+            }
+
+            @Override
+            public void saveLog() {
+                Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("text/plain");
+                intent.putExtra(Intent.EXTRA_TITLE, "terminow-debug-" + new java.text.SimpleDateFormat("yyyyMMdd-HHmm",
+                    java.util.Locale.ROOT).format(new java.util.Date()) + ".log");
+                try {
+                    mActivity.startActivityForResult(intent, REQUEST_SAVE_DEBUG_LOG);
+                } catch (Exception e) {
+                    mActivity.showToast(String.valueOf(e.getMessage()), true);
+                }
+            }
+        });
+        // A log that was turned on goes on from the start of the app
+        TerminowDebugLog.start(activity, this::allSessions);
         // Account & Premium in the top bar, drawn again when the account or Premium changes
         mPremiumButton = activity.findViewById(R.id.terminow_premium_button);
         mPremiumButton.setOnClickListener(v -> openAccountScreen());
@@ -1861,6 +1889,18 @@ public class TerminowHome {
     /** Write to a session once it started, which is when its tab is first shown. */
     private void writeWhenStartedShown(@NonNull TerminalSession session, @NonNull String text) {
         session.mOnStarted = () -> writeWhenStarted(session, text, 0);
+    }
+
+    /** The terminal sessions of the service, for the debug log, which reads them on its own thread. */
+    @NonNull
+    private List<TerminalSession> allSessions() {
+        List<TerminalSession> sessions = new ArrayList<>();
+        TermuxService service = mActivity.getTermuxService();
+        if (service == null) return sessions;
+        // A copy first: the list is the service's own, which the main thread changes
+        for (com.termux.shared.termux.shell.command.runner.terminal.TermuxSession session : new ArrayList<>(service.getTermuxSessions()))
+            sessions.add(session.getTerminalSession());
+        return sessions;
     }
 
     /** The activity was resumed, for example after a screen of Android settings. */
@@ -4529,6 +4569,24 @@ public class TerminowHome {
             return true;
         }
         if (mBackupUi.onActivityResult(requestCode, resultCode, data)) return true;
+        if (requestCode == REQUEST_SAVE_DEBUG_LOG) {
+            if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null) {
+                Uri target = data.getData();
+                new Thread(() -> {
+                    String error = null;
+                    try (java.io.OutputStream out = mActivity.getContentResolver().openOutputStream(target, "w")) {
+                        if (out == null) throw new java.io.IOException("The file could not be opened");
+                        TerminowDebugLog.copyTo(mActivity, out);
+                    } catch (Exception e) {
+                        error = String.valueOf(e.getMessage());
+                    }
+                    String finalError = error;
+                    mHandler.post(() -> mActivity.showToast(finalError == null ? mActivity.getString(R.string.terminow_debug_saved) :
+                        finalError, true));
+                }, "terminow-debug-save").start();
+            }
+            return true;
+        }
         if (requestCode == REQUEST_IMPORT_HOSTS) {
             if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null) readImportFile(data.getData());
             return true;

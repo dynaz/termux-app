@@ -118,4 +118,14 @@
         <item quantity="other">มี %1$d แท็บทำงานใน %2$s โปรแกรมอาจกำลังใช้ไฟล์ที่จะถูกเขียนทับ กู้คืนต่อไหม</item>
     </plurals>
     <string name="terminow_launch_diagnostics_starts">การเริ่ม Linux:</string>
+    <string name="terminow_debug_section">ดีบัก</string>
+    <string name="terminow_debug_diagnostics_summary">สถานะของแต่ละแท็บตอนนี้: ตัวอ่านและตัวเขียน อ่านเขียนล่าสุดเมื่อไร และข้อผิดพลาด</string>
+    <string name="terminow_debug_record">บันทึกล็อกดีบัก</string>
+    <string name="terminow_debug_record_summary">ทุก 15 วินาทีบันทึกสถานะของแต่ละแท็บและหน่วยความจำ และตำแหน่งที่ TermiNow ค้างเมื่อไม่ตอบสนอง 3 วินาที ไม่บันทึกข้อความในแท็บหรือสิ่งที่พิมพ์</string>
+    <string name="terminow_debug_save">บันทึกไฟล์ล็อกดีบัก…</string>
+    <string name="terminow_debug_empty">ว่าง</string>
+    <string name="terminow_debug_clear">ล้างล็อกดีบัก</string>
+    <string name="terminow_debug_cleared">ล้างล็อกดีบักแล้ว</string>
+    <string name="terminow_debug_saved">บันทึกล็อกดีบักแล้ว</string>
+    <string name="terminow_debug_copy">คัดลอก</string>
 </resources>

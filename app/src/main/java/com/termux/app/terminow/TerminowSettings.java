@@ -78,6 +78,21 @@ public class TerminowSettings {
         mAccountUi = new TerminowAccountUi(activity, store, this::update);
     }
 
+    /** What the Debug section does, which the home screen provides. */
+    public interface DebugActions {
+        void showDiagnostics();
+
+        void setRecording(boolean recording);
+
+        void saveLog();
+    }
+
+    @Nullable private DebugActions mDebug;
+
+    public void setDebugActions(@NonNull DebugActions actions) {
+        mDebug = actions;
+    }
+
     /** The row of the vault password and syncing, which the vault switcher provides. */
     public void setVaultSettings(@NonNull Runnable showVaultSettings) {
         mVaultSettings = showVaultSettings;
@@ -216,6 +231,23 @@ public class TerminowSettings {
                 setProperty(TermuxPropertyConstants.KEY_VOLUME_KEYS_BEHAVIOUR, value ?
                     TermuxPropertyConstants.IVALUE_VOLUME_KEY_BEHAVIOUR_VIRTUAL : TermuxPropertyConstants.IVALUE_VOLUME_KEY_BEHAVIOUR_VOLUME));
 
+
+        addSection(R.string.terminow_debug_section, false);
+        DebugActions debug = mDebug;
+        addRow(R.string.terminow_launch_diagnostics_title, mActivity.getString(R.string.terminow_debug_diagnostics_summary),
+            debug != null ? debug::showDiagnostics : null);
+        addSwitchRow(R.string.terminow_debug_record, R.string.terminow_debug_record_summary, TerminowDebugLog.isRecording(mActivity), value -> {
+            if (debug != null) debug.setRecording(value);
+            update();
+        });
+        java.io.File log = TerminowDebugLog.file(mActivity);
+        addRow(R.string.terminow_debug_save, log.isFile() ? android.text.format.Formatter.formatShortFileSize(mActivity, log.length()) :
+            mActivity.getString(R.string.terminow_debug_empty), debug != null ? debug::saveLog : null);
+        addRow(R.string.terminow_debug_clear, null, () -> {
+            TerminowDebugLog.clear(mActivity);
+            mActivity.showToast(mActivity.getString(R.string.terminow_debug_cleared), false);
+            update();
+        });
 
         addSection(R.string.terminow_settings_about, false);
 

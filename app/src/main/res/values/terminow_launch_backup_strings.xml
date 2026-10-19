@@ -120,4 +120,14 @@
         <item quantity="other">%1$d tabs run in %2$s. Programs there may be using files that are replaced. Restore anyway?</item>
     </plurals>
     <string name="terminow_launch_diagnostics_starts">Starts of Linux:</string>
+    <string name="terminow_debug_section">Debug</string>
+    <string name="terminow_debug_diagnostics_summary">Each tab now: its reader and writer, when they last read and wrote, and errors</string>
+    <string name="terminow_debug_record">Record debug log</string>
+    <string name="terminow_debug_record_summary">Every 15 seconds the state of each tab and the memory, and where TermiNow is when it does not answer for 3 seconds. Never what tabs show or what you type.</string>
+    <string name="terminow_debug_save">Save debug log…</string>
+    <string name="terminow_debug_empty">Empty</string>
+    <string name="terminow_debug_clear">Clear debug log</string>
+    <string name="terminow_debug_cleared">The debug log was cleared</string>
+    <string name="terminow_debug_saved">The debug log was saved</string>
+    <string name="terminow_debug_copy">Copy</string>
 </resources>

@@ -1444,6 +1444,12 @@ public class TerminowLauncher {
             .setTitle(R.string.terminow_launch_diagnostics_title)
             .setView(scroll)
             .setPositiveButton(android.R.string.ok, null)
+            .setNeutralButton(R.string.terminow_debug_copy, (d, w) -> {
+                ClipboardManager clipboard = (ClipboardManager) mActivity.getSystemService(Context.CLIPBOARD_SERVICE);
+                if (clipboard == null) return;
+                clipboard.setPrimaryClip(ClipData.newPlainText("TermiNow diagnostics", text));
+                mActivity.showToast(mActivity.getString(R.string.terminow_launcher_copied), false);
+            })
             .show();
     }
 
