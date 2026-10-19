@@ -1,9 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The Google Play build: shared storage only through folders that the user picks with the
-     Storage Access Framework. All files access is removed, also if a library would add it. -->
+<!-- The Google Play build, with the broad file-management mode of the File Manager, the same as
+     the full build. Google Play only allows All files access with an approved declaration in
+     Play Console (App content, Sensitive permissions), with file management as the core use:
+     All files access on Android 11 and higher, and the storage permission on Android 6 to 10,
+     which Android 10 only honours with requestLegacyExternalStorage. Each is only requested
+     after the user chose to browse shared storage. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29"
+        tools:replace="android:maxSdkVersion" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29"
+        tools:replace="android:maxSdkVersion" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+
+    <application android:requestLegacyExternalStorage="true" />
 
 </manifest>

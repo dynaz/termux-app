@@ -234,7 +234,7 @@ android {
     productFlavors {
         play {
             dimension "distribution"
-            buildConfigField "boolean", "TERMINOW_ALL_FILES_ACCESS", "false"
+            buildConfigField "boolean", "TERMINOW_ALL_FILES_ACCESS", "true"
         }
         full {
             dimension "distribution"
