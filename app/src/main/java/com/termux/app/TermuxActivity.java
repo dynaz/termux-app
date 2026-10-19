@@ -350,6 +350,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         if (mTerminowHome != null && mTermuxService != null)
             mTerminowHome.refresh();
 
+        if (mTerminalView != null) mTerminalView.post(this::focusTerminal);
+
         // Check if a crash happened on last run of the app or if a plugin crashed and show a
         // notification with the crash details if it did
         TermuxCrashUtils.notifyAppCrashFromCrashLogFile(this, LOG_TAG);
@@ -934,6 +936,19 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
     public boolean isTerminalToolbarTextInputViewSelected() {
         return getTerminalToolbarViewPager().getCurrentItem() == 1;
+    }
+
+    /**
+     * Give the keys to the terminal, unless the text box of the toolbar is chosen or the home
+     * screen is shown. The keyboard types into the view that has the focus: when a view that is
+     * hidden or not meant for typing kept it, the keyboard showed but typing and pasting went
+     * nowhere, and tapping the terminal did not help.
+     */
+    public void focusTerminal() {
+        if (mTerminalView == null || isHomeVisible()) return;
+        ViewPager toolbar = getTerminalToolbarViewPager();
+        if (toolbar != null && toolbar.getVisibility() == View.VISIBLE && isTerminalToolbarTextInputViewSelected()) return;
+        if (getCurrentFocus() != mTerminalView) mTerminalView.requestFocus();
     }
 
 

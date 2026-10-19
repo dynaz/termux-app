@@ -198,6 +198,8 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
             }
         }
 
+        // Typing goes where the tap was, also when another view kept the focus
+        mActivity.focusTerminal();
         if (!term.isMouseTrackingActive() && !e.isFromSource(InputDevice.SOURCE_MOUSE)) {
             if (!KeyboardUtils.areDisableSoftKeyboardFlagsSet(mActivity))
                 KeyboardUtils.showSoftKeyboard(mActivity, mActivity.getTerminalView());
