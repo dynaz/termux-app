@@ -48,6 +48,12 @@ public interface TerminalViewClient {
 
     boolean onLongPress(MotionEvent event);
 
+    /**
+     * On a horizontal swipe across the terminal. {@code toLeft} is true when the finger moved left.
+     * Return true if the swipe was handled.
+     */
+    boolean onHorizontalSwipe(boolean toLeft);
+
 
 
     boolean readControlKey();

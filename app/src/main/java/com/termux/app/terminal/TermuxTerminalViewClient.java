@@ -19,6 +19,7 @@ import android.widget.Toast;
 
 import com.termux.R;
 import com.termux.app.TermuxActivity;
+import com.termux.app.TermuxService;
 import com.termux.shared.file.FileUtils;
 import com.termux.shared.interact.MessageDialogUtils;
 import com.termux.shared.interact.ShareUtils;
@@ -356,6 +357,15 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
     @Override
     public boolean onLongPress(MotionEvent event) {
         return false;
+    }
+
+    @Override
+    public boolean onHorizontalSwipe(boolean toLeft) {
+        TermuxService service = mActivity.getTermuxService();
+        if (service == null || service.getTermuxSessionsSize() < 2) return false;
+        // Swiping left shows the next session, like turning a page.
+        mTermuxTerminalSessionActivityClient.switchToSession(toLeft);
+        return true;
     }
 
 

@@ -194,8 +194,10 @@ public final class TerminalView extends View {
             }
 
             @Override
-            public boolean onFling(final MotionEvent e2, float velocityX, float velocityY) {
+            public boolean onFling(final MotionEvent e1, final MotionEvent e2, float velocityX, float velocityY) {
                 if (mEmulator == null) return true;
+                if (isHorizontalSwipe(e1, e2, velocityX, velocityY) && mClient.onHorizontalSwipe(e2.getX() < e1.getX()))
+                    return true;
                 // Do not start scrolling until last fling has been taken care of:
                 if (!mScroller.isFinished()) return true;
 
@@ -578,6 +580,18 @@ public final class TerminalView extends View {
     }
 
     /** Perform a scroll, either from dragging the screen or by scrolling a mouse wheel. */
+    /**
+     * A finger fling that is mostly sideways and covers a fifth of the view. Flings that start at the
+     * left edge are left alone, so that swiping in from the edge still opens the session list.
+     */
+    private boolean isHorizontalSwipe(@Nullable MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
+        if (e1 == null || isSelectingText() || e2.isFromSource(InputDevice.SOURCE_MOUSE)) return false;
+        if (Math.abs(velocityX) < 2 * Math.abs(velocityY)) return false;
+        float edge = 32 * getResources().getDisplayMetrics().density;
+        if (e1.getX() < edge) return false;
+        return Math.abs(e2.getX() - e1.getX()) > getWidth() / 5f;
+    }
+
     void doScroll(MotionEvent event, int rowsDown) {
         boolean up = rowsDown < 0;
         int amount = Math.abs(rowsDown);
