@@ -27,5 +27,17 @@
     <string name="terminow_phone_backup_cancelled">The backup was stopped and %1$s was deleted.</string>
     <string name="terminow_phone_backup_failed">The backup of %1$s failed, and the unfinished file was deleted.\n\n%2$s</string>
     <string name="terminow_phone_backup_done_toast">%1$s is backed up in %2$s</string>
-    <string name="terminow_phone_backup_failed_toast">The backup of %1$s to %2$s did not finish. Open Back up to see why.</string>
+    <string name="terminow_phone_restore_menu">Restore from phone storage…</string>
+    <string name="terminow_phone_restore_summary">From a .tar.gz that Back up to phone storage or proot-distro backup saved</string>
+    <string name="terminow_phone_restore_not_backup">%1$s is not a backup that TermiNow can restore. Pick a .tar.gz file that Back up to phone storage or proot-distro backup made.</string>
+    <string name="terminow_phone_restore_title">Restore %1$s</string>
+    <string name="terminow_phone_restore_replace">Restoring %3$s replaces %1$s (%2$s): all of its files now are deleted, and the files of the backup take their place.</string>
+    <string name="terminow_phone_restore_new">%2$s is a backup of %1$s, which is not installed. It is restored as the environment %1$s.</string>
+    <string name="terminow_phone_restore_confirm_check">I understand that the files in %1$s now are replaced</string>
+    <string name="terminow_phone_restore_run">Restore</string>
+    <string name="terminow_phone_restore_close_tabs">Close the tabs and restore</string>
+    <string name="terminow_phone_restore_running">Restoring %1$s from %2$s with proot-distro restore.\n\n%3$s of %4$s read. It keeps running if you hide this, and it can not be stopped: a restore that stops halfway leaves %1$s incomplete.</string>
+    <string name="terminow_phone_restore_done">%1$s is restored from %2$s.</string>
+    <string name="terminow_phone_restore_failed">The restore of %1$s failed.\n\n%2$s</string>
+    <string name="terminow_phone_restore_done_toast">%1$s is restored from %2$s</string>
 </resources>

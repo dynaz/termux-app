@@ -215,6 +215,12 @@ public class TerminowLinuxUi {
         };
     }
 
+    /** The installed environment with the alias, {@code null} if there is none. */
+    @Nullable
+    TerminowLinuxEnv envOf(@NonNull String alias) {
+        return mRegistry.get(alias);
+    }
+
     TerminowLinuxInstaller newInstaller() {
         return new TerminowLinuxInstaller(mRegistry, new File(mActivity.getCacheDir(), "linux-install"), newRunner(), new TerminowLinuxInstaller.Marker() {
             @Nullable
@@ -472,13 +478,13 @@ public class TerminowLinuxUi {
      * the app: the Ubuntu setup installs it with apt, so after the data of the app was cleared
      * an install of its own would fail with "proot-distro: No such file or directory".
      */
-    private boolean isRuntimeReady() {
+    boolean isRuntimeReady() {
         File prefix = mRegistry.getPrefix();
         return new File(prefix, "bin/proot-distro").isFile() && new File(prefix, "bin/proot").isFile();
     }
 
     /** Ubuntu: its setup, which makes the runtime ready and installs it. Anything else: ask to set up Ubuntu once first. */
-    private void needRuntime(@NonNull String name, boolean ubuntu) {
+    void needRuntime(@NonNull String name, boolean ubuntu) {
         if (ubuntu) {
             mHost.startUbuntuSetup();
             return;

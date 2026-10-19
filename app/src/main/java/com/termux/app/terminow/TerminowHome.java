@@ -121,6 +121,7 @@ public class TerminowHome {
     private static final int REQUEST_IMPORT_HOSTS = 2004;
     private static final int REQUEST_IMPORT_ROOTFS = 2006;
     private static final int REQUEST_PHONE_BACKUP = 2007;
+    private static final int REQUEST_PHONE_RESTORE = 2008;
     /** A certificate is one line of some kilobytes. */
     private static final int CERTIFICATE_MAX_SIZE = 64 * 1024;
 
@@ -351,6 +352,11 @@ public class TerminowHome {
             @Override
             public void backupToPhone(@NonNull String alias, @NonNull String title) {
                 pickPhoneBackupFile(alias, title);
+            }
+
+            @Override
+            public void restoreFromPhone() {
+                pickPhoneRestoreFile();
             }
 
             @Override
@@ -1363,27 +1369,151 @@ public class TerminowHome {
             fileName.substring(fileName.lastIndexOf('/') + 1)) == null) {
             mActivity.showToast(mActivity.getString(R.string.terminow_phone_backup_busy), true);
         } else {
-            // Its end is told also when the progress is hidden
-            Runnable[] onEnd = new Runnable[1];
-            onEnd[0] = () -> {
-                TerminowPhoneBackup.Job job = TerminowPhoneBackup.current();
-                if (job == null || job.state == TerminowPhoneBackup.State.RUNNING) return;
-                TerminowPhoneBackup.removeListener(onEnd[0]);
-                if (mPhoneBackupDialog == null || !mPhoneBackupDialog.isShowing())
-                    mActivity.showToast(mActivity.getString(job.state == TerminowPhoneBackup.State.SUCCEEDED ?
-                        R.string.terminow_phone_backup_done_toast : R.string.terminow_phone_backup_failed_toast, job.title, job.fileName), true);
-            };
-            TerminowPhoneBackup.addListener(onEnd[0]);
+            tellPhoneBackupEnd();
         }
         showPhoneBackup();
+    }
+
+    /** Tell when the backup or restore ends also when its progress is hidden; a restore changes the environments. */
+    private void tellPhoneBackupEnd() {
+        Runnable[] onEnd = new Runnable[1];
+        onEnd[0] = () -> {
+            TerminowPhoneBackup.Job job = TerminowPhoneBackup.current();
+            if (job == null || job.state == TerminowPhoneBackup.State.RUNNING) return;
+            TerminowPhoneBackup.removeListener(onEnd[0]);
+            if (job.restore) {
+                if (mExplorer != null) mExplorer.refresh();
+                if (mQuickLaunch != null) mQuickLaunch.refresh();
+            }
+            if (mPhoneBackupDialog != null && mPhoneBackupDialog.isShowing()) return;
+            // Why it failed is shown again; that it worked is only told
+            if (job.state == TerminowPhoneBackup.State.FAILED) showPhoneBackup();
+            else if (job.state == TerminowPhoneBackup.State.SUCCEEDED)
+                mActivity.showToast(mActivity.getString(job.restore ? R.string.terminow_phone_restore_done_toast :
+                    R.string.terminow_phone_backup_done_toast, job.title, job.fileName), true);
+        };
+        TerminowPhoneBackup.addListener(onEnd[0]);
+    }
+
+    /** The file picker of Android for a backup to restore; a backup or restore that runs already is shown instead. */
+    private void pickPhoneRestoreFile() {
+        if (TerminowPhoneBackup.isRunning()) {
+            showPhoneBackup();
+            return;
+        }
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        try {
+            mActivity.startActivityForResult(intent, REQUEST_PHONE_RESTORE);
+        } catch (Exception e) {
+            mActivity.showToast(String.valueOf(e.getMessage()), true);
+        }
+    }
+
+    /** Find out which environment the file is a backup of, in the background, then ask. */
+    private void readPhoneRestoreFile(@NonNull Uri uri) {
+        String name = uri.getLastPathSegment() != null ? uri.getLastPathSegment() : "";
+        long size = 0;
+        try (Cursor cursor = mActivity.getContentResolver().query(uri, new String[]{OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE}, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                if (!cursor.isNull(0)) name = cursor.getString(0);
+                if (!cursor.isNull(1)) size = cursor.getLong(1);
+            }
+        } catch (RuntimeException e) {
+            // The name of the uri
+        }
+        String fileName = name.substring(name.lastIndexOf('/') + 1);
+        long fileSize = size;
+        new Thread(() -> {
+            String container = null;
+            try (java.io.InputStream in = mActivity.getContentResolver().openInputStream(uri)) {
+                if (in != null) container = TerminowPhoneBackup.containerOf(in);
+            } catch (Exception ignored) {
+                // Not readable, said below
+            }
+            String alias = container;
+            mActivity.runOnUiThread(() -> confirmPhoneRestore(uri, fileName, fileSize, alias));
+        }, "terminow-phone-restore-check").start();
+    }
+
+    /**
+     * Restoring replaces all files of the environment, so it is said which one, which of its tabs
+     * close, and it has to be confirmed; a new environment is only asked about.
+     */
+    private void confirmPhoneRestore(@NonNull Uri uri, @NonNull String fileName, long size, @Nullable String alias) {
+        if (mActivity.isFinishing()) return;
+        if (alias == null) {
+            new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setTitle(R.string.terminow_phone_restore_menu)
+                .setMessage(mActivity.getString(R.string.terminow_phone_restore_not_backup, fileName))
+                .setPositiveButton(android.R.string.ok, null)
+                .show();
+            return;
+        }
+        if (!mLinuxUi.isRuntimeReady()) {
+            mLinuxUi.needRuntime(alias, false);
+            return;
+        }
+        if (TerminowLinuxUi.isBusy() || TerminowPhoneBackup.isRunning()) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_linux_install_busy), true);
+            return;
+        }
+        TerminowLinuxEnv env = mLinuxUi.envOf(alias);
+        String title = env != null ? env.getTitle() : alias;
+        List<TerminalSession> sessions = env != null ? mLauncher.sessionsOf(alias) : new ArrayList<>();
+        LinearLayout box = new LinearLayout(mActivity);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(24), dp(6), dp(24), 0);
+        StringBuilder message = new StringBuilder(env != null ?
+            mActivity.getString(R.string.terminow_phone_restore_replace, title, alias, fileName) :
+            mActivity.getString(R.string.terminow_phone_restore_new, alias, fileName));
+        if (!sessions.isEmpty()) {
+            message.append("\n\n").append(mActivity.getString(R.string.terminow_linux_uninstall_sessions, sessions.size()));
+            for (TerminalSession session : sessions) message.append("\n• ").append(session.mSessionName != null ? session.mSessionName : "?");
+        }
+        TextView text = new TextView(mActivity);
+        text.setText(message);
+        text.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
+        box.addView(text);
+        CheckBox understood = new CheckBox(mActivity);
+        understood.setText(mActivity.getString(R.string.terminow_phone_restore_confirm_check, alias));
+        if (env != null) box.addView(understood);
+        AlertDialog dialog = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(mActivity.getString(R.string.terminow_phone_restore_title, title))
+            .setView(box)
+            .setPositiveButton(sessions.isEmpty() ? R.string.terminow_phone_restore_run : R.string.terminow_phone_restore_close_tabs, null)
+            .setNegativeButton(android.R.string.cancel, null)
+            .create();
+        dialog.setOnShowListener(d -> {
+            View positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            positive.setEnabled(env == null);
+            understood.setOnCheckedChangeListener((b, checked) -> positive.setEnabled(checked));
+            positive.setOnClickListener(v -> {
+                dialog.dismiss();
+                for (TerminalSession session : sessions) session.finishIfRunning();
+                // The tabs need a moment to end before proot-distro sees nothing running in it
+                mHandler.postDelayed(() -> {
+                    if (TerminowPhoneBackup.startRestore(mActivity, mLinuxUi.newRunner(), TermuxConstants.TERMUX_PREFIX_DIR_PATH, alias,
+                        title, uri, fileName, size) == null) {
+                        mActivity.showToast(mActivity.getString(R.string.terminow_phone_backup_busy), true);
+                        return;
+                    }
+                    tellPhoneBackupEnd();
+                    showPhoneBackup();
+                }, sessions.isEmpty() ? 0 : 800);
+            });
+        });
+        dialog.show();
     }
 
     /** The progress of the backup, which keeps running when this is hidden. */
     private void showPhoneBackup() {
         if (TerminowPhoneBackup.current() == null) return;
         if (mPhoneBackupDialog != null && mPhoneBackupDialog.isShowing()) return;
+        TerminowPhoneBackup.Job current = TerminowPhoneBackup.current();
         AlertDialog dialog = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
-            .setTitle(R.string.terminow_phone_backup_menu)
+            .setTitle(current != null && current.restore ? R.string.terminow_phone_restore_menu : R.string.terminow_phone_backup_menu)
             .setMessage(" ")
             .setPositiveButton(R.string.terminow_phone_backup_hide, null)
             .setNegativeButton(R.string.terminow_phone_backup_cancel, null)
@@ -1410,7 +1540,14 @@ public class TerminowHome {
         if (dialog == null || !dialog.isShowing() || job == null) return;
         String size = android.text.format.Formatter.formatShortFileSize(mActivity, job.bytes);
         String message;
-        switch (job.state) {
+        if (job.restore) {
+            String total = job.total > 0 ? android.text.format.Formatter.formatShortFileSize(mActivity, job.total) : "?";
+            switch (job.state) {
+                case RUNNING: message = mActivity.getString(R.string.terminow_phone_restore_running, job.title, job.fileName, size, total); break;
+                case SUCCEEDED: message = mActivity.getString(R.string.terminow_phone_restore_done, job.title, job.fileName); break;
+                default: message = mActivity.getString(R.string.terminow_phone_restore_failed, job.title, job.error); break;
+            }
+        } else switch (job.state) {
             case RUNNING: message = mActivity.getString(R.string.terminow_phone_backup_running, job.title, job.fileName, size); break;
             case SUCCEEDED: message = mActivity.getString(R.string.terminow_phone_backup_done, job.title, job.fileName, size); break;
             case CANCELLED: message = mActivity.getString(R.string.terminow_phone_backup_cancelled, job.fileName); break;
@@ -1418,7 +1555,8 @@ public class TerminowHome {
         }
         dialog.setMessage(message);
         boolean running = job.state == TerminowPhoneBackup.State.RUNNING;
-        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setVisibility(running ? View.VISIBLE : View.GONE);
+        // A restore is never stopped halfway: it would leave half of the environment
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setVisibility(running && !job.restore ? View.VISIBLE : View.GONE);
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setText(running ? R.string.terminow_phone_backup_hide : android.R.string.ok);
     }
 
@@ -4563,6 +4701,10 @@ public class TerminowHome {
             mPhoneBackupPending = null;
             if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null && pending != null)
                 startPhoneBackup(pending[0], pending[1], data.getData());
+            return true;
+        }
+        if (requestCode == REQUEST_PHONE_RESTORE) {
+            if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null) readPhoneRestoreFile(data.getData());
             return true;
         }
         if (requestCode == REQUEST_IMPORT_HOSTS) {

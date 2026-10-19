@@ -2,6 +2,7 @@ package com.termux.app.terminow;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -66,5 +67,57 @@ public class TerminowPhoneBackupTest {
     public void theSuggestedNameSaysWhatAndWhen() {
         String name = TerminowPhoneBackup.fileName("ubuntu", System.currentTimeMillis());
         assertTrue(name, name.matches("ubuntu-backup-\\d{8}-\\d{4}\\.tar\\.gz"));
+    }
+
+    /** A tar entry: its header, then its data in blocks of 512 bytes. */
+    private static void entry(ByteArrayOutputStream tar, String name, char type, byte[] data) {
+        byte[] header = new byte[512];
+        byte[] nameBytes = name.getBytes(StandardCharsets.UTF_8);
+        System.arraycopy(nameBytes, 0, header, 0, Math.min(100, nameBytes.length));
+        byte[] size = String.format("%011o", data.length).getBytes(StandardCharsets.US_ASCII);
+        System.arraycopy(size, 0, header, 124, size.length);
+        header[156] = (byte) type;
+        System.arraycopy("ustar".getBytes(StandardCharsets.US_ASCII), 0, header, 257, 5);
+        tar.write(header, 0, 512);
+        tar.write(data, 0, data.length);
+        tar.write(new byte[(512 - data.length % 512) % 512], 0, (512 - data.length % 512) % 512);
+    }
+
+    private static byte[] gzip(byte[] bytes) throws Exception {
+        ByteArrayOutputStream gz = new ByteArrayOutputStream();
+        try (GZIPOutputStream out = new GZIPOutputStream(gz)) {
+            out.write(bytes);
+        }
+        return gz.toByteArray();
+    }
+
+    @Test
+    public void theEnvironmentOfABackupIsItsFirstFolder() throws Exception {
+        ByteArrayOutputStream tar = new ByteArrayOutputStream();
+        entry(tar, "ubuntu/manifest.json", '0', "{}".getBytes(StandardCharsets.UTF_8));
+        entry(tar, "ubuntu/rootfs/", '5', new byte[0]);
+        assertEquals("ubuntu", TerminowPhoneBackup.containerOf(new ByteArrayInputStream(gzip(tar.toByteArray()))));
+        assertEquals("ubuntu", TerminowPhoneBackup.containerOf(new ByteArrayInputStream(tar.toByteArray())));
+    }
+
+    @Test
+    public void paxAndLongNameHeadersAreSkipped() throws Exception {
+        ByteArrayOutputStream pax = new ByteArrayOutputStream();
+        entry(pax, "././@PaxHeader", 'x', "30 mtime=1792399990.123456789\n".getBytes(StandardCharsets.UTF_8));
+        entry(pax, "debian/manifest.json", '0', new byte[3]);
+        assertEquals("debian", TerminowPhoneBackup.containerOf(new ByteArrayInputStream(gzip(pax.toByteArray()))));
+        ByteArrayOutputStream gnu = new ByteArrayOutputStream();
+        entry(gnu, "././@LongLink", 'L', "my-ubuntu/rootfs/a/very/long/name\0".getBytes(StandardCharsets.UTF_8));
+        entry(gnu, "my-ubuntu/rootfs/a/very/lo", '0', new byte[0]);
+        assertEquals("my-ubuntu", TerminowPhoneBackup.containerOf(new ByteArrayInputStream(gnu.toByteArray())));
+    }
+
+    @Test
+    public void whatIsNotABackupHasNoEnvironment() throws Exception {
+        assertNull(TerminowPhoneBackup.containerOf(new ByteArrayInputStream("not a backup".getBytes(StandardCharsets.UTF_8))));
+        assertNull(TerminowPhoneBackup.containerOf(new ByteArrayInputStream(gzip("short".getBytes(StandardCharsets.UTF_8)))));
+        ByteArrayOutputStream bad = new ByteArrayOutputStream();
+        entry(bad, "../etc/passwd", '0', new byte[0]);
+        assertNull(TerminowPhoneBackup.containerOf(new ByteArrayInputStream(bad.toByteArray())));
     }
 }

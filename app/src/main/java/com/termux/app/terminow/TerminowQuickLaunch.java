@@ -77,6 +77,9 @@ public class TerminowQuickLaunch {
 
         /** Back up a Linux environment to a file on the phone, in a folder that the user picks. */
         void backupToPhone(@NonNull String alias, @NonNull String title);
+
+        /** Restore a Linux environment from a backup file on the phone that the user picks. */
+        void restoreFromPhone();
     }
 
     private final TermuxActivity mActivity;
@@ -500,6 +503,7 @@ public class TerminowQuickLaunch {
         if (linux != null) menu.getMenu().add(0, 7, 0, R.string.terminow_quick_manage);
         if (linux != null) menu.getMenu().add(0, 10, 0, R.string.terminow_phone_backup_menu);
         if (linux != null) menu.getMenu().add(0, 8, 0, R.string.terminow_backup_menu);
+        if (linux != null) menu.getMenu().add(0, 11, 0, R.string.terminow_phone_restore_menu);
         menu.setOnMenuItemClickListener(item -> {
             switch (item.getItemId()) {
                 case 1: rename(id, nameOf(id, environment.isLocal() ? mActivity.getString(R.string.terminow_quick_local_name) : environment.shortName())); break;
@@ -515,6 +519,7 @@ public class TerminowQuickLaunch {
                 case 8: if (linux != null) mHost.backupEnvironment(linux.alias, environment.shortName()); break;
                 case 9: mLauncher.openNewTerminal(environment); break;
                 case 10: if (linux != null) mHost.backupToPhone(linux.alias, environment.shortName()); break;
+                case 11: mHost.restoreFromPhone(); break;
                 default: break;
             }
             return true;
@@ -522,14 +527,16 @@ public class TerminowQuickLaunch {
         menu.show();
     }
 
-    /** Where to back up an environment to: a file on the phone, or a server. */
+    /** Where to back up an environment to: a file on the phone, or a server; or restore one from the phone. */
     private void chooseBackup(@NonNull String alias, @NonNull String title) {
-        CharSequence[] places = {mActivity.getString(R.string.terminow_phone_backup_menu), mActivity.getString(R.string.terminow_backup_menu)};
+        CharSequence[] places = {mActivity.getString(R.string.terminow_phone_backup_menu), mActivity.getString(R.string.terminow_backup_menu),
+            mActivity.getString(R.string.terminow_phone_restore_menu)};
         new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
             .setTitle(mActivity.getString(R.string.terminow_backup_title, title))
             .setItems(places, (d, which) -> {
                 if (which == 0) mHost.backupToPhone(alias, title);
-                else mHost.backupEnvironment(alias, title);
+                else if (which == 1) mHost.backupEnvironment(alias, title);
+                else mHost.restoreFromPhone();
             })
             .show();
     }
@@ -670,6 +677,11 @@ public class TerminowQuickLaunch {
             mActivity.getString(R.string.terminow_quick_option_import_summary), () -> {
                 dialog.dismiss();
                 showImportInfo();
+            }));
+        content.addView(optionRow(R.drawable.ic_terminow_download, mActivity.getString(R.string.terminow_phone_restore_menu),
+            mActivity.getString(R.string.terminow_phone_restore_summary), () -> {
+                dialog.dismiss();
+                mHost.restoreFromPhone();
             }));
         content.addView(optionRow(R.drawable.ic_terminow_snippets, mActivity.getString(R.string.terminow_quick_option_custom),
             mActivity.getString(R.string.terminow_quick_option_custom_summary), () -> {

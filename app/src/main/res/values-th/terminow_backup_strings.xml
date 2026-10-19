@@ -27,5 +27,17 @@
     <string name="terminow_phone_backup_cancelled">หยุดการสำรองแล้ว และลบ %1$s แล้ว</string>
     <string name="terminow_phone_backup_failed">สำรอง %1$s ไม่สำเร็จ และลบไฟล์ที่ยังไม่เสร็จแล้ว\n\n%2$s</string>
     <string name="terminow_phone_backup_done_toast">สำรอง %1$s ไว้ใน %2$s แล้ว</string>
-    <string name="terminow_phone_backup_failed_toast">สำรอง %1$s ไปยัง %2$s ไม่เสร็จ เปิด สำรอง เพื่อดูสาเหตุ</string>
+    <string name="terminow_phone_restore_menu">กู้คืนจากที่เก็บข้อมูลในโทรศัพท์…</string>
+    <string name="terminow_phone_restore_summary">จากไฟล์ .tar.gz ที่ สำรองไปยังที่เก็บข้อมูลในโทรศัพท์ หรือ proot-distro backup บันทึกไว้</string>
+    <string name="terminow_phone_restore_not_backup">%1$s ไม่ใช่ไฟล์สำรองที่ TermiNow กู้คืนได้ เลือกไฟล์ .tar.gz ที่ สำรองไปยังที่เก็บข้อมูลในโทรศัพท์ หรือ proot-distro backup สร้างไว้</string>
+    <string name="terminow_phone_restore_title">กู้คืน %1$s</string>
+    <string name="terminow_phone_restore_replace">การกู้คืน %3$s จะแทนที่ %1$s (%2$s): ไฟล์ทั้งหมดที่มีตอนนี้จะถูกลบ และใช้ไฟล์จากข้อมูลสำรองแทน</string>
+    <string name="terminow_phone_restore_new">%2$s เป็นข้อมูลสำรองของ %1$s ซึ่งยังไม่ได้ติดตั้ง จะกู้คืนเป็นสภาพแวดล้อม %1$s</string>
+    <string name="terminow_phone_restore_confirm_check">เข้าใจแล้วว่าไฟล์ใน %1$s ตอนนี้จะถูกแทนที่</string>
+    <string name="terminow_phone_restore_run">กู้คืน</string>
+    <string name="terminow_phone_restore_close_tabs">ปิดแท็บแล้วกู้คืน</string>
+    <string name="terminow_phone_restore_running">กำลังกู้คืน %1$s จาก %2$s ด้วย proot-distro restore\n\nอ่านแล้ว %3$s จาก %4$s ยังทำงานต่อแม้ซ่อนหน้าต่างนี้ และหยุดกลางคันไม่ได้ เพราะจะทำให้ %1$s ไม่สมบูรณ์</string>
+    <string name="terminow_phone_restore_done">กู้คืน %1$s จาก %2$s แล้ว</string>
+    <string name="terminow_phone_restore_failed">กู้คืน %1$s ไม่สำเร็จ\n\n%2$s</string>
+    <string name="terminow_phone_restore_done_toast">กู้คืน %1$s จาก %2$s แล้ว</string>
 </resources>
