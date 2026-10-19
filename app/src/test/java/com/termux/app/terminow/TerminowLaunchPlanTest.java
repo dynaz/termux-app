@@ -482,7 +482,8 @@ public class TerminowLaunchPlanTest {
     @Test
     public void ubuntuShellsDoNotPauseOnCtrlS() {
         // Ctrl+S goes to the program, it does not stop the output until Ctrl+Q
-        assertTrue(TerminowLaunchPlan.NO_XOFF_SHELL.startsWith("stty -ixon 2>/dev/null; exec "));
+        // After the sign that it runs
+        assertTrue(TerminowLaunchPlan.NO_XOFF_SHELL.startsWith(TerminowLaunchPlan.READY_SIGN + "stty -ixon 2>/dev/null; exec "));
         TerminowLaunchPlan plain = TerminowLaunchPlan.build(PREFIX, "ubuntu", "root", "/root", TerminowLaunchPlan.TOOL_SHELL, "",
             TerminowLaunchPlan.TMUX_OFF, "", true);
         List<String> args = plain.arguments;

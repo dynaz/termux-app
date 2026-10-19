@@ -215,6 +215,55 @@ public class TerminowLinuxUi {
         };
     }
 
+    /** The bytes of an environment that a full backup archives: what the space analyzer counts too. Slow, never on the main thread. */
+    long fullSizeOf(@NonNull TerminowLinuxEnv env, @NonNull TerminowFs.Cancel cancel) throws IOException {
+        return TerminowLinuxFs.diskUsage(env, mRegistry.mountsOf(env), mOps, cancel);
+    }
+
+    /**
+     * The bytes of folders of an environment, without following links, entering bound folders or
+     * counting anything twice. Slow, never on the main thread.
+     */
+    long sizeOf(@NonNull TerminowLinuxEnv env, @NonNull List<String> folders, @NonNull TerminowFs.Cancel cancel) throws IOException {
+        TerminowLinuxFs fs = filesOf(env).forScan();
+        long total = 0;
+        for (String folder : folders) {
+            TerminowFs.Node node = fs.nodeOf(folder);
+            if (node != null) total += sizeOf(fs, node, cancel);
+        }
+        return total;
+    }
+
+    private long sizeOf(@NonNull TerminowLinuxFs fs, @NonNull TerminowFs.Node directory, @NonNull TerminowFs.Cancel cancel) throws IOException {
+        long total = 0;
+        List<TerminowFs.Node> children;
+        try {
+            children = fs.list(directory, cancel);
+        } catch (TerminowLinuxFs.AccessDeniedException e) {
+            return 0;
+        }
+        for (TerminowFs.Node child : children) {
+            cancel.check();
+            if (child.link) continue;
+            total += child.directory ? sizeOf(fs, child, cancel) : Math.max(0, child.size);
+        }
+        return total;
+    }
+
+    /** Where Android's folders and the shared folders are bound into an environment. */
+    @NonNull
+    List<String> bindsOf(@NonNull TerminowLinuxEnv env) {
+        List<String> guests = new ArrayList<>();
+        for (TerminowLinuxPaths.Mount mount : mRegistry.mountsOf(env)) guests.add(mount.guest);
+        return guests;
+    }
+
+    /** The environments that are installed. */
+    @NonNull
+    List<TerminowLinuxEnv> installedEnvs() {
+        return mRegistry.installed();
+    }
+
     /** The installed environment with the alias, {@code null} if there is none. */
     @Nullable
     TerminowLinuxEnv envOf(@NonNull String alias) {

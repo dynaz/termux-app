@@ -118,6 +118,24 @@ public class TerminowSettings {
         addRow(R.string.terminow_settings_default_profile, TerminowLaunchProfilesUi.describeDefault(mActivity, mStore),
             () -> TerminowLaunchProfilesUi.pickDefault(mActivity, mStore, this::update));
 
+        final String[] launchValues = {TerminowStore.UBUNTU_LAUNCH_ASK, TerminowStore.UBUNTU_LAUNCH_CURRENT, TerminowStore.UBUNTU_LAUNCH_NEW};
+        final String[] launchLabels = {mActivity.getString(R.string.terminow_launch_behavior_ask),
+            mActivity.getString(R.string.terminow_launch_use_current), mActivity.getString(R.string.terminow_launch_open_new)};
+        addRow(R.string.terminow_launch_behavior, launchLabels[Math.max(0, indexOf(launchValues, mStore.getUbuntuLaunchBehavior()))], () ->
+            pick(R.string.terminow_launch_behavior, launchLabels, which -> {
+                mStore.setUbuntuLaunchBehavior(launchValues[which]);
+                update();
+            }));
+
+        int[] timeouts = TerminowStore.UBUNTU_START_TIMEOUTS;
+        String[] timeoutLabels = new String[timeouts.length];
+        for (int i = 0; i < timeouts.length; i++) timeoutLabels[i] = mActivity.getString(R.string.terminow_launch_timeout_seconds, timeouts[i]);
+        addRow(R.string.terminow_launch_timeout, mActivity.getString(R.string.terminow_launch_timeout_seconds, mStore.getUbuntuStartTimeoutSeconds()), () ->
+            pick(R.string.terminow_launch_timeout, timeoutLabels, which -> {
+                mStore.setUbuntuStartTimeoutSeconds(timeouts[which]);
+                update();
+            }));
+
         addSwitchRow(R.string.terminow_settings_start_in_tmux, R.string.terminow_settings_start_in_tmux_summary,
             mStore.shouldStartInTmux(), mStore::setStartInTmux);
 
@@ -237,6 +255,12 @@ public class TerminowSettings {
     private static int indexOf(@NonNull int[] values, int value) {
         for (int i = 0; i < values.length; i++)
             if (values[i] == value) return i;
+        return -1;
+    }
+
+    private static int indexOf(@NonNull String[] values, @NonNull String value) {
+        for (int i = 0; i < values.length; i++)
+            if (values[i].equals(value)) return i;
         return -1;
     }
 

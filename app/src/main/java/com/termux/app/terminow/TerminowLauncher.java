@@ -109,14 +109,14 @@ public class TerminowLauncher {
         "  case \"$s\" in *'\"loggedIn\":true'*) echo TERMINOW_LOGGED_IN=yes;; *'\"loggedIn\":false'*) echo TERMINOW_LOGGED_IN=no;; *) echo TERMINOW_LOGGED_IN=unknown;; esac;;\n" +
         "esac\n";
 
-    /** Starts Claude Code with the arguments after `$0`, from the folder the session starts in. */
     /** How long a Claude Code tab opened after an install is watched for a sign-in link. */
     private static final long SIGN_IN_HELP_WATCH_MS = 10 * 60 * 1000;
 
-    static final String CLAUDE_SCRIPT = "PATH=\"$HOME/.local/bin:$PATH\"; export PATH; exec claude \"$@\"";
+    /** Starts Claude Code with the arguments after `$0`, from the folder the session starts in. */
+    static final String CLAUDE_SCRIPT = TerminowLaunchPlan.READY_SIGN + "PATH=\"$HOME/.local/bin:$PATH\"; export PATH; exec claude \"$@\"";
 
     /** {@link #CLAUDE_SCRIPT}, after saying how to sign in. */
-    static final String CLAUDE_SIGN_IN_HELP_SCRIPT = "PATH=\"$HOME/.local/bin:$PATH\"; export PATH; " +
+    static final String CLAUDE_SIGN_IN_HELP_SCRIPT = TerminowLaunchPlan.READY_SIGN + "PATH=\"$HOME/.local/bin:$PATH\"; export PATH; " +
         "echo 'TermiNow: Claude Code is starting. If it asks you to sign in, pick a login method and open the link it shows;'; " +
         "echo 'TermiNow offers to open it in the browser. TermiNow never signs in for you or sees your password.'; " +
         "echo 'TermiNow: later, run /login in Claude Code to sign in again, or claude in any Ubuntu tab to start it.'; echo; " +
@@ -382,6 +382,30 @@ public class TerminowLauncher {
         return TerminowLaunchPlan.isValidTmuxName(name) ? name : "terminow";
     }
 
+    /**
+     * The tmux session of a new tab: the one of the environment, unless a tab shows it already,
+     * then the next free one, like "ubuntu-2". Two tabs on one tmux session show and type the same.
+     */
+    @NonNull
+    String newTabTmuxName(@NonNull Environment environment) {
+        Set<String> shown = new HashSet<>();
+        for (Map.Entry<TerminalSession, SessionInfo> entry : mInfo.entrySet())
+            if (entry.getKey() != null && entry.getKey().isRunning() && environment.key.equals(entry.getValue().environmentKey))
+                shown.add(entry.getValue().tmux);
+        return freeTmuxName(quickTmuxName(environment), shown);
+    }
+
+    /** The name, or with -2, -3 and so on the first that is not taken. */
+    @NonNull
+    static String freeTmuxName(@NonNull String base, @NonNull Set<String> taken) {
+        if (!taken.contains(base)) return base;
+        for (int i = 2; i < 100; i++) {
+            String name = base + "-" + i;
+            if (TerminowLaunchPlan.isValidTmuxName(name) && !taken.contains(name)) return name;
+        }
+        return base;
+    }
+
     /** Whether Open terminal of an environment starts in its tmux session: "off" or "attach". */
     @NonNull
     String tmuxPreferenceOf(@NonNull Environment environment) {
@@ -488,7 +512,7 @@ public class TerminowLauncher {
         String tmux = tmuxPreferenceOf(environment);
         boolean useTmux = TerminowLaunchPlan.TMUX_ATTACH.equals(tmux);
         Runnable open = () -> launchPlan("quick|" + environment.key + "|" + System.nanoTime(), environment, user, getFolder(environment),
-            TerminowLaunchPlan.TOOL_SHELL, "", tmux, quickTmuxName(environment),
+            TerminowLaunchPlan.TOOL_SHELL, "", tmux, newTabTmuxName(environment),
             mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), "bash"), true, "bash");
         if (useTmux) TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.TMUX, 0, open);
         else open.run();
@@ -1163,6 +1187,16 @@ public class TerminowLauncher {
                                    @NonNull String workingDirectory, @NonNull String name, boolean alwaysNew,
                                    @NonNull SessionInfo info) {
         if (mLaunching) return null;
+        boolean tracked = isTrackedStart(args);
+        String target = info.environmentKey + "|" + info.user + "|" + info.tool;
+        // Another tap while it starts shows the tab that starts, a restore starts each of its tabs
+        TerminowLaunchState.Launch starting = tracked && !key.startsWith("restore|") ? LAUNCHES.starting(target) : null;
+        if (starting != null && starting.session.isRunning()) {
+            dismiss();
+            mHost.showSession(starting.session);
+            mActivity.showToast(mActivity.getString(R.string.terminow_launch_already_starting, info.environmentLabel), false);
+            return starting.session;
+        }
         WeakReference<TerminalSession> existing = mSessions.get(key);
         TerminalSession running = existing != null ? existing.get() : null;
         if (running != null && running.isRunning() && !alwaysNew) {
@@ -1182,11 +1216,435 @@ public class TerminowLauncher {
             mInfo.put(session, info);
             updateToolbar(session);
             dismiss();
-            watchStart(session, name, 0);
+            if (tracked) {
+                trackStart(target, session, info.environmentLabel, false, -1, () -> launch(key + "|retry" + System.nanoTime(), executable, args,
+                    workingDirectory, name, true, info));
+            } else {
+                watchStart(session, name, 0);
+            }
             return session;
         } finally {
             mLaunching = false;
         }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Starting Linux in a tab: starting, running, failed or exited, and where to open it
+    // ---------------------------------------------------------------------------------------
+
+    /** The starts of Linux environments in tabs, of this process. */
+    static final TerminowLaunchState LAUNCHES = new TerminowLaunchState(System::currentTimeMillis);
+
+    private static final long WATCH_START_MS = 500;
+    private static final long WATCH_ENTERED_MS = 1000;
+
+    /**
+     * The title of a session changed. Returns whether it was the sign that Linux runs in it,
+     * which is then not shown or told as a title.
+     */
+    public static boolean onTitleChanged(@NonNull TerminalSession session) {
+        String title = session.getTitle();
+        return LAUNCHES.onTitle(session, title) || TerminowLaunchPlan.READY_TITLE.equals(title);
+    }
+
+    /** Whether what is started says when it runs: a shell, tmux or Claude Code in an environment. */
+    static boolean isTrackedStart(@NonNull String[] args) {
+        for (String arg : args)
+            if (arg.equals(TerminowLaunchPlan.NO_XOFF_SHELL) || arg.equals(TerminowLaunchPlan.CONTAINER_TMUX_SCRIPT) ||
+                arg.equals(CLAUDE_SCRIPT) || arg.equals(CLAUDE_SIGN_IN_HELP_SCRIPT)) return true;
+        return false;
+    }
+
+    /**
+     * Watch a start until it runs, ends or takes too long.
+     *
+     * @param shellPid For a start in a tab that was open: the pid of its shell, which stays. -1 for a new tab.
+     */
+    private void trackStart(@NonNull String target, @NonNull TerminalSession session, @NonNull String label, boolean inExistingTab,
+                            int shellPid, @NonNull Runnable retry) {
+        TerminowLaunchState.Launch launch = LAUNCHES.begin(target, session, mStore.getUbuntuStartTimeoutSeconds() * 1000L, inExistingTab);
+        launch.retry = retry;
+        // Said in the new tab until Linux prints anything itself, after the output a restored tab shows
+        if (!inExistingTab && session.getEmulator() == null) {
+            byte[] line = (mActivity.getString(R.string.terminow_launch_starting_line, label) + "\r\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            byte[] before = session.mPrelude;
+            if (before == null) {
+                session.mPrelude = line;
+            } else {
+                byte[] both = Arrays.copyOf(before, before.length + line.length);
+                System.arraycopy(line, 0, both, before.length, line.length);
+                session.mPrelude = both;
+            }
+        }
+        mHandler.postDelayed(() -> watchLaunch(session, label, shellPid, false), WATCH_START_MS);
+    }
+
+    private void watchLaunch(@NonNull TerminalSession session, @NonNull String label, int shellPid, boolean entered) {
+        TerminowLaunchState.Launch launch = LAUNCHES.of(session);
+        if (launch == null) return;
+        if (launch.inExistingTab) {
+            if (!session.isRunning()) {
+                LAUNCHES.forget(session);
+                return;
+            }
+            int foreground = foregroundGroupOf(shellPid);
+            boolean inLinux = foreground > 0 && foreground != shellPid;
+            if (entered && !inLinux) {
+                // Linux ended and the shell of the tab is shown again
+                boolean wasStarting = launch.state == TerminowLaunchState.State.STARTING;
+                LAUNCHES.onLeft(session);
+                leftLinux(session);
+                if (wasStarting) showStartFailed(launch, label, shellPid);
+                return;
+            }
+            if (launch.state == TerminowLaunchState.State.RUNNING) {
+                mHandler.postDelayed(() -> watchLaunch(session, label, shellPid, entered || inLinux), WATCH_ENTERED_MS);
+                return;
+            }
+            if (LAUNCHES.timeout(session) != null) {
+                stopLaunch(launch, shellPid);
+                showStartFailed(launch, label, shellPid);
+                return;
+            }
+            mHandler.postDelayed(() -> watchLaunch(session, label, shellPid, entered || inLinux), WATCH_START_MS);
+            return;
+        }
+        if (launch.state != TerminowLaunchState.State.STARTING) return;
+        // A tab the user closed while it started is no failure
+        com.termux.app.TermuxService service = mActivity.getTermuxService();
+        if (service != null && service.getIndexOfSession(session) < 0) {
+            LAUNCHES.forget(session);
+            return;
+        }
+        // A tab that was not shown yet has not started its process, so its time does not run
+        if (!launch.processStarted) {
+            if (session.getPid() <= 0) {
+                mHandler.postDelayed(() -> watchLaunch(session, label, shellPid, false), WATCH_ENTERED_MS);
+                return;
+            }
+            LAUNCHES.processStarted(session);
+        }
+        if (session.getPid() > 0 && !session.isRunning()) {
+            LAUNCHES.onExited(session, session.getExitStatus());
+            showStartFailed(launch, label, -1);
+            return;
+        }
+        if (LAUNCHES.timeout(session) != null) {
+            stopLaunch(launch, -1);
+            showStartFailed(launch, label, -1);
+            return;
+        }
+        mHandler.postDelayed(() -> watchLaunch(session, label, shellPid, false), WATCH_START_MS);
+    }
+
+    /**
+     * Stop only what this start started: the processes of the new tab, or the program that runs
+     * in front of the shell of a tab that was open. Never other tabs, and never all proot,
+     * tmux or bash.
+     */
+    private void stopLaunch(@NonNull TerminowLaunchState.Launch launch, int shellPid) {
+        try {
+            if (launch.inExistingTab) {
+                int foreground = foregroundGroupOf(shellPid);
+                if (foreground > 0 && foreground != shellPid) android.system.Os.kill(-foreground, android.system.OsConstants.SIGKILL);
+            } else {
+                int pid = launch.session.getPid();
+                // Its process group: proot-distro, proot and what runs in Linux
+                if (pid > 0) android.system.Os.kill(-pid, android.system.OsConstants.SIGKILL);
+                launch.session.finishIfRunning();
+            }
+        } catch (android.system.ErrnoException e) {
+            // It ended already
+        }
+    }
+
+    /** Whether what a start started has ended, so that it can be started again. */
+    private static boolean isStopped(@NonNull TerminowLaunchState.Launch launch, int shellPid) {
+        if (!launch.inExistingTab) return !launch.session.isRunning();
+        int foreground = foregroundGroupOf(shellPid);
+        return foreground <= 0 || foreground == shellPid;
+    }
+
+    /** Why a start failed, once what it started has ended, with Retry, Close tab and the details. */
+    private void showStartFailed(@NonNull TerminowLaunchState.Launch launch, @NonNull String label, int shellPid) {
+        showStartFailed(launch, label, shellPid, 0);
+    }
+
+    private void showStartFailed(@NonNull TerminowLaunchState.Launch launch, @NonNull String label, int shellPid, int waited) {
+        if (mActivity.isFinishing()) return;
+        if (!isStopped(launch, shellPid) && waited < 20) {
+            mHandler.postDelayed(() -> showStartFailed(launch, label, shellPid, waited + 1), 250);
+            return;
+        }
+        String reason = launch.failure == TerminowLaunchState.Failure.TIMEOUT ?
+            mActivity.getString(R.string.terminow_launch_failed_timeout, label, launch.timeoutMs / 1000) :
+            mActivity.getString(R.string.terminow_launch_failed_exited, label, launch.exitStatus);
+        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(mActivity.getString(R.string.terminow_launch_failed_title, label))
+            .setMessage(reason + "\n\n" + mActivity.getString(launch.inExistingTab ? R.string.terminow_launch_failed_tab_kept :
+                R.string.terminow_launch_failed_others_kept))
+            .setNeutralButton(R.string.terminow_launch_details, (d, w) -> showLaunchDiagnostics());
+        if (launch.retry != null) {
+            builder.setPositiveButton(R.string.terminow_launch_retry, (d, w) -> {
+                if (!isStopped(launch, shellPid)) {
+                    mActivity.showToast(mActivity.getString(R.string.terminow_launch_still_stopping), true);
+                    return;
+                }
+                if (!launch.inExistingTab) mActivity.getTermuxTerminalSessionClient().closeSession(launch.session);
+                LAUNCHES.forget(launch.session);
+                launch.retry.run();
+            });
+        }
+        if (!launch.inExistingTab) {
+            builder.setNegativeButton(R.string.terminow_launch_close_tab, (d, w) -> {
+                LAUNCHES.forget(launch.session);
+                mActivity.getTermuxTerminalSessionClient().closeSession(launch.session);
+            });
+        } else {
+            builder.setNegativeButton(android.R.string.cancel, (d, w) -> LAUNCHES.forget(launch.session));
+        }
+        builder.show();
+    }
+
+    /** What happened to the starts of this session of the app: when, where, which state and how long. */
+    void showLaunchDiagnostics() {
+        List<String> lines = LAUNCHES.diagnostics();
+        String text = lines.isEmpty() ? mActivity.getString(R.string.terminow_launch_no_diagnostics) : TextUtils.join("\n", lines);
+        TextView view = new TextView(mActivity);
+        view.setText(text);
+        view.setTextIsSelectable(true);
+        view.setTypeface(Typeface.MONOSPACE);
+        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        view.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
+        int padding = dp(16);
+        view.setPadding(padding, padding, padding, padding);
+        ScrollView scroll = new ScrollView(mActivity);
+        scroll.addView(view);
+        new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_launch_diagnostics_title)
+            .setView(scroll)
+            .setPositiveButton(android.R.string.ok, null)
+            .show();
+    }
+
+    /** The process group in front of the terminal of a process, from /proc; -1 if it can not be read. */
+    static int foregroundGroupOf(int pid) {
+        if (pid <= 0) return -1;
+        try {
+            byte[] bytes = java.nio.file.Files.readAllBytes(new File("/proc/" + pid + "/stat").toPath());
+            return parseForegroundGroup(new String(bytes, java.nio.charset.StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    /** The tpgid of a /proc/PID/stat line, whose name in parentheses may have spaces and parentheses. */
+    static int parseForegroundGroup(@NonNull String stat) {
+        int end = stat.lastIndexOf(')');
+        if (end < 0) return -1;
+        String[] fields = stat.substring(end + 1).trim().split("\\s+");
+        // state ppid pgrp session tty_nr tpgid
+        if (fields.length < 6) return -1;
+        try {
+            return Integer.parseInt(fields[5]);
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    /**
+     * Whether the line of the cursor looks like a prompt with nothing typed after it: nothing
+     * right of the cursor, and a prompt sign right before it. When it does not, the user is asked
+     * before anything is typed, since what is typed would be added to their text.
+     */
+    static boolean looksLikeEmptyPrompt(@NonNull String beforeCursor, @NonNull String afterCursor) {
+        if (!afterCursor.trim().isEmpty()) return false;
+        String before = beforeCursor.replaceAll("\\s+$", "");
+        return before.endsWith("$") || before.endsWith("#") || before.endsWith(">") || before.endsWith("%");
+    }
+
+    /**
+     * What is typed into a TermiNow shell to go into an environment there: proot-distro with each
+     * argument quoted on its own, never joined unquoted. A space first keeps it out of the history.
+     */
+    @NonNull
+    static String enterCommand(@NonNull String prefix, @NonNull String alias, @NonNull String user, @NonNull String folder,
+                               @NonNull List<String> binds) {
+        List<String> words = new ArrayList<>(Arrays.asList(prefix + "/bin/proot-distro", "login", alias, "--user", user, "--work-dir", folder));
+        words.addAll(binds);
+        words.addAll(Arrays.asList("--", "/bin/sh", "-c", TerminowLaunchPlan.NO_XOFF_SHELL));
+        StringBuilder line = new StringBuilder(" ");
+        for (int i = 0; i < words.size(); i++) {
+            if (i > 0) line.append(' ');
+            line.append(TerminowStore.shellQuote(words.get(i)));
+        }
+        return line.toString();
+    }
+
+    /** What a tab ran before Linux was started in it, given back when Linux ends. */
+    private final Map<TerminalSession, SessionInfo> mEnteredFrom = new java.util.WeakHashMap<>();
+
+    private void leftLinux(@NonNull TerminalSession session) {
+        SessionInfo before = mEnteredFrom.remove(session);
+        if (before != null) mInfo.put(session, before);
+        updateToolbar(session);
+    }
+
+    /**
+     * Open Ubuntu, or another environment, as the settings say: ask, in the tab that is open, or
+     * in a new tab. TermiNow itself opens as before.
+     */
+    void openUbuntu(@NonNull Environment environment) {
+        if (environment.container == null) {
+            openTerminal(environment);
+            return;
+        }
+        switch (mStore.getUbuntuLaunchBehavior()) {
+            case TerminowStore.UBUNTU_LAUNCH_CURRENT: openInCurrentTab(environment); break;
+            case TerminowStore.UBUNTU_LAUNCH_NEW: openInNewTab(environment); break;
+            default: askHowToOpen(environment); break;
+        }
+    }
+
+    /** Use the tab that is open, or open a new one, and maybe remember it. A tab of it that runs can be gone to. */
+    private void askHowToOpen(@NonNull Environment environment) {
+        TerminalSession running = lastShellOf(environment);
+        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog);
+        Context context = builder.getContext();
+        LinearLayout box = new LinearLayout(context);
+        box.setOrientation(LinearLayout.VERTICAL);
+        int padding = dp(20);
+        box.setPadding(padding, dp(4), padding, 0);
+        android.widget.CheckBox remember = new android.widget.CheckBox(context);
+        remember.setText(R.string.terminow_launch_remember);
+        List<CharSequence> labels = new ArrayList<>(Arrays.asList(mActivity.getString(R.string.terminow_launch_use_current),
+            mActivity.getString(R.string.terminow_launch_open_new)));
+        if (running != null && running != mActivity.getCurrentSession())
+            labels.add(mActivity.getString(R.string.terminow_launch_go_to, running.mSessionName != null ? running.mSessionName : environment.shortName()));
+        android.widget.ListView list = new android.widget.ListView(context);
+        list.setAdapter(new android.widget.ArrayAdapter<>(context, android.R.layout.simple_list_item_1, labels));
+        box.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        box.addView(remember);
+        android.app.AlertDialog dialog = builder
+            .setTitle(mActivity.getString(R.string.terminow_launch_how_title, environment.shortName()))
+            .setView(box)
+            .setNegativeButton(android.R.string.cancel, null)
+            .create();
+        list.setOnItemClickListener((parent, view, which, id) -> {
+            dialog.dismiss();
+            if (which == 2) {
+                dismiss();
+                mHost.showSession(running);
+                return;
+            }
+            if (remember.isChecked())
+                mStore.setUbuntuLaunchBehavior(which == 0 ? TerminowStore.UBUNTU_LAUNCH_CURRENT : TerminowStore.UBUNTU_LAUNCH_NEW);
+            if (which == 0) openInCurrentTab(environment);
+            else openInNewTab(environment);
+        });
+        dialog.show();
+    }
+
+    /** A new tab of the environment, one per tap: a tap while one starts shows that one. */
+    void openInNewTab(@NonNull Environment environment) {
+        openNewTerminal(environment);
+    }
+
+    /**
+     * Use the tab that is open: show it if it already runs the environment; go into the
+     * environment in its own terminal if it is an idle TermiNow shell; otherwise say what runs
+     * there and offer a new tab. Nothing is typed into ssh, another environment, tmux or a
+     * program that runs.
+     */
+    void openInCurrentTab(@NonNull Environment environment) {
+        TerminalSession current = mActivity.getCurrentSession();
+        if (current == null || !current.isRunning()) {
+            openInNewTab(environment);
+            return;
+        }
+        SessionInfo info = mInfo.get(current);
+        if (info != null && environment.key.equals(info.environmentKey)) {
+            dismiss();
+            mHost.showSession(current);
+            mActivity.showToast(mActivity.getString(R.string.terminow_toolbar_already_in, environment.label), false);
+            return;
+        }
+        if (info != null && info.environmentKey != null && !TerminowMcpTargets.TARGET_TERMINOW.equals(info.environmentKey)) {
+            offerNewTab(environment, mActivity.getString(R.string.terminow_launch_tab_other_env, info.environmentLabel, environment.shortName()));
+            return;
+        }
+        if (info == null || info.environmentKey == null || !"bash".equals(info.tool)) {
+            offerNewTab(environment, mActivity.getString(R.string.terminow_launch_tab_not_shell));
+            return;
+        }
+        int shellPid = current.getPid();
+        int foreground = foregroundGroupOf(shellPid);
+        if (foreground > 0 && foreground != shellPid) {
+            offerNewTab(environment, mActivity.getString(R.string.terminow_launch_tab_busy));
+            return;
+        }
+        TerminalEmulator emulator = current.getEmulator();
+        boolean empty = false;
+        if (foreground == shellPid && emulator != null) {
+            int row = emulator.getCursorRow();
+            int column = emulator.getCursorCol();
+            com.termux.terminal.TerminalBuffer screen = emulator.getScreen();
+            empty = looksLikeEmptyPrompt(column > 0 ? screen.getSelectedText(0, row, column - 1, row) : "",
+                screen.getSelectedText(column, row, emulator.mColumns, row));
+        }
+        if (empty) {
+            enterInTab(environment, current, shellPid);
+            return;
+        }
+        // Whether the shell waits at an empty prompt is not known: typing into it is only done when the user says so
+        new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(mActivity.getString(R.string.terminow_launch_confirm_title, environment.shortName()))
+            .setMessage(R.string.terminow_launch_confirm_message)
+            .setPositiveButton(R.string.terminow_launch_confirm_enter, (d, w) -> {
+                if (foregroundGroupOf(shellPid) != shellPid) {
+                    offerNewTab(environment, mActivity.getString(R.string.terminow_launch_tab_busy));
+                    return;
+                }
+                enterInTab(environment, current, shellPid);
+            })
+            .setNeutralButton(R.string.terminow_launch_open_new, (d, w) -> openInNewTab(environment))
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    private void offerNewTab(@NonNull Environment environment, @NonNull String why) {
+        new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(mActivity.getString(R.string.terminow_launch_tab_in_use_title))
+            .setMessage(why)
+            .setPositiveButton(R.string.terminow_launch_open_new, (d, w) -> openInNewTab(environment))
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    /** Type the start of the environment at the prompt of the idle TermiNow shell of the tab; exit gives the shell back. */
+    private void enterInTab(@NonNull Environment environment, @NonNull TerminalSession session, int shellPid) {
+        if (environment.container == null) return;
+        String target = "tab|" + session.mHandle;
+        TerminowLaunchState.Launch starting = LAUNCHES.starting(target);
+        if (starting != null) {
+            dismiss();
+            mHost.showSession(session);
+            mActivity.showToast(mActivity.getString(R.string.terminow_launch_already_starting, environment.shortName()), false);
+            return;
+        }
+        String user = getUser(environment);
+        String folder = getFolder(environment);
+        if (resolve(environment, folder) == null) folder = homeOf(environment, user);
+        SessionInfo before = mInfo.get(session);
+        if (before != null) mEnteredFrom.put(session, before);
+        SessionInfo info = new SessionInfo(environment.key, environment.shortName(), "bash", folder, "");
+        info.user = user;
+        mInfo.put(session, info);
+        dismiss();
+        mHost.showSession(session);
+        session.write(enterCommand(mTargets.getPrefixDir().getPath(), environment.container.name, user, folder, bindsOf(environment)) + "\r");
+        updateToolbar(session);
+        trackStart(target, session, environment.shortName(), true, shellPid, () -> openInCurrentTab(environment));
     }
 
     /** Report a session that ended with an error right after it started, like a missing program. */
@@ -1669,6 +2127,11 @@ public class TerminowLauncher {
                 }
                 Environment environment = environments.get(which);
                 setEnvironment(environment.key);
+                // A Linux environment opens as the settings say: in this tab, a new one, or ask
+                if (!environment.isLocal()) {
+                    openUbuntu(environment);
+                    return;
+                }
                 TerminalSession current = mActivity.getCurrentSession();
                 TerminalSession session = lastShellOf(environment);
                 if (session != null) {

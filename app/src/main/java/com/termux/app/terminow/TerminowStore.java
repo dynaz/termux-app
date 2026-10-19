@@ -556,6 +556,15 @@ public class TerminowStore {
     /** The number of recent connections that are kept. */
     private static final int RECENT_CONNECTIONS_MAX = 30;
     private static final String KEY_START_IN_TMUX = "start_in_tmux";
+    private static final String KEY_UBUNTU_LAUNCH = "ubuntu_launch_behavior";
+    private static final String KEY_UBUNTU_START_TIMEOUT = "ubuntu_start_timeout";
+
+    /** Open Ubuntu: ask each time, in the tab that is open, or in a new tab. */
+    public static final String UBUNTU_LAUNCH_ASK = "ask";
+    public static final String UBUNTU_LAUNCH_CURRENT = "current";
+    public static final String UBUNTU_LAUNCH_NEW = "new";
+    /** The seconds that a Linux environment may take to start, that can be chosen. */
+    public static final int[] UBUNTU_START_TIMEOUTS = {30, 60, 120, 300};
     private static final String KEY_TERMINAL_THEME = "terminal_theme";
     private static final String KEY_TERMINAL_FONT = "terminal_font";
 
@@ -1278,6 +1287,27 @@ public class TerminowStore {
     }
 
     /** Whether local terminals are started in a tmux session. */
+    @NonNull
+    public String getUbuntuLaunchBehavior() {
+        String value = mPreferences.getString(KEY_UBUNTU_LAUNCH, UBUNTU_LAUNCH_ASK);
+        return UBUNTU_LAUNCH_CURRENT.equals(value) || UBUNTU_LAUNCH_NEW.equals(value) ? value : UBUNTU_LAUNCH_ASK;
+    }
+
+    public void setUbuntuLaunchBehavior(@NonNull String behavior) {
+        mPreferences.edit().putString(KEY_UBUNTU_LAUNCH, behavior).apply();
+    }
+
+    /** How long a Linux environment may take to start in a tab before it is stopped as failed. */
+    public int getUbuntuStartTimeoutSeconds() {
+        int value = mPreferences.getInt(KEY_UBUNTU_START_TIMEOUT, 60);
+        for (int allowed : UBUNTU_START_TIMEOUTS) if (allowed == value) return value;
+        return 60;
+    }
+
+    public void setUbuntuStartTimeoutSeconds(int seconds) {
+        mPreferences.edit().putInt(KEY_UBUNTU_START_TIMEOUT, seconds).apply();
+    }
+
     public boolean shouldStartInTmux() {
         return mPreferences.getBoolean(KEY_START_IN_TMUX, true);
     }

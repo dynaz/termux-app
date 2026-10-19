@@ -129,6 +129,8 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
 
     @Override
     public void onTitleChanged(@NonNull TerminalSession updatedSession) {
+        // The sign that Linux runs in a tab is not a title to show
+        if (com.termux.app.terminow.TerminowLauncher.onTitleChanged(updatedSession)) return;
         if (!mActivity.isVisible()) return;
 
         if (updatedSession != mActivity.getCurrentSession()) {

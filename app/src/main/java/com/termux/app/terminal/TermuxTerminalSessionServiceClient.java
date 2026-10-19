@@ -28,4 +28,10 @@ public class TermuxTerminalSessionServiceClient extends TermuxTerminalSessionCli
             termuxSession.getExecutionCommand().mPid = pid;
     }
 
+    /** A tab that starts Linux says when it runs also while the activity is not there. */
+    @Override
+    public void onTitleChanged(@NonNull TerminalSession updatedSession) {
+        com.termux.app.terminow.TerminowLauncher.onTitleChanged(updatedSession);
+    }
+
 }

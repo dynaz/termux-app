@@ -30,10 +30,19 @@ public final class TerminowLaunchPlan {
     static final String STARTUP_SCRIPT = "eval \"$1\"; shift; exec \"$@\"";
 
     /**
+     * The title that a shell in a Linux environment sets as soon as it runs there, see
+     * {@link TerminowLaunchState}. It is set back to empty right after, so it is never shown.
+     */
+    public static final String READY_TITLE = "terminow-ready";
+
+    /** Sets {@link #READY_TITLE}, then the title back to empty. */
+    static final String READY_SIGN = "printf '\\033]0;" + READY_TITLE + "\\007\\033]0;\\007'; ";
+
+    /**
      * The login shell of a Linux environment, with Ctrl+S and Ctrl+Q given to programs instead
      * of pausing and resuming the terminal, which looks like it froze.
      */
-    static final String NO_XOFF_SHELL = "stty -ixon 2>/dev/null; exec \"${SHELL:-/bin/bash}\" -l";
+    static final String NO_XOFF_SHELL = READY_SIGN + "stty -ixon 2>/dev/null; exec \"${SHELL:-/bin/bash}\" -l";
 
     /** The arguments that start {@link #NO_XOFF_SHELL}. */
     @NonNull
@@ -56,6 +65,7 @@ public final class TerminowLaunchPlan {
      * always a usable shell and tmux is never nested.
      */
     static final String CONTAINER_TMUX_SCRIPT =
+        READY_SIGN + "\n" +
         "mode=\"$1\"; name=\"$2\"; socket=\"$3\"; shift 3\n" +
         "t=\n" +
         "for d in ${TERMINOW_TMUX_DIRS:-/usr/local/bin /usr/bin /bin}; do if [ -x \"$d/tmux\" ]; then t=\"$d/tmux\"; break; fi; done\n" +
