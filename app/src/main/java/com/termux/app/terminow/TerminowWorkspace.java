@@ -365,8 +365,12 @@ public final class TerminowWorkspace {
     private boolean mStarted;
     private int mPolls;
     private static final long POLL_MS = 3000;
-    /** The output is saved every few polls, and when the app goes to the background. */
-    private static final int OUTPUT_EVERY_POLLS = 3;
+    /**
+     * The output is saved about once a minute, and when the app goes to the background. Reading
+     * all of every tab runs on the thread that draws the terminals and takes the keys, so more
+     * often made long Claude Code tabs pause.
+     */
+    private static final int OUTPUT_EVERY_POLLS = 20;
 
     private final Runnable mPoll = new Runnable() {
         @Override

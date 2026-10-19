@@ -27,4 +27,13 @@
     <plurals name="terminow_restore_done">
         <item quantity="other">กู้คืน %d แท็บแล้ว</item>
     </plurals>
+    <string name="terminow_closed_title">Android ปิด TermiNow</string>
+    <string name="terminow_closed_message">เมื่อ %1$s %2$s\n\nโปรแกรมในแท็บหยุดทำงานตอนนั้น แท็บที่ดูเหมือนค้างอาจเป็นเพราะเหตุนี้ แท็บถูกเปิดกลับมาพร้อมข้อความเดิม เป็นเชลล์ใหม่\n\nเพื่อให้ Claude Code และ Ubuntu ทำงานต่อได้ ให้ปิดแอปที่ไม่ได้ใช้</string>
+    <string name="terminow_closed_low_memory">Android ปิด TermiNow เพราะหน่วยความจำของโทรศัพท์เหลือน้อย</string>
+    <string name="terminow_closed_killed">Android หยุด TermiNow (signal 9) ซึ่งมักเป็นการคืนหน่วยความจำ</string>
+    <string name="terminow_closed_crash">TermiNow ขัดข้อง</string>
+    <string name="terminow_closed_not_responding">TermiNow ไม่ตอบสนอง และ Android ปิดไป</string>
+    <string name="terminow_closed_resources">Android ปิด TermiNow เพราะใช้ทรัพยากรมากเกินไปขณะอยู่เบื้องหลัง</string>
+    <string name="terminow_closed_frozen">Android หยุดชั่วคราวแล้วปิด TermiNow ขณะอยู่เบื้องหลัง</string>
+    <string name="terminow_closed_other">Android ปิด TermiNow</string>
 </resources>

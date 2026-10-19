@@ -1942,7 +1942,52 @@ public class TerminowHome {
         mActivity.getTermuxTerminalSessionClient().setCurrentSession(active != null ? active : first);
         hide();
         mActivity.showToast(mActivity.getResources().getQuantityString(R.plurals.terminow_restore_done, restored, restored), false);
+        showWhyClosed(state.saved);
         return true;
+    }
+
+    /**
+     * Why Android ended TermiNow the last time, if it did so after the tabs were last saved: the
+     * programs in the tabs stopped then, which looked like a hang. Only Android 11 and later say why.
+     */
+    private void showWhyClosed(long saved) {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R || saved <= 0) return;
+        android.app.ActivityManager manager = mActivity.getSystemService(android.app.ActivityManager.class);
+        if (manager == null) return;
+        List<android.app.ApplicationExitInfo> exits;
+        try {
+            exits = manager.getHistoricalProcessExitReasons(null, 0, 1);
+        } catch (RuntimeException e) {
+            return;
+        }
+        if (exits.isEmpty()) return;
+        android.app.ApplicationExitInfo exit = exits.get(0);
+        // An exit long before the last save is from an earlier run
+        if (exit.getTimestamp() < saved - 60_000) return;
+        int why = whyClosed(exit.getReason(), exit.getStatus());
+        if (why == 0) return;
+        String when = android.text.format.DateUtils.formatDateTime(mActivity, exit.getTimestamp(),
+            android.text.format.DateUtils.FORMAT_SHOW_TIME | android.text.format.DateUtils.FORMAT_SHOW_DATE | android.text.format.DateUtils.FORMAT_ABBREV_ALL);
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_closed_title)
+            .setMessage(mActivity.getString(R.string.terminow_closed_message, when, mActivity.getString(why)))
+            .setPositiveButton(android.R.string.ok, null)
+            .show();
+    }
+
+    /** What to say about how Android ended the app, 0 for an exit that needs no word, like Exit in TermiNow. */
+    static int whyClosed(int reason, int status) {
+        switch (reason) {
+            case android.app.ApplicationExitInfo.REASON_LOW_MEMORY: return R.string.terminow_closed_low_memory;
+            case android.app.ApplicationExitInfo.REASON_SIGNALED: return status == 9 ? R.string.terminow_closed_killed : 0;
+            case android.app.ApplicationExitInfo.REASON_CRASH:
+            case android.app.ApplicationExitInfo.REASON_CRASH_NATIVE: return R.string.terminow_closed_crash;
+            case android.app.ApplicationExitInfo.REASON_ANR: return R.string.terminow_closed_not_responding;
+            case android.app.ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE: return R.string.terminow_closed_resources;
+            case android.app.ApplicationExitInfo.REASON_FREEZER: return R.string.terminow_closed_frozen;
+            case android.app.ApplicationExitInfo.REASON_OTHER: return R.string.terminow_closed_other;
+            default: return 0;
+        }
     }
 
     @Nullable

@@ -28,4 +28,13 @@
         <item quantity="one">Restored %d tab</item>
         <item quantity="other">Restored %d tabs</item>
     </plurals>
+    <string name="terminow_closed_title">Android closed TermiNow</string>
+    <string name="terminow_closed_message">At %1$s, %2$s\n\nThe programs in the tabs stopped then, so a tab that seemed stuck may have been one of them. The tabs are back with what they showed, as new shells.\n\nTo keep Claude Code and Ubuntu running, close apps you do not need.</string>
+    <string name="terminow_closed_low_memory">Android closed TermiNow because the phone was low on memory.</string>
+    <string name="terminow_closed_killed">Android ended TermiNow (signal 9), usually to free memory.</string>
+    <string name="terminow_closed_crash">TermiNow crashed.</string>
+    <string name="terminow_closed_not_responding">TermiNow stopped responding and Android closed it.</string>
+    <string name="terminow_closed_resources">Android closed TermiNow because it used too much of the phone in the background.</string>
+    <string name="terminow_closed_frozen">Android froze and then closed TermiNow while it was in the background.</string>
+    <string name="terminow_closed_other">Android closed TermiNow.</string>
 </resources>
