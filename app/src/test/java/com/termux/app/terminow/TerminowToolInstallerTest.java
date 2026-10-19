@@ -164,6 +164,97 @@ public class TerminowToolInstallerTest {
     }
 
     @Test
+    public void cursorComesFromItsOfficialInstaller() throws Exception {
+        TerminowToolInstaller.Runner runner = environment("0", "none", "", "ok");
+        TerminowToolInstaller.Job job = installAndWait(runner, "root", TerminowToolInstaller.Tool.CURSOR);
+        assertEquals(job.getLog(), TerminowToolInstaller.State.SUCCEEDED, job.getState());
+        assertEquals("2026.10.18-ea085cb", job.getVersion());
+        String calls = calls();
+        assertTrue(calls, calls.contains("install -y --no-install-recommends curl ca-certificates"));
+        assertTrue(calls, calls.contains("curl -fsSL https://cursor.com/install"));
+        assertTrue(bashrc().contains("TermiNow: Claude Code PATH"));
+    }
+
+    @Test
+    public void gstackAndPluginsNeedClaudeCode() throws Exception {
+        TerminowToolInstaller.Runner runner = environment("0", "none", "", "ok");
+        TerminowToolInstaller.Job gstack = installAndWait(runner, "root", TerminowToolInstaller.Tool.GSTACK);
+        assertEquals(TerminowToolInstaller.Failure.NEEDS_CLAUDE, gstack.getFailure());
+        TerminowToolInstaller.Job plugins = installAndWait(runner, "root", TerminowToolInstaller.Tool.PLUGINS);
+        assertEquals(TerminowToolInstaller.Failure.NEEDS_CLAUDE, plugins.getFailure());
+        assertEquals("nothing is downloaded or installed", "", calls());
+    }
+
+    /** Claude Code that writes its plugin commands to the calls, and fails to install the plugin "broken". */
+    private void pluginClaude() throws Exception {
+        File claude = new File(mDir, "home/.local/bin/claude");
+        Files.write(claude.toPath(), ("#!/bin/sh\n" +
+            "echo \"claude $*\" >> \"" + mDir + "/calls\"\n" +
+            "case \"$*\" in *broken@*) exit 1;; esac\n" +
+            "exit 0\n").getBytes(StandardCharsets.UTF_8));
+        assertTrue(claude.setExecutable(true));
+    }
+
+    @Test
+    public void pluginsComeFromTheOfficialMarketplace() throws Exception {
+        TerminowToolInstaller.Runner runner = environment("0", "none", "claude", "ok");
+        pluginClaude();
+        CountDownLatch ended = new CountDownLatch(1);
+        TerminowToolInstaller.addListener(() -> {
+            TerminowToolInstaller.Job job = TerminowToolInstaller.jobOf("ubuntu", "root", TerminowToolInstaller.Tool.PLUGINS);
+            if (job != null && job.getState() != TerminowToolInstaller.State.RUNNING) ended.countDown();
+        });
+        TerminowToolInstaller.Job job = TerminowToolInstaller.install(runner, "ubuntu", "root", TerminowToolInstaller.Tool.PLUGINS,
+            "code-review", "commit-commands");
+        assertNotNull(job);
+        assertTrue(ended.await(60, TimeUnit.SECONDS));
+        assertEquals(job.getLog(), TerminowToolInstaller.State.SUCCEEDED, job.getState());
+        assertEquals("2", job.getVersion());
+        String calls = calls();
+        assertTrue(calls, calls.contains("claude plugin marketplace add anthropics/claude-plugins-official"));
+        assertTrue(calls, calls.contains("claude plugin install -y code-review@claude-plugins-official"));
+        assertTrue(calls, calls.contains("claude plugin install -y commit-commands@claude-plugins-official"));
+    }
+
+    @Test
+    public void aPluginThatIsNotInstalledFailsTheJobAndIsNamed() throws Exception {
+        TerminowToolInstaller.Runner runner = environment("0", "none", "claude", "ok");
+        pluginClaude();
+        CountDownLatch ended = new CountDownLatch(1);
+        TerminowToolInstaller.addListener(() -> {
+            TerminowToolInstaller.Job job = TerminowToolInstaller.jobOf("ubuntu", "root", TerminowToolInstaller.Tool.PLUGINS);
+            if (job != null && job.getState() != TerminowToolInstaller.State.RUNNING) ended.countDown();
+        });
+        TerminowToolInstaller.Job job = TerminowToolInstaller.install(runner, "ubuntu", "root", TerminowToolInstaller.Tool.PLUGINS,
+            "code-review", "broken");
+        assertNotNull(job);
+        assertTrue(ended.await(60, TimeUnit.SECONDS));
+        assertEquals(TerminowToolInstaller.State.FAILED, job.getState());
+        assertEquals(TerminowToolInstaller.Failure.INSTALLER, job.getFailure());
+        assertTrue(job.getLog(), job.getLog().contains("these plugins were not installed: broken"));
+    }
+
+    @Test
+    public void theOfficialPluginsAreListedMostInstalledFirst() {
+        TerminowToolInstaller.PluginCatalog catalog = new TerminowToolInstaller.PluginCatalog();
+        TerminowToolInstaller.parsePlugins(catalog, "noise\nTERMINOW_JSON_BEGIN\n" +
+            "{\"installed\":[{\"id\":\"code-review@claude-plugins-official\"},{\"id\":\"x@other\"}],\"available\":[" +
+            "{\"name\":\"a\",\"description\":\"A\",\"marketplaceName\":\"claude-plugins-official\",\"installCount\":5}," +
+            "{\"name\":\"b\",\"description\":\"B\",\"marketplaceName\":\"claude-plugins-official\",\"installCount\":50}," +
+            "{\"name\":\"c\",\"description\":\"C\",\"marketplaceName\":\"anthropic-plugin-directory\",\"installCount\":99}]}\n" +
+            "TERMINOW_JSON_END\n");
+        assertNull(catalog.error);
+        assertEquals(2, catalog.plugins.size());
+        assertEquals("b", catalog.plugins.get(0).name);
+        assertEquals("a", catalog.plugins.get(1).name);
+        assertEquals(java.util.Collections.singleton("code-review"), catalog.installed);
+
+        TerminowToolInstaller.PluginCatalog none = new TerminowToolInstaller.PluginCatalog();
+        TerminowToolInstaller.parsePlugins(none, "TERMINOW_NO_CLAUDE\n");
+        assertTrue(none.noClaude);
+    }
+
+    @Test
     public void anotherUserNeedsSudoWithoutAPassword() throws Exception {
         TerminowToolInstaller.Job none = installAndWait(environment("1000", "none", "", "ok"), "dev", TerminowToolInstaller.Tool.GIT);
         assertEquals(TerminowToolInstaller.Failure.NO_SUDO, none.getFailure());
