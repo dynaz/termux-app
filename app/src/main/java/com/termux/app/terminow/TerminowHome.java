@@ -368,6 +368,7 @@ public class TerminowHome {
 
             @Override
             public void backupAndRestore(@NonNull String alias, @NonNull String title) {
+                TerminowWhatsNew.seen(mActivity, TerminowWhatsNew.Feature.BACKUP);
                 mBackupUi.showMenu(alias, title);
             }
 
@@ -550,6 +551,8 @@ public class TerminowHome {
         });
 
         setPage(PAGE_HOSTS);
+        mSettings.setWhatsNew(() -> TerminowWhatsNew.showAll(mActivity, BuildConfig.VERSION_CODE, this::openWhatsNew));
+        showWhatsNewIfPending();
     }
 
 
@@ -565,11 +568,28 @@ public class TerminowHome {
     /** Add a notification about an update of the app, on the first start after it. */
     private void addUpdateNotification() {
         int lastVersionCode = mStore.updateLastVersionCode(BuildConfig.VERSION_CODE);
+        List<TerminowWhatsNew.Feature> features = TerminowWhatsNew.onStart(mActivity, lastVersionCode, BuildConfig.VERSION_CODE);
         // Not when the app was just installed, or the version was not changed
         if (lastVersionCode == 0 || lastVersionCode == BuildConfig.VERSION_CODE) return;
         mStore.addNotification(mActivity.getString(R.string.terminow_notification_updated,
             BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")"),
-            mActivity.getString(R.string.terminow_notification_updated_text));
+            features.isEmpty() ? mActivity.getString(R.string.terminow_notification_updated_text) : TerminowWhatsNew.describe(mActivity, features));
+    }
+
+    /** What is new after an update, once, over the home screen and never over a terminal. */
+    private void showWhatsNewIfPending() {
+        if (!isVisible()) return;
+        // After the layout, so that the window does not come before the home screen is drawn
+        mHomeView.post(() -> {
+            if (isVisible() && !mActivity.isFinishing())
+                TerminowWhatsNew.showIfPending(mActivity, BuildConfig.VERSION_CODE, this::openWhatsNew);
+        });
+    }
+
+    private void openWhatsNew(@NonNull TerminowWhatsNew.Action action) {
+        if (action == TerminowWhatsNew.Action.QUICK_LAUNCH) setPage(PAGE_LAUNCH);
+        else if (action == TerminowWhatsNew.Action.FILES) setPage(PAGE_FILES);
+        else if (action == TerminowWhatsNew.Action.SETTINGS) setPage(PAGE_SETTINGS);
     }
 
     /** Show the home screen over the terminal. */
@@ -586,6 +606,7 @@ public class TerminowHome {
         if (mPage == PAGE_SETTINGS)
             mSettings.update();
         refresh();
+        showWhatsNewIfPending();
     }
 
     /** Hide the home screen and show the terminal. */
@@ -746,6 +767,7 @@ public class TerminowHome {
     }
 
     private void setPage(int page) {
+        if (page == PAGE_FILES) TerminowWhatsNew.seen(mActivity, TerminowWhatsNew.Feature.FILES);
         if (mPage == PAGE_FILES && page != PAGE_FILES) mExplorer.onHidden();
         if (mPage == PAGE_LAUNCH && page != PAGE_LAUNCH && mQuickLaunch != null) mQuickLaunch.hide();
         mPage = page;

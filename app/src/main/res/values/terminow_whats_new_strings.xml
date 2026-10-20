@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_new_title">What\'s new in %s</string>
+    <string name="terminow_new_open">Open</string>
+    <string name="terminow_new_off">Don\'t show again</string>
+    <string name="terminow_new_badge">NEW</string>
+    <string name="terminow_new_settings_row">What\'s new</string>
+    <string name="terminow_new_backup">Backup &amp; Restore of Ubuntu</string>
+    <string name="terminow_new_backup_text">Back up the whole Ubuntu or chosen folders to any folder of the phone (Premium), checked before it counts. Restore is for everyone. In Quick Launch, Backup on an Ubuntu card.</string>
+    <string name="terminow_new_ubuntu_tab">Open Ubuntu in this tab or a new one</string>
+    <string name="terminow_new_ubuntu_tab_text">Choose each time, or remember it in Settings → Terminal → Ubuntu launch behavior.</string>
+    <string name="terminow_new_files">File Manager on all of your storage</string>
+    <string name="terminow_new_files_text">With All files access the File Manager shows the whole internal storage, not only TermiNow Home.</string>
+    <string name="terminow_new_frozen_tabs">Tabs that froze are fixed</string>
+    <string name="terminow_new_frozen_tabs_text">Ubuntu and Claude Code no longer stop taking keys after a while, and a busy terminal no longer makes TermiNow hang.</string>
+    <string name="terminow_new_debug">Debug in Settings</string>
+    <string name="terminow_new_debug_text">If a tab still seems stuck: Terminal diagnostics, and a debug log you can save and send. It never holds what a tab shows or what you type.</string>
+    <string name="terminow_new_swipe">Swipe between sessions</string>
+    <string name="terminow_new_swipe_text">Swipe left or right on the terminal for the next or previous session.</string>
+    <string name="terminow_new_installer">More tools to install</string>
+    <string name="terminow_new_installer_text">Install in the toolbar now has Cursor CLI, gstack and the Claude Code plugins of the official marketplace.</string>
+</resources>

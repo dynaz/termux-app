@@ -313,7 +313,8 @@ public class TerminowQuickLaunch {
             secondary.addView(secondaryButton(R.drawable.ic_terminow_folder, mActivity.getString(R.string.terminow_quick_files),
                 () -> mLauncher.openFilesOf(environment)), weighted());
             if (linux != null)
-                secondary.addView(secondaryButton(R.drawable.ic_terminow_download, mActivity.getString(R.string.terminow_quick_backup),
+                secondary.addView(secondaryButton(R.drawable.ic_terminow_download,
+                    TerminowWhatsNew.label(mActivity, mActivity.getString(R.string.terminow_quick_backup), TerminowWhatsNew.Feature.BACKUP),
                     () -> mHost.backupAndRestore(linux.alias, environment.shortName())), weighted());
         } else {
             secondary.addView(secondaryButton(R.drawable.ic_terminow_folder, mActivity.getString(R.string.terminow_quick_files),
@@ -1044,7 +1045,7 @@ public class TerminowQuickLaunch {
     }
 
     @NonNull
-    private TextView secondaryButton(int iconRes, @NonNull String label, @NonNull Runnable onClick) {
+    private TextView secondaryButton(int iconRes, @NonNull CharSequence label, @NonNull Runnable onClick) {
         TextView button = text(label, 14, R.color.terminow_text);
         button.setGravity(Gravity.CENTER);
         button.setSingleLine(true);
@@ -1268,7 +1269,7 @@ public class TerminowQuickLaunch {
     }
 
     @NonNull
-    private TextView text(@NonNull String value, int sp, int colorRes) {
+    private TextView text(@NonNull CharSequence value, int sp, int colorRes) {
         TextView view = new TextView(mActivity);
         view.setText(value);
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);

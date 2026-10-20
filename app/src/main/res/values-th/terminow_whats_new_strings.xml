@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_new_title">มีอะไรใหม่ใน %s</string>
+    <string name="terminow_new_open">เปิด</string>
+    <string name="terminow_new_off">ไม่ต้องแสดงอีก</string>
+    <string name="terminow_new_badge">ใหม่</string>
+    <string name="terminow_new_settings_row">มีอะไรใหม่</string>
+    <string name="terminow_new_backup">สำรองและกู้คืน Ubuntu</string>
+    <string name="terminow_new_backup_text">สำรอง Ubuntu ทั้งระบบหรือเฉพาะโฟลเดอร์ที่เลือก ไปยังโฟลเดอร์ใดก็ได้ในเครื่อง (Premium) และตรวจสอบไฟล์ก่อนถือว่าสำเร็จ ทุกคนกู้คืนได้ อยู่ที่ปุ่ม Backup ในการ์ด Ubuntu ของ Quick Launch</string>
+    <string name="terminow_new_ubuntu_tab">เปิด Ubuntu ในแท็บนี้หรือแท็บใหม่</string>
+    <string name="terminow_new_ubuntu_tab_text">เลือกได้ทุกครั้ง หรือตั้งค่าไว้ที่ Settings → Terminal → Ubuntu launch behavior</string>
+    <string name="terminow_new_files">File Manager เห็นทั้งที่เก็บข้อมูล</string>
+    <string name="terminow_new_files_text">เมื่ออนุญาตการเข้าถึงไฟล์ทั้งหมด File Manager จะแสดงที่เก็บข้อมูลภายในทั้งหมด ไม่ใช่แค่ TermiNow Home</string>
+    <string name="terminow_new_frozen_tabs">แก้แท็บค้าง</string>
+    <string name="terminow_new_frozen_tabs_text">Ubuntu และ Claude Code ไม่หยุดรับการพิมพ์อีกแล้ว และเทอร์มินัลที่ทำงานหนักไม่ทำให้ TermiNow ค้าง</string>
+    <string name="terminow_new_debug">Debug ใน Settings</string>
+    <string name="terminow_new_debug_text">ถ้าแท็บยังดูค้าง: ดู Terminal diagnostics และบันทึก debug log เพื่อส่งให้เรา โดยไม่เก็บสิ่งที่แสดงในแท็บหรือสิ่งที่พิมพ์</string>
+    <string name="terminow_new_swipe">ปัดเพื่อสลับเซสชัน</string>
+    <string name="terminow_new_swipe_text">ปัดซ้ายหรือขวาบนเทอร์มินัลเพื่อไปเซสชันถัดไปหรือก่อนหน้า</string>
+    <string name="terminow_new_installer">เครื่องมือติดตั้งเพิ่ม</string>
+    <string name="terminow_new_installer_text">ปุ่ม Install มี Cursor CLI, gstack และปลั๊กอิน Claude Code จาก marketplace ทางการแล้ว</string>
+</resources>

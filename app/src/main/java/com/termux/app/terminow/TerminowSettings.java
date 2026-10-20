@@ -94,6 +94,13 @@ public class TerminowSettings {
     }
 
     /** The row of the vault password and syncing, which the vault switcher provides. */
+    @Nullable private Runnable mWhatsNew;
+
+    /** The window of what is new in this version, opened from the About rows. */
+    public void setWhatsNew(@NonNull Runnable showWhatsNew) {
+        mWhatsNew = showWhatsNew;
+    }
+
     public void setVaultSettings(@NonNull Runnable showVaultSettings) {
         mVaultSettings = showVaultSettings;
     }
@@ -136,11 +143,15 @@ public class TerminowSettings {
         final String[] launchValues = {TerminowStore.UBUNTU_LAUNCH_ASK, TerminowStore.UBUNTU_LAUNCH_CURRENT, TerminowStore.UBUNTU_LAUNCH_NEW};
         final String[] launchLabels = {mActivity.getString(R.string.terminow_launch_behavior_ask),
             mActivity.getString(R.string.terminow_launch_use_current), mActivity.getString(R.string.terminow_launch_open_new)};
-        addRow(R.string.terminow_launch_behavior, launchLabels[Math.max(0, indexOf(launchValues, mStore.getUbuntuLaunchBehavior()))], () ->
-            pick(R.string.terminow_launch_behavior, launchLabels, which -> {
-                mStore.setUbuntuLaunchBehavior(launchValues[which]);
+        addRow(TerminowWhatsNew.label(mActivity, mActivity.getText(R.string.terminow_launch_behavior), TerminowWhatsNew.Feature.UBUNTU_TAB),
+            launchLabels[Math.max(0, indexOf(launchValues, mStore.getUbuntuLaunchBehavior()))], () -> {
+                TerminowWhatsNew.seen(mActivity, TerminowWhatsNew.Feature.UBUNTU_TAB);
                 update();
-            }));
+                pick(R.string.terminow_launch_behavior, launchLabels, which -> {
+                    mStore.setUbuntuLaunchBehavior(launchValues[which]);
+                    update();
+                });
+            });
 
         int[] timeouts = TerminowStore.UBUNTU_START_TIMEOUTS;
         String[] timeoutLabels = new String[timeouts.length];
@@ -234,8 +245,12 @@ public class TerminowSettings {
 
         addSection(R.string.terminow_debug_section, false);
         DebugActions debug = mDebug;
-        addRow(R.string.terminow_launch_diagnostics_title, mActivity.getString(R.string.terminow_debug_diagnostics_summary),
-            debug != null ? debug::showDiagnostics : null);
+        addRow(TerminowWhatsNew.label(mActivity, mActivity.getText(R.string.terminow_launch_diagnostics_title), TerminowWhatsNew.Feature.DEBUG),
+            mActivity.getString(R.string.terminow_debug_diagnostics_summary), debug == null ? null : () -> {
+                TerminowWhatsNew.seen(mActivity, TerminowWhatsNew.Feature.DEBUG);
+                update();
+                debug.showDiagnostics();
+            });
         addSwitchRow(R.string.terminow_debug_record, R.string.terminow_debug_record_summary, TerminowDebugLog.isRecording(mActivity), value -> {
             if (debug != null) debug.setRecording(value);
             update();
@@ -257,6 +272,7 @@ public class TerminowSettings {
         addRow(R.string.terminow_settings_help, null,
             () -> ActivityUtils.startActivity(mActivity, new Intent(mActivity, HelpActivity.class)));
 
+        if (mWhatsNew != null) addRow(R.string.terminow_new_settings_row, null, mWhatsNew);
         addRow(R.string.terminow_settings_version, BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")", null);
         // Identifies the exact build that is installed, like for reporting a problem
         addRow(R.string.terminow_settings_build, BuildConfig.TERMINOW_BOOTSTRAP_RELEASE + " / " + BuildConfig.TERMINOW_COMMIT, null);
@@ -387,6 +403,11 @@ public class TerminowSettings {
     /** Add a row with a title and an optional summary under it. Returns the row to add a view at its end. */
     @NonNull
     private LinearLayout addRow(int titleRes, @Nullable String summary, @Nullable Runnable onClick) {
+        return addRow(mActivity.getText(titleRes), summary, onClick);
+    }
+
+    @NonNull
+    private LinearLayout addRow(@NonNull CharSequence title, @Nullable String summary, @Nullable Runnable onClick) {
         LinearLayout row = new LinearLayout(mActivity);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
@@ -397,7 +418,7 @@ public class TerminowSettings {
         texts.setOrientation(LinearLayout.VERTICAL);
 
         TextView titleView = new TextView(mActivity);
-        titleView.setText(titleRes);
+        titleView.setText(title);
         titleView.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
         titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         texts.addView(titleView);
