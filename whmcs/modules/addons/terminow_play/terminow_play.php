@@ -103,3 +103,33 @@ function terminow_play_output($vars)
     }
     echo '</table>';
 }
+
+/**
+ * The client area page index.php?m=terminow_play: a one-time code that links this client to a
+ * TermiNow account. WHMCS asks for the login and checks the form token, as on its own pages.
+ */
+function terminow_play_clientarea($vars)
+{
+    $clientId = 0;
+    if (class_exists('\WHMCS\Authentication\CurrentUser')) {
+        $client = (new \WHMCS\Authentication\CurrentUser())->client();
+        if ($client) $clientId = (int)$client->id;
+    } elseif (!empty($_SESSION['uid'])) {
+        $clientId = (int)$_SESSION['uid'];
+    }
+    $code = null;
+    if ($clientId > 0 && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') === 'code') {
+        $db = Capsule::connection()->getPdo();
+        $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        \TermiNow\PlaySync\migrate($db);
+        $code = \TermiNow\PlaySync\create_link_code($db, $clientId, time());
+    }
+    return [
+        'pagetitle' => 'Link TermiNow',
+        'breadcrumb' => ['index.php?m=terminow_play' => 'Link TermiNow'],
+        'templatefile' => 'link',
+        'requirelogin' => true,
+        'forcessl' => true,
+        'vars' => ['code' => $code, 'seconds' => \TermiNow\PlaySync\LINK_CODE_SECONDS],
+    ];
+}
