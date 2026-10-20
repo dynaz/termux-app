@@ -176,6 +176,36 @@ public class TerminowPlayPurchases {
         if (entitlement != null) store.setPlayEntitlement(entitlement);
     }
 
+    /**
+     * The entitlement that the backend signs, with a Play Integrity token for it to observe, on a
+     * background thread. {@code null} when the backend signs none yet or can not be reached: the
+     * entitlement that was read then decides as before.
+     */
+    @Nullable
+    private JSONObject fetchSigned(@NonNull TerminowAccount.Session session) {
+        String nonce = TerminowIntegrity.newNonce();
+        String[] integrity = new String[2];
+        java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+        mHandler.post(() -> TerminowPlayIntegrity.request(mActivity, com.termux.BuildConfig.TERMINOW_INTEGRITY_PROJECT_NUMBER,
+            TerminowIntegrity.requestHash(session.uid, nonce), (token, error) -> {
+                integrity[0] = token;
+                integrity[1] = error;
+                done.countDown();
+            }));
+        try {
+            if (!done.await(15, java.util.concurrent.TimeUnit.SECONDS)) integrity[1] = "TIMEOUT";
+            JSONObject result = mAccount.signedEntitlement(session, nonce, integrity[0], integrity[1],
+                TerminowPlayIntegrity.SUPPORTED ? "play" : "full");
+            return result.optJSONObject("signed");
+        } catch (TerminowAccount.AccountException e) {
+            // Observed only: the old backend has no such function, and that changes nothing
+            return null;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        }
+    }
+
     /** Read the entitlement that the server keeps, after a renewal or an expiry that it found itself. */
     private void refreshEntitlementAsync(@NonNull TerminowAccount.Session session, @NonNull Callback onDone) {
         if (!mAccount.hasFirebaseBackend()) {
@@ -191,6 +221,8 @@ public class TerminowPlayPurchases {
                 JSONObject kept = new JSONObject();
                 kept.put("premium", entitlement != null && entitlement.optBoolean("premium"));
                 if (play != null) kept.put("google_play", play);
+                JSONObject signed = fetchSigned(session);
+                if (signed != null) kept.put("signed", signed);
                 mStore.setPlayEntitlement(kept);
                 if (play != null && !play.optBoolean("premium") && getStatus(mStore) == Status.ACTIVE)
                     mStore.setPlayPurchaseStatus(Status.EXPIRED.name(), null, play.optBoolean("test"));

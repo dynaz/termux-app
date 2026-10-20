@@ -71,8 +71,8 @@ android {
         applicationId "com.terminow"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 196
-        versionName "0.119.0.4"
+        versionCode 197
+        versionName "0.119.0.5"
 
         if (appVersionName) versionName = appVersionName
         validateVersionName(versionName)
@@ -116,6 +116,11 @@ android {
         if (!functionsRegion.isEmpty() && !(functionsRegion ==~ /[a-z]+-[a-z]+[0-9]/))
             throw new GradleException("functionsRegion in app/terminow-billing.properties is not a region: " + functionsRegion)
         buildConfigField "String", "TERMINOW_FUNCTIONS_REGION", "\"" + functionsRegion + "\""
+        // The Google Cloud project number for Play Integrity tokens, 0 to not ask for one
+        def integrityProjectNumber = billingProperties.getProperty("integrityCloudProjectNumber", "0").trim()
+        if (!(integrityProjectNumber ==~ /[0-9]+/))
+            throw new GradleException("integrityCloudProjectNumber in app/terminow-billing.properties is not a number: " + integrityProjectNumber)
+        buildConfigField "long", "TERMINOW_INTEGRITY_PROJECT_NUMBER", integrityProjectNumber + "L"
         buildConfigField "String", "TERMUX_PACKAGE_VARIANT", "\"" + project.ext.packageVariant + "\"" // Used by TermuxApplication class
 
         manifestPlaceholders.TERMUX_PACKAGE_NAME = "com.terminow"
@@ -250,6 +255,8 @@ android {
 dependencies {
     // Google Play Billing for Premium, in the Play build only
     playImplementation "com.android.billingclient:billing:8.3.0"
+    // Play Integrity, observed by the backend only, see firebase/README.md
+    playImplementation "com.google.android.play:integrity:1.4.0"
 
     testImplementation "junit:junit:4.13.2"
     // The real org.json for unit tests, android.jar only has stubs

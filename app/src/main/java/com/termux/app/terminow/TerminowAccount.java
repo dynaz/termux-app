@@ -494,6 +494,25 @@ public class TerminowAccount {
         return callFunction(session, "verifyPlayPurchase", object("purchaseToken", purchaseToken), true);
     }
 
+    /**
+     * The entitlement that the backend signs for this account, with an optional Play Integrity
+     * token for the backend to observe, bound to {@code nonce}. The token decides nothing.
+     *
+     * @return {"signed": {kid, payload, signature}} or no "signed" when the backend signs none.
+     */
+    @NonNull
+    public JSONObject signedEntitlement(@NonNull Session session, @NonNull String nonce, @Nullable String integrityToken,
+                                        @Nullable String integrityError, @NonNull String distribution) throws AccountException {
+        JSONObject data = object("nonce", nonce, "distribution", distribution);
+        try {
+            if (integrityToken != null) data.put("integrityToken", integrityToken);
+            if (integrityError != null) data.put("integrityError", integrityError);
+        } catch (JSONException e) {
+            throw new AccountException("", String.valueOf(e.getMessage()));
+        }
+        return callFunction(session, "signedEntitlement", data, false);
+    }
+
     /** Link an existing WHMCS client to this account with a one-time code from the client area. */
     public void linkWhmcsAccount(@NonNull Session session, @NonNull String code) throws AccountException {
         callFunction(session, "linkWhmcsAccount", object("code", code), true);

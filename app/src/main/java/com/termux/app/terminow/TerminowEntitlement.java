@@ -23,6 +23,17 @@ public class TerminowEntitlement {
 
     public static final int OFFLINE_DAYS = 7;
 
+    /**
+     * Whether Google Play Premium needs the entitlement that the backend signed. Off while the
+     * backend does not sign yet: the signature is then only checked and its result kept for the
+     * diagnostics, and Premium is decided as before. Turned on in a release only after the
+     * backend signs with a key whose public key is in {@link TerminowSignedEntitlement}.
+     */
+    static final boolean ENFORCE_SIGNED_PLAY = false;
+
+    /** The result of the last check of a signed entitlement, for the diagnostics. */
+    @Nullable static volatile TerminowSignedEntitlement.Result sLastSignedResult;
+
     public enum State {
         /** Not signed in to a TermiNow account. */
         SIGNED_OUT,
@@ -43,7 +54,35 @@ public class TerminowEntitlement {
         long now = System.currentTimeMillis();
         State accmove = decide(session != null, session != null && session.emailVerified, store.getPremium(), now);
         if (session == null) return accmove;
-        return combine(accmove, decidePlay(store.getPlayEntitlement(), now));
+        return combine(accmove, decidePlay(store.getPlayEntitlement(), session.uid, now, ENFORCE_SIGNED_PLAY));
+    }
+
+    /**
+     * The Google Play entitlement of the account {@code uid}: the one that was read, and, when
+     * {@code enforceSigned}, only as far as the backend signed it. A missing or invalid signature
+     * then asks for a check instead of ending Premium, so that a backend that can not be reached
+     * takes nothing away before the signed entitlement expires.
+     */
+    @Nullable
+    static State decidePlay(@Nullable JSONObject entitlement, @NonNull String uid, long now, boolean enforceSigned) {
+        return decidePlay(entitlement, uid, now, enforceSigned, null);
+    }
+
+    @Nullable
+    static State decidePlay(@Nullable JSONObject entitlement, @NonNull String uid, long now, boolean enforceSigned,
+                            @Nullable String[][] keys) {
+        // A copy read for another account, after an account switch, is not this account's
+        if (entitlement != null && !entitlement.isNull("uid") && entitlement.has("uid") && !uid.equals(entitlement.optString("uid")))
+            return null;
+        State read = decidePlay(entitlement, now);
+        JSONObject signedData = entitlement != null ? entitlement.optJSONObject("signed") : null;
+        TerminowSignedEntitlement.Verified signed = keys != null ? TerminowSignedEntitlement.verify(signedData, uid, now, keys) :
+            TerminowSignedEntitlement.verify(signedData, uid, now);
+        sLastSignedResult = signed.result;
+        if (!enforceSigned || read == null) return read;
+        if (signed.result != TerminowSignedEntitlement.Result.VALID) return read == State.ACTIVE ? State.NEEDS_CHECK : read;
+        if (!signed.premium) return read == State.ACTIVE ? State.NEEDS_CHECK : read;
+        return signed.expiresAt > now ? State.ACTIVE : State.EXPIRED;
     }
 
     /**

@@ -908,6 +908,10 @@ public class TerminowStore {
                 .remove(KEY_ACCOUNT_DEVICE).apply();
             return;
         }
+        // Premium that was checked for another account is not this one's
+        TerminowAccount.Session previous = getAccount();
+        if (previous != null && !previous.uid.equals(session.uid))
+            mPreferences.edit().remove(KEY_PREMIUM).remove(KEY_PLAY_ENTITLEMENT).remove(KEY_PLAY_PURCHASE_STATUS).apply();
         // Each sign in is a new device of the account, so a device signed out from another one stays signed out
         if (mPreferences.getString(KEY_ACCOUNT_DEVICE, "").isEmpty())
             mPreferences.edit().putString(KEY_ACCOUNT_DEVICE, newDeviceId()).apply();
@@ -980,8 +984,11 @@ public class TerminowStore {
 
     public void setPlayEntitlement(@Nullable JSONObject entitlement) {
         try {
+            // Kept with the account it was read for, see TerminowEntitlement.decidePlay
+            TerminowAccount.Session session = getAccount();
             mPreferences.edit().putString(KEY_PLAY_ENTITLEMENT, entitlement == null ? "" :
-                new JSONObject(entitlement.toString()).put("checked", System.currentTimeMillis()).toString()).apply();
+                new JSONObject(entitlement.toString()).put("checked", System.currentTimeMillis())
+                    .put("uid", session != null ? session.uid : JSONObject.NULL).toString()).apply();
         } catch (JSONException e) {
             Logger.logError(LOG_TAG, "Failed to save the Play entitlement");
         }
