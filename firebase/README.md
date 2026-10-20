@@ -41,6 +41,7 @@ replaces `play.php`; it uses the identity of the functions instead of a key file
 | WHMCS product ids | `whmcsProductId` in `PLAY_PRODUCT_MAP` | **missing**: create the product first (see WHMCS) |
 | Functions region | `FUNCTIONS_REGION`, and `functionsRegion` in `app/terminow-billing.properties` | **missing**: your choice, for example `asia-southeast1` |
 | RTDN topic | `PLAY_RTDN_TOPIC` | **missing**: for example `play-rtdn` |
+| Free members in WHMCS | `enrollWhmcsMembers`, every 60 minutes | every account with a verified email becomes a WHMCS client, without a service; license testers too |
 | WHMCS endpoint | `WHMCS_SYNC_URL` | `https://cp.accmove.com/terminow/play_sync.php` |
 | WHMCS secret | Secret Manager secret `WHMCS_SYNC_SECRET` | **missing**: 64 random characters, the same in the WHMCS addon |
 | Runtime service account | the default compute service account of the project, or one you set | **missing**: its email is needed for Play Console |

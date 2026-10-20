@@ -390,6 +390,55 @@ class Service {
     return results;
   }
 
+  /**
+   * Every TermiNow account with a verified email is a WHMCS client, free members too: an
+   * account that has no outbox yet gets one with a free state. The state of a subscriber is
+   * never overwritten, and an outbox without an email gets the one that is verified now.
+   * @param {Array<{uid: string, email: ?string, emailVerified: boolean}>} users
+   */
+  async enrollMembers(users) {
+    const done = { enrolled: 0, emailAdded: 0, unchanged: 0, unverified: 0 };
+    const verified = users.filter((u) => u && u.uid && u.email && u.emailVerified);
+    done.unverified = users.length - verified.length;
+    for (let i = 0; i < verified.length; i += 100) {
+      const batch = verified.slice(i, i + 100);
+      const snaps = await this.db.getAll(...batch.map((u) => this.db.collection('whmcsOutbox').doc(u.uid)));
+      for (let j = 0; j < batch.length; j++) {
+        const outbox = snaps[j].exists ? snaps[j].data() : null;
+        if (outbox && outbox.email) {
+          done.unchanged++;
+          continue;
+        }
+        const result = await this.db.runTransaction(async (tx) => {
+          const snap = await tx.get(snaps[j].ref);
+          const now = this.now();
+          const email = batch[j].email.toLowerCase();
+          if (!snap.exists) {
+            tx.create(snap.ref, {
+              uid: batch[j].uid,
+              email,
+              version: 1,
+              desired: { premium: false, tier: null, subscriptionState: 'NONE', expiresAt: null, autoRenew: false, test: false,
+                productId: null, basePlanId: null, whmcsProductId: null, lastVerifiedAt: null },
+              status: 'queued',
+              attempts: 0,
+              nextAttemptAt: now,
+              syncedVersion: 0,
+              lastError: null,
+              updatedAt: now,
+            });
+            return 'enrolled';
+          }
+          if (snap.data().email) return 'unchanged';
+          tx.update(snap.ref, { email, version: FieldValue.increment(1), status: 'queued', attempts: 0, nextAttemptAt: now, updatedAt: now });
+          return 'emailAdded';
+        });
+        done[result]++;
+      }
+    }
+    return done;
+  }
+
   /** Link an existing WHMCS client with a one-time code that its owner got in the client area. */
   async linkWhmcs(uid, code) {
     if (!uid) throw new TermiNowError('SIGN_IN_REQUIRED', 'Sign in to TermiNow first');

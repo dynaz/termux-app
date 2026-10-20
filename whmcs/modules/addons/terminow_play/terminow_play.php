@@ -78,7 +78,8 @@ function terminow_play_output($vars)
     $rows = $db->query('SELECT * FROM mod_terminow_play_sync ORDER BY updated_at DESC LIMIT 500')->fetchAll(PDO::FETCH_ASSOC);
     $live = count(array_filter($rows, fn($r) => !(int)$r['test'] && (int)$r['premium']));
     $test = count(array_filter($rows, fn($r) => (int)$r['test']));
-    echo '<p>Live Premium accounts: <b>' . $live . '</b> · Test purchases (license testers, not revenue): <b>' . $test . '</b>. '
+    $free = count(array_filter($rows, fn($r) => !(int)$r['test'] && !(int)$r['premium']));
+    echo '<p>Live Premium accounts: <b>' . $live . '</b> · Free members: <b>' . $free . '</b> · Test purchases (license testers, not revenue): <b>' . $test . '</b>. '
         . 'Google Play collects all payments; WHMCS keeps no invoices for these services.</p>';
     echo '<table class="datatable" width="100%"><tr><th>TermiNow account</th><th>Client</th><th>Service</th><th>Play plan</th>'
         . '<th>State</th><th>Expires (UTC)</th><th>Live/Test</th><th>Verified</th><th>Synced</th><th>Status</th><th></th></tr>';

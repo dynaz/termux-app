@@ -9,6 +9,7 @@
  * - onPlayNotification (Pub/Sub): Real-time Developer Notifications of Google Play.
  * - reconcilePlayPurchases (scheduled): purchases that are due, failed acknowledgements.
  * - syncWhmcs (Firestore trigger) and retryWhmcsSync (scheduled): the WHMCS outbox.
+ * - enrollWhmcsMembers (scheduled): every account with a verified email, free too, into the outbox.
  * - accountDevices (callable): the devices signed in to the account, and signing them out.
  *
  * See firebase/README.md for the configuration and the setup.
@@ -131,6 +132,18 @@ exports.syncWhmcs = onDocumentWritten({ document: 'whmcsOutbox/{uid}', region: p
   const after = event.data && event.data.after && event.data.after.data();
   if (!after || after.status !== 'queued' || after.syncedVersion >= after.version) return;
   await service().syncWhmcs(event.params.uid);
+});
+
+exports.enrollWhmcsMembers = onSchedule({ schedule: 'every 60 minutes', secrets: [WHMCS_SYNC_SECRET] }, async () => {
+  const totals = {};
+  let pageToken;
+  do {
+    const page = await getAuth().listUsers(1000, pageToken);
+    const done = await service().enrollMembers(page.users.map((u) => ({ uid: u.uid, email: u.email || null, emailVerified: u.emailVerified })));
+    for (const [key, n] of Object.entries(done)) totals[key] = (totals[key] || 0) + n;
+    pageToken = page.pageToken;
+  } while (pageToken);
+  logger.info('WHMCS members: ' + JSON.stringify(totals));
 });
 
 exports.retryWhmcsSync = onSchedule({ schedule: 'every 15 minutes', secrets: [WHMCS_SYNC_SECRET] }, async () => {

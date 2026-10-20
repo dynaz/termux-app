@@ -270,3 +270,42 @@ test('linking a WHMCS account needs a valid code', async () => {
   assert.deepEqual(await service.linkWhmcs('alice', 'abcd2345'), { linked: true });
   assert.equal((await db.collection('whmcsLinks').doc('alice').get()).data().clientId, 42);
 });
+
+test('every verified account becomes a WHMCS member, free too, without overwriting a subscriber', async () => {
+  const { clock, play, whmcs, service } = setup();
+  play.set(T1, subscription({ uid: 'alice', expiry: clock.now + 30 * DAY }));
+  await service.verifyForUser('alice', 'alice@example.com', T1);
+  const before = (await db.collection('whmcsOutbox').doc('alice').get()).data();
+  const done = await service.enrollMembers([
+    { uid: 'alice', email: 'alice@example.com', emailVerified: true },
+    { uid: 'fred', email: 'Fred@Example.com', emailVerified: true },
+    { uid: 'nora', email: 'nora@example.com', emailVerified: false },
+    { uid: 'anon', email: null, emailVerified: false },
+  ]);
+  assert.deepEqual(done, { enrolled: 1, emailAdded: 0, unchanged: 1, unverified: 2 });
+  assert.deepEqual((await db.collection('whmcsOutbox').doc('alice').get()).data(), before);
+  const fred = (await db.collection('whmcsOutbox').doc('fred').get()).data();
+  assert.equal(fred.email, 'fred@example.com');
+  assert.equal(fred.desired.premium, false);
+  assert.equal(fred.status, 'queued');
+  assert.equal(await service.syncWhmcs('fred'), 'synced');
+  assert.equal(whmcs.syncs.at(-1).uid, 'fred');
+  assert.equal(whmcs.syncs.at(-1).premium, false);
+  assert.equal(whmcs.syncs.at(-1).email, 'fred@example.com');
+  // Again: nothing new to send
+  assert.deepEqual(await service.enrollMembers([{ uid: 'fred', email: 'fred@example.com', emailVerified: true }]),
+    { enrolled: 0, emailAdded: 0, unchanged: 1, unverified: 0 });
+  assert.equal((await db.collection('whmcsOutbox').doc('fred').get()).data().version, 1);
+});
+
+test('a subscriber whose outbox had no email gets the verified one', async () => {
+  const { clock, play, service } = setup();
+  play.set(T1, subscription({ uid: 'bob', expiry: clock.now + 30 * DAY }));
+  await service.verifyForUser('bob', null, T1);
+  const done = await service.enrollMembers([{ uid: 'bob', email: 'bob@example.com', emailVerified: true }]);
+  assert.equal(done.emailAdded, 1);
+  const bob = (await db.collection('whmcsOutbox').doc('bob').get()).data();
+  assert.equal(bob.email, 'bob@example.com');
+  assert.equal(bob.desired.premium, true);
+  assert.equal(bob.version, 2);
+});

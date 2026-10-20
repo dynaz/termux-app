@@ -172,7 +172,8 @@ fails(fn() => handle($db, $whmcs, ['action' => 'redeem_link', 'uid' => 'carol', 
 $db = db();
 $whmcs = new FakeWhmcs();
 $answer = handle($db, $whmcs, state(['uid' => 'tess', 'email' => 'tess@example.com', 'test' => true]), $settings, $now);
-check($answer['status'] === 'test_only' && $whmcs->count('AddOrder') === 0 && $whmcs->count('AddClient') === 0, 'test purchases stay out of the financial records');
+check($answer['status'] === 'test_only' && $whmcs->count('AddOrder') === 0, 'test purchases stay out of the financial records');
+check($answer['clientId'] === 100 && $whmcs->count('AddClient') === 1, 'a license tester is a client like every member');
 fails(fn() => handle($db, $whmcs, state(['uid' => 'paula', 'email' => 'paula@example.com', 'whmcsProductId' => 8]), $settings, $now),
     'WHMCS_PRODUCT_NOT_FREE', 'a product that would invoice is refused');
 check($whmcs->count('AddOrder') === 0, 'and nothing is ordered for it');
@@ -180,6 +181,25 @@ $row = $db->query("SELECT status, last_error FROM mod_terminow_play_sync WHERE u
 check($row['status'] === 'error' && strpos($row['last_error'], 'Free') !== false, 'the error is kept for the admin view');
 $whmcs->products[8] = 'free';
 check(retry($db, $whmcs, 'paula', $settings, $now)['status'] === 'synced', 'Retry sync applies the last state again');
+
+// Free members: a client, never a service
+$db = db();
+$whmcs = new FakeWhmcs();
+$free = ['action' => 'sync', 'uid' => 'fred', 'version' => 1, 'email' => 'Fred@Example.com', 'premium' => false, 'subscriptionState' => 'NONE'];
+$answer = handle($db, $whmcs, $free, $settings, $now);
+check($answer['status'] === 'member' && $answer['clientId'] === 100 && $whmcs->clients[100] === 'fred@example.com', 'a free member becomes a client');
+check($whmcs->count('AddOrder') === 0 && $whmcs->count('GetProducts') === 0, 'and gets no service');
+handle($db, $whmcs, ['version' => 2] + $free, $settings, $now);
+check($whmcs->count('AddClient') === 1, 'a free member is added once');
+$answer = handle($db, $whmcs, state(['uid' => 'fred', 'email' => 'fred@example.com', 'version' => 3]), $settings, $now);
+check($answer['status'] === 'synced' && $answer['clientId'] === 100 && $whmcs->services[$answer['serviceId']]['status'] === 'Active',
+    'a free member who subscribes gets the service on the same client');
+$answer = handle($db, $whmcs, state(['uid' => 'gina', 'email' => 'gina@example.com', 'premium' => false, 'subscriptionState' => 'SUBSCRIPTION_STATE_EXPIRED']), $settings, $now);
+check($answer['status'] === 'member' && $whmcs->count('AddOrder') === 1, 'a subscription that ended before it reached WHMCS orders nothing');
+$answer = handle($db, $whmcs, ['action' => 'sync', 'uid' => 'hank', 'version' => 1, 'email' => 'existing@example.com', 'premium' => false], $settings, $now);
+check($answer['status'] === 'needs_link' && $whmcs->count('AddClient') === 2, 'a free member with the email of a client is not merged either');
+$answer = handle($db, $whmcs, ['action' => 'sync', 'uid' => 'ivy', 'version' => 1, 'premium' => false], $settings, $now);
+check($answer['status'] === 'needs_email', 'a member without a verified email waits');
 
 // The Firestore entitlement, as vault.php reads it
 $doc = fn(bool $premium, array $sources) => ['fields' => ['premium' => ['booleanValue' => $premium], 'sources' => ['mapValue' => ['fields' => $sources]]]];

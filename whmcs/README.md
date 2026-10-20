@@ -34,7 +34,8 @@ and outgoing HTTPS to www.googleapis.com.
 ## Google Play subscriptions
 
 Premium bought with Google Play is verified by Firebase (see `firebase/README.md`), not here.
-WHMCS only keeps the client and a free service record of each subscriber, through the
+WHMCS keeps every TermiNow account with a verified email as a client, free members too, and a
+free service record of each subscriber, through the
 TermiNow Google Play addon (`modules/addons/terminow_play`) and the signed endpoint
 `terminow/play_sync.php`. `terminow/link.php` gives a logged-in client a one-time code to link
 their client account to their TermiNow account. Tests: `php whmcs/tests/test_play_sync.php`.

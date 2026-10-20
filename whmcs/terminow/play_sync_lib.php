@@ -4,16 +4,17 @@
  * WHMCS, so that it can be tested on its own.
  *
  * Firebase verifies every purchase with Google Play and decides Premium. It then sends the
- * state of each TermiNow account here, signed with a shared secret. WHMCS only keeps the
- * customer and a service record: the service is of a product with the pay type "free", so
- * WHMCS never invoices it, and Google Play collects the payments.
+ * state of each TermiNow account here, signed with a shared secret, free members too. Every
+ * account with a verified email becomes a WHMCS client. A Premium subscriber also gets a service
+ * record: the service is of a product with the pay type "free", so WHMCS never invoices it, and
+ * Google Play collects the payments.
  *
  * - One WHMCS client and one service per TermiNow account (Firebase uid), whatever the number of
  *   retries: the ids are kept in mod_terminow_play_sync, and a service that was created by an
  *   attempt that failed later is found again by the marker in its admin notes.
  * - A client is never merged by email. A new client is only created when no client has the
  *   email; otherwise the account waits until its owner links it with a code from the client area.
- * - Test purchases of license testers are recorded, but never become clients or services.
+ * - Test purchases of license testers make a client, but never a service.
  * - Only WHMCS API calls are used, never writes to the tables of WHMCS.
  */
 
@@ -129,17 +130,6 @@ function sync(\PDO $db, callable $api, array $r, array $settings, int $now): arr
         ];
         $row = save($db, $uid, $row, $fields);
 
-        if ($test) return finish($db, $uid, 'test_only', null, $now);
-        if ($whmcsProductId === null) return finish($db, $uid, 'not_configured', 'No WHMCS product is mapped to this Play plan', $now);
-
-        // Google Play collects the payments: the WHMCS product must never invoice
-        $product = $api('GetProducts', ['pid' => $whmcsProductId]);
-        $info = $product['products']['product'][0] ?? null;
-        if (($product['result'] ?? '') !== 'success' || !is_array($info))
-            return finish($db, $uid, 'error', 'WHMCS product ' . $whmcsProductId . ' was not found', $now, 'WHMCS_PRODUCT_MISSING');
-        if (($info['paytype'] ?? '') !== 'free')
-            return finish($db, $uid, 'error', 'WHMCS product ' . $whmcsProductId . ' must have the pay type Free, so WHMCS never invoices Google Play subscribers', $now, 'WHMCS_PRODUCT_NOT_FREE');
-
         $clientId = $row['client_id'] !== null ? (int)$row['client_id'] : null;
         if ($clientId === null) {
             if ($fields['email'] === null) return finish($db, $uid, 'needs_email', 'The account has no verified email for a WHMCS client', $now);
@@ -154,7 +144,7 @@ function sync(\PDO $db, callable $api, array $r, array $settings, int $now): arr
                 'password2' => bin2hex(random_bytes(16)),
                 'skipvalidation' => true,
                 'noemail' => true,
-                'notes' => 'Created for a TermiNow Google Play subscription',
+                'notes' => 'Created for a TermiNow account' . ($test ? ', which only made Google Play test purchases' : ''),
             ]);
             if (($created['result'] ?? '') !== 'success' || empty($created['clientid']))
                 return finish($db, $uid, 'error', 'AddClient failed: ' . sanitize($created['message'] ?? ''), $now, 'WHMCS_ADD_CLIENT');
@@ -162,7 +152,23 @@ function sync(\PDO $db, callable $api, array $r, array $settings, int $now): arr
             set_ids($db, $uid, $clientId, null);
         }
 
+        // A free member, or a license tester, is a client without a service
+        if ($test) return finish($db, $uid, 'test_only', null, $now);
+        if ($whmcsProductId === null)
+            return $premium ? finish($db, $uid, 'not_configured', 'No WHMCS product is mapped to this Play plan', $now) :
+                finish($db, $uid, 'member', null, $now);
+
+        // Google Play collects the payments: the WHMCS product must never invoice
+        $product = $api('GetProducts', ['pid' => $whmcsProductId]);
+        $info = $product['products']['product'][0] ?? null;
+        if (($product['result'] ?? '') !== 'success' || !is_array($info))
+            return finish($db, $uid, 'error', 'WHMCS product ' . $whmcsProductId . ' was not found', $now, 'WHMCS_PRODUCT_MISSING');
+        if (($info['paytype'] ?? '') !== 'free')
+            return finish($db, $uid, 'error', 'WHMCS product ' . $whmcsProductId . ' must have the pay type Free, so WHMCS never invoices Google Play subscribers', $now, 'WHMCS_PRODUCT_NOT_FREE');
+
         $serviceId = $row['service_id'] !== null ? (int)$row['service_id'] : find_service($api, $clientId, $whmcsProductId, $uid);
+        // Nothing to cancel for a subscription that never had a service
+        if ($serviceId === null && !$premium) return finish($db, $uid, 'member', null, $now);
         if ($serviceId === null) {
             $order = $api('AddOrder', [
                 'clientid' => $clientId,
