@@ -8,6 +8,9 @@
  */
 
 require __DIR__ . '/play_sync_lib.php';
+// A page of the client area: without it WHMCS checks the form token of a POST against another
+// context and refuses it with "Invalid CSRF Protection Token"
+define('CLIENTAREA', true);
 require dirname(__DIR__) . '/init.php';
 
 header('Cache-Control: no-store');
