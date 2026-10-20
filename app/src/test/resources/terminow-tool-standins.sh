@@ -34,6 +34,7 @@ cat > "$S/real/curl" <<X
 #!/bin/sh
 echo "curl \$*" >> "$S/calls"
 [ "$curlmode" = net ] && { echo "curl: (6) Could not resolve host: claude.ai" >&2; exit 6; }
+case "\$*" in *cursor.com*) echo 'mkdir -p "\$HOME/.local/bin"; printf "#!/bin/sh\necho 2026.10.18-ea085cb\n" > "\$HOME/.local/bin/cursor-agent"; chmod +x "\$HOME/.local/bin/cursor-agent"'; exit 0;; esac
 echo 'mkdir -p "\$HOME/.local/bin"; printf "#!/bin/sh\necho 2.1.30 \\(Claude Code\\)\n" > "\$HOME/.local/bin/claude"; chmod +x "\$HOME/.local/bin/claude"; echo installed'
 X
 chmod +x "$S/bin/"* "$S/real/curl"

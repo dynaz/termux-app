@@ -18,7 +18,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Installs tools in a Linux environment as one of its users: Claude Code, Git, curl and tmux.
+ * Installs tools in a Linux environment as one of its users: Claude Code, Cursor CLI, gstack,
+ * Git, curl and tmux, and plugins of the official Claude Code marketplace.
  *
  * <p>Each install is a process of its own, {@code proot-distro login <alias> --user <user> --
  * /bin/sh -c SCRIPT}, whose output is read line by line and whose exit code decides the result:
@@ -32,7 +33,9 @@ import java.util.concurrent.TimeUnit;
 public final class TerminowToolInstaller {
 
     public enum Tool {
-        CLAUDE("claude"), GIT("git"), CURL("curl"), TMUX("tmux");
+        CLAUDE("claude"), CURSOR("cursor"), GSTACK("gstack"), GIT("git"), CURL("curl"), TMUX("tmux"),
+        /** Plugins of the official marketplace, the names given to {@link #install}. */
+        PLUGINS("plugins");
 
         public final String id;
 
@@ -48,7 +51,7 @@ public final class TerminowToolInstaller {
 
     /** Why an install failed, from its TERMINOW_FAILED line, or how the process ended. */
     public enum Failure {
-        NO_APT, NO_SUDO, SUDO_PASSWORD, UNSUPPORTED_ARCH, APT_UPDATE, APT_INSTALL, NETWORK, INSTALLER, PATH, VERIFY,
+        NO_APT, NO_SUDO, SUDO_PASSWORD, UNSUPPORTED_ARCH, NEEDS_CLAUDE, APT_UPDATE, APT_INSTALL, NETWORK, INSTALLER, PATH, VERIFY,
         CANCELLED, START, EXIT;
 
         @NonNull
@@ -58,6 +61,7 @@ public final class TerminowToolInstaller {
                 case "no-sudo": return NO_SUDO;
                 case "sudo-password": return SUDO_PASSWORD;
                 case "unsupported-arch": return UNSUPPORTED_ARCH;
+                case "needs-claude": return NEEDS_CLAUDE;
                 case "apt-update": return APT_UPDATE;
                 case "apt-install": return APT_INSTALL;
                 case "network": return NETWORK;
@@ -74,6 +78,8 @@ public final class TerminowToolInstaller {
         public final String alias;
         public final String user;
         public final Tool tool;
+        /** The plugins of a {@link Tool#PLUGINS} job, empty for the others. */
+        public final List<String> args;
         private volatile Stage mStage = Stage.CHECKING;
         private volatile State mState = State.RUNNING;
         @Nullable private volatile Failure mFailure;
@@ -84,10 +90,11 @@ public final class TerminowToolInstaller {
         @Nullable private volatile Process mProcess;
         private volatile boolean mCancelled;
 
-        Job(@NonNull String alias, @NonNull String user, @NonNull Tool tool) {
+        Job(@NonNull String alias, @NonNull String user, @NonNull Tool tool, @NonNull String... args) {
             this.alias = alias;
             this.user = user;
             this.tool = tool;
+            this.args = java.util.Collections.unmodifiableList(Arrays.asList(args));
         }
 
         @NonNull public Stage getStage() { return mStage; }
@@ -192,6 +199,17 @@ public final class TerminowToolInstaller {
     static final int LOG_MAX = 64 * 1024;
     public static final long DETECT_TIMEOUT_MS = 90_000;
 
+    /** Where gstack is, in the home of the user: the folder of skills of Claude Code. */
+    static final String GSTACK_DIR = ".claude/skills/gstack";
+
+    /** The official marketplace of Claude Code plugins, its name and its GitHub repository. */
+    public static final String MARKETPLACE = "claude-plugins-official";
+    static final String MARKETPLACE_REPO = "anthropics/claude-plugins-official";
+
+    /** Adds the official marketplace to Claude Code, if it is not there. */
+    static final String ADD_MARKETPLACE =
+        "{ claude plugin marketplace list 2>/dev/null | grep -q " + MARKETPLACE + " || claude plugin marketplace add " + MARKETPLACE_REPO + " </dev/null; }";
+
     /** The ports of curl that mean the network: it could not resolve, connect, finish TLS, or got nothing. */
     static final String NETWORK_EXIT_CODES = "6|7|28|35|52|56";
 
@@ -206,7 +224,8 @@ public final class TerminowToolInstaller {
 
     /**
      * What the user has: its uid, the CPU, apt and sudo, and the version of each tool. Claude
-     * Code may be in `~/.local/bin`, where its installer puts it, which is not always on the PATH.
+     * Code and Cursor CLI may be in `~/.local/bin`, where their installers put them, which is not
+     * always on the PATH. gstack is a folder of Claude Code skills, with its version in a file.
      */
     static final String DETECT_SCRIPT =
         OWN_PATH +
@@ -214,8 +233,15 @@ public final class TerminowToolInstaller {
         "echo \"TERMINOW_ARCH=$(uname -m)\"\n" +
         "command -v apt-get >/dev/null 2>&1 && echo TERMINOW_APT=yes\n" +
         "command -v sudo >/dev/null 2>&1 && echo TERMINOW_SUDO=yes\n" +
-        "for t in claude git curl tmux; do\n" +
-        "  case $t in claude) v=$(claude --version 2>/dev/null);; tmux) v=$(tmux -V 2>/dev/null);; *) v=$($t --version 2>/dev/null);; esac\n" +
+        "for t in claude cursor gstack git curl tmux; do\n" +
+        "  v=\n" +
+        "  case $t in\n" +
+        "    claude) v=$(claude --version 2>/dev/null);;\n" +
+        "    cursor) v=$(cursor-agent --version 2>/dev/null);;\n" +
+        "    gstack) [ -f \"$HOME/" + GSTACK_DIR + "/SKILL.md\" ] && v=\"gstack $(head -n 1 \"$HOME/" + GSTACK_DIR + "/VERSION\" 2>/dev/null)\";;\n" +
+        "    tmux) v=$(tmux -V 2>/dev/null);;\n" +
+        "    *) v=$($t --version 2>/dev/null);;\n" +
+        "  esac\n" +
         "  [ -n \"$v\" ] && echo \"TERMINOW_HAS_$t=$(printf '%s\\n' \"$v\" | head -n 1)\"\n" +
         "done\n" +
         "exit 0\n";
@@ -224,7 +250,10 @@ public final class TerminowToolInstaller {
      * Installs the tool {@code $1} as the user that runs it. apt is used as root directly, never
      * with sudo; as another user only with sudo that needs no password, which this process can
      * not type. sudo is never installed. apt waits for the lock of another apt instead of failing.
-     * Claude Code comes from its official installer, as the user, with curl and Git from apt.
+     * Claude Code and Cursor CLI come from their official installers, as the user, with curl
+     * and Git from apt. gstack is cloned into the skills of Claude Code and set up with Bun, which
+     * comes from its official installer. Plugins, the arguments after {@code plugins}, are
+     * installed from the official marketplace with Claude Code, which is added if it is not there.
      */
     static final String INSTALL_SCRIPT =
         "stage() { echo \"TERMINOW_STAGE=$1\"; }\n" +
@@ -254,24 +283,90 @@ public final class TerminowToolInstaller {
         "  grep -Eqs '^[^#]*PATH=.*(\\$HOME|~|'\"$HOME\"')/\\.local/bin' \"$rc\" && return 0\n" +
         "  { echo; echo '# TermiNow: Claude Code PATH'; echo 'case \":$PATH:\" in *\":$HOME/.local/bin:\"*) ;; *) export PATH=\"$HOME/.local/bin:$PATH\" ;; esac'; } >> \"$rc\" || fail path 31\n" +
         "}\n" +
+        // ~/.bun/bin on the PATH of bash for good, once, for the tools of gstack
+        "persist_bun_path() {\n" +
+        "  rc=\"$HOME/.bashrc\"\n" +
+        "  grep -qs 'TermiNow: Bun PATH' \"$rc\" && return 0\n" +
+        "  grep -Eqs '^[^#]*PATH=.*\\.bun/bin' \"$rc\" && return 0\n" +
+        "  { echo; echo '# TermiNow: Bun PATH'; echo 'case \":$PATH:\" in *\":$HOME/.bun/bin:\"*) ;; *) export PATH=\"$HOME/.bun/bin:$PATH\" ;; esac'; } >> \"$rc\" || fail path 31\n" +
+        "}\n" +
+        // Run an official installer from the network, with bash; its exit code says why it failed
+        "run_installer() {\n" +
+        "  bash -o pipefail -c \"curl -fsSL $1 | bash\"\n" +
+        "  s=$?\n" +
+        "  if [ \"$s\" -ne 0 ]; then case \"$s\" in " + NETWORK_EXIT_CODES + ") fail network \"$s\";; *) fail installer \"$s\";; esac; fi\n" +
+        "}\n" +
+        "native_arch() { case \"$(uname -m)\" in aarch64|arm64|x86_64|amd64) ;; *) fail unsupported-arch 15;; esac; }\n" +
         "case \"$tool\" in\n" +
         "  claude)\n" +
         "    if v=$(claude --version 2>/dev/null) && [ -n \"$v\" ]; then\n" +
         "      echo TERMINOW_ALREADY=1; persist_path; stage verifying; echo \"TERMINOW_VERSION=$(first \"$v\")\"; exit 0\n" +
         "    fi\n" +
-        "    case \"$(uname -m)\" in aarch64|arm64|x86_64|amd64) ;; *) fail unsupported-arch 15;; esac\n" +
+        "    native_arch\n" +
         "    stage dependencies\n" +
         "    apt_install curl ca-certificates git\n" +
         "    command -v bash >/dev/null 2>&1 || apt_install bash\n" +
         "    stage installing\n" +
-        "    bash -o pipefail -c 'curl -fsSL https://claude.ai/install.sh | bash'\n" +
-        "    s=$?\n" +
-        "    if [ \"$s\" -ne 0 ]; then case \"$s\" in " + NETWORK_EXIT_CODES + ") fail network \"$s\";; *) fail installer \"$s\";; esac; fi\n" +
+        "    run_installer https://claude.ai/install.sh\n" +
         "    persist_path\n" +
         "    stage verifying\n" +
         "    v=$(claude --version 2>&1) || { echo \"$v\"; fail verify 30; }\n" +
         "    [ -n \"$v\" ] || fail verify 30\n" +
         "    echo \"TERMINOW_VERSION=$(first \"$v\")\"\n" +
+        "    ;;\n" +
+        "  cursor)\n" +
+        "    if v=$(cursor-agent --version 2>/dev/null) && [ -n \"$v\" ]; then\n" +
+        "      echo TERMINOW_ALREADY=1; persist_path; stage verifying; echo \"TERMINOW_VERSION=$(first \"$v\")\"; exit 0\n" +
+        "    fi\n" +
+        "    native_arch\n" +
+        "    stage dependencies\n" +
+        "    apt_install curl ca-certificates\n" +
+        "    command -v bash >/dev/null 2>&1 || apt_install bash\n" +
+        "    stage installing\n" +
+        "    run_installer https://cursor.com/install\n" +
+        "    persist_path\n" +
+        "    stage verifying\n" +
+        "    v=$(cursor-agent --version 2>&1) || { echo \"$v\"; fail verify 30; }\n" +
+        "    [ -n \"$v\" ] || fail verify 30\n" +
+        "    echo \"TERMINOW_VERSION=$(first \"$v\")\"\n" +
+        "    ;;\n" +
+        "  gstack)\n" +
+        "    d=\"$HOME/" + GSTACK_DIR + "\"\n" +
+        "    command -v claude >/dev/null 2>&1 || fail needs-claude 16\n" +
+        "    if [ -f \"$d/SKILL.md\" ]; then\n" +
+        "      echo TERMINOW_ALREADY=1; stage verifying; echo \"TERMINOW_VERSION=gstack $(head -n 1 \"$d/VERSION\" 2>/dev/null)\"; exit 0\n" +
+        "    fi\n" +
+        "    native_arch\n" +
+        "    stage dependencies\n" +
+        "    apt_install curl ca-certificates git unzip\n" +
+        "    command -v bash >/dev/null 2>&1 || apt_install bash\n" +
+        "    PATH=\"$HOME/.bun/bin:$PATH\"; export PATH\n" +
+        "    command -v bun >/dev/null 2>&1 || run_installer https://bun.sh/install\n" +
+        "    persist_bun_path\n" +
+        "    stage installing\n" +
+        "    mkdir -p \"$(dirname \"$d\")\" || fail installer 32\n" +
+        "    rm -rf \"$d\"\n" +
+        "    git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git \"$d\" || fail network 33\n" +
+        // A setup that failed leaves no gstack behind, so it is not taken for installed
+        "    (cd \"$d\" && ./setup) || { s=$?; rm -rf \"$d\"; fail installer \"$s\"; }\n" +
+        "    stage verifying\n" +
+        "    [ -f \"$d/SKILL.md\" ] || fail verify 30\n" +
+        "    echo \"TERMINOW_VERSION=gstack $(head -n 1 \"$d/VERSION\" 2>/dev/null)\"\n" +
+        "    ;;\n" +
+        "  plugins)\n" +
+        "    shift\n" +
+        "    command -v claude >/dev/null 2>&1 || fail needs-claude 16\n" +
+        "    stage installing\n" +
+        "    " + ADD_MARKETPLACE + " || fail installer 34\n" +
+        "    n=0; bad=\n" +
+        // -y: there is nobody to confirm at a prompt; the user chose each plugin in TermiNow
+        "    for p in \"$@\"; do\n" +
+        "      echo \"TermiNow: installing the plugin $p\"\n" +
+        "      if claude plugin install -y \"$p@" + MARKETPLACE + "\" </dev/null; then n=$((n + 1)); else bad=\"$bad $p\"; fi\n" +
+        "    done\n" +
+        "    stage verifying\n" +
+        "    [ -z \"$bad\" ] || { echo \"TermiNow: these plugins were not installed:$bad\"; fail installer 35; }\n" +
+        "    echo \"TERMINOW_VERSION=$n\"\n" +
         "    ;;\n" +
         "  git|curl|tmux)\n" +
         "    case \"$tool\" in git) pkgs=git; check='git --version';; curl) pkgs='curl ca-certificates'; check='curl --version';; tmux) pkgs=tmux; check='tmux -V';; esac\n" +
@@ -287,6 +382,20 @@ public final class TerminowToolInstaller {
         "    ;;\n" +
         "  *) echo \"TermiNow: unknown tool $tool\"; exit 2;;\n" +
         "esac\n";
+
+    /**
+     * The plugins of the official marketplace and which are installed, as the JSON of Claude Code
+     * between two lines, after the marketplace was added or brought up to date.
+     */
+    static final String PLUGINS_SCRIPT =
+        OWN_PATH +
+        "command -v claude >/dev/null 2>&1 || { echo TERMINOW_NO_CLAUDE; exit 0; }\n" +
+        ADD_MARKETPLACE + " >/dev/null 2>&1\n" +
+        "claude plugin marketplace update " + MARKETPLACE + " </dev/null >/dev/null 2>&1\n" +
+        "echo TERMINOW_JSON_BEGIN\n" +
+        "claude plugin list --available --json </dev/null\n" +
+        "echo\n" +
+        "echo TERMINOW_JSON_END\n";
 
     private static final Map<String, Job> sJobs = new HashMap<>();
     private static final List<Runnable> sListeners = new CopyOnWriteArrayList<>();
@@ -335,13 +444,14 @@ public final class TerminowToolInstaller {
      * another install runs in the environment: it has to end first.
      */
     @Nullable
-    public static Job install(@NonNull Runner runner, @NonNull String alias, @NonNull String user, @NonNull Tool tool) {
+    public static Job install(@NonNull Runner runner, @NonNull String alias, @NonNull String user, @NonNull Tool tool,
+                              @NonNull String... args) {
         Job job;
         synchronized (TerminowToolInstaller.class) {
             Job same = sJobs.get(keyOf(alias, user, tool));
             if (same != null && same.mState == State.RUNNING) return same;
             if (runningIn(alias) != null) return null;
-            job = new Job(alias, user, tool);
+            job = new Job(alias, user, tool, args);
             sJobs.put(keyOf(alias, user, tool), job);
         }
         Job started = job;
@@ -355,7 +465,10 @@ public final class TerminowToolInstaller {
     private static void run(@NonNull Runner runner, @NonNull Job job) {
         Process process;
         try {
-            process = runner.start(job.alias, job.user, INSTALL_SCRIPT, job.tool.id);
+            List<String> args = new ArrayList<>();
+            args.add(job.tool.id);
+            args.addAll(job.args);
+            process = runner.start(job.alias, job.user, INSTALL_SCRIPT, args.toArray(new String[0]));
         } catch (IOException | RuntimeException e) {
             job.onStartFailed("TermiNow: the install did not start: " + e.getMessage());
             changed();
@@ -458,6 +571,102 @@ public final class TerminowToolInstaller {
                     if (tool.id.equals(id)) detection.versions.put(tool, line.substring(equals + 1).trim());
             }
         }
+    }
+
+    /** A plugin of the official marketplace. */
+    public static final class Plugin {
+        public final String name;
+        public final String description;
+        public final long installCount;
+
+        Plugin(@NonNull String name, @NonNull String description, long installCount) {
+            this.name = name;
+            this.description = description;
+            this.installCount = installCount;
+        }
+    }
+
+    /** The plugins of the official marketplace, most installed first, and the names of those installed. */
+    public static final class PluginCatalog {
+        public final List<Plugin> plugins = new ArrayList<>();
+        public final java.util.Set<String> installed = new java.util.HashSet<>();
+        /** Claude Code is not in the environment, so it has no plugins. */
+        public boolean noClaude;
+        @Nullable public String error;
+    }
+
+    public static final long PLUGINS_TIMEOUT_MS = 180_000;
+
+    /** Get the plugins, blocking: Claude Code adds or updates the marketplace first, over the network. */
+    @NonNull
+    public static PluginCatalog listPlugins(@NonNull Runner runner, @NonNull String alias, @NonNull String user) {
+        PluginCatalog catalog = new PluginCatalog();
+        Process process;
+        try {
+            process = runner.start(alias, user, PLUGINS_SCRIPT);
+        } catch (IOException | RuntimeException e) {
+            catalog.error = String.valueOf(e.getMessage());
+            return catalog;
+        }
+        StringBuilder out = new StringBuilder();
+        Thread errors = new Thread(() -> readLines(process.getErrorStream(), line -> { }));
+        errors.setDaemon(true);
+        errors.start();
+        Thread reader = new Thread(() -> readLines(process.getInputStream(), line -> out.append(line).append('\n')));
+        reader.setDaemon(true);
+        reader.start();
+        try {
+            if (!process.waitFor(PLUGINS_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                process.destroy();
+                catalog.error = "Getting the plugins took too long";
+                return catalog;
+            }
+            reader.join(2000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            process.destroy();
+            catalog.error = "Interrupted";
+            return catalog;
+        }
+        parsePlugins(catalog, out.toString());
+        return catalog;
+    }
+
+    static void parsePlugins(@NonNull PluginCatalog catalog, @NonNull String stdout) {
+        if (stdout.contains("TERMINOW_NO_CLAUDE")) {
+            catalog.noClaude = true;
+            return;
+        }
+        int begin = stdout.indexOf("TERMINOW_JSON_BEGIN");
+        int end = stdout.indexOf("TERMINOW_JSON_END");
+        if (begin < 0 || end < begin) {
+            catalog.error = "Claude Code did not list the plugins";
+            return;
+        }
+        try {
+            org.json.JSONObject json = new org.json.JSONObject(stdout.substring(begin + "TERMINOW_JSON_BEGIN".length(), end).trim());
+            org.json.JSONArray installed = json.optJSONArray("installed");
+            for (int i = 0; installed != null && i < installed.length(); i++) {
+                org.json.JSONObject plugin = installed.optJSONObject(i);
+                if (plugin == null) continue;
+                // "name@marketplace", or the name and the marketplace apart
+                String id = plugin.optString("id", plugin.optString("pluginId"));
+                if (!id.contains("@")) id = plugin.optString("name") + "@" + plugin.optString("marketplace", plugin.optString("marketplaceName"));
+                if (id.endsWith("@" + MARKETPLACE)) catalog.installed.add(id.substring(0, id.length() - MARKETPLACE.length() - 1));
+            }
+            org.json.JSONArray available = json.optJSONArray("available");
+            for (int i = 0; available != null && i < available.length(); i++) {
+                org.json.JSONObject plugin = available.optJSONObject(i);
+                if (plugin == null || !MARKETPLACE.equals(plugin.optString("marketplaceName"))) continue;
+                String name = plugin.optString("name");
+                if (name.isEmpty()) continue;
+                catalog.plugins.add(new Plugin(name, plugin.optString("description"), plugin.optLong("installCount")));
+            }
+        } catch (org.json.JSONException e) {
+            catalog.error = "The list of plugins could not be read: " + e.getMessage();
+            return;
+        }
+        java.util.Collections.sort(catalog.plugins, (a, b) -> Long.compare(b.installCount, a.installCount));
     }
 
     @Nullable

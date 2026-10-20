@@ -33,15 +33,23 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * The Install tools sheet of the terminal toolbar: Claude Code, Git, curl and tmux in the
- * environment of the tab, as its user, with their real state. Installing is done by
+ * The Install tools sheet of the terminal toolbar: Claude Code, Cursor CLI, gstack, Git, curl
+ * and tmux in the environment of the tab, as its user, with their real state, and plugins of the
+ * official Claude Code marketplace, chosen in {@link TerminowPluginPicker}. Installing is done by
  * {@link TerminowToolInstaller}, whose jobs outlive this sheet; the sheet only shows them, and
  * finds out again what is installed when it opens and after each install ends.
  */
 final class TerminowToolSheet {
 
     private static final TerminowToolInstaller.Tool[] TOOLS = {
-        TerminowToolInstaller.Tool.CLAUDE, TerminowToolInstaller.Tool.GIT, TerminowToolInstaller.Tool.CURL, TerminowToolInstaller.Tool.TMUX};
+        TerminowToolInstaller.Tool.CLAUDE, TerminowToolInstaller.Tool.CURSOR, TerminowToolInstaller.Tool.GSTACK,
+        TerminowToolInstaller.Tool.GIT, TerminowToolInstaller.Tool.CURL, TerminowToolInstaller.Tool.TMUX};
+
+    /** The tools and the plugins: the jobs that the sheet shows. */
+    private static final TerminowToolInstaller.Tool[] JOBS = {
+        TerminowToolInstaller.Tool.CLAUDE, TerminowToolInstaller.Tool.CURSOR, TerminowToolInstaller.Tool.GSTACK,
+        TerminowToolInstaller.Tool.GIT, TerminowToolInstaller.Tool.CURL, TerminowToolInstaller.Tool.TMUX,
+        TerminowToolInstaller.Tool.PLUGINS};
 
     private final TermuxActivity mActivity;
     private final TerminowLauncher mLauncher;
@@ -173,7 +181,7 @@ final class TerminowToolSheet {
         mUser = mLauncher.getUser(chosen);
         mDetection = null;
         mSeenEnded.clear();
-        for (TerminowToolInstaller.Tool tool : TOOLS) {
+        for (TerminowToolInstaller.Tool tool : JOBS) {
             TerminowToolInstaller.Job job = TerminowToolInstaller.jobOf(chosen.key, mUser, tool);
             if (job != null && job.getState() != TerminowToolInstaller.State.RUNNING) mSeenEnded.add(job);
         }
@@ -206,7 +214,7 @@ final class TerminowToolSheet {
         TerminowLauncher.Environment environment = mEnvironment;
         boolean ended = false;
         if (environment != null) {
-            for (TerminowToolInstaller.Tool tool : TOOLS) {
+            for (TerminowToolInstaller.Tool tool : JOBS) {
                 TerminowToolInstaller.Job job = TerminowToolInstaller.jobOf(environment.key, mUser, tool);
                 if (job != null && job.getState() != TerminowToolInstaller.State.RUNNING && !mSeenEnded.contains(job)) {
                     mSeenEnded.add(job);
@@ -294,6 +302,7 @@ final class TerminowToolSheet {
 
         TerminowToolInstaller.Job running = TerminowToolInstaller.runningIn(environment.key);
         for (TerminowToolInstaller.Tool tool : TOOLS) toolRow(content, environment, tool, running);
+        pluginsRow(content, environment, running);
 
         TextView footer = note(mActivity.getString(mDetection != null && mDetection.isRoot() ? R.string.terminow_install_note_root :
             R.string.terminow_install_note_user, environment.shortName(), mUser));
@@ -362,17 +371,19 @@ final class TerminowToolSheet {
         if (version != null) {
             status.setText(mActivity.getString(R.string.terminow_install_installed, version));
             status.setTextColor(color(R.color.terminow_quick_ready));
-            String open = tool == TerminowToolInstaller.Tool.CLAUDE ? mActivity.getString(R.string.terminow_install_open_claude) :
-                mActivity.getString(R.string.terminow_install_open);
+            // gstack is used from Claude Code, as its skills
+            boolean claude = tool == TerminowToolInstaller.Tool.CLAUDE || tool == TerminowToolInstaller.Tool.GSTACK;
+            String open = claude ? mActivity.getString(R.string.terminow_install_open_claude) : mActivity.getString(R.string.terminow_install_open);
             row.addView(button(open, tool == TerminowToolInstaller.Tool.CLAUDE, true, () -> {
                 dismiss();
-                if (tool == TerminowToolInstaller.Tool.CLAUDE) mLauncher.openClaudeWithSignInHelp(environment, mUser);
+                if (claude) mLauncher.openClaudeWithSignInHelp(environment, mUser);
                 else mLauncher.openTerminal(environment);
             }));
             return;
         }
-        if (tool == TerminowToolInstaller.Tool.CLAUDE && !arch.isEmpty() && !TerminowToolInstaller.claudeSupports(arch)) {
-            status.setText(mActivity.getString(R.string.terminow_install_unsupported_arch, arch));
+        if (tool != TerminowToolInstaller.Tool.GIT && tool != TerminowToolInstaller.Tool.CURL && tool != TerminowToolInstaller.Tool.TMUX &&
+            !arch.isEmpty() && !TerminowToolInstaller.claudeSupports(arch)) {
+            status.setText(mActivity.getString(R.string.terminow_install_unsupported_arch, nameOf(tool), arch));
             status.setTextColor(color(R.color.terminow_mcp_warn));
             return;
         }
@@ -408,6 +419,102 @@ final class TerminowToolSheet {
         row.addView(action);
     }
 
+    /** The plugins of the official marketplace: chosen in the picker, installed as one job. */
+    private void pluginsRow(@NonNull LinearLayout content, @NonNull TerminowLauncher.Environment environment,
+                            @Nullable TerminowToolInstaller.Job running) {
+        TerminowToolInstaller.Tool tool = TerminowToolInstaller.Tool.PLUGINS;
+        LinearLayout card = card(content);
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        ImageView icon = new ImageView(mActivity);
+        icon.setImageResource(iconOf(tool));
+        icon.setPadding(dp(9), dp(9), dp(9), dp(9));
+        GradientDrawable tile = new GradientDrawable();
+        tile.setColor(color(R.color.terminow_field));
+        tile.setCornerRadius(dp(12));
+        icon.setBackground(tile);
+        row.addView(icon, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        LinearLayout texts = new LinearLayout(mActivity);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        texts.setPadding(dp(12), 0, dp(8), 0);
+        TextView name = text(nameOf(tool), 16, R.color.terminow_text);
+        name.setTypeface(Typeface.DEFAULT_BOLD);
+        texts.addView(name);
+        texts.addView(text(descriptionOf(tool), 12, R.color.terminow_text_secondary));
+        TextView status = text("", 13, R.color.terminow_text_secondary);
+        status.setPadding(0, dp(4), 0, 0);
+        texts.addView(status);
+        row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        card.addView(row, matchWrap());
+
+        TerminowToolInstaller.Job job = TerminowToolInstaller.jobOf(environment.key, mUser, tool);
+        if (job != null && job.getState() == TerminowToolInstaller.State.RUNNING) {
+            status.setText(mActivity.getString(R.string.terminow_install_running, job.getStage().ordinal() + 1,
+                TerminowToolInstaller.Stage.values().length, stageName(job.getStage())));
+            status.setTextColor(color(R.color.terminow_panel_accent));
+            ProgressBar bar = new ProgressBar(mActivity, null, android.R.attr.progressBarStyleHorizontal);
+            bar.setIndeterminate(true);
+            bar.setIndeterminateTintList(android.content.res.ColorStateList.valueOf(color(R.color.terminow_panel_accent)));
+            LinearLayout.LayoutParams barParams = matchWrap();
+            barParams.topMargin = dp(8);
+            card.addView(bar, barParams);
+            String last = job.getLogTail(1);
+            if (!last.isEmpty()) {
+                TextView line = mono(last);
+                line.setSingleLine(true);
+                line.setEllipsize(TextUtils.TruncateAt.END);
+                card.addView(line, matchWrap());
+            }
+            row.addView(button(mActivity.getString(R.string.terminow_install_cancel), false, true, job::cancel));
+            return;
+        }
+        if (mDetection == null) {
+            status.setText(R.string.terminow_install_checking);
+            return;
+        }
+        boolean hasClaude = mDetection.versions.get(TerminowToolInstaller.Tool.CLAUDE) != null;
+        if (job != null && job.getState() == TerminowToolInstaller.State.FAILED) {
+            status.setText(mActivity.getString(R.string.terminow_install_failed, stageName(job.getStage()), failureText(job)));
+            status.setTextColor(color(R.color.terminow_mcp_warn));
+            boolean open = mLogOpen.contains(tool);
+            String log = open ? job.getLog().trim() : job.getLogTail(8);
+            if (!log.isEmpty()) {
+                TextView logView = mono(log);
+                logView.setTextIsSelectable(true);
+                card.addView(logView, matchWrap());
+                TextView toggle = text(mActivity.getString(open ? R.string.terminow_install_log_less : R.string.terminow_install_log_all), 13,
+                    R.color.terminow_panel_accent);
+                toggle.setPadding(0, dp(6), 0, 0);
+                toggle.setOnClickListener(v -> {
+                    if (!mLogOpen.remove(tool)) mLogOpen.add(tool);
+                    render();
+                });
+                card.addView(toggle);
+            }
+        } else if (job != null && job.getState() == TerminowToolInstaller.State.SUCCEEDED) {
+            status.setText(mActivity.getString(R.string.terminow_install_plugins_done, job.getVersion()));
+            status.setTextColor(color(R.color.terminow_quick_ready));
+        } else if (!hasClaude) {
+            status.setText(R.string.terminow_install_plugins_needs_claude);
+        }
+        View action = button(mActivity.getString(R.string.terminow_install_plugins_choose), hasClaude, true, () ->
+            new TerminowPluginPicker(mActivity, mRunner, environment.key, mUser, names -> {
+                TerminowToolInstaller.Job started = TerminowToolInstaller.install(mRunner, environment.key, mUser, tool, names);
+                if (started == null) {
+                    TerminowToolInstaller.Job other = TerminowToolInstaller.runningIn(environment.key);
+                    mActivity.showToast(mActivity.getString(R.string.terminow_install_waiting, other != null ? nameOf(other.tool) : ""), false);
+                }
+                mLogOpen.remove(tool);
+                render();
+            }).show());
+        if (!hasClaude || running != null) {
+            action.setEnabled(false);
+            action.setAlpha(0.4f);
+            if (running != null && hasClaude) status.setText(mActivity.getString(R.string.terminow_install_waiting, nameOf(running.tool)));
+        }
+        row.addView(action);
+    }
+
     private void install(@NonNull TerminowLauncher.Environment environment, @NonNull TerminowToolInstaller.Tool tool) {
         TerminowToolInstaller.Job job = TerminowToolInstaller.install(mRunner, environment.key, mUser, tool);
         if (job == null) {
@@ -431,6 +538,7 @@ final class TerminowToolSheet {
             case NO_SUDO: return mActivity.getString(R.string.terminow_install_fail_no_sudo, job.user);
             case SUDO_PASSWORD: return mActivity.getString(R.string.terminow_install_fail_sudo_password, job.user);
             case UNSUPPORTED_ARCH: return mActivity.getString(R.string.terminow_install_fail_arch);
+            case NEEDS_CLAUDE: return mActivity.getString(R.string.terminow_install_fail_needs_claude);
             case APT_UPDATE: return mActivity.getString(R.string.terminow_install_fail_apt_update);
             case APT_INSTALL: return mActivity.getString(R.string.terminow_install_fail_apt_install);
             case NETWORK: return mActivity.getString(R.string.terminow_install_fail_network);
@@ -457,6 +565,9 @@ final class TerminowToolSheet {
     private String nameOf(@NonNull TerminowToolInstaller.Tool tool) {
         switch (tool) {
             case CLAUDE: return mActivity.getString(R.string.terminow_install_claude);
+            case CURSOR: return mActivity.getString(R.string.terminow_install_cursor);
+            case GSTACK: return mActivity.getString(R.string.terminow_install_gstack);
+            case PLUGINS: return mActivity.getString(R.string.terminow_install_plugins);
             case GIT: return "Git";
             case CURL: return "curl";
             default: return "tmux";
@@ -467,6 +578,9 @@ final class TerminowToolSheet {
     private String descriptionOf(@NonNull TerminowToolInstaller.Tool tool) {
         switch (tool) {
             case CLAUDE: return mActivity.getString(R.string.terminow_install_claude_description);
+            case CURSOR: return mActivity.getString(R.string.terminow_install_cursor_description);
+            case GSTACK: return mActivity.getString(R.string.terminow_install_gstack_description);
+            case PLUGINS: return mActivity.getString(R.string.terminow_install_plugins_description);
             case GIT: return mActivity.getString(R.string.terminow_install_git_description);
             case CURL: return mActivity.getString(R.string.terminow_install_curl_description);
             default: return mActivity.getString(R.string.terminow_install_tmux_description);
@@ -476,6 +590,9 @@ final class TerminowToolSheet {
     private static int iconOf(@NonNull TerminowToolInstaller.Tool tool) {
         switch (tool) {
             case CLAUDE: return R.drawable.ic_terminow_tool_claude;
+            case CURSOR: return R.drawable.ic_terminow_tool_cursor;
+            case GSTACK: return R.drawable.ic_terminow_tool_gstack;
+            case PLUGINS: return R.drawable.ic_terminow_tool_plugins;
             case GIT: return R.drawable.ic_terminow_tool_git;
             case CURL: return R.drawable.ic_terminow_tool_curl;
             default: return R.drawable.ic_terminow_tool_tmux;
