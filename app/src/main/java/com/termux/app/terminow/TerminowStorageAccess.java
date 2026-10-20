@@ -26,10 +26,10 @@ import java.util.List;
 /**
  * The storage volumes of the device, and the permission to browse them by path.
  *
- * Only the build outside Google Play ({@link BuildConfig#TERMINOW_ALL_FILES_ACCESS}) declares
- * the permissions: All files access on Android 11 and higher, the storage permission on
- * Android 6 to 10. The Google Play build uses folders that the user picks with the Storage
- * Access Framework instead. Nothing here works around Android's restrictions.
+ * Only builds with {@link BuildConfig#TERMINOW_ALL_FILES_ACCESS} declare the permissions: All
+ * files access on Android 11 and higher, the storage permission on Android 6 to 10. Without
+ * them, folders that the user picks with the Storage Access Framework are used instead.
+ * Nothing here works around Android's restrictions.
  */
 public class TerminowStorageAccess {
 
