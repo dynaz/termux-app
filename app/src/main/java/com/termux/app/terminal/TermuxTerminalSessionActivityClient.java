@@ -133,13 +133,8 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         if (com.termux.app.terminow.TerminowLauncher.onTitleChanged(updatedSession)) return;
         if (!mActivity.isVisible()) return;
 
-        if (updatedSession != mActivity.getCurrentSession()) {
-            // Only show toast for other sessions than the current one, since the user
-            // probably consciously caused the title change to change in the current session
-            // and don't want an annoying toast for that.
-            mActivity.showToast(toToastTitle(updatedSession), true);
-        }
-
+        // No toast for a title of another tab: the tabs show the titles, and programs like
+        // Claude Code animate theirs while they work, which made a toast blink again and again
         termuxSessionListNotifyUpdated();
     }
 
