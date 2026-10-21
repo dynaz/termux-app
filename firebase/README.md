@@ -136,6 +136,22 @@ Nothing here has been run against Google Play yet. Only the tests below have run
 | `PLAY_AUTH`, `PLAY_UNAVAILABLE` | Google could not be reached | yes |
 | `NETWORK` | The phone is offline | yes |
 
+## Play Integrity (observed only)
+
+`signedEntitlement` records what Play Integrity says about each request of the app in
+`integrityObservations/{uid}/events`: the verdicts, and whether the request hash
+(sha256 of `terminow-entitlement:<uid>:<nonce>`), the package and the time match. The token is
+never kept. Each nonce is accepted once (`integrityNonces`). It answers `{signed: null}`: no
+entitlement is signed yet, and no verdict changes Premium or blocks a device.
+
+Before it can decode tokens:
+
+1. Enable the Play Integrity API in `linex-bf945` (it is disabled now).
+2. Play Console, App integrity, Play Integrity API: link the Cloud project, Google-managed responses.
+3. Optional: a Firestore TTL policy on `integrityNonces.expireAt`, so old nonces are removed.
+
+Until then every observation is recorded as `INTEGRITY_PERMISSION`, which changes nothing for users.
+
 ## Tests
 
 ```

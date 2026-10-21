@@ -11,6 +11,7 @@
  * - syncWhmcs (Firestore trigger) and retryWhmcsSync (scheduled): the WHMCS outbox.
  * - enrollWhmcsMembers (scheduled): every account with a verified email, free too, into the outbox.
  * - accountDevices (callable): the devices signed in to the account, and signing them out.
+ * - signedEntitlement (callable): records Play Integrity verdicts, observed only; signs nothing yet.
  *
  * See firebase/README.md for the configuration and the setup.
  */
@@ -32,6 +33,7 @@ const { WhmcsClient } = require('./src/whmcs');
 const { Service } = require('./src/service');
 const { TermiNowError, redact } = require('./src/errors');
 const { Devices } = require('./src/devices');
+const { IntegrityClient, IntegrityObserver } = require('./src/integrity');
 
 // Configuration, set in functions/.env.<project id> (not secret) and Secret Manager (secret)
 const FUNCTIONS_REGION = defineString('FUNCTIONS_REGION', { description: 'Region of the functions, like asia-southeast1' });
@@ -149,4 +151,18 @@ exports.enrollWhmcsMembers = onSchedule({ schedule: 'every 60 minutes', secrets:
 exports.retryWhmcsSync = onSchedule({ schedule: 'every 15 minutes', secrets: [WHMCS_SYNC_SECRET] }, async () => {
   const done = await service().syncDueWhmcs();
   logger.info('WHMCS retries: ' + JSON.stringify(done));
+});
+
+// Play Integrity, observed only (src/integrity.js): the app asks for the signed entitlement and
+// sends a token; no entitlement is signed yet, so it answers {signed: null} and Premium stays as
+// the other functions decide. A failure here is never an error for the app.
+exports.signedEntitlement = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in to TermiNow first', { code: 'SIGN_IN_REQUIRED' });
+  try {
+    const packageName = process.env.PLAY_PACKAGE_NAME;
+    return await new IntegrityObserver({ db: getFirestore(), client: new IntegrityClient(packageName), packageName, log: logger })
+      .observe(request.auth.uid, request.data || {});
+  } catch (e) {
+    throw toHttpsError(e, 'The request could not be checked, try again later');
+  }
 });

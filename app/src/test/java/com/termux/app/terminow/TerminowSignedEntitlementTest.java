@@ -125,4 +125,11 @@ public class TerminowSignedEntitlementTest {
         assertEquals("no keys in this build yet", TerminowSignedEntitlement.Result.UNKNOWN_KEY,
             TerminowSignedEntitlement.verify(sign(payload("alice", true, NOW, NOW + DAY), mPair), "alice", NOW).result);
     }
+
+    @Test
+    public void theRequestHashIsTheOneOfTheBackend() {
+        // The same value is in firebase/functions/test/unit/integrity.test.js
+        assertEquals("5b380f59549e17b56ae5d2b795ebf3f243a24379327ab26fa8d1f0470d6b57f6",
+            TerminowIntegrity.requestHash("alice", "00112233445566778899aabbccddeeff"));
+    }
 }
