@@ -172,9 +172,9 @@ public class TerminowKeyBar {
             extraKeysView.setLayoutParams(params);
             index = row.indexOfChild(extraKeysView) + 1;
         } else {
-            for (String key : TerminowKeyBarModel.keysOf(mode)) row.addView(keyCap(key, false), index++);
+            for (String key : TerminowKeyBarModel.keysOf(mode)) row.addView(keyCap(key), index++);
             row.addView(gap(), index++);
-            for (String key : TerminowKeyBarModel.NAVIGATION_KEYS) row.addView(keyCap(key, true), index++);
+            for (String key : TerminowKeyBarModel.NAVIGATION_KEYS) row.addView(arrowCap(key), index++);
         }
         row.addView(gap(), index++);
         row.addView(iconCap(R.drawable.ic_terminow_more, R.string.terminow_keybar_more, this::showMore), index);
@@ -231,11 +231,29 @@ public class TerminowKeyBar {
     }
 
     /**
-     * A key: sent through the input of the terminal as a key or a character, never its name.
-     * Ctrl and Alt are on for the next key instead, and lock when held. Arrows repeat while held.
+     * An arrow: an icon, one arrow turned for the four of them, so that they are all the same
+     * size, as the other icons of the bar. It repeats while held, and is sent as the key.
      */
     @NonNull
-    private TextView keyCap(@NonNull String key, boolean arrow) {
+    private ImageButton arrowCap(@NonNull String key) {
+        int icon;
+        switch (key) {
+            case "LEFT": icon = R.drawable.ic_terminow_key_left; break;
+            case "DOWN": icon = R.drawable.ic_terminow_key_down; break;
+            case "UP": icon = R.drawable.ic_terminow_key_up; break;
+            default: icon = R.drawable.ic_terminow_key_right; break;
+        }
+        ImageButton cap = iconCap(icon, descriptionOf(key), () -> sendKey(key));
+        repeatWhileHeld(cap, key);
+        return cap;
+    }
+
+    /**
+     * A key: sent through the input of the terminal as a key or a character, never its name.
+     * Ctrl and Alt are on for the next key instead, and lock when held.
+     */
+    @NonNull
+    private TextView keyCap(@NonNull String key) {
         TextView cap = new TextView(mActivity);
         cap.setText(labelOf(key));
         cap.setGravity(Gravity.CENTER);
@@ -245,7 +263,7 @@ public class TerminowKeyBar {
         cap.setIncludeFontPadding(false);
         cap.setPadding(dp(10), dp(9), dp(10), dp(9));
         // Larger text shrinks to fit the keycap instead of being cut
-        androidx.core.widget.TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(cap, 9, arrow ? 18 : 14, 1, TypedValue.COMPLEX_UNIT_SP);
+        androidx.core.widget.TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(cap, 9, 14, 1, TypedValue.COMPLEX_UNIT_SP);
         cap.setMinWidth(dp(48));
         cap.setBackground(keycap(false, false));
         String description = mActivity.getString(descriptionOf(key));
@@ -253,7 +271,7 @@ public class TerminowKeyBar {
         TooltipCompat.setTooltipText(cap, description);
         cap.setFocusable(true);
         cap.setClickable(true);
-        cap.setLayoutParams(new LinearLayout.LayoutParams(arrow ? dp(48) : dp(56), dp(48)));
+        cap.setLayoutParams(new LinearLayout.LayoutParams(dp(56), dp(48)));
         if (TerminowKeyBarModel.isModifier(key)) {
             TerminowKeyBarModel.Modifier modifier = key.equals("CTRL") ? CTRL : ALT;
             if (modifier == CTRL) mCtrlCap = cap;
@@ -270,7 +288,6 @@ public class TerminowKeyBar {
             return cap;
         }
         cap.setOnClickListener(v -> sendKey(key));
-        if (arrow) repeatWhileHeld(cap, key);
         return cap;
     }
 
