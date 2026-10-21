@@ -573,6 +573,11 @@ public class TerminowStore {
     /** Claude Code in a new tab with the last conversation, --continue. */
     public static final String CLAUDE_LAUNCH_CONTINUE = "continue";
     private static final String KEY_CLAUDE_FAVORITES = "claude_command_favorites";
+    /** The interactive shell of new tabs of local Ubuntu. Not set: the shell Ubuntu gives, as before. */
+    private static final String KEY_UBUNTU_SHELL = "ubuntu_interactive_shell";
+    public static final String UBUNTU_SHELL_DEFAULT = "";
+    public static final String UBUNTU_SHELL_FISH = "fish";
+    public static final String UBUNTU_SHELL_BASH = "bash";
     /** The seconds that a Linux environment may take to start, that can be chosen. */
     public static final int[] UBUNTU_START_TIMEOUTS = {30, 60, 120, 300};
     private static final String KEY_TERMINAL_THEME = "terminal_theme";
@@ -1325,6 +1330,20 @@ public class TerminowStore {
 
     public void setClaudeLaunchBehavior(@NonNull String behavior) {
         mPreferences.edit().putString(KEY_CLAUDE_LAUNCH, behavior).apply();
+    }
+
+    /**
+     * The shell of new tabs of local Ubuntu: Fish, Bash, or not chosen, which keeps the shell
+     * that Ubuntu gives, so an Ubuntu installed before this setting opens as it always did.
+     */
+    @NonNull
+    public String getUbuntuShell() {
+        String value = mPreferences.getString(KEY_UBUNTU_SHELL, UBUNTU_SHELL_DEFAULT);
+        return UBUNTU_SHELL_FISH.equals(value) || UBUNTU_SHELL_BASH.equals(value) ? value : UBUNTU_SHELL_DEFAULT;
+    }
+
+    public void setUbuntuShell(@NonNull String shell) {
+        mPreferences.edit().putString(KEY_UBUNTU_SHELL, shell).apply();
     }
 
     /** The commands of Claude Code that the user pinned in the commands panel, in the order they were pinned. */

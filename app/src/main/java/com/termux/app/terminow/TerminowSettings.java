@@ -167,6 +167,20 @@ public class TerminowSettings {
                 update();
             }));
 
+        // The shell of new tabs of local Ubuntu; not chosen yet shows Bash and keeps the shell Ubuntu gives
+        final String[] shellValues = {TerminowStore.UBUNTU_SHELL_FISH, TerminowStore.UBUNTU_SHELL_BASH};
+        final String[] shellLabels = {mActivity.getString(R.string.terminow_settings_ubuntu_shell_fish),
+            mActivity.getString(R.string.terminow_settings_ubuntu_shell_bash)};
+        String shell = mStore.getUbuntuShell();
+        addRow(R.string.terminow_settings_ubuntu_shell,
+            (TerminowStore.UBUNTU_SHELL_FISH.equals(shell) ? shellLabels[0] : shellLabels[1]) + " · " +
+                mActivity.getString(R.string.terminow_settings_ubuntu_shell_summary), () ->
+            pick(R.string.terminow_settings_ubuntu_shell, shellLabels, which -> {
+                mStore.setUbuntuShell(shellValues[which]);
+                mActivity.showToast(mActivity.getString(R.string.terminow_settings_ubuntu_shell_changed, shellLabels[which]), true);
+                update();
+            }));
+
         int[] timeouts = TerminowStore.UBUNTU_START_TIMEOUTS;
         String[] timeoutLabels = new String[timeouts.length];
         for (int i = 0; i < timeouts.length; i++) timeoutLabels[i] = mActivity.getString(R.string.terminow_launch_timeout_seconds, timeouts[i]);

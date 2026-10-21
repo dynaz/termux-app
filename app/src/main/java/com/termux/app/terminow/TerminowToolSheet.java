@@ -43,13 +43,13 @@ final class TerminowToolSheet {
 
     private static final TerminowToolInstaller.Tool[] TOOLS = {
         TerminowToolInstaller.Tool.CLAUDE, TerminowToolInstaller.Tool.CURSOR, TerminowToolInstaller.Tool.GSTACK,
-        TerminowToolInstaller.Tool.GIT, TerminowToolInstaller.Tool.CURL, TerminowToolInstaller.Tool.TMUX};
+        TerminowToolInstaller.Tool.GIT, TerminowToolInstaller.Tool.CURL, TerminowToolInstaller.Tool.TMUX, TerminowToolInstaller.Tool.FISH};
 
     /** The tools and the plugins: the jobs that the sheet shows. */
     private static final TerminowToolInstaller.Tool[] JOBS = {
         TerminowToolInstaller.Tool.CLAUDE, TerminowToolInstaller.Tool.CURSOR, TerminowToolInstaller.Tool.GSTACK,
         TerminowToolInstaller.Tool.GIT, TerminowToolInstaller.Tool.CURL, TerminowToolInstaller.Tool.TMUX,
-        TerminowToolInstaller.Tool.PLUGINS};
+        TerminowToolInstaller.Tool.FISH, TerminowToolInstaller.Tool.PLUGINS};
 
     private final TermuxActivity mActivity;
     private final TerminowLauncher mLauncher;
@@ -372,6 +372,10 @@ final class TerminowToolSheet {
             status.setText(mActivity.getString(R.string.terminow_install_installed, version));
             status.setTextColor(color(R.color.terminow_quick_ready));
             // gstack is used from Claude Code, as its skills
+            if (tool == TerminowToolInstaller.Tool.FISH) {
+                fishInstalled(row, status, environment, version);
+                return;
+            }
             boolean claude = tool == TerminowToolInstaller.Tool.CLAUDE || tool == TerminowToolInstaller.Tool.GSTACK;
             String open = claude ? mActivity.getString(R.string.terminow_install_open_claude) : mActivity.getString(R.string.terminow_install_open);
             row.addView(button(open, tool == TerminowToolInstaller.Tool.CLAUDE, true, () -> {
@@ -382,6 +386,7 @@ final class TerminowToolSheet {
             return;
         }
         if (tool != TerminowToolInstaller.Tool.GIT && tool != TerminowToolInstaller.Tool.CURL && tool != TerminowToolInstaller.Tool.TMUX &&
+            tool != TerminowToolInstaller.Tool.FISH &&
             !arch.isEmpty() && !TerminowToolInstaller.claudeSupports(arch)) {
             status.setText(mActivity.getString(R.string.terminow_install_unsupported_arch, nameOf(tool), arch));
             status.setTextColor(color(R.color.terminow_mcp_warn));
@@ -408,8 +413,10 @@ final class TerminowToolSheet {
         } else {
             status.setText(R.string.terminow_install_not_installed);
         }
-        View action = button(mActivity.getString(failed ? R.string.terminow_install_retry : R.string.terminow_install_install), true, true,
-            () -> install(environment, tool));
+        // Fish is installed and made the shell of new tabs in one go
+        int label = failed ? R.string.terminow_install_retry :
+            tool == TerminowToolInstaller.Tool.FISH ? R.string.terminow_install_fish_enable : R.string.terminow_install_install;
+        View action = button(mActivity.getString(label), true, true, () -> install(environment, tool));
         if (running != null) {
             // apt runs once at a time in an environment
             action.setEnabled(false);
@@ -561,6 +568,29 @@ final class TerminowToolSheet {
         }
     }
 
+    /**
+     * Fish that is installed: whether new Ubuntu tabs open with it, and Enable when they do not.
+     * Tabs that are open keep the shell they have.
+     */
+    private void fishInstalled(@NonNull LinearLayout row, @NonNull TextView status, @NonNull TerminowLauncher.Environment environment,
+                               @NonNull String version) {
+        boolean ubuntu = mLauncher.isUbuntuEnvironment(environment);
+        boolean enabled = ubuntu && TerminowStore.UBUNTU_SHELL_FISH.equals(mLauncher.getStore().getUbuntuShell());
+        status.setText(mActivity.getString(enabled ? R.string.terminow_install_fish_enabled : R.string.terminow_install_installed, version));
+        if (!ubuntu) return;
+        if (enabled) {
+            row.addView(button(mActivity.getString(R.string.terminow_install_open), true, true, () -> {
+                dismiss();
+                mLauncher.openNewTerminal(environment);
+            }));
+        } else {
+            row.addView(button(mActivity.getString(R.string.terminow_install_fish_enable_only), true, true, () -> {
+                mLauncher.enableFish();
+                render();
+            }));
+        }
+    }
+
     @NonNull
     private String nameOf(@NonNull TerminowToolInstaller.Tool tool) {
         switch (tool) {
@@ -570,6 +600,7 @@ final class TerminowToolSheet {
             case PLUGINS: return mActivity.getString(R.string.terminow_install_plugins);
             case GIT: return "Git";
             case CURL: return "curl";
+            case FISH: return mActivity.getString(R.string.terminow_install_fish);
             default: return "tmux";
         }
     }
@@ -583,6 +614,7 @@ final class TerminowToolSheet {
             case PLUGINS: return mActivity.getString(R.string.terminow_install_plugins_description);
             case GIT: return mActivity.getString(R.string.terminow_install_git_description);
             case CURL: return mActivity.getString(R.string.terminow_install_curl_description);
+            case FISH: return mActivity.getString(R.string.terminow_install_fish_description);
             default: return mActivity.getString(R.string.terminow_install_tmux_description);
         }
     }
@@ -595,6 +627,7 @@ final class TerminowToolSheet {
             case PLUGINS: return R.drawable.ic_terminow_tool_plugins;
             case GIT: return R.drawable.ic_terminow_tool_git;
             case CURL: return R.drawable.ic_terminow_tool_curl;
+            case FISH: return R.drawable.ic_terminow_tool_fish;
             default: return R.drawable.ic_terminow_tool_tmux;
         }
     }

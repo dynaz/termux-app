@@ -65,4 +65,15 @@
     <string name="terminow_plugins_install">Install %1$d</string>
     <string name="terminow_plugins_error">Could not get the plugins: %1$s</string>
     <string name="terminow_plugins_note">Each plugin adds to every Claude Code session, and some need an account of their own. Choose the ones you use.</string>
+    <string name="terminow_install_fish">Fish Shell</string>
+    <string name="terminow_install_fish_description">Suggests commands from your history as you type</string>
+    <string name="terminow_install_fish_enable">Install &amp; Enable</string>
+    <string name="terminow_install_fish_enable_only">Enable</string>
+    <string name="terminow_install_fish_enabled">Installed · %1$s · Opens in new Ubuntu tabs</string>
+    <string name="terminow_fish_enabled">Fish opens in new Ubuntu tabs. Tabs that are open keep their shell.</string>
+    <string name="terminow_settings_ubuntu_shell">Default shell</string>
+    <string name="terminow_settings_ubuntu_shell_summary">Fish suggests commands from your history as you type.</string>
+    <string name="terminow_settings_ubuntu_shell_fish">Fish</string>
+    <string name="terminow_settings_ubuntu_shell_bash">Bash</string>
+    <string name="terminow_settings_ubuntu_shell_changed">New Ubuntu tabs open with %1$s. Tabs that are open keep their shell.</string>
 </resources>

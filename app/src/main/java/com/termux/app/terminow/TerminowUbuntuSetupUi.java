@@ -137,6 +137,8 @@ public class TerminowUbuntuSetupUi {
                         }
                     },
                     new FileLog(logFile));
+                // A new Ubuntu opens with Fish once the setup found that Fish runs in it
+                sSetup.setOnFishReady(alias -> new TerminowStore(app).setUbuntuShell(TerminowStore.UBUNTU_SHELL_FISH));
             }
             if (!sRecovered) {
                 sRecovered = true;

@@ -63,4 +63,15 @@
     <string name="terminow_plugins_install">ติดตั้ง %1$d</string>
     <string name="terminow_plugins_error">โหลดปลั๊กอินไม่ได้: %1$s</string>
     <string name="terminow_plugins_note">ปลั๊กอินแต่ละตัวจะเพิ่มเข้าไปในทุกเซสชันของ Claude Code และบางตัวต้องมีบัญชีของตัวเอง เลือกเฉพาะที่ใช้</string>
+    <string name="terminow_install_fish">Fish Shell</string>
+    <string name="terminow_install_fish_description">แนะนำคำสั่งจากประวัติขณะพิมพ์</string>
+    <string name="terminow_install_fish_enable">ติดตั้งและเปิดใช้</string>
+    <string name="terminow_install_fish_enable_only">เปิดใช้</string>
+    <string name="terminow_install_fish_enabled">ติดตั้งแล้ว · %1$s · เปิดในแท็บ Ubuntu ใหม่</string>
+    <string name="terminow_fish_enabled">แท็บ Ubuntu ใหม่จะเปิดด้วย Fish แท็บที่เปิดอยู่ใช้ shell เดิมต่อ</string>
+    <string name="terminow_settings_ubuntu_shell">Shell เริ่มต้น</string>
+    <string name="terminow_settings_ubuntu_shell_summary">Fish แนะนำคำสั่งจากประวัติขณะที่คุณพิมพ์</string>
+    <string name="terminow_settings_ubuntu_shell_fish">Fish</string>
+    <string name="terminow_settings_ubuntu_shell_bash">Bash</string>
+    <string name="terminow_settings_ubuntu_shell_changed">แท็บ Ubuntu ใหม่จะเปิดด้วย %1$s แท็บที่เปิดอยู่ใช้ shell เดิมต่อ</string>
 </resources>

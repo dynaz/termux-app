@@ -63,23 +63,45 @@ public final class TerminowKeyBarModel {
         }
     }
 
+    /** Where a command is listed in the panel, in the order of a session. */
+    public enum Category { CONVERSATION, MODEL, PROJECT, TOOLS, ACCOUNT }
+
     /** A command of Claude Code, which is put on its prompt for the user to send. */
     public static final class Command {
         public final String text;
         /** Which string says what it does, by its name, see the strings of the key bar. */
         public final String descriptionName;
+        public final Category category;
+        /** What it takes after its name, like "<path>" when it needs it or "[name]" when it may have it, empty for nothing. */
+        public final String argument;
         /** The first version of Claude Code that has it. */
         public final String since;
 
-        Command(@NonNull String text, @NonNull String descriptionName) {
-            this(text, descriptionName, "1.0.0");
+        Command(@NonNull String text, @NonNull String descriptionName, @NonNull Category category, @NonNull String argument) {
+            this(text, descriptionName, category, argument, "1.0.0");
         }
 
-        Command(@NonNull String text, @NonNull String descriptionName, @NonNull String since) {
+        Command(@NonNull String text, @NonNull String descriptionName, @NonNull Category category, @NonNull String argument,
+                @NonNull String since) {
             this.text = text;
             this.descriptionName = descriptionName;
+            this.category = category;
+            this.argument = argument;
             this.since = since;
         }
+
+        /** Whether it can not run without what follows its name. */
+        public boolean needsArgument() {
+            return argument.startsWith("<");
+        }
+    }
+
+    /** Whether a command matches what was typed in the filter of the panel: its name or what it does. */
+    public static boolean matches(@NonNull Command command, @NonNull String description, @NonNull String filter) {
+        String query = filter.trim().toLowerCase(java.util.Locale.ROOT);
+        if (query.startsWith("/")) query = query.substring(1);
+        if (query.isEmpty()) return true;
+        return command.text.substring(1).contains(query) || description.toLowerCase(java.util.Locale.ROOT).contains(query);
     }
 
     /** The numbers of a version that Claude Code prints, like "2.1.303 (Claude Code)", {@code null} if it has none. */
@@ -143,23 +165,56 @@ public final class TerminowKeyBarModel {
         }
     }
 
+    /** The commands of https://code.claude.com/docs/en/commands that are of use in a terminal on a phone. */
     public static final List<Command> CLAUDE_COMMANDS = Collections.unmodifiableList(Arrays.asList(
-        new Command("/help", "terminow_keybar_cmd_help"),
-        new Command("/clear", "terminow_keybar_cmd_clear"),
-        new Command("/compact", "terminow_keybar_cmd_compact"),
-        new Command("/model", "terminow_keybar_cmd_model"),
-        new Command("/resume", "terminow_keybar_cmd_resume"),
-        new Command("/init", "terminow_keybar_cmd_init"),
-        new Command("/memory", "terminow_keybar_cmd_memory"),
-        new Command("/mcp", "terminow_keybar_cmd_mcp"),
-        new Command("/permissions", "terminow_keybar_cmd_permissions"),
-        new Command("/status", "terminow_keybar_cmd_status"),
-        new Command("/config", "terminow_keybar_cmd_config"),
-        new Command("/cost", "terminow_keybar_cmd_cost"),
-        new Command("/doctor", "terminow_keybar_cmd_doctor"),
-        new Command("/login", "terminow_keybar_cmd_login"),
-        new Command("/logout", "terminow_keybar_cmd_logout"),
-        new Command("/exit", "terminow_keybar_cmd_exit")));
+        new Command("/help", "terminow_keybar_cmd_help", Category.CONVERSATION, ""),
+        new Command("/clear", "terminow_keybar_cmd_clear", Category.CONVERSATION, "[name]"),
+        new Command("/compact", "terminow_keybar_cmd_compact", Category.CONVERSATION, "[instructions]"),
+        new Command("/resume", "terminow_keybar_cmd_resume", Category.CONVERSATION, "[session]"),
+        new Command("/rewind", "terminow_keybar_cmd_rewind", Category.CONVERSATION, ""),
+        new Command("/branch", "terminow_keybar_cmd_branch", Category.CONVERSATION, "[name]"),
+        new Command("/rename", "terminow_keybar_cmd_rename", Category.CONVERSATION, "[name]"),
+        new Command("/btw", "terminow_keybar_cmd_btw", Category.CONVERSATION, "[question]"),
+        new Command("/recap", "terminow_keybar_cmd_recap", Category.CONVERSATION, ""),
+        new Command("/context", "terminow_keybar_cmd_context", Category.CONVERSATION, ""),
+        new Command("/copy", "terminow_keybar_cmd_copy", Category.CONVERSATION, "[N]"),
+        new Command("/export", "terminow_keybar_cmd_export", Category.CONVERSATION, "[filename]"),
+        new Command("/exit", "terminow_keybar_cmd_exit", Category.CONVERSATION, ""),
+        new Command("/model", "terminow_keybar_cmd_model", Category.MODEL, "[model]"),
+        new Command("/effort", "terminow_keybar_cmd_effort", Category.MODEL, "[level]"),
+        new Command("/fast", "terminow_keybar_cmd_fast", Category.MODEL, "[on|off]"),
+        new Command("/plan", "terminow_keybar_cmd_plan", Category.MODEL, "[description]"),
+        new Command("/permissions", "terminow_keybar_cmd_permissions", Category.MODEL, ""),
+        new Command("/config", "terminow_keybar_cmd_config", Category.MODEL, ""),
+        new Command("/status", "terminow_keybar_cmd_status", Category.MODEL, ""),
+        new Command("/theme", "terminow_keybar_cmd_theme", Category.MODEL, ""),
+        new Command("/output-style", "terminow_keybar_cmd_output_style", Category.MODEL, "[style]"),
+        new Command("/tui", "terminow_keybar_cmd_tui", Category.MODEL, "[default|fullscreen]"),
+        new Command("/init", "terminow_keybar_cmd_init", Category.PROJECT, ""),
+        new Command("/memory", "terminow_keybar_cmd_memory", Category.PROJECT, ""),
+        new Command("/add-dir", "terminow_keybar_cmd_add_dir", Category.PROJECT, "<path>"),
+        new Command("/cd", "terminow_keybar_cmd_cd", Category.PROJECT, "<path>"),
+        new Command("/diff", "terminow_keybar_cmd_diff", Category.PROJECT, ""),
+        new Command("/review", "terminow_keybar_cmd_review", Category.PROJECT, "[pr|branch]"),
+        new Command("/security-review", "terminow_keybar_cmd_security_review", Category.PROJECT, ""),
+        new Command("/simplify", "terminow_keybar_cmd_simplify", Category.PROJECT, "[target]"),
+        new Command("/goal", "terminow_keybar_cmd_goal", Category.PROJECT, "[condition|clear]"),
+        new Command("/mcp", "terminow_keybar_cmd_mcp", Category.TOOLS, ""),
+        new Command("/agents", "terminow_keybar_cmd_agents", Category.TOOLS, ""),
+        new Command("/skills", "terminow_keybar_cmd_skills", Category.TOOLS, ""),
+        new Command("/hooks", "terminow_keybar_cmd_hooks", Category.TOOLS, ""),
+        new Command("/plugin", "terminow_keybar_cmd_plugin", Category.TOOLS, "[subcommand]"),
+        new Command("/tasks", "terminow_keybar_cmd_tasks", Category.TOOLS, ""),
+        new Command("/doctor", "terminow_keybar_cmd_doctor", Category.TOOLS, ""),
+        new Command("/debug", "terminow_keybar_cmd_debug", Category.TOOLS, "[description]"),
+        new Command("/statusline", "terminow_keybar_cmd_statusline", Category.TOOLS, ""),
+        new Command("/keybindings", "terminow_keybar_cmd_keybindings", Category.TOOLS, ""),
+        new Command("/release-notes", "terminow_keybar_cmd_release_notes", Category.TOOLS, ""),
+        new Command("/bug", "terminow_keybar_cmd_bug", Category.TOOLS, "[report]"),
+        new Command("/usage", "terminow_keybar_cmd_usage", Category.ACCOUNT, ""),
+        new Command("/login", "terminow_keybar_cmd_login", Category.ACCOUNT, ""),
+        new Command("/logout", "terminow_keybar_cmd_logout", Category.ACCOUNT, ""),
+        new Command("/upgrade", "terminow_keybar_cmd_upgrade", Category.ACCOUNT, "")));
 
     public static final List<Shortcut> CLAUDE_SHORTCUTS = Collections.unmodifiableList(Arrays.asList(
         new Shortcut("Esc", "ESC", "terminow_keybar_key_claude_esc"),
@@ -186,7 +241,9 @@ public final class TerminowKeyBarModel {
      */
     @NonNull
     public static String promptText(@NonNull Command command) {
-        return command.text.replace("\r", "").replace("\n", "");
+        // One that needs more gets a space, for the user to type it after
+        String text = command.text.replace("\r", "").replace("\n", "");
+        return command.needsArgument() ? text + " " : text;
     }
 
     /** Whether the arguments of a process are those of Claude Code: its program, by name or by its install. */

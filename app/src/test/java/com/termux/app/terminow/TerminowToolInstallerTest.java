@@ -360,4 +360,20 @@ public class TerminowToolInstallerTest {
         assertTrue(process.waitFor(10, TimeUnit.SECONDS));
         assertEquals("/home/u/.local/bin:/usr/local/bin:/usr/bin:/bin", path);
     }
+
+    @Test
+    public void fishIsInstalledWithAptAndOnlyTakenAsInstalledOnceItRuns() throws Exception {
+        TerminowToolInstaller.Runner runner = environment("0", "none", "", "ok");
+        TerminowToolInstaller.Job job = installAndWait(runner, "root", TerminowToolInstaller.Tool.FISH);
+        assertEquals(job.getLog(), TerminowToolInstaller.State.SUCCEEDED, job.getState());
+        assertEquals("fish, version 3.7.0", job.getVersion());
+        assertTrue(calls(), calls().contains("install -y --no-install-recommends fish"));
+        assertEquals("fish, version 3.7.0", TerminowToolInstaller.detect(runner, "ubuntu", "root").versions.get(TerminowToolInstaller.Tool.FISH));
+        // Installed already: apt is not run again
+        java.nio.file.Files.write(new File(mDir, "calls").toPath(), new byte[0]);
+        TerminowToolInstaller.reset();
+        TerminowToolInstaller.Job again = installAndWait(runner, "root", TerminowToolInstaller.Tool.FISH);
+        assertEquals(TerminowToolInstaller.State.SUCCEEDED, again.getState());
+        assertFalse(calls(), calls().contains("apt-get"));
+    }
 }

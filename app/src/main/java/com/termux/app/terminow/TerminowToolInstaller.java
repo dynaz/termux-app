@@ -34,6 +34,8 @@ public final class TerminowToolInstaller {
 
     public enum Tool {
         CLAUDE("claude"), CURSOR("cursor"), GSTACK("gstack"), GIT("git"), CURL("curl"), TMUX("tmux"),
+        /** Fish, the interactive shell with suggestions from its history, from apt. */
+        FISH("fish"),
         /** Plugins of the official marketplace, the names given to {@link #install}. */
         PLUGINS("plugins");
 
@@ -233,7 +235,7 @@ public final class TerminowToolInstaller {
         "echo \"TERMINOW_ARCH=$(uname -m)\"\n" +
         "command -v apt-get >/dev/null 2>&1 && echo TERMINOW_APT=yes\n" +
         "command -v sudo >/dev/null 2>&1 && echo TERMINOW_SUDO=yes\n" +
-        "for t in claude cursor gstack git curl tmux; do\n" +
+        "for t in claude cursor gstack git curl tmux fish; do\n" +
         "  v=\n" +
         "  case $t in\n" +
         "    claude) v=$(claude --version 2>/dev/null);;\n" +
@@ -368,8 +370,10 @@ public final class TerminowToolInstaller {
         "    [ -z \"$bad\" ] || { echo \"TermiNow: these plugins were not installed:$bad\"; fail installer 35; }\n" +
         "    echo \"TERMINOW_VERSION=$n\"\n" +
         "    ;;\n" +
-        "  git|curl|tmux)\n" +
-        "    case \"$tool\" in git) pkgs=git; check='git --version';; curl) pkgs='curl ca-certificates'; check='curl --version';; tmux) pkgs=tmux; check='tmux -V';; esac\n" +
+        "  git|curl|tmux|fish)\n" +
+        "    case \"$tool\" in git) pkgs=git; check='git --version';; curl) pkgs='curl ca-certificates'; check='curl --version';; tmux) pkgs=tmux; check='tmux -V';;\n" +
+        // Fish is only taken as installed once the Fish of the environment runs
+        "      fish) pkgs=fish; check='fish --version';; esac\n" +
         "    if v=$($check 2>/dev/null) && [ -n \"$v\" ]; then\n" +
         "      echo TERMINOW_ALREADY=1; stage verifying; echo \"TERMINOW_VERSION=$(first \"$v\")\"; exit 0\n" +
         "    fi\n" +

@@ -40,14 +40,51 @@ public final class TerminowLaunchPlan {
 
     /**
      * The login shell of a Linux environment, with Ctrl+S and Ctrl+Q given to programs instead
-     * of pausing and resuming the terminal, which looks like it froze.
+     * of pausing and resuming the terminal, which looks like it froze. It is the one place where
+     * the shell of a tab is chosen, by $1, see {@link TerminowStore#getUbuntuShell}:
+     * <ul>
+     * <li>fish: the Fish of Ubuntu itself, only once it runs, as a login shell, with ~/.local/bin
+     * on PATH as the .profile of Ubuntu has it for Bash (Claude Code and other tools are there).
+     * Without a Fish that runs, Bash opens and says so in one line.</li>
+     * <li>bash: Bash of Ubuntu.</li>
+     * <li>nothing: the login shell that Ubuntu gives, as before the setting.</li>
+     * </ul>
+     * SHELL stays as it was, so programs that run commands, like Claude Code, keep using Bash.
+     * Nothing is added to .bashrc or other startup files, and exec never starts a second shell.
      */
-    static final String NO_XOFF_SHELL = READY_SIGN + "stty -ixon 2>/dev/null; exec \"${SHELL:-/bin/bash}\" -l";
+    static final String NO_XOFF_SHELL = READY_SIGN + "stty -ixon 2>/dev/null; " +
+        // One line, so that it can also be typed into a TermiNow shell, see TerminowLauncher#enterCommand
+        "case \"$1\" in fish|fish:*) " +
+        // The color of suggestions for the theme of the terminal, after fish: as six hex digits
+        "c=${1#fish}; c=${c#:}; case \"$c\" in [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;; *) c=;; esac; " +
+        "for f in ${TERMINOW_FISH_PATHS:-/usr/bin/fish /usr/local/bin/fish}; do " +
+        "if [ -x \"$f\" ] && \"$f\" --version >/dev/null 2>&1; then " +
+        "case \":$PATH:\" in *\":$HOME/.local/bin:\"*) ;; *) PATH=\"$HOME/.local/bin:$PATH\"; export PATH;; esac; " +
+        // New windows of tmux get the same shell and PATH; its first window is this one
+        "if [ -n \"$TMUX\" ]; then tmux set-option -g default-shell \"$f\"; tmux set-environment -g PATH \"$PATH\"; fi >/dev/null 2>&1; " +
+        // Only a suggestion color that is still the default of Fish is set, for this shell; one the user chose stays
+        "if [ -n \"$c\" ]; then exec \"$f\" -l -C \"if not set -q fish_color_autosuggestion[1]; or contains -- \\\"\\$fish_color_autosuggestion\\\" brblack '555 brblack'; " +
+        "set -g fish_color_autosuggestion $c; end\"; fi; " +
+        "exec \"$f\" -l; " +
+        "fi; done; " +
+        "echo 'TermiNow: Fish is not installed in this Ubuntu, so Bash opened. Install it with Install in the toolbar, or choose Bash in Settings.'; " +
+        "if [ -x /bin/bash ]; then exec /bin/bash -l; fi;; " +
+        "bash) if [ -x /bin/bash ]; then if [ -n \"$TMUX\" ]; then tmux set-option -g default-shell /bin/bash >/dev/null 2>&1; fi; " +
+        "exec /bin/bash -l; fi;; " +
+        "esac; " +
+        "exec \"${SHELL:-/bin/bash}\" -l";
 
-    /** The arguments that start {@link #NO_XOFF_SHELL}. */
+    /** The arguments that start {@link #NO_XOFF_SHELL} with the shell that Ubuntu gives. */
     @NonNull
     public static List<String> interactiveShell() {
-        return Arrays.asList("/bin/sh", "-c", NO_XOFF_SHELL);
+        return interactiveShell(TerminowStore.UBUNTU_SHELL_DEFAULT);
+    }
+
+    /** The arguments that start {@link #NO_XOFF_SHELL} with a shell of {@link TerminowStore#getUbuntuShell}. */
+    @NonNull
+    public static List<String> interactiveShell(@NonNull String shell) {
+        if (shell.isEmpty()) return Arrays.asList("/bin/sh", "-c", NO_XOFF_SHELL);
+        return Arrays.asList("/bin/sh", "-c", NO_XOFF_SHELL, "terminow", shell);
     }
 
     public static final String TMUX_OFF = "off";
@@ -171,6 +208,20 @@ public final class TerminowLaunchPlan {
                                            @NonNull String tmuxMode, @NonNull String tmuxName, boolean localTmuxInstalled,
                                            @NonNull List<String> bindArguments, @NonNull String executable,
                                            @NonNull List<String> programArguments, @NonNull String startup) {
+        return build(prefix, container, user, folder, tool, customCommand, tmuxMode, tmuxName, localTmuxInstalled, bindArguments,
+            executable, programArguments, startup, TerminowStore.UBUNTU_SHELL_DEFAULT);
+    }
+
+    /**
+     * @param shell The interactive shell of a shell tab of the container, see {@link #interactiveShell(String)};
+     *              programs, custom commands and Claude Code never run in it.
+     */
+    @NonNull
+    public static TerminowLaunchPlan build(@NonNull String prefix, @NonNull String container, @NonNull String user,
+                                           @NonNull String folder, @NonNull String tool, @NonNull String customCommand,
+                                           @NonNull String tmuxMode, @NonNull String tmuxName, boolean localTmuxInstalled,
+                                           @NonNull List<String> bindArguments, @NonNull String executable,
+                                           @NonNull List<String> programArguments, @NonNull String startup, @NonNull String shell) {
         if (TOOL_PROGRAM.equals(tool) && !TerminowLaunchProfile.isValidExecutable(executable))
             throw new IllegalArgumentException("Invalid program");
         boolean withStartup = TOOL_SHELL.equals(tool) && !startup.trim().isEmpty();
@@ -218,7 +269,7 @@ public final class TerminowLaunchPlan {
         List<String> program = new ArrayList<>();
         if (withStartup) {
             program.addAll(Arrays.asList("/bin/sh", "-c", STARTUP_SCRIPT, "terminow", startup));
-            program.addAll(interactiveShell());
+            program.addAll(interactiveShell(shell));
         } else if (TOOL_PROGRAM.equals(tool)) {
             if (executable.startsWith("/")) program.add(executable);
             else program.addAll(Arrays.asList("/usr/bin/env", executable));
@@ -230,7 +281,7 @@ public final class TerminowLaunchPlan {
             program.addAll(claudeArguments(tool));
         } else {
             // A shell, in tmux or not
-            program.addAll(interactiveShell());
+            program.addAll(interactiveShell(shell));
         }
         if (!TMUX_OFF.equals(tmuxMode)) {
             args.addAll(Arrays.asList("--", "/bin/sh", "-c", CONTAINER_TMUX_SCRIPT, "terminow", tmuxMode, tmuxName, tmuxSocket(false, user)));

@@ -117,6 +117,10 @@ public class TerminowUbuntuSetup {
         public long total = -1;
         /** Packages whose Python files were compiled again, so it is not done twice. */
         public Set<String> compiled = new LinkedHashSet<>();
+        /** Whether this setup installed Ubuntu, rather than finding it installed. */
+        public boolean newInstall;
+        /** Fish in a new Ubuntu: "" not tried, "installed" when /usr/bin/fish was found to run, "failed". */
+        public String fish = "";
 
         @NonNull
         JSONObject toJson() {
@@ -131,6 +135,8 @@ public class TerminowUbuntuSetup {
                 object.put("version", version);
                 object.put("warnings", new JSONArray(warnings));
                 object.put("compiled", new JSONArray(compiled));
+                object.put("newInstall", newInstall);
+                object.put("fish", fish);
             } catch (JSONException e) {
                 throw new IllegalStateException(e);
             }
@@ -155,6 +161,8 @@ public class TerminowUbuntuSetup {
                 for (int i = 0; warnings != null && i < warnings.length(); i++) state.warnings.add(warnings.optString(i));
                 JSONArray compiled = object.optJSONArray("compiled");
                 for (int i = 0; compiled != null && i < compiled.length(); i++) state.compiled.add(compiled.optString(i));
+                state.newInstall = object.optBoolean("newInstall");
+                state.fish = object.optString("fish");
             } catch (JSONException | IllegalArgumentException e) {
                 // A state of another version: start again
                 return new State();
@@ -291,6 +299,7 @@ public class TerminowUbuntuSetup {
             checkPackages();
             TerminowLinuxEnv env = findOrInstallUbuntu();
             verify(env);
+            if (mState.newInstall) installFish(env);
             synchronized (this) {
                 mState.status = State.Status.READY;
                 mState.stage = Stage.READY;
@@ -536,6 +545,7 @@ public class TerminowUbuntuSetup {
         log("Installing " + entry.name + " " + entry.version + " as '" + alias + "' from " + entry.url + " (SHA-256 " + entry.sha256 + ")");
         synchronized (this) {
             mState.alias = alias;
+            mState.newInstall = true;
         }
         save();
         TerminowLinuxEnv env;
@@ -603,6 +613,49 @@ public class TerminowUbuntuSetup {
             warn("The network or DNS does not work in Ubuntu: archive.ubuntu.com does not resolve, so apt in Ubuntu can not download " +
                 "until it does. Check the connection of the phone.");
         }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // 6. Fish, for a new Ubuntu
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * Installs Fish in Ubuntu as root with its apt, once, and runs it to check it. Ubuntu stays
+     * usable without it: a failure is a warning, Bash opens, and Fish can be installed again with
+     * Install tools. Nothing here runs again when Ubuntu is opened.
+     */
+    static final String FISH_SCRIPT =
+        "export DEBIAN_FRONTEND=noninteractive\n" +
+        "if [ -x /usr/bin/fish ] && /usr/bin/fish --version >/dev/null 2>&1; then echo " + MARK + "FISH_OK; exit 0; fi\n" +
+        "apt-get -o DPkg::Lock::Timeout=300 update || exit 20\n" +
+        "apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends fish || exit 21\n" +
+        "[ -x /usr/bin/fish ] && /usr/bin/fish --version && echo " + MARK + "FISH_OK\n";
+
+    /** Called once Fish was installed and runs in a new Ubuntu, with its name, to make it the shell of new tabs. */
+    @Nullable private volatile java.util.function.Consumer<String> mOnFishReady;
+
+    public void setOnFishReady(@Nullable java.util.function.Consumer<String> onFishReady) {
+        mOnFishReady = onFishReady;
+    }
+
+    void installFish(@NonNull TerminowLinuxEnv env) throws Cancelled, IOException {
+        checkCancelled();
+        log("Installing Fish, the shell that suggests commands from your history");
+        String out = capture(Arrays.asList(prefixed("bin/proot-distro"), "login", env.alias, "--user", "root", "--",
+            "/bin/sh", "-c", FISH_SCRIPT));
+        for (String line : out.split("\n")) if (!line.isEmpty()) log("  " + line);
+        boolean ok = out.contains(MARK + "FISH_OK");
+        synchronized (this) {
+            mState.fish = ok ? "installed" : "failed";
+        }
+        if (!ok) {
+            warn("Fish could not be installed, so Ubuntu opens with Bash. Install it later with Install in the toolbar: " + lastLine(out));
+            return;
+        }
+        log("Fish runs in Ubuntu: it opens in new tabs");
+        java.util.function.Consumer<String> onFishReady = mOnFishReady;
+        if (onFishReady != null) onFishReady.accept(env.alias);
+        save();
     }
 
     // ---------------------------------------------------------------------------------------

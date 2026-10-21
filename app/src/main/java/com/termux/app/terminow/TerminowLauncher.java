@@ -502,6 +502,24 @@ public class TerminowLauncher {
     void onToolInstalled(@NonNull Environment environment, @NonNull TerminowToolInstaller.Tool tool) {
         if (tool == TerminowToolInstaller.Tool.CLAUDE) mClaude.remove(stateKey(environment));
         if (tool == TerminowToolInstaller.Tool.TMUX) mTmux.remove(stateKey(environment));
+        // Install & Enable: Fish, which the install found to run, opens in new tabs of Ubuntu
+        if (tool == TerminowToolInstaller.Tool.FISH && isUbuntuEnvironment(environment)) enableFish();
+    }
+
+    /** Fish for new tabs of local Ubuntu; the tabs that are open keep their shell. */
+    void enableFish() {
+        mStore.setUbuntuShell(TerminowStore.UBUNTU_SHELL_FISH);
+        mActivity.showToast(mActivity.getString(R.string.terminow_fish_enabled), true);
+    }
+
+    boolean isUbuntuEnvironment(@NonNull Environment environment) {
+        TerminowLinuxEnv linux = environment.container != null ? linuxOf(environment) : null;
+        return linux != null && isUbuntu(linux);
+    }
+
+    @NonNull
+    TerminowStore getStore() {
+        return mStore;
     }
 
     /**
@@ -521,7 +539,7 @@ public class TerminowLauncher {
         boolean useTmux = TerminowLaunchPlan.TMUX_ATTACH.equals(tmux);
         Runnable open = () -> launchPlan("quick|" + environment.key + "|" + System.nanoTime(), environment, user, getFolder(environment),
             TerminowLaunchPlan.TOOL_SHELL, "", tmux, newTabTmuxName(environment),
-            mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), "bash"), true, "bash");
+            mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), shellNameOf(environment)), true, "bash");
         if (useTmux) TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.TMUX, 0, open);
         else open.run();
     }
@@ -1156,29 +1174,62 @@ public class TerminowLauncher {
         String folder = getFolder(environment);
         // An empty executable is the default login shell of the app, like a Local Terminal
         launch("shell|" + environment.key + "|" + folder, "", new String[0],
-            folder, mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), "bash"), false,
+            folder, mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), shellNameOf(environment)), false,
             new SessionInfo(environment.key, environment.shortName(), "bash", folder, ""));
     }
 
     private void launchUbuntu(@NonNull Environment environment) {
         if (environment.container == null) return;
         String folder = getFolder(environment);
-        String[] args = ubuntuLoginArgs(environment.container.name, getUser(environment), folder, bindsOf(environment)).toArray(new String[0]);
+        String[] args = ubuntuLoginArgs(environment.container.name, getUser(environment), folder, bindsOf(environment),
+            shellOf(environment)).toArray(new String[0]);
         SessionInfo info = new SessionInfo(environment.key, environment.shortName(), "bash", folder, "");
         info.user = getUser(environment);
         launch("ubuntu|" + environment.key + "|" + folder, new File(mTargets.getPrefixDir(), "bin/proot-distro").getPath(), args,
-            TermuxConstants.TERMUX_HOME_DIR_PATH, mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), "bash"), false,
+            TermuxConstants.TERMUX_HOME_DIR_PATH, mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), shellNameOf(environment)), false,
             info);
     }
 
     /** The arguments of proot-distro that open a shell of an environment as a user in a folder. */
     @NonNull
     static List<String> ubuntuLoginArgs(@NonNull String alias, @NonNull String user, @NonNull String folder, @NonNull List<String> binds) {
+        return ubuntuLoginArgs(alias, user, folder, binds, TerminowStore.UBUNTU_SHELL_DEFAULT);
+    }
+
+    /** The same, with the interactive shell of {@link #shellOf}. */
+    @NonNull
+    static List<String> ubuntuLoginArgs(@NonNull String alias, @NonNull String user, @NonNull String folder, @NonNull List<String> binds,
+                                        @NonNull String shell) {
         List<String> login = new ArrayList<>(Arrays.asList("login", alias, "--user", user, "--work-dir", folder));
         login.addAll(binds);
         login.add("--");
-        login.addAll(TerminowLaunchPlan.interactiveShell());
+        login.addAll(TerminowLaunchPlan.interactiveShell(shell));
         return login;
+    }
+
+    /**
+     * The interactive shell for new shell tabs of an environment: the one chosen in Settings for
+     * local Ubuntu, nothing for others, which keep the shell they give. SSH hosts and the TermiNow
+     * shell never get here.
+     */
+    @NonNull
+    String shellOf(@NonNull Environment environment) {
+        if (!isUbuntuEnvironment(environment)) return TerminowStore.UBUNTU_SHELL_DEFAULT;
+        String shell = mStore.getUbuntuShell();
+        if (!TerminowStore.UBUNTU_SHELL_FISH.equals(shell)) return shell;
+        // With the color of suggestions for the theme of the terminal, see TerminowLaunchPlan#NO_XOFF_SHELL
+        TerminowThemes.Theme theme = TerminowThemes.find(mStore.getTerminalTheme());
+        return shell + ":" + TerminowThemes.suggestionColor(theme != null ? theme : TerminowThemes.DEFAULT_THEME);
+    }
+
+    /** The name of the shell for the name of a tab: fish when it is chosen for Ubuntu, else bash, as before. */
+    @NonNull
+    String shellNameOf(@NonNull Environment environment) {
+        return TerminowStore.UBUNTU_SHELL_FISH.equals(mStore.getUbuntuShell()) && isUbuntuEnvironment(environment) ? "fish" : "bash";
+    }
+
+    static boolean isUbuntu(@NonNull TerminowLinuxEnv linux) {
+        return "ubuntu".equals(linux.distroId) || linux.idLike.contains("ubuntu");
     }
 
     /**
@@ -1565,9 +1616,16 @@ public class TerminowLauncher {
     @NonNull
     static String enterCommand(@NonNull String prefix, @NonNull String alias, @NonNull String user, @NonNull String folder,
                                @NonNull List<String> binds) {
+        return enterCommand(prefix, alias, user, folder, binds, TerminowStore.UBUNTU_SHELL_DEFAULT);
+    }
+
+    @NonNull
+    static String enterCommand(@NonNull String prefix, @NonNull String alias, @NonNull String user, @NonNull String folder,
+                               @NonNull List<String> binds, @NonNull String shell) {
         List<String> words = new ArrayList<>(Arrays.asList(prefix + "/bin/proot-distro", "login", alias, "--user", user, "--work-dir", folder));
         words.addAll(binds);
-        words.addAll(Arrays.asList("--", "/bin/sh", "-c", TerminowLaunchPlan.NO_XOFF_SHELL));
+        words.add("--");
+        words.addAll(TerminowLaunchPlan.interactiveShell(shell));
         StringBuilder line = new StringBuilder(" ");
         for (int i = 0; i < words.size(); i++) {
             if (i > 0) line.append(' ');
@@ -1700,7 +1758,8 @@ public class TerminowLauncher {
         mInfo.put(session, info);
         dismiss();
         mHost.showSession(session);
-        session.write(enterCommand(mTargets.getPrefixDir().getPath(), environment.container.name, user, folder, bindsOf(environment)) + "\r");
+        session.write(enterCommand(mTargets.getPrefixDir().getPath(), environment.container.name, user, folder, bindsOf(environment),
+            shellOf(environment)) + "\r");
         updateToolbar(session);
         trackStart(target, session, environment.shortName(), true, shellPid, () -> openInCurrentTab(environment));
     }
@@ -1935,7 +1994,7 @@ public class TerminowLauncher {
             plan = TerminowLaunchPlan.build(mTargets.getPrefixDir().getPath(), environment.isLocal() ? "" : environment.key, user,
                 folder, tool, command, tmuxMode, tmuxName, isLocalTmuxInstalled(), bindsOf(environment),
                 profile != null ? profile.executable : "", profile != null ? profile.arguments : new ArrayList<>(),
-                profile != null ? profile.startup : "");
+                profile != null ? profile.startup : "", shellOf(environment));
         } catch (IllegalArgumentException e) {
             showFailure(tabName, String.valueOf(e.getMessage()));
             return null;
@@ -1983,7 +2042,7 @@ public class TerminowLauncher {
             if (!TerminowLaunchPlan.isValidTmuxName(tmuxName)) tmuxName = "ubuntu" + number;
             launchPlan("default|" + number + "|" + System.nanoTime(), environment, getUser(environment), getFolder(environment),
                 TerminowLaunchPlan.TOOL_SHELL, "", tmuxMode, tmuxName,
-                mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), "bash"), true, "bash");
+                mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), shellNameOf(environment)), true, "bash");
             return true;
         }
         for (TerminowLaunchProfile profile : mStore.getLaunchProfiles()) {
@@ -2068,7 +2127,7 @@ public class TerminowLauncher {
             return;
         }
         launchPlan("linux|" + alias + "|" + user + "|" + System.nanoTime(), environment, user, path, TerminowLaunchPlan.TOOL_SHELL, "",
-            TerminowLaunchPlan.TMUX_OFF, "", mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), "bash"), true, "bash");
+            TerminowLaunchPlan.TMUX_OFF, "", mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), shellNameOf(environment)), true, "bash");
     }
 
     /**
@@ -2098,7 +2157,7 @@ public class TerminowLauncher {
         boolean tmux = !tmuxName.isEmpty() && TerminowLaunchPlan.isValidTmuxName(tmuxName);
         return launchPlan("restore|" + alias + "|" + System.nanoTime(), environment, who, folder, TerminowLaunchPlan.TOOL_SHELL, "",
             tmux ? TerminowLaunchPlan.TMUX_ATTACH : TerminowLaunchPlan.TMUX_OFF, tmux ? tmuxName : "",
-            tabName.isEmpty() ? mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), "bash") : tabName, true, "bash");
+            tabName.isEmpty() ? mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), shellNameOf(environment)) : tabName, true, "bash");
     }
 
     /** The tabs that TermiNow started in an environment and that still run. */

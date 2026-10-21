@@ -277,6 +277,7 @@ public class TerminowKeyBar {
         content.setOrientation(LinearLayout.VERTICAL);
         scroll.addView(content);
         if (claude) {
+            mFilter = "";
             mContent = content;
             mPanelSession = session;
             fillClaude(content, session);
@@ -305,6 +306,10 @@ public class TerminowKeyBar {
             }
         });
         dialog.setContentView(root);
+        // The keyboard only opens when the filter is tapped
+        if (dialog.getWindow() != null)
+            dialog.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN |
+                android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         dialog.setOnDismissListener(d -> {
             if (mDialog == dialog) {
                 mDialog = null;
@@ -370,7 +375,27 @@ public class TerminowKeyBar {
             content.addView(text(mActivity.getString(R.string.terminow_keybar_commands_unchecked), 12, R.color.terminow_mcp_warn));
         else
             content.addView(text(mActivity.getString(R.string.terminow_keybar_commands_checked, version), 12, R.color.terminow_text_secondary));
-        for (TerminowKeyBarModel.Command command : commands) commandRow(content, session, command, favorites.contains(command.text));
+        // A filter, since there are many commands; the list below follows what is typed
+        android.widget.EditText filter = new android.widget.EditText(mActivity);
+        filter.setHint(R.string.terminow_keybar_filter_hint);
+        filter.setSingleLine(true);
+        filter.setTextColor(color(R.color.terminow_text));
+        filter.setHintTextColor(color(R.color.terminow_text_secondary));
+        filter.setMinHeight(dp(48));
+        filter.setText(mFilter);
+        content.addView(filter, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout list = new LinearLayout(mActivity);
+        list.setOrientation(LinearLayout.VERTICAL);
+        content.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        fillCommands(list, session, commands, favorites);
+        filter.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override public void afterTextChanged(android.text.Editable s) {
+                mFilter = s.toString();
+                fillCommands(list, session, commands, favorites);
+            }
+        });
 
         section(content, R.string.terminow_keybar_section_keyboard);
         for (TerminowKeyBarModel.Shortcut shortcut : TerminowKeyBarModel.CLAUDE_SHORTCUTS)
@@ -402,12 +427,45 @@ public class TerminowKeyBar {
         addMore(content);
     }
 
+    /** What was typed in the filter of the commands, kept while the panel is filled again. */
+    private String mFilter = "";
+
+    private static final int[] CATEGORY_LABELS = {R.string.terminow_keybar_cat_conversation, R.string.terminow_keybar_cat_model,
+        R.string.terminow_keybar_cat_project, R.string.terminow_keybar_cat_tools, R.string.terminow_keybar_cat_account};
+
+    /** The commands that match the filter, under the name of their group. */
+    private void fillCommands(@NonNull LinearLayout list, @NonNull TerminalSession session, @NonNull List<TerminowKeyBarModel.Command> commands,
+                              @NonNull List<String> favorites) {
+        list.removeAllViews();
+        boolean any = false;
+        for (TerminowKeyBarModel.Category category : TerminowKeyBarModel.Category.values()) {
+            boolean header = false;
+            for (TerminowKeyBarModel.Command command : commands) {
+                if (command.category != category || !TerminowKeyBarModel.matches(command, describe(command.descriptionName), mFilter)) continue;
+                if (!header) {
+                    TextView label = text(mActivity.getString(CATEGORY_LABELS[category.ordinal()]), 12, R.color.terminow_text_secondary);
+                    label.setTypeface(Typeface.DEFAULT_BOLD);
+                    label.setPadding(dp(4), dp(10), 0, dp(2));
+                    ViewCompat.setAccessibilityHeading(label, true);
+                    list.addView(label);
+                    header = true;
+                }
+                commandRow(list, session, command, favorites.contains(command.text));
+                any = true;
+            }
+        }
+        if (!any) list.addView(text(mActivity.getString(R.string.terminow_keybar_filter_none), 13, R.color.terminow_text_secondary));
+    }
+
     /** A command: a tap puts it on the prompt, a long press copies it, the star pins or unpins it. */
     private void commandRow(@NonNull LinearLayout content, @NonNull TerminalSession session, @NonNull TerminowKeyBarModel.Command command,
                             boolean favorite) {
         LinearLayout line = new LinearLayout(mActivity);
         line.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout row = row(null, command.text, describe(command.descriptionName), () -> typeCommand(session, command));
+        String name = command.argument.isEmpty() ? command.text : command.text + " " + command.argument;
+        String description = describe(command.descriptionName);
+        if (command.needsArgument()) description += " · " + mActivity.getString(R.string.terminow_keybar_argument_needed, command.argument);
+        LinearLayout row = row(null, name, description, () -> typeCommand(session, command));
         row.setOnLongClickListener(v -> {
             android.content.ClipboardManager clipboard = (android.content.ClipboardManager) mActivity.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
             if (clipboard != null) clipboard.setPrimaryClip(android.content.ClipData.newPlainText(command.text, TerminowKeyBarModel.promptText(command)));
@@ -456,22 +514,54 @@ public class TerminowKeyBar {
     /** The strings that say what commands and keys do, named in {@link TerminowKeyBarModel}; by reference, so that shrinking keeps them. */
     private static final Map<String, Integer> DESCRIPTIONS = new java.util.HashMap<>();
     static {
+        DESCRIPTIONS.put("terminow_keybar_cmd_add_dir", R.string.terminow_keybar_cmd_add_dir);
+        DESCRIPTIONS.put("terminow_keybar_cmd_agents", R.string.terminow_keybar_cmd_agents);
+        DESCRIPTIONS.put("terminow_keybar_cmd_branch", R.string.terminow_keybar_cmd_branch);
+        DESCRIPTIONS.put("terminow_keybar_cmd_btw", R.string.terminow_keybar_cmd_btw);
+        DESCRIPTIONS.put("terminow_keybar_cmd_bug", R.string.terminow_keybar_cmd_bug);
+        DESCRIPTIONS.put("terminow_keybar_cmd_cd", R.string.terminow_keybar_cmd_cd);
         DESCRIPTIONS.put("terminow_keybar_cmd_clear", R.string.terminow_keybar_cmd_clear);
         DESCRIPTIONS.put("terminow_keybar_cmd_compact", R.string.terminow_keybar_cmd_compact);
         DESCRIPTIONS.put("terminow_keybar_cmd_config", R.string.terminow_keybar_cmd_config);
-        DESCRIPTIONS.put("terminow_keybar_cmd_cost", R.string.terminow_keybar_cmd_cost);
+        DESCRIPTIONS.put("terminow_keybar_cmd_context", R.string.terminow_keybar_cmd_context);
+        DESCRIPTIONS.put("terminow_keybar_cmd_copy", R.string.terminow_keybar_cmd_copy);
+        DESCRIPTIONS.put("terminow_keybar_cmd_debug", R.string.terminow_keybar_cmd_debug);
+        DESCRIPTIONS.put("terminow_keybar_cmd_diff", R.string.terminow_keybar_cmd_diff);
         DESCRIPTIONS.put("terminow_keybar_cmd_doctor", R.string.terminow_keybar_cmd_doctor);
+        DESCRIPTIONS.put("terminow_keybar_cmd_effort", R.string.terminow_keybar_cmd_effort);
         DESCRIPTIONS.put("terminow_keybar_cmd_exit", R.string.terminow_keybar_cmd_exit);
+        DESCRIPTIONS.put("terminow_keybar_cmd_export", R.string.terminow_keybar_cmd_export);
+        DESCRIPTIONS.put("terminow_keybar_cmd_fast", R.string.terminow_keybar_cmd_fast);
+        DESCRIPTIONS.put("terminow_keybar_cmd_goal", R.string.terminow_keybar_cmd_goal);
         DESCRIPTIONS.put("terminow_keybar_cmd_help", R.string.terminow_keybar_cmd_help);
+        DESCRIPTIONS.put("terminow_keybar_cmd_hooks", R.string.terminow_keybar_cmd_hooks);
         DESCRIPTIONS.put("terminow_keybar_cmd_init", R.string.terminow_keybar_cmd_init);
+        DESCRIPTIONS.put("terminow_keybar_cmd_keybindings", R.string.terminow_keybar_cmd_keybindings);
         DESCRIPTIONS.put("terminow_keybar_cmd_login", R.string.terminow_keybar_cmd_login);
         DESCRIPTIONS.put("terminow_keybar_cmd_logout", R.string.terminow_keybar_cmd_logout);
         DESCRIPTIONS.put("terminow_keybar_cmd_mcp", R.string.terminow_keybar_cmd_mcp);
         DESCRIPTIONS.put("terminow_keybar_cmd_memory", R.string.terminow_keybar_cmd_memory);
         DESCRIPTIONS.put("terminow_keybar_cmd_model", R.string.terminow_keybar_cmd_model);
+        DESCRIPTIONS.put("terminow_keybar_cmd_output_style", R.string.terminow_keybar_cmd_output_style);
         DESCRIPTIONS.put("terminow_keybar_cmd_permissions", R.string.terminow_keybar_cmd_permissions);
+        DESCRIPTIONS.put("terminow_keybar_cmd_plan", R.string.terminow_keybar_cmd_plan);
+        DESCRIPTIONS.put("terminow_keybar_cmd_plugin", R.string.terminow_keybar_cmd_plugin);
+        DESCRIPTIONS.put("terminow_keybar_cmd_recap", R.string.terminow_keybar_cmd_recap);
+        DESCRIPTIONS.put("terminow_keybar_cmd_release_notes", R.string.terminow_keybar_cmd_release_notes);
+        DESCRIPTIONS.put("terminow_keybar_cmd_rename", R.string.terminow_keybar_cmd_rename);
         DESCRIPTIONS.put("terminow_keybar_cmd_resume", R.string.terminow_keybar_cmd_resume);
+        DESCRIPTIONS.put("terminow_keybar_cmd_review", R.string.terminow_keybar_cmd_review);
+        DESCRIPTIONS.put("terminow_keybar_cmd_rewind", R.string.terminow_keybar_cmd_rewind);
+        DESCRIPTIONS.put("terminow_keybar_cmd_security_review", R.string.terminow_keybar_cmd_security_review);
+        DESCRIPTIONS.put("terminow_keybar_cmd_simplify", R.string.terminow_keybar_cmd_simplify);
+        DESCRIPTIONS.put("terminow_keybar_cmd_skills", R.string.terminow_keybar_cmd_skills);
         DESCRIPTIONS.put("terminow_keybar_cmd_status", R.string.terminow_keybar_cmd_status);
+        DESCRIPTIONS.put("terminow_keybar_cmd_statusline", R.string.terminow_keybar_cmd_statusline);
+        DESCRIPTIONS.put("terminow_keybar_cmd_tasks", R.string.terminow_keybar_cmd_tasks);
+        DESCRIPTIONS.put("terminow_keybar_cmd_theme", R.string.terminow_keybar_cmd_theme);
+        DESCRIPTIONS.put("terminow_keybar_cmd_tui", R.string.terminow_keybar_cmd_tui);
+        DESCRIPTIONS.put("terminow_keybar_cmd_upgrade", R.string.terminow_keybar_cmd_upgrade);
+        DESCRIPTIONS.put("terminow_keybar_cmd_usage", R.string.terminow_keybar_cmd_usage);
         DESCRIPTIONS.put("terminow_keybar_key_claude_esc", R.string.terminow_keybar_key_claude_esc);
         DESCRIPTIONS.put("terminow_keybar_key_claude_esc_esc", R.string.terminow_keybar_key_claude_esc_esc);
         DESCRIPTIONS.put("terminow_keybar_key_claude_mode", R.string.terminow_keybar_key_claude_mode);

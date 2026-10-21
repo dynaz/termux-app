@@ -180,4 +180,34 @@ public class TerminowKeyBarModelTest {
     private static void assertArrayEqualsInt(int[] expected, int[] actual) {
         assertEquals(Arrays.toString(expected), Arrays.toString(actual));
     }
+
+    @Test
+    public void theCommandsOfTheDocsAreThereOnceAndNoneThatWereRemoved() {
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (TerminowKeyBarModel.Command command : TerminowKeyBarModel.CLAUDE_COMMANDS)
+            assertTrue("twice: " + command.text, seen.add(command.text));
+        for (String command : Arrays.asList("/rewind", "/context", "/effort", "/plan", "/add-dir", "/usage", "/btw", "/diff"))
+            assertTrue(command, seen.contains(command));
+        // Removed from Claude Code, or an alias of another
+        for (String command : Arrays.asList("/vim", "/pr-comments", "/ultraplan", "/cost"))
+            assertFalse(command, seen.contains(command));
+    }
+
+    @Test
+    public void aCommandThatNeedsMoreGetsASpaceAndNeverAnEnter() {
+        TerminowKeyBarModel.Command addDir = TerminowKeyBarModel.commandOf("/add-dir");
+        assertTrue(addDir.needsArgument());
+        assertEquals("/add-dir ", TerminowKeyBarModel.promptText(addDir));
+        // An optional argument: the command alone runs
+        assertEquals("/compact", TerminowKeyBarModel.promptText(TerminowKeyBarModel.commandOf("/compact")));
+    }
+
+    @Test
+    public void theFilterFindsANameOrWhatItDoes() {
+        TerminowKeyBarModel.Command rewind = TerminowKeyBarModel.commandOf("/rewind");
+        assertTrue(TerminowKeyBarModel.matches(rewind, "Go back to an earlier point", ""));
+        assertTrue(TerminowKeyBarModel.matches(rewind, "Go back to an earlier point", "/rew"));
+        assertTrue(TerminowKeyBarModel.matches(rewind, "Go back to an earlier point", "EARLIER"));
+        assertFalse(TerminowKeyBarModel.matches(rewind, "Go back to an earlier point", "model"));
+    }
 }

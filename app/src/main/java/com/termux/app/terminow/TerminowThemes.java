@@ -90,6 +90,48 @@ public class TerminowThemes {
     };
 
 
+    /**
+     * A color for suggestions of Fish on the background of a theme: between its text and its
+     * background, dimmer than the text, but with a contrast of at least 3 to the background,
+     * as six hex digits. The bright black of some themes, which Fish uses, is the background.
+     */
+    @NonNull
+    public static String suggestionColor(@NonNull Theme theme) {
+        int color = theme.foreground;
+        for (int percent = 45; percent <= 100; percent += 5) {
+            color = mix(theme.foreground, theme.background, percent);
+            if (contrast(color, theme.background) >= 3) break;
+        }
+        return String.format(java.util.Locale.ROOT, "%06x", color & 0xFFFFFF);
+    }
+
+    /** The color that is that much of the first, as a percentage, and the rest of the second. */
+    static int mix(int first, int second, int percent) {
+        int color = 0;
+        for (int shift = 0; shift <= 16; shift += 8) {
+            int a = (first >> shift) & 0xFF, b = (second >> shift) & 0xFF;
+            color |= ((a * percent + b * (100 - percent) + 50) / 100) << shift;
+        }
+        return color;
+    }
+
+    /** The contrast ratio of two colors, as WCAG has it, from 1 to 21. */
+    static double contrast(int first, int second) {
+        double a = luminance(first), b = luminance(second);
+        return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    }
+
+    private static double luminance(int color) {
+        double sum = 0;
+        double[] weights = {0.0722, 0.7152, 0.2126};
+        for (int i = 0; i < 3; i++) {
+            double value = ((color >> (8 * i)) & 0xFF) / 255.0;
+            value = value <= 0.03928 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
+            sum += weights[i] * value;
+        }
+        return sum;
+    }
+
     /** The theme with the name, {@code null} if there is none, like for the empty name of "the settings". */
     @androidx.annotation.Nullable
     public static Theme find(@NonNull String name) {

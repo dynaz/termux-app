@@ -19,6 +19,7 @@ cat > "$S/bin/apt-get" <<X
 echo "apt-get \$*" >> "$S/calls"
 case "\$*" in *install*) for a in "\$@"; do case "\$a" in -*|install|DPkg*) ;; *) echo "\$a" >> "$S/installed"
  case "\$a" in git) printf '#!/bin/sh\necho git version 2.43.0\n' > "$S/bin/git";; tmux) printf '#!/bin/sh\necho tmux 3.4\n' > "$S/bin/tmux";;
+  fish) printf '#!/bin/sh\necho fish, version 3.7.0\n' > "$S/bin/fish";;
   curl) printf '#!/bin/sh\nexec "$S/real/curl" "\$@"\n' > "$S/bin/curl";; esac; chmod +x "$S/bin/"* 2>/dev/null;; esac; done;; esac
 exit 0
 X

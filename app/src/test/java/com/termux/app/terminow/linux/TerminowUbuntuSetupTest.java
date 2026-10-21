@@ -40,6 +40,9 @@ public class TerminowUbuntuSetupTest {
     private final List<Object[]> mAnswers = new ArrayList<>();
     private String mAptInstallOutput = "";
     private int mAptInstallExit = 0;
+    /** Whether apt of Ubuntu installs Fish, and how often it was asked to. */
+    private boolean mFishInstalls = true;
+    private int mFishRuns;
     @Nullable private String mFreeAlias;
 
     @Before
@@ -111,6 +114,15 @@ public class TerminowUbuntuSetupTest {
                 output.line(TerminowUbuntuSetup.MARK + "CMD_OK aarch64");
             } else if (joined.contains("getent")) {
                 output.line(TerminowUbuntuSetup.MARK + "DNS_OK");
+            } else if (joined.contains(TerminowUbuntuSetup.MARK + "FISH_OK")) {
+                // Fish, from apt of Ubuntu
+                mFishRuns++;
+                if (!mFishInstalls) {
+                    output.line("E: Unable to locate package fish");
+                    return 21;
+                }
+                output.line("fish, version 3.7.0");
+                output.line(TerminowUbuntuSetup.MARK + "FISH_OK");
             }
             return 0;
         }
@@ -275,6 +287,9 @@ public class TerminowUbuntuSetupTest {
         assertEquals("ubuntu", state.alias);
         assertEquals("mine", new String(Files.readAllBytes(userFile.toPath()), StandardCharsets.UTF_8));
         assertTrue(ranTool("proot-distro", "login"));
+        // An Ubuntu that was there gets no packages: Fish is for Install tools
+        assertEquals(0, mFishRuns);
+        assertFalse(state.newInstall);
     }
 
     @Test
@@ -497,4 +512,35 @@ public class TerminowUbuntuSetupTest {
         assertEquals(TerminowUbuntuSetup.State.Status.READY, retry.getState().status);
     }
 
+
+    @Test
+    public void aNewUbuntuGetsFishAndOpensWithItOnceItRuns() {
+        TerminowUbuntuSetup setup = setup();
+        java.util.List<String> enabled = new java.util.ArrayList<>();
+        setup.setOnFishReady(enabled::add);
+        assertTrue(setup.start());
+        setup.run();
+        TerminowUbuntuSetup.State state = setup.getState();
+        assertEquals(TerminowUbuntuSetup.State.Status.READY, state.status);
+        assertTrue(state.newInstall);
+        assertEquals("installed", state.fish);
+        assertEquals(Arrays.asList("ubuntu"), enabled);
+        assertEquals(1, mFishRuns);
+    }
+
+    @Test
+    public void fishThatCanNotBeInstalledLeavesUbuntuReadyWithBash() {
+        mFishInstalls = false;
+        TerminowUbuntuSetup setup = setup();
+        java.util.List<String> enabled = new java.util.ArrayList<>();
+        setup.setOnFishReady(enabled::add);
+        assertTrue(setup.start());
+        setup.run();
+        TerminowUbuntuSetup.State state = setup.getState();
+        assertEquals(TerminowUbuntuSetup.State.Status.READY, state.status);
+        assertEquals("failed", state.fish);
+        assertTrue("Fish is never taken as there", enabled.isEmpty());
+        assertEquals(1, state.warnings.size());
+        assertTrue(state.warnings.get(0), state.warnings.get(0).contains("Bash"));
+    }
 }
