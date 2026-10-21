@@ -1,15 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
-<HorizontalScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- The key bar: the strip of actions above the keys, or at their left on a wide screen, see TerminowKeyBar -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/terminow_keybar"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true"
-    android:overScrollMode="never"
-    android:scrollbars="none">
+    android:orientation="vertical">
 
-    <com.termux.shared.termux.extrakeys.ExtraKeysView
-        android:id="@+id/terminal_toolbar_extra_keys"
-        style="?android:attr/buttonBarStyle"
-        android:layout_width="wrap_content"
-        android:layout_height="match_parent"
+    <LinearLayout
+        android:id="@+id/terminow_keybar_actions"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/terminow_keybar_actions_height"
+        android:gravity="center_vertical"
         android:orientation="horizontal" />
-</HorizontalScrollView>
+
+    <HorizontalScrollView
+        android:id="@+id/terminow_keybar_keys"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true"
+        android:overScrollMode="never"
+        android:scrollbars="none">
+
+        <com.termux.shared.termux.extrakeys.ExtraKeysView
+            android:id="@+id/terminal_toolbar_extra_keys"
+            style="?android:attr/buttonBarStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:orientation="horizontal" />
+    </HorizontalScrollView>
+</LinearLayout>

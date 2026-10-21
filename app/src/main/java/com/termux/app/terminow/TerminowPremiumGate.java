@@ -26,6 +26,26 @@ public final class TerminowPremiumGate {
         return feature == Feature.MULTIPLE_ENVIRONMENTS && installedEnvironments == 0;
     }
 
+    /** The gold of the crown of Premium. */
+    public static final int PREMIUM_GOLD = 0xFFFFC107;
+
+    /**
+     * A label with the Premium badge after it, for a menu or a button of a feature that is part
+     * of Premium: "Backup &amp; Restore  ♛ PREMIUM". Shown also with Premium, so the label says where
+     * the feature belongs.
+     */
+    @NonNull
+    public static CharSequence withBadge(@NonNull android.content.Context context, @NonNull CharSequence label) {
+        android.text.SpannableStringBuilder text = new android.text.SpannableStringBuilder(label).append("  ");
+        int start = text.length();
+        text.append("♛ ").append(context.getString(R.string.terminow_account_premium).toUpperCase(java.util.Locale.getDefault()));
+        int end = text.length();
+        text.setSpan(new android.text.style.ForegroundColorSpan(PREMIUM_GOLD), start, end, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        text.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), start, end, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        text.setSpan(new android.text.style.RelativeSizeSpan(0.75f), start, end, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        return text;
+    }
+
     /** Run the action if allowed, otherwise say that it is part of Premium. */
     public static void require(@NonNull TermuxActivity activity, @NonNull TerminowStore store, @NonNull Feature feature,
                                int installedEnvironments, @NonNull Runnable action) {

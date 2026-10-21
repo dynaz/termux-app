@@ -157,7 +157,7 @@
     <LinearLayout
         android:id="@+id/terminow_terminal_toolbar"
         android:layout_width="match_parent"
-        android:layout_height="40dp"
+        android:layout_height="48dp"
         android:background="@color/terminow_bar_terminal"
         android:gravity="center_vertical"
         android:orientation="horizontal"
@@ -193,39 +193,28 @@
             android:textColor="@color/terminow_text_secondary"
             android:textSize="13sp" />
 
-        <!-- Install tools: the label goes when the toolbar is narrow, the tooltip stays -->
-        <TextView
+        <!-- Install tools and Quick Launch: icons only, each with a tooltip and a description for TalkBack -->
+        <ImageView
             android:id="@+id/terminow_toolbar_install"
-            android:layout_width="wrap_content"
-            android:layout_height="32dp"
-            android:layout_marginStart="6dp"
-            android:background="@drawable/terminow_tab_idle"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="2dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/terminow_install_title"
-            android:drawableStart="@drawable/ic_terminow_download"
-            android:drawablePadding="6dp"
-            android:drawableTint="@color/terminow_text"
-            android:gravity="center_vertical"
-            android:maxLines="1"
-            android:paddingHorizontal="10dp"
-            android:text="@string/terminow_install_button"
-            android:textColor="@color/terminow_text"
-            android:textSize="13sp" />
+            android:scaleType="center"
+            android:src="@drawable/ic_terminow_download"
+            app:tint="@color/terminow_text" />
 
-        <TextView
+        <ImageView
             android:id="@+id/terminow_toolbar_tools"
-            android:layout_width="wrap_content"
-            android:layout_height="32dp"
-            android:layout_marginStart="6dp"
-            android:background="@drawable/terminow_tab_idle"
-            android:drawableStart="@drawable/ic_terminow_launch"
-            android:drawablePadding="6dp"
-            android:drawableTint="@color/terminow_text"
-            android:gravity="center_vertical"
-            android:maxLines="1"
-            android:paddingHorizontal="10dp"
-            android:text="@string/terminow_quick_title"
-            android:textColor="@color/terminow_text"
-            android:textSize="13sp" />
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="2dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/terminow_quick_title"
+            android:scaleType="center"
+            android:src="@drawable/ic_terminow_launch"
+            app:tint="@color/terminow_text" />
 
         <ImageView
             android:id="@+id/terminow_toolbar_keys"

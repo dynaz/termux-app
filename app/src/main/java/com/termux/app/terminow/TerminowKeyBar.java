@@ -1,0 +1,543 @@
+package com.termux.app.terminow;
+
+import android.app.Dialog;
+import android.content.res.ColorStateList;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.TypedValue;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.ImageButton;
+import android.widget.LinearLayout;
+import android.widget.PopupMenu;
+import android.widget.ScrollView;
+import android.widget.TextView;
+
+import androidx.annotation.DrawableRes;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.StringRes;
+import androidx.appcompat.widget.TooltipCompat;
+import androidx.core.content.ContextCompat;
+import androidx.core.view.ViewCompat;
+
+import com.termux.R;
+import com.termux.app.TermuxActivity;
+import com.termux.app.terminal.io.TermuxTerminalExtraKeys;
+import com.termux.shared.termux.extrakeys.ExtraKeysView;
+import com.termux.terminal.TerminalSession;
+import com.termux.view.TerminalView;
+
+import java.io.File;
+import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+/**
+ * The key bar below the terminal: a strip of actions (attach, paste, commands and shortcuts,
+ * the keys of the tab, the keyboard) and a strip of keys that scrolls. The keys follow the tab
+ * that is shown: those of Claude Code while it runs in it, else those of a terminal. Nothing is
+ * sent to a tab without a tap of the user; a command is only put on the prompt.
+ */
+public class TerminowKeyBar {
+
+    /** How often a tab is looked at for Claude Code that was started in it, like from bash. */
+    private static final long SCAN_INTERVAL_MS = 2000;
+
+    private final TermuxActivity mActivity;
+    private final Handler mHandler = new Handler(Looper.getMainLooper());
+    private final ExecutorService mExecutor = Executors.newSingleThreadExecutor();
+    /** What the user chose with the mode button, for each tab. */
+    private final Map<TerminalSession, TerminowKeyBarModel.Choice> mChoices = new WeakHashMap<>();
+    /** Whether Claude Code was found running in a tab, the last time it was looked at. */
+    private final Map<TerminalSession, Boolean> mFound = new WeakHashMap<>();
+    @Nullable private ImageButton mModeButton;
+    @Nullable private TerminalSession mShownSession;
+    @Nullable private TerminowKeyBarModel.Mode mShownMode;
+    private boolean mScanning;
+    private boolean mStarted;
+    @Nullable private Dialog mDialog;
+
+    private final Runnable mScan = this::scan;
+
+    public TerminowKeyBar(@NonNull TermuxActivity activity) {
+        mActivity = activity;
+    }
+
+    /** Whether the actions are beside the keys, in one row, on a wide screen like a tablet or an unfolded phone. */
+    public static boolean isOneRow(@NonNull android.content.Context context) {
+        return context.getResources().getConfiguration().screenWidthDp >= 600;
+    }
+
+    /** The height of the key bar: the keys, and the actions above them on a narrow screen. */
+    public static int heightOf(@NonNull android.content.Context context, int keysHeight) {
+        int actions = context.getResources().getDimensionPixelSize(R.dimen.terminow_keybar_actions_height);
+        return isOneRow(context) ? Math.max(keysHeight, actions) : keysHeight + actions;
+    }
+
+    /** Put the actions above the keys, or beside them on a wide screen, after the screen was folded or turned. */
+    public void applyLayout(@NonNull LinearLayout bar) {
+        LinearLayout actions = bar.findViewById(R.id.terminow_keybar_actions);
+        View keys = bar.findViewById(R.id.terminow_keybar_keys);
+        if (actions == null || keys == null) return;
+        boolean oneRow = isOneRow(mActivity);
+        bar.setOrientation(oneRow ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams actionParams = (LinearLayout.LayoutParams) actions.getLayoutParams();
+        actionParams.width = oneRow ? mActivity.getResources().getDimensionPixelSize(R.dimen.terminow_keybar_actions_width) : ViewGroup.LayoutParams.MATCH_PARENT;
+        actionParams.height = oneRow ? ViewGroup.LayoutParams.MATCH_PARENT : mActivity.getResources().getDimensionPixelSize(R.dimen.terminow_keybar_actions_height);
+        actions.setLayoutParams(actionParams);
+        LinearLayout.LayoutParams keyParams = (LinearLayout.LayoutParams) keys.getLayoutParams();
+        keyParams.width = oneRow ? 0 : ViewGroup.LayoutParams.MATCH_PARENT;
+        keyParams.height = oneRow ? ViewGroup.LayoutParams.MATCH_PARENT : 0;
+        keyParams.weight = 1;
+        keys.setLayoutParams(keyParams);
+    }
+
+    /** Fill the strip of actions, which is part of the toolbar page of the keys. */
+    public void bindActions(@NonNull LinearLayout strip) {
+        strip.removeAllViews();
+        addAction(strip, R.drawable.ic_terminow_attach, R.string.terminow_keybar_attach, v -> {
+            TerminowHome home = mActivity.getTerminowHome();
+            if (home != null && currentRunning() != null) home.attachFiles();
+        });
+        addAction(strip, R.drawable.ic_terminow_paste, R.string.terminow_keybar_paste, v -> {
+            if (currentRunning() != null && mActivity.getTermuxTerminalSessionClient() != null)
+                mActivity.getTermuxTerminalSessionClient().onPasteTextFromClipboard(null);
+        });
+        addAction(strip, R.drawable.ic_terminow_commands, R.string.terminow_keybar_commands, v -> showCommands());
+        mModeButton = addAction(strip, R.drawable.ic_terminow_terminal, R.string.terminow_keybar_mode, this::showModeMenu);
+        addAction(strip, R.drawable.ic_terminow_keyboard_hide, R.string.terminow_keybar_keyboard, v -> {
+            if (mActivity.getTermuxTerminalViewClient() != null) mActivity.getTermuxTerminalViewClient().onToggleSoftKeyboardRequest();
+        });
+        mShownMode = null;
+        refresh();
+    }
+
+    private ImageButton addAction(@NonNull LinearLayout strip, @DrawableRes int icon, @StringRes int label, @NonNull View.OnClickListener click) {
+        ImageButton button = new ImageButton(mActivity);
+        button.setImageResource(icon);
+        button.setImageTintList(ColorStateList.valueOf(ContextCompat.getColor(mActivity, R.color.terminow_text)));
+        TypedValue ripple = new TypedValue();
+        mActivity.getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true);
+        button.setBackgroundResource(ripple.resourceId);
+        button.setScaleType(ImageButton.ScaleType.CENTER);
+        button.setPadding(0, 0, 0, 0);
+        String text = mActivity.getString(label);
+        button.setContentDescription(text);
+        TooltipCompat.setTooltipText(button, text);
+        button.setOnClickListener(click);
+        strip.addView(button, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1));
+        return button;
+    }
+
+    @Nullable
+    private TerminalSession currentRunning() {
+        TerminalSession session = mActivity.getCurrentSession();
+        return session != null && session.isRunning() ? session : null;
+    }
+
+    /** The keys for the tab that is shown, after it changed, ended or what it runs changed. */
+    public void refresh() {
+        TerminalSession session = mActivity.getCurrentSession();
+        if (session != mShownSession) {
+            // CTRL and ALT never carry over to another tab
+            ExtraKeysView keys = mActivity.getExtraKeysView();
+            if (keys != null) keys.resetSpecialButtons();
+            mShownSession = session;
+        }
+        TerminowKeyBarModel.Mode mode = modeOf(session);
+        TermuxTerminalExtraKeys extraKeys = mActivity.getTermuxTerminalExtraKeys();
+        ExtraKeysView keys = mActivity.getExtraKeysView();
+        if (extraKeys != null && (extraKeys.setMode(mode) || mode != mShownMode) && keys != null) {
+            keys.reload(extraKeys.getExtraKeysInfo(), mActivity.getTerminalToolbarDefaultHeight());
+            keys.resetSpecialButtons();
+        }
+        mShownMode = mode;
+        if (mModeButton != null) {
+            mModeButton.setImageResource(mode == TerminowKeyBarModel.Mode.CLAUDE ? R.drawable.ic_terminow_tool_claude : R.drawable.ic_terminow_terminal);
+            // The Claude mark has its own color
+            mModeButton.setImageTintList(mode == TerminowKeyBarModel.Mode.CLAUDE ? null :
+                ColorStateList.valueOf(ContextCompat.getColor(mActivity, R.color.terminow_text)));
+            String state = mActivity.getString(mode == TerminowKeyBarModel.Mode.CLAUDE ? R.string.terminow_keybar_mode_claude : R.string.terminow_keybar_mode_terminal);
+            String label = mActivity.getString(R.string.terminow_keybar_mode_now, state);
+            mModeButton.setContentDescription(label);
+            TooltipCompat.setTooltipText(mModeButton, label);
+        }
+    }
+
+    @NonNull
+    private TerminowKeyBarModel.Mode modeOf(@Nullable TerminalSession session) {
+        if (session == null) return TerminowKeyBarModel.Mode.TERMINAL;
+        TerminowKeyBarModel.Choice choice = choiceOf(session);
+        TerminowHome home = mActivity.getTerminowHome();
+        boolean launched = home != null && home.isClaudeTab(session);
+        Boolean found = mFound.get(session);
+        return TerminowKeyBarModel.resolve(choice, session.isRunning(), launched, found != null && found);
+    }
+
+    @NonNull
+    private TerminowKeyBarModel.Choice choiceOf(@NonNull TerminalSession session) {
+        TerminowKeyBarModel.Choice choice = mChoices.get(session);
+        return choice != null ? choice : TerminowKeyBarModel.Choice.AUTO;
+    }
+
+    /** Look at the tabs again and again while the terminal can be seen. */
+    public void start() {
+        mStarted = true;
+        mHandler.removeCallbacks(mScan);
+        mHandler.post(mScan);
+    }
+
+    public void stop() {
+        mStarted = false;
+        mHandler.removeCallbacks(mScan);
+    }
+
+    /**
+     * Find out off the main thread whether Claude Code runs in the tab that is shown, which is
+     * only needed when the keys are found out and TermiNow did not start it there itself.
+     */
+    private void scan() {
+        if (!mStarted) return;
+        mHandler.postDelayed(mScan, SCAN_INTERVAL_MS);
+        TerminalSession session = currentRunning();
+        TerminowHome home = mActivity.getTerminowHome();
+        if (session == null || mScanning || choiceOf(session) != TerminowKeyBarModel.Choice.AUTO ||
+            (home != null && home.isClaudeTab(session)) || mActivity.isHomeVisible()) return;
+        int pid = session.getPid();
+        mScanning = true;
+        mExecutor.execute(() -> {
+            boolean found = TerminowKeyBarModel.isClaudeRunningUnder(new File("/proc"), pid);
+            mHandler.post(() -> {
+                mScanning = false;
+                Boolean before = mFound.put(session, found);
+                if (before == null || before != found) refresh();
+            });
+        });
+    }
+
+    private void showModeMenu(@NonNull View anchor) {
+        TerminalSession session = mActivity.getCurrentSession();
+        if (session == null) return;
+        PopupMenu menu = new PopupMenu(mActivity, anchor);
+        TerminowKeyBarModel.Choice choice = choiceOf(session);
+        TerminowKeyBarModel.Choice[] choices = TerminowKeyBarModel.Choice.values();
+        int[] labels = {R.string.terminow_keybar_choice_auto, R.string.terminow_keybar_choice_terminal, R.string.terminow_keybar_choice_claude};
+        for (int i = 0; i < choices.length; i++)
+            menu.getMenu().add(0, i, i, labels[i]).setCheckable(true).setChecked(choices[i] == choice);
+        menu.getMenu().setGroupCheckable(0, true, true);
+        menu.setOnMenuItemClickListener(item -> {
+            mChoices.put(session, choices[item.getItemId()]);
+            refresh();
+            return true;
+        });
+        menu.show();
+    }
+
+    /**
+     * The commands and shortcuts for what the tab runs. A command of Claude Code is put on its
+     * prompt for the user to send; a shortcut sends its keys. Also opens with Ctrl+Alt+S on a
+     * hardware keyboard.
+     */
+    public void showCommands() {
+        TerminalSession session = currentRunning();
+        if (session == null) return;
+        if (mDialog != null && mDialog.isShowing()) mDialog.dismiss();
+        boolean claude = modeOf(session) == TerminowKeyBarModel.Mode.CLAUDE;
+        Dialog dialog = new Dialog(mActivity, R.style.TerminowPanelDialog);
+        mDialog = dialog;
+        LinearLayout root = new LinearLayout(mActivity);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setGravity(Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        root.setBackgroundColor(color(R.color.terminow_panel_scrim));
+        root.setOnClickListener(v -> dialog.dismiss());
+
+        LinearLayout sheet = new LinearLayout(mActivity);
+        sheet.setOrientation(LinearLayout.VERTICAL);
+        sheet.setClickable(true);
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(color(R.color.terminow_panel));
+        float radius = dp(20);
+        background.setCornerRadii(new float[]{radius, radius, radius, radius, 0, 0, 0, 0});
+        sheet.setBackground(background);
+        sheet.setPadding(dp(16), dp(12), dp(16), dp(12));
+        TextView title = text(mActivity.getString(claude ? R.string.terminow_keybar_commands_claude : R.string.terminow_keybar_commands_terminal),
+            18, R.color.terminow_text);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        ViewCompat.setAccessibilityHeading(title, true);
+        sheet.addView(title);
+
+        ScrollView scroll = new ScrollView(mActivity);
+        LinearLayout content = new LinearLayout(mActivity);
+        content.setOrientation(LinearLayout.VERTICAL);
+        scroll.addView(content);
+        if (claude) {
+            mContent = content;
+            mPanelSession = session;
+            fillClaude(content, session);
+        } else {
+            section(content, R.string.terminow_keybar_section_shortcuts);
+            for (TerminowKeyBarModel.Shortcut shortcut : TerminowKeyBarModel.TERMINAL_SHORTCUTS)
+                row(content, shortcut.label, describe(shortcut.descriptionName), () -> sendKeys(session, shortcut.keys));
+        }
+        if (!claude) addMore(content);
+        sheet.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        root.addView(sheet, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        // A column in the middle on a tablet or an unfolded phone, never taller than most of the screen
+        root.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            int width = Math.min(right - left, dp(560));
+            int scrollMax = Math.round((bottom - top) * 0.8f) - dp(60);
+            ViewGroup.LayoutParams params = sheet.getLayoutParams();
+            ViewGroup.LayoutParams scrollParams = scroll.getLayoutParams();
+            int scrollHeight = content.getHeight() > scrollMax ? scrollMax : ViewGroup.LayoutParams.WRAP_CONTENT;
+            if (params.width != width || scrollParams.height != scrollHeight) {
+                params.width = width;
+                scrollParams.height = scrollHeight;
+                sheet.post(() -> {
+                    sheet.setLayoutParams(params);
+                    scroll.setLayoutParams(scrollParams);
+                });
+            }
+        });
+        dialog.setContentView(root);
+        dialog.setOnDismissListener(d -> {
+            if (mDialog == dialog) {
+                mDialog = null;
+                mContent = null;
+                mPanelSession = null;
+            }
+        });
+        dialog.show();
+    }
+
+    /** Snippets, more keys and the password, for a terminal. */
+    private void addMore(@NonNull LinearLayout content) {
+        section(content, R.string.terminow_keybar_section_more);
+        TerminowHome home = mActivity.getTerminowHome();
+        if (home != null) {
+            row(content, mActivity.getString(R.string.terminow_keybar_snippets), mActivity.getString(R.string.terminow_keybar_snippets_description),
+                home::showSnippetsPicker);
+            row(content, mActivity.getString(R.string.terminow_keybar_more_keys), mActivity.getString(R.string.terminow_keybar_more_keys_description),
+                home::toggleKeyPanel);
+        }
+        row(content, mActivity.getString(R.string.terminow_keybar_password), mActivity.getString(R.string.terminow_keybar_password_description), () -> {
+            TerminalView view = mActivity.getTerminalView();
+            if (view != null && view.isAutoFillEnabled()) view.requestAutoFillPassword();
+            else mActivity.showToast(mActivity.getString(R.string.terminow_autofill_unavailable), true);
+        });
+    }
+
+    /** The content of the panel that is open, filled again when a favorite changes. */
+    @Nullable private LinearLayout mContent;
+    @Nullable private TerminalSession mPanelSession;
+
+    /**
+     * Favorites, the commands of the installed Claude Code, its keyboard shortcuts, and its
+     * conversations, which start in a new tab. Nothing is sent with Enter, and no permission
+     * of Claude Code is answered from here.
+     */
+    private void fillClaude(@NonNull LinearLayout content, @NonNull TerminalSession session) {
+        content.removeAllViews();
+        TerminowHome home = mActivity.getTerminowHome();
+        TerminowLauncher launcher = home != null ? home.getLauncher() : null;
+        TerminowLauncher.SessionInfo info = launcher != null ? launcher.infoOf(session) : null;
+        TerminowLauncher.Environment environment = launcher != null && info != null && info.environmentKey != null ?
+            launcher.environmentFor(info.environmentKey) : null;
+        TerminowLauncher.ClaudeState state = launcher != null && environment != null ? launcher.claudeOf(environment) : null;
+        String version = state != null && state.error == null ? state.version : null;
+        List<TerminowKeyBarModel.Command> commands = TerminowKeyBarModel.commandsFor(version);
+        TerminowStore store = home != null ? home.getStore() : null;
+        List<String> favorites = store != null ? store.getClaudeFavorites() : new java.util.ArrayList<>();
+
+        section(content, R.string.terminow_keybar_section_favorites);
+        boolean anyFavorite = false;
+        for (String text : favorites) {
+            TerminowKeyBarModel.Command command = TerminowKeyBarModel.commandOf(text);
+            if (command == null || !commands.contains(command)) continue;
+            commandRow(content, session, command, true);
+            anyFavorite = true;
+        }
+        if (!anyFavorite) content.addView(text(mActivity.getString(R.string.terminow_keybar_favorites_empty), 12, R.color.terminow_text_secondary));
+
+        section(content, R.string.terminow_keybar_section_commands);
+        content.addView(text(mActivity.getString(R.string.terminow_keybar_commands_note), 12, R.color.terminow_text_secondary));
+        if (version == null || TerminowKeyBarModel.parseVersion(version) == null)
+            content.addView(text(mActivity.getString(R.string.terminow_keybar_commands_unchecked), 12, R.color.terminow_mcp_warn));
+        else
+            content.addView(text(mActivity.getString(R.string.terminow_keybar_commands_checked, version), 12, R.color.terminow_text_secondary));
+        for (TerminowKeyBarModel.Command command : commands) commandRow(content, session, command, favorites.contains(command.text));
+
+        section(content, R.string.terminow_keybar_section_keyboard);
+        for (TerminowKeyBarModel.Shortcut shortcut : TerminowKeyBarModel.CLAUDE_SHORTCUTS)
+            row(content, shortcut.label, describe(shortcut.descriptionName), () -> sendKeys(session, shortcut.keys));
+
+        section(content, R.string.terminow_keybar_section_conversations);
+        content.addView(text(mActivity.getString(R.string.terminow_keybar_conversations_note), 12, R.color.terminow_text_secondary));
+        if (environment == null || launcher == null) {
+            content.addView(text(mActivity.getString(R.string.terminow_keybar_conversations_unknown), 12, R.color.terminow_text_secondary));
+        } else if (state == null) {
+            content.addView(text(mActivity.getString(R.string.terminow_keybar_conversations_checking), 12, R.color.terminow_text_secondary));
+            // The flags of the installed version are found out, then the panel is filled again
+            launcher.whenClaudeChecked(environment, () -> {
+                if (mContent == content && mPanelSession == session) fillClaude(content, session);
+            });
+        } else {
+            TerminowLauncher.Environment env = environment;
+            if (state.supportsContinue)
+                row(content, mActivity.getString(R.string.terminow_picker_claude_continue), mActivity.getString(R.string.terminow_picker_claude_continue_summary),
+                    () -> launcher.launchClaudeInNewTab(env, new String[]{"--continue"}));
+            if (state.supportsResume)
+                row(content, mActivity.getString(R.string.terminow_picker_claude_pick), mActivity.getString(R.string.terminow_picker_claude_pick_summary),
+                    () -> launcher.launchClaudeInNewTab(env, new String[]{"--resume"}));
+            row(content, mActivity.getString(R.string.terminow_picker_claude_new), mActivity.getString(R.string.terminow_picker_claude_new_summary),
+                () -> launcher.launchClaudeInNewTab(env, new String[0]));
+            if (!state.supportsContinue && !state.supportsResume)
+                content.addView(text(mActivity.getString(R.string.terminow_picker_claude_flags_missing), 12, R.color.terminow_text_secondary));
+        }
+        addMore(content);
+    }
+
+    /** A command: a tap puts it on the prompt, a long press copies it, the star pins or unpins it. */
+    private void commandRow(@NonNull LinearLayout content, @NonNull TerminalSession session, @NonNull TerminowKeyBarModel.Command command,
+                            boolean favorite) {
+        LinearLayout line = new LinearLayout(mActivity);
+        line.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout row = row(null, command.text, describe(command.descriptionName), () -> typeCommand(session, command));
+        row.setOnLongClickListener(v -> {
+            android.content.ClipboardManager clipboard = (android.content.ClipboardManager) mActivity.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+            if (clipboard != null) clipboard.setPrimaryClip(android.content.ClipData.newPlainText(command.text, TerminowKeyBarModel.promptText(command)));
+            mActivity.showToast(mActivity.getString(R.string.terminow_keybar_command_copied, command.text), false);
+            return true;
+        });
+        line.addView(row, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        ImageButton star = new ImageButton(mActivity);
+        star.setImageResource(favorite ? R.drawable.ic_terminow_star : R.drawable.ic_terminow_star_outline);
+        star.setImageTintList(ColorStateList.valueOf(favorite ? TerminowPremiumGate.PREMIUM_GOLD : color(R.color.terminow_text_secondary)));
+        TypedValue ripple = new TypedValue();
+        mActivity.getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true);
+        star.setBackgroundResource(ripple.resourceId);
+        String label = mActivity.getString(favorite ? R.string.terminow_keybar_unpin : R.string.terminow_keybar_pin, command.text);
+        star.setContentDescription(label);
+        TooltipCompat.setTooltipText(star, label);
+        star.setOnClickListener(v -> {
+            TerminowHome home = mActivity.getTerminowHome();
+            if (home == null) return;
+            TerminowStore store = home.getStore();
+            store.setClaudeFavorites(TerminowKeyBarModel.toggleFavorite(store.getClaudeFavorites(), command.text));
+            if (mContent != null && mPanelSession != null) fillClaude(mContent, mPanelSession);
+        });
+        line.addView(star, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        content.addView(line, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+    }
+
+    /** Put a command on the prompt of Claude Code, with no Enter: the user sends it. */
+    private void typeCommand(@NonNull TerminalSession session, @NonNull TerminowKeyBarModel.Command command) {
+        if (!session.isRunning() || session != mActivity.getCurrentSession()) return;
+        // CTRL or ALT that is on would change the characters
+        ExtraKeysView keys = mActivity.getExtraKeysView();
+        if (keys != null) keys.resetSpecialButtons();
+        TermuxTerminalExtraKeys extraKeys = mActivity.getTermuxTerminalExtraKeys();
+        if (extraKeys != null) extraKeys.sendText(TerminowKeyBarModel.promptText(command));
+    }
+
+    private void sendKeys(@NonNull TerminalSession session, @NonNull String macro) {
+        if (!session.isRunning() || session != mActivity.getCurrentSession()) return;
+        ExtraKeysView keys = mActivity.getExtraKeysView();
+        if (keys != null) keys.resetSpecialButtons();
+        TermuxTerminalExtraKeys extraKeys = mActivity.getTermuxTerminalExtraKeys();
+        if (extraKeys != null) extraKeys.sendMacro(mActivity.getTerminalView(), macro);
+    }
+
+    /** The strings that say what commands and keys do, named in {@link TerminowKeyBarModel}; by reference, so that shrinking keeps them. */
+    private static final Map<String, Integer> DESCRIPTIONS = new java.util.HashMap<>();
+    static {
+        DESCRIPTIONS.put("terminow_keybar_cmd_clear", R.string.terminow_keybar_cmd_clear);
+        DESCRIPTIONS.put("terminow_keybar_cmd_compact", R.string.terminow_keybar_cmd_compact);
+        DESCRIPTIONS.put("terminow_keybar_cmd_config", R.string.terminow_keybar_cmd_config);
+        DESCRIPTIONS.put("terminow_keybar_cmd_cost", R.string.terminow_keybar_cmd_cost);
+        DESCRIPTIONS.put("terminow_keybar_cmd_doctor", R.string.terminow_keybar_cmd_doctor);
+        DESCRIPTIONS.put("terminow_keybar_cmd_exit", R.string.terminow_keybar_cmd_exit);
+        DESCRIPTIONS.put("terminow_keybar_cmd_help", R.string.terminow_keybar_cmd_help);
+        DESCRIPTIONS.put("terminow_keybar_cmd_init", R.string.terminow_keybar_cmd_init);
+        DESCRIPTIONS.put("terminow_keybar_cmd_login", R.string.terminow_keybar_cmd_login);
+        DESCRIPTIONS.put("terminow_keybar_cmd_logout", R.string.terminow_keybar_cmd_logout);
+        DESCRIPTIONS.put("terminow_keybar_cmd_mcp", R.string.terminow_keybar_cmd_mcp);
+        DESCRIPTIONS.put("terminow_keybar_cmd_memory", R.string.terminow_keybar_cmd_memory);
+        DESCRIPTIONS.put("terminow_keybar_cmd_model", R.string.terminow_keybar_cmd_model);
+        DESCRIPTIONS.put("terminow_keybar_cmd_permissions", R.string.terminow_keybar_cmd_permissions);
+        DESCRIPTIONS.put("terminow_keybar_cmd_resume", R.string.terminow_keybar_cmd_resume);
+        DESCRIPTIONS.put("terminow_keybar_cmd_status", R.string.terminow_keybar_cmd_status);
+        DESCRIPTIONS.put("terminow_keybar_key_claude_esc", R.string.terminow_keybar_key_claude_esc);
+        DESCRIPTIONS.put("terminow_keybar_key_claude_esc_esc", R.string.terminow_keybar_key_claude_esc_esc);
+        DESCRIPTIONS.put("terminow_keybar_key_claude_mode", R.string.terminow_keybar_key_claude_mode);
+        DESCRIPTIONS.put("terminow_keybar_key_claude_tab", R.string.terminow_keybar_key_claude_tab);
+        DESCRIPTIONS.put("terminow_keybar_key_ctrl_c", R.string.terminow_keybar_key_ctrl_c);
+        DESCRIPTIONS.put("terminow_keybar_key_ctrl_d", R.string.terminow_keybar_key_ctrl_d);
+        DESCRIPTIONS.put("terminow_keybar_key_ctrl_l", R.string.terminow_keybar_key_ctrl_l);
+        DESCRIPTIONS.put("terminow_keybar_key_ctrl_r", R.string.terminow_keybar_key_ctrl_r);
+        DESCRIPTIONS.put("terminow_keybar_key_ctrl_z", R.string.terminow_keybar_key_ctrl_z);
+        DESCRIPTIONS.put("terminow_keybar_key_end", R.string.terminow_keybar_key_end);
+        DESCRIPTIONS.put("terminow_keybar_key_home", R.string.terminow_keybar_key_home);
+        DESCRIPTIONS.put("terminow_keybar_key_pgdn", R.string.terminow_keybar_key_pgdn);
+        DESCRIPTIONS.put("terminow_keybar_key_pgup", R.string.terminow_keybar_key_pgup);
+    }
+
+    @NonNull
+    private String describe(@NonNull String name) {
+        Integer id = DESCRIPTIONS.get(name);
+        return id != null ? mActivity.getString(id) : "";
+    }
+
+    private void section(@NonNull LinearLayout content, @StringRes int label) {
+        TextView view = text(mActivity.getString(label), 13, R.color.terminow_panel_accent);
+        view.setTypeface(Typeface.DEFAULT_BOLD);
+        view.setPadding(0, dp(14), 0, dp(4));
+        ViewCompat.setAccessibilityHeading(view, true);
+        content.addView(view);
+    }
+
+    @NonNull
+    private LinearLayout row(@Nullable LinearLayout content, @NonNull String name, @NonNull String description, @NonNull Runnable action) {
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setMinimumHeight(dp(48));
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(4), dp(6), dp(4), dp(6));
+        TypedValue ripple = new TypedValue();
+        mActivity.getTheme().resolveAttribute(android.R.attr.selectableItemBackground, ripple, true);
+        row.setBackgroundResource(ripple.resourceId);
+        TextView title = text(name, 15, R.color.terminow_text);
+        title.setTypeface(Typeface.MONOSPACE);
+        row.addView(title);
+        if (!description.isEmpty()) row.addView(text(description, 12, R.color.terminow_text_secondary));
+        row.setContentDescription(description.isEmpty() ? name : name + ", " + description);
+        row.setOnClickListener(v -> {
+            if (mDialog != null) mDialog.dismiss();
+            action.run();
+        });
+        if (content != null) content.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        return row;
+    }
+
+    @NonNull
+    private TextView text(@NonNull String value, int sp, int color) {
+        TextView view = new TextView(mActivity);
+        view.setText(value);
+        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
+        view.setTextColor(color(color));
+        return view;
+    }
+
+    private int color(int id) {
+        return ContextCompat.getColor(mActivity, id);
+    }
+
+    private int dp(int value) {
+        return Math.round(value * mActivity.getResources().getDisplayMetrics().density);
+    }
+}

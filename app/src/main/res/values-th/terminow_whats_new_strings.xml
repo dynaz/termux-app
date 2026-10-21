@@ -6,7 +6,7 @@
     <string name="terminow_new_badge">ใหม่</string>
     <string name="terminow_new_settings_row">มีอะไรใหม่</string>
     <string name="terminow_new_backup">สำรองและกู้คืน Ubuntu</string>
-    <string name="terminow_new_backup_text">สำรอง Ubuntu ทั้งระบบหรือเฉพาะโฟลเดอร์ที่เลือก ไปยังโฟลเดอร์ใดก็ได้ในเครื่อง (Premium) และตรวจสอบไฟล์ก่อนถือว่าสำเร็จ ทุกคนกู้คืนได้ อยู่ที่ปุ่ม Backup ในการ์ด Ubuntu ของ Quick Launch</string>
+    <string name="terminow_new_backup_text">สำรอง Ubuntu ทั้งหมดหรือเฉพาะโฟลเดอร์ที่เลือกไปยังโฟลเดอร์ใดก็ได้ในเครื่อง ตรวจสอบก่อนใช้ และกู้คืนอย่างปลอดภัย (Premium) ใน Quick Launch อยู่ที่ Backup &amp; Restore ในเมนู More ของการ์ด Ubuntu</string>
     <string name="terminow_new_ubuntu_tab">เปิด Ubuntu ในแท็บนี้หรือแท็บใหม่</string>
     <string name="terminow_new_ubuntu_tab_text">เลือกได้ทุกครั้ง หรือตั้งค่าไว้ที่ Settings → Terminal → Ubuntu launch behavior</string>
     <string name="terminow_new_files">File Manager เห็นทั้งที่เก็บข้อมูล</string>

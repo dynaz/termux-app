@@ -165,15 +165,16 @@ final class TerminowPhoneBackup {
     }
 
     /**
-     * Backing up to the phone is part of Premium: it is checked here again, where the job
-     * starts, whatever showed the button.
+     * Backup &amp; Restore of Ubuntu is part of Premium: it is checked here again, where each job
+     * starts, whatever showed the button. Commands the user types in a terminal are never limited.
      */
     static boolean mayBackUp(@NonNull TerminowStore store) {
         return TerminowEntitlement.get(store) == TerminowEntitlement.State.ACTIVE;
     }
 
     /**
-     * Start a job, {@code null} if one runs already, or if it is a backup and the user has no Premium.
+     * Start a job, {@code null} if one runs already, or if the user has no Premium: a backup, a
+     * check of a backup file, or a restore.
      *
      * @param prefix The prefix of TermiNow, where its proot-distro is.
      */
@@ -181,7 +182,7 @@ final class TerminowPhoneBackup {
     static Job start(@NonNull Context context, @NonNull TerminowStore store, @NonNull TerminowLinuxInstaller.Runner runner,
                      @NonNull String prefix, @NonNull Request request) {
         if (isRunning()) return null;
-        if ((request.kind == Kind.BACKUP_FULL || request.kind == Kind.BACKUP_FOLDERS) && !mayBackUp(store)) return null;
+        if (!mayBackUp(store)) return null;
         Job job = new Job(request);
         sJob = job;
         Context app = context.getApplicationContext();
@@ -402,16 +403,20 @@ final class TerminowPhoneBackup {
         IOException readError = feed(context, file, process, job, false);
         int exit = process.waitFor();
         errors.join(2000);
-        boolean restored = readError == null && exit == 0 && new File(containers, request.alias + "/rootfs").isDirectory();
+        // The restored environment is only kept, and the one that was there only removed, once it looks whole
+        boolean restored = readError == null && exit == 0 && job.state == State.RUNNING &&
+            isUsableRootfs(new File(containers, request.alias + "/rootfs"));
         if (!restored) {
+            boolean cancelled = job.state == State.CANCELLED;
             synchronized (lines) {
                 job.error = readError != null ? "The file could not be read: " + readError.getMessage() :
-                    "proot-distro restore ended with " + exit + (lines.isEmpty() ? "" : ":\n" + String.join("\n", lines));
+                    exit != 0 ? "proot-distro restore ended with " + exit + (lines.isEmpty() ? "" : ":\n" + String.join("\n", lines)) :
+                    cancelled ? "Stopped" : "The restored files are not a whole Linux: there is no /bin/sh or /etc/os-release in it";
             }
-            job.state = State.FAILED;
+            if (!cancelled) job.state = State.FAILED;
             // What was restored halfway goes, and the environment that was there comes back
+            if (existing.exists()) runQuietly(runner, prefix, Arrays.asList("remove", request.alias));
             if (aside != null) {
-                if (existing.exists()) runQuietly(runner, prefix, Arrays.asList("remove", request.alias));
                 if (runQuietly(runner, prefix, Arrays.asList("rename", aside, request.alias)) != 0)
                     job.error += "\n\nThe environment that was there is kept as " + aside + ".";
                 else job.error += "\n\nThe environment that was there was kept as it was.";
@@ -423,6 +428,18 @@ final class TerminowPhoneBackup {
             if (runQuietly(runner, prefix, Arrays.asList("remove", aside)) != 0)
                 job.error = "Restored. The environment that was there before is still kept as " + aside + "; remove it to free space.";
         }
+    }
+
+    /**
+     * Whether a restored root of Linux can start: a folder with a shell and os-release, also
+     * through the links of a merged /usr, like /bin to usr/bin. A restore that left less, or
+     * that stopped halfway, is taken back and the environment that was there kept.
+     */
+    static boolean isUsableRootfs(@NonNull File rootfs) {
+        if (!rootfs.isDirectory()) return false;
+        boolean shell = new File(rootfs, "bin/sh").exists() || new File(rootfs, "usr/bin/sh").exists();
+        boolean release = new File(rootfs, "etc/os-release").exists() || new File(rootfs, "usr/lib/os-release").exists();
+        return shell && release;
     }
 
     /** Restore a folders backup into the environment with GNU tar, as root. */

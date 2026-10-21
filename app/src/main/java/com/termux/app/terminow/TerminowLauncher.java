@@ -231,9 +231,16 @@ public class TerminowLauncher {
     private final Map<String, WeakReference<TerminalSession>> mSessions = new HashMap<>();
     private final Map<String, TerminowTmux.State> mTmux = new HashMap<>();
     private final Set<String> mTmuxChecking = new HashSet<>();
+    /** The last new tab of each target and when it was asked for, see {@link TerminowLaunchChoice#isRepeatTap}. */
+    private final Map<String, WeakReference<TerminalSession>> mLastNew = new HashMap<>();
+    private final Map<String, Long> mLastNewTap = new HashMap<>();
+    /** What to do once Claude Code was checked in an environment, by {@link #stateKey}. */
+    private final Map<String, List<Runnable>> mAfterCheck = new HashMap<>();
     /** What each tab that TermiNow started runs. Tabs that are not in it are unknown. */
     private final Map<TerminalSession, SessionInfo> mInfo = new WeakHashMap<>();
     private final TerminowLaunchProfilesUi mProfiles;
+    /** What Open Ubuntu and Open Claude ask, see {@link TerminowLaunchChoice}. */
+    private final TerminowSessionPicker mPicker;
     @Nullable private TerminowLinuxUi mLinux;
     @Nullable private TextView mToolbarEnvironment;
     @Nullable private TextView mToolbarFolder;
@@ -249,6 +256,7 @@ public class TerminowLauncher {
         mTargets = new TerminowMcpTargets(new File(TermuxConstants.TERMUX_PREFIX_DIR_PATH), new File(TermuxConstants.TERMUX_HOME_DIR_PATH));
         mEnvironmentKey = getPrefs().optString("environment", TerminowMcpTargets.TARGET_TERMINOW);
         mProfiles = new TerminowLaunchProfilesUi(activity, store, this);
+        mPicker = new TerminowSessionPicker(activity, store, this);
     }
 
     /** The registry of Linux environments, for their names, users, folders and shared folders. */
@@ -518,8 +526,22 @@ public class TerminowLauncher {
         else open.run();
     }
 
+    /**
+     * Open Claude as remembered, or ask: go back to its tab that runs, a new tab, or a
+     * conversation in a new tab. What the installed Claude Code supports is checked first.
+     */
     void openClaude(@NonNull Environment environment) {
-        launchClaude(environment, new String[0], false);
+        whenClaudeChecked(environment, () -> {
+            ClaudeState state = claudeOf(environment);
+            List<TerminalSession> running = runningOf(environment, true);
+            switch (TerminowLaunchChoice.claude(mStore.getClaudeLaunchBehavior(), !running.isEmpty(),
+                state != null && state.supportsContinue)) {
+                case RESUME: showRunning(running.get(0)); break;
+                case NEW_TAB: launchClaudeInNewTab(environment, new String[0]); break;
+                case CONTINUE: launchClaudeInNewTab(environment, new String[]{"--continue"}); break;
+                default: mPicker.showClaude(environment, state); break;
+            }
+        });
     }
 
     /** What is known about Claude Code in the environment, {@code null} until it was checked. */
@@ -762,11 +784,12 @@ public class TerminowLauncher {
 
         boolean loggedOut = state.loggedIn.equals("no");
         List<View> buttons = new ArrayList<>();
-        buttons.add(button(R.string.terminow_launcher_claude_new, !loggedOut, () -> launchClaude(environment, new String[0], false)));
+        // Claude Code goes back to its tab or asks, as Open Claude does; a conversation is a new tab
+        buttons.add(button(R.string.terminow_launcher_claude_new, !loggedOut, () -> openClaude(environment)));
         if (state.supportsContinue)
-            buttons.add(button(R.string.terminow_launcher_claude_continue, false, () -> launchClaude(environment, new String[]{"--continue"}, false)));
+            buttons.add(button(R.string.terminow_launcher_claude_continue, false, () -> launchClaudeInNewTab(environment, new String[]{"--continue"})));
         if (state.supportsResume)
-            buttons.add(button(R.string.terminow_launcher_claude_resume, false, () -> launchClaude(environment, new String[]{"--resume"}, false)));
+            buttons.add(button(R.string.terminow_launcher_claude_resume, false, () -> launchClaudeInNewTab(environment, new String[]{"--resume"})));
         if (state.supportsLogin)
             buttons.add(button(R.string.terminow_launcher_claude_login, loggedOut, () -> launchClaude(environment, new String[]{"auth", "login"}, true)));
         buttons.add(button(R.string.terminow_launcher_check_again, false, () -> checkClaude(environment, true)));
@@ -1106,8 +1129,23 @@ public class TerminowLauncher {
                 mChecking.remove(key);
                 mClaude.put(key, state);
                 render();
+                List<Runnable> after = mAfterCheck.remove(key);
+                if (after != null) for (Runnable action : after) action.run();
             });
         });
+    }
+
+    /** Run the action once Claude Code was checked in the environment: now if it was, else after the check. */
+    void whenClaudeChecked(@NonNull Environment environment, @NonNull Runnable action) {
+        String key = stateKey(environment);
+        if (mClaude.containsKey(key)) {
+            action.run();
+            return;
+        }
+        List<Runnable> after = mAfterCheck.get(key);
+        if (after == null) mAfterCheck.put(key, after = new ArrayList<>());
+        after.add(action);
+        checkClaude(environment, false);
     }
 
     // ---------------------------------------------------------------------------------------
@@ -1151,9 +1189,25 @@ public class TerminowLauncher {
         launchClaude(environment, claudeArgs, login, CLAUDE_SCRIPT, getUser(environment));
     }
 
+    /**
+     * Claude Code in a new tab, also when one runs already: a new conversation, or one with
+     * --continue or --resume, which the installed version was checked to have. Nothing is ever
+     * typed into a tab that runs.
+     */
+    @Nullable
+    TerminalSession launchClaudeInNewTab(@NonNull Environment environment, @NonNull String[] claudeArgs) {
+        return launchClaude(environment, claudeArgs, false, CLAUDE_SCRIPT, getUser(environment), true);
+    }
+
     @Nullable
     private TerminalSession launchClaude(@NonNull Environment environment, @NonNull String[] claudeArgs, boolean login,
                                          @NonNull String script, @NonNull String user) {
+        return launchClaude(environment, claudeArgs, login, script, user, false);
+    }
+
+    @Nullable
+    private TerminalSession launchClaude(@NonNull Environment environment, @NonNull String[] claudeArgs, boolean login,
+                                         @NonNull String script, @NonNull String user, boolean newTab) {
         String folder = getFolder(environment);
         String executable;
         List<String> args = new ArrayList<>();
@@ -1171,8 +1225,9 @@ public class TerminowLauncher {
         }
         args.addAll(Arrays.asList(claudeArgs));
         String tool = login ? "Claude login" : "Claude";
-        TerminalSession session = launch("claude|" + environment.key + "|" + folder + "|" + TextUtils.join(" ", claudeArgs), executable,
-            args.toArray(new String[0]), workingDirectory, mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), tool), login,
+        String key = "claude|" + environment.key + "|" + folder + "|" + TextUtils.join(" ", claudeArgs) + (newTab ? "|" + System.nanoTime() : "");
+        TerminalSession session = launch(key, executable,
+            args.toArray(new String[0]), workingDirectory, mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), tool), login || newTab,
             new SessionInfo(environment.key, environment.shortName(), tool, folder, ""));
         if (session != null && login) watchLogin(session, environment, null, Long.MAX_VALUE);
         return session;
@@ -1197,6 +1252,16 @@ public class TerminowLauncher {
             mActivity.showToast(mActivity.getString(R.string.terminow_launch_already_starting, info.environmentLabel), false);
             return starting.session;
         }
+        // A new tab asked for twice in a row, like a double tap, is one tab
+        long now = android.os.SystemClock.uptimeMillis();
+        WeakReference<TerminalSession> lastNew = mLastNew.get(target);
+        TerminalSession repeated = lastNew != null ? lastNew.get() : null;
+        if (alwaysNew && !key.startsWith("restore|") && repeated != null && repeated.isRunning() &&
+            TerminowLaunchChoice.isRepeatTap(mLastNewTap.containsKey(target) ? mLastNewTap.get(target) : 0, now)) {
+            dismiss();
+            mHost.showSession(repeated);
+            return repeated;
+        }
         WeakReference<TerminalSession> existing = mSessions.get(key);
         TerminalSession running = existing != null ? existing.get() : null;
         if (running != null && running.isRunning() && !alwaysNew) {
@@ -1214,6 +1279,10 @@ public class TerminowLauncher {
             }
             mSessions.put(key, new WeakReference<>(session));
             mInfo.put(session, info);
+            if (alwaysNew) {
+                mLastNew.put(target, new WeakReference<>(session));
+                mLastNewTap.put(target, now);
+            }
             updateToolbar(session);
             dismiss();
             if (tracked) {
@@ -1525,50 +1594,13 @@ public class TerminowLauncher {
             openTerminal(environment);
             return;
         }
-        switch (mStore.getUbuntuLaunchBehavior()) {
-            case TerminowStore.UBUNTU_LAUNCH_CURRENT: openInCurrentTab(environment); break;
-            case TerminowStore.UBUNTU_LAUNCH_NEW: openInNewTab(environment); break;
-            default: askHowToOpen(environment); break;
+        List<TerminalSession> running = runningOf(environment, false);
+        switch (TerminowLaunchChoice.ubuntu(mStore.getUbuntuLaunchBehavior(), !running.isEmpty())) {
+            case RESUME: showRunning(running.get(0)); break;
+            case CURRENT_TAB: openInCurrentTab(environment); break;
+            case NEW_TAB: openInNewTab(environment); break;
+            default: mPicker.showUbuntu(environment); break;
         }
-    }
-
-    /** Use the tab that is open, or open a new one, and maybe remember it. A tab of it that runs can be gone to. */
-    private void askHowToOpen(@NonNull Environment environment) {
-        TerminalSession running = lastShellOf(environment);
-        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog);
-        Context context = builder.getContext();
-        LinearLayout box = new LinearLayout(context);
-        box.setOrientation(LinearLayout.VERTICAL);
-        int padding = dp(20);
-        box.setPadding(padding, dp(4), padding, 0);
-        android.widget.CheckBox remember = new android.widget.CheckBox(context);
-        remember.setText(R.string.terminow_launch_remember);
-        List<CharSequence> labels = new ArrayList<>(Arrays.asList(mActivity.getString(R.string.terminow_launch_use_current),
-            mActivity.getString(R.string.terminow_launch_open_new)));
-        if (running != null && running != mActivity.getCurrentSession())
-            labels.add(mActivity.getString(R.string.terminow_launch_go_to, running.mSessionName != null ? running.mSessionName : environment.shortName()));
-        android.widget.ListView list = new android.widget.ListView(context);
-        list.setAdapter(new android.widget.ArrayAdapter<>(context, android.R.layout.simple_list_item_1, labels));
-        box.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        box.addView(remember);
-        android.app.AlertDialog dialog = builder
-            .setTitle(mActivity.getString(R.string.terminow_launch_how_title, environment.shortName()))
-            .setView(box)
-            .setNegativeButton(android.R.string.cancel, null)
-            .create();
-        list.setOnItemClickListener((parent, view, which, id) -> {
-            dialog.dismiss();
-            if (which == 2) {
-                dismiss();
-                mHost.showSession(running);
-                return;
-            }
-            if (remember.isChecked())
-                mStore.setUbuntuLaunchBehavior(which == 0 ? TerminowStore.UBUNTU_LAUNCH_CURRENT : TerminowStore.UBUNTU_LAUNCH_NEW);
-            if (which == 0) openInCurrentTab(environment);
-            else openInNewTab(environment);
-        });
-        dialog.show();
     }
 
     /** A new tab of the environment, one per tap: a tap while one starts shows that one. */
@@ -2080,6 +2112,43 @@ public class TerminowLauncher {
         return sessions;
     }
 
+    /**
+     * The tabs of the environment that run, the one shown last first: its shells, or its Claude
+     * Code tabs. A tab that ended is never in it.
+     */
+    @NonNull
+    List<TerminalSession> runningOf(@NonNull Environment environment, boolean claude) {
+        List<TerminalSession> sessions = new ArrayList<>();
+        for (Map.Entry<TerminalSession, SessionInfo> entry : mInfo.entrySet()) {
+            TerminalSession session = entry.getKey();
+            SessionInfo info = entry.getValue();
+            if (session == null || !session.isRunning() || !environment.key.equals(info.environmentKey)) continue;
+            boolean isClaude = info.tool.equals("Claude");
+            if (claude ? isClaude : "bash".equals(info.tool)) sessions.add(session);
+        }
+        Collections.sort(sessions, (a, b) -> Long.compare(TerminowQuickLaunch.lastShown(b), TerminowQuickLaunch.lastShown(a)));
+        return sessions;
+    }
+
+    /** What the tab runs, {@code null} for one TermiNow did not start. */
+    @Nullable
+    SessionInfo infoOf(@NonNull TerminalSession session) {
+        return mInfo.get(session);
+    }
+
+    /** Whether the tab is still starting its environment, as far as TermiNow watches it. */
+    boolean isStarting(@NonNull TerminalSession session) {
+        TerminowLaunchState.Launch launch = LAUNCHES.of(session);
+        return launch != null && launch.state == TerminowLaunchState.State.STARTING;
+    }
+
+    /** Show a tab that runs: only attached to and shown, nothing is started or typed in it. */
+    void showRunning(@NonNull TerminalSession session) {
+        if (!session.isRunning()) return;
+        dismiss();
+        mHost.showSession(session);
+    }
+
     /** Remember what a tab runs that TermiNow started some other way, like a Local Terminal. */
     public void track(@NonNull TerminalSession session, @NonNull SessionInfo info) {
         mInfo.put(session, info);
@@ -2098,23 +2167,24 @@ public class TerminowLauncher {
         mToolbarEnvironment.setOnClickListener(v -> switchEnvironment());
         mToolbarFolder.setOnClickListener(v -> changeFolder());
         toolbar.findViewById(R.id.terminow_toolbar_tools).setOnClickListener(v -> show());
-        TextView install = toolbar.findViewById(R.id.terminow_toolbar_install);
+        View install = toolbar.findViewById(R.id.terminow_toolbar_install);
         install.setOnClickListener(v -> showInstallTools());
         androidx.appcompat.widget.TooltipCompat.setTooltipText(install, mActivity.getString(R.string.terminow_install_title));
-        // Only the icon when the toolbar is narrow, like a phone held upright with a long folder
-        toolbar.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
-            boolean compact = right - left < dp(520);
-            CharSequence label = compact ? "" : mActivity.getString(R.string.terminow_install_button);
-            if (!TextUtils.equals(install.getText(), label)) install.post(() -> {
-                install.setText(label);
-                install.setCompoundDrawablePadding(compact ? 0 : dp(6));
-            });
-        });
+        androidx.appcompat.widget.TooltipCompat.setTooltipText(toolbar.findViewById(R.id.terminow_toolbar_tools),
+            mActivity.getString(R.string.terminow_quick_title));
         toolbar.findViewById(R.id.terminow_toolbar_more).setOnClickListener(this::showToolbarMenu);
+    }
+
+    /** Whether the launcher started Claude Code, or its sign-in, as the program of the tab. */
+    boolean isClaudeTab(@NonNull TerminalSession session) {
+        SessionInfo info = mInfo.get(session);
+        return info != null && (info.tool.equals("Claude") || info.tool.equals("Claude login"));
     }
 
     /** Show what the tab runs in the toolbar, "Unknown" for a tab that TermiNow did not start. */
     public void updateToolbar(@Nullable TerminalSession session) {
+        // The keys below the terminal follow what the tab runs, which is known from here on
+        mActivity.getTerminowKeyBar().refresh();
         if (mToolbarEnvironment == null || mToolbarFolder == null) return;
         TerminalSession current = mActivity.getCurrentSession();
         if (session != current) session = current;

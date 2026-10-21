@@ -105,9 +105,13 @@ final class TerminowBackupUi {
             showProgress();
             return;
         }
-        boolean premium = TerminowPhoneBackup.mayBackUp(mStore);
+        // All of Backup & Restore is Premium; without it the upgrade of Premium is shown
+        TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.BACKUP, 0, () -> showPremiumMenu(alias, title));
+    }
+
+    private void showPremiumMenu(@NonNull String alias, @NonNull String title) {
         CharSequence[] items = {
-            mActivity.getString(premium ? R.string.terminow_phone_backup_menu : R.string.terminow_backup_menu_premium),
+            mActivity.getString(R.string.terminow_phone_backup_menu),
             mActivity.getString(R.string.terminow_backup_menu),
             mActivity.getString(R.string.terminow_phone_restore_menu)};
         new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
@@ -556,6 +560,11 @@ final class TerminowBackupUi {
             showProgress();
             return;
         }
+        TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.BACKUP, 0, this::openRestorePicker);
+    }
+
+    /** The file of a backup, picked with the system picker; it is checked before anything is restored. */
+    private void openRestorePicker() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("*/*");

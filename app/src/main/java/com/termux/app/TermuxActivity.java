@@ -25,6 +25,7 @@ import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.EditText;
 import android.widget.ImageButton;
+import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.RelativeLayout;
 import android.widget.Toast;
@@ -33,6 +34,7 @@ import com.termux.R;
 import com.termux.app.api.file.FileReceiverActivity;
 import com.termux.app.terminal.TermuxActivityRootView;
 import com.termux.app.terminow.TerminowHome;
+import com.termux.app.terminow.TerminowKeyBar;
 import com.termux.app.terminal.TermuxTerminalSessionActivityClient;
 import com.termux.app.terminal.io.TermuxTerminalExtraKeys;
 import com.termux.shared.activities.ReportActivity;
@@ -147,6 +149,9 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
      * The home screen shown over the terminal and the tab bar above it.
      */
     TerminowHome mTerminowHome;
+
+    /** The actions and keys below the terminal, which follow what the tab that is shown runs. */
+    private final TerminowKeyBar mTerminowKeyBar = new TerminowKeyBar(this);
 
     /**
      * The {@link TermuxActivity} broadcast receiver for various things like terminal style configuration changes.
@@ -326,6 +331,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
             addTermuxActivityRootViewGlobalLayoutListener();
 
         registerTermuxActivityBroadcastReceiver();
+
+        mTerminowKeyBar.start();
     }
 
     @Override
@@ -368,6 +375,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         if (mIsInvalidState) return;
 
         mIsVisible = false;
+
+        mTerminowKeyBar.stop();
 
         if (mTermuxTerminalSessionActivityClient != null)
             mTermuxTerminalSessionActivityClient.onStop();
@@ -588,9 +597,11 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         if (terminalToolbarViewPager == null) return;
 
         ViewGroup.LayoutParams layoutParams = terminalToolbarViewPager.getLayoutParams();
-        layoutParams.height = Math.round(mTerminalToolbarDefaultHeight *
+        int keysHeight = Math.round(mTerminalToolbarDefaultHeight *
             (mTermuxTerminalExtraKeys.getExtraKeysInfo() == null ? 0 : mTermuxTerminalExtraKeys.getExtraKeysInfo().getMatrix().length) *
             mProperties.getTerminalToolbarHeightScaleFactor());
+        // The key bar has its actions too, see TerminowKeyBar: exactly as tall as what it shows
+        layoutParams.height = TerminowKeyBar.heightOf(this, keysHeight);
         terminalToolbarViewPager.setLayoutParams(layoutParams);
     }
 
@@ -659,6 +670,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     @Override
     public void onConfigurationChanged(@NonNull android.content.res.Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
+        // Folded, unfolded or turned: the actions of the key bar above the keys or beside them
+        View keyBar = findViewById(R.id.terminow_keybar);
+        if (keyBar instanceof LinearLayout) mTerminowKeyBar.applyLayout((LinearLayout) keyBar);
+        setTerminalToolbarHeight();
         if (mTerminowHome != null && mTermuxService != null)
             mTerminowHome.refresh();
     }
@@ -961,6 +976,11 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         return mTerminowHome;
     }
 
+    @NonNull
+    public TerminowKeyBar getTerminowKeyBar() {
+        return mTerminowKeyBar;
+    }
+
     public boolean isHomeVisible() {
         return mTerminowHome != null && mTerminowHome.isVisible();
     }
@@ -1097,6 +1117,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         }
 
         setMargins();
+        // The keys of the tab again, also when the keys of the properties changed
+        mTerminowKeyBar.refresh();
         setTerminalToolbarHeight();
 
         FileReceiverActivity.updateFileReceiverActivityComponentsState(this);

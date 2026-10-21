@@ -6,7 +6,7 @@
     <string name="terminow_new_badge">NEW</string>
     <string name="terminow_new_settings_row">What\'s new</string>
     <string name="terminow_new_backup">Backup &amp; Restore of Ubuntu</string>
-    <string name="terminow_new_backup_text">Back up the whole Ubuntu or chosen folders to any folder of the phone (Premium), checked before it counts. Restore is for everyone. In Quick Launch, Backup on an Ubuntu card.</string>
+    <string name="terminow_new_backup_text">Back up the whole Ubuntu or chosen folders to any folder of the phone, checked before it counts, and restore it safely (Premium). In Quick Launch, Backup &amp; Restore in the More menu of an Ubuntu card.</string>
     <string name="terminow_new_ubuntu_tab">Open Ubuntu in this tab or a new one</string>
     <string name="terminow_new_ubuntu_tab_text">Choose each time, or remember it in Settings → Terminal → Ubuntu launch behavior.</string>
     <string name="terminow_new_files">File Manager on all of your storage</string>

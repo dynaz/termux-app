@@ -563,6 +563,16 @@ public class TerminowStore {
     public static final String UBUNTU_LAUNCH_ASK = "ask";
     public static final String UBUNTU_LAUNCH_CURRENT = "current";
     public static final String UBUNTU_LAUNCH_NEW = "new";
+    /** Go back to the tab of the environment that runs, a new tab when none runs. */
+    public static final String UBUNTU_LAUNCH_RESUME = "resume";
+    private static final String KEY_CLAUDE_LAUNCH = "claude_launch_behavior";
+    public static final String CLAUDE_LAUNCH_ASK = "ask";
+    /** Go back to the Claude Code tab that runs, a new one when none runs. */
+    public static final String CLAUDE_LAUNCH_RESUME = "resume";
+    public static final String CLAUDE_LAUNCH_NEW = "new";
+    /** Claude Code in a new tab with the last conversation, --continue. */
+    public static final String CLAUDE_LAUNCH_CONTINUE = "continue";
+    private static final String KEY_CLAUDE_FAVORITES = "claude_command_favorites";
     /** The seconds that a Linux environment may take to start, that can be chosen. */
     public static final int[] UBUNTU_START_TIMEOUTS = {30, 60, 120, 300};
     private static final String KEY_TERMINAL_THEME = "terminal_theme";
@@ -1297,11 +1307,43 @@ public class TerminowStore {
     @NonNull
     public String getUbuntuLaunchBehavior() {
         String value = mPreferences.getString(KEY_UBUNTU_LAUNCH, UBUNTU_LAUNCH_ASK);
-        return UBUNTU_LAUNCH_CURRENT.equals(value) || UBUNTU_LAUNCH_NEW.equals(value) ? value : UBUNTU_LAUNCH_ASK;
+        return UBUNTU_LAUNCH_CURRENT.equals(value) || UBUNTU_LAUNCH_NEW.equals(value) || UBUNTU_LAUNCH_RESUME.equals(value) ?
+            value : UBUNTU_LAUNCH_ASK;
     }
 
     public void setUbuntuLaunchBehavior(@NonNull String behavior) {
         mPreferences.edit().putString(KEY_UBUNTU_LAUNCH, behavior).apply();
+    }
+
+    /** What Open Claude does, remembered apart from Open Ubuntu: ask, go back to its tab, a new one, or the last conversation. */
+    @NonNull
+    public String getClaudeLaunchBehavior() {
+        String value = mPreferences.getString(KEY_CLAUDE_LAUNCH, CLAUDE_LAUNCH_ASK);
+        return CLAUDE_LAUNCH_RESUME.equals(value) || CLAUDE_LAUNCH_NEW.equals(value) || CLAUDE_LAUNCH_CONTINUE.equals(value) ?
+            value : CLAUDE_LAUNCH_ASK;
+    }
+
+    public void setClaudeLaunchBehavior(@NonNull String behavior) {
+        mPreferences.edit().putString(KEY_CLAUDE_LAUNCH, behavior).apply();
+    }
+
+    /** The commands of Claude Code that the user pinned in the commands panel, in the order they were pinned. */
+    @NonNull
+    public List<String> getClaudeFavorites() {
+        List<String> favorites = new ArrayList<>();
+        for (String command : mPreferences.getString(KEY_CLAUDE_FAVORITES, "").split("\n"))
+            if (command.startsWith("/") && !favorites.contains(command)) favorites.add(command);
+        return favorites;
+    }
+
+    public void setClaudeFavorites(@NonNull List<String> favorites) {
+        StringBuilder value = new StringBuilder();
+        for (String command : favorites) {
+            if (!command.startsWith("/") || command.contains("\n")) continue;
+            if (value.length() > 0) value.append('\n');
+            value.append(command);
+        }
+        mPreferences.edit().putString(KEY_CLAUDE_FAVORITES, value.toString()).apply();
     }
 
     /** How long a Linux environment may take to start in a tab before it is stopped as failed. */

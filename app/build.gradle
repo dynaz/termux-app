@@ -71,8 +71,8 @@ android {
         applicationId "com.terminow"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 197
-        versionName "0.119.0.5"
+        versionCode 198
+        versionName "1.120.0.198"
 
         if (appVersionName) versionName = appVersionName
         validateVersionName(versionName)

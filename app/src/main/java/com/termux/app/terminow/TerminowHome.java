@@ -1282,6 +1282,12 @@ public class TerminowHome {
 
     /** Where to, what, and how: remembered for the environment, so the next backup is two taps. */
     private void showBackupDialog(@NonNull String alias, @NonNull String title) {
+        // Backup & Restore of Ubuntu is Premium, also to a server
+        if (!TerminowPhoneBackup.mayBackUp(mStore)) {
+            // Only the upgrade of Premium is shown
+            TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.BACKUP, 0, () -> {});
+            return;
+        }
         mHosts = mStore.getHosts();
         List<TerminowStore.Host> servers = new ArrayList<>();
         for (TerminowStore.Host host : mHosts) if (host.isTerminal() && !host.telnet) servers.add(host);
@@ -1400,6 +1406,11 @@ public class TerminowHome {
     /** In a tab of its own, so its progress, prompts and result are shown; saved passwords and passphrases are typed in. */
     private void runBackup(@NonNull String alias, @NonNull String title, @NonNull TerminowStore.Host host, @NonNull String dir,
                            @Nullable List<String> folders, boolean installRsync) {
+        // Checked again where the backup starts, whatever showed the button
+        if (!TerminowPhoneBackup.mayBackUp(mStore)) {
+            TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.BACKUP, 0, () -> {});
+            return;
+        }
         Route route = prepareRoute(host);
         if (route == null) return;
         String[] transport = route.login.getTransport(route.jump, route.proxyConnector, mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
@@ -1965,6 +1976,10 @@ public class TerminowHome {
         hide();
     }
 
+    /** The Local Terminal that was opened last and when, so that a double tap opens one. */
+    @Nullable private WeakReference<TerminalSession> mLastLocalTerminal;
+    private long mLastLocalTerminalTap;
+
     /**
      * Open a new Local Terminal with the default launch profile of the settings. The TermiNow
      * shell gets its startup command once, written to its own new shell before the user types;
@@ -1974,10 +1989,24 @@ public class TerminowHome {
     private void openLocalTerminal() {
         TermuxService service = mActivity.getTermuxService();
         if (service == null) return;
-        if (mLauncher.launchDefault(service.getTermuxSessionsSize() + 1)) return;
+        // A second tap right after the first shows the tab the first one opened
+        long now = android.os.SystemClock.uptimeMillis();
+        TerminalSession last = mLastLocalTerminal != null ? mLastLocalTerminal.get() : null;
+        if (last != null && last.isRunning() && TerminowLaunchChoice.isRepeatTap(mLastLocalTerminalTap, now)) {
+            mActivity.getTermuxTerminalSessionClient().setCurrentSession(last);
+            hide();
+            return;
+        }
+        mLastLocalTerminalTap = now;
+        if (mLauncher.launchDefault(service.getTermuxSessionsSize() + 1)) {
+            TerminalSession started = mActivity.getCurrentSession();
+            mLastLocalTerminal = started != null ? new WeakReference<>(started) : null;
+            return;
+        }
 
         TerminalSession session = addSession(null);
         if (session == null) return;
+        mLastLocalTerminal = new WeakReference<>(session);
 
         String tmuxName = "local" + (service.getIndexOfSession(session) + 1);
         String command = getLocalStartupCommand(tmuxName);
@@ -4838,6 +4867,33 @@ public class TerminowHome {
         addMenuItem(menu, popup, R.drawable.ic_terminow_import, R.string.terminow_attach_upload, this::pickFilesForTmp);
         menu.measure(View.MeasureSpec.makeMeasureSpec(dp(280), View.MeasureSpec.EXACTLY), View.MeasureSpec.UNSPECIFIED);
         popup.showAsDropDown(anchor, 0, -anchor.getHeight() - menu.getMeasuredHeight() - dp(8));
+    }
+
+    /** Attach files: copy the files the user picks to /tmp of the tab and type their paths, with no Enter. */
+    public void attachFiles() {
+        pickFilesForTmp();
+    }
+
+    /** The key panel with more keys: beside the terminal on a wide screen, over it on a narrow one. */
+    public void toggleKeyPanel() {
+        mKeyPanel.toggle();
+    }
+
+    /** The preferences of TermiNow, like the favorite commands of the key bar. */
+    @NonNull
+    TerminowStore getStore() {
+        return mStore;
+    }
+
+    /** The launcher of tabs, for the key bar: what a tab runs and Claude Code in a new tab. */
+    @NonNull
+    TerminowLauncher getLauncher() {
+        return mLauncher;
+    }
+
+    /** Whether TermiNow started Claude Code as the program of the tab. */
+    public boolean isClaudeTab(@NonNull TerminalSession session) {
+        return mLauncher.isClaudeTab(session);
     }
 
     private void pickFilesForTmp() {

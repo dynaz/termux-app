@@ -4,6 +4,7 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
+import android.widget.LinearLayout;
 
 import androidx.annotation.NonNull;
 import androidx.viewpager.widget.PagerAdapter;
@@ -11,6 +12,7 @@ import androidx.viewpager.widget.ViewPager;
 
 import com.termux.R;
 import com.termux.app.TermuxActivity;
+import com.termux.app.terminow.TerminowKeyBar;
 import com.termux.shared.termux.extrakeys.ExtraKeysView;
 import com.termux.terminal.TerminalSession;
 
@@ -44,14 +46,20 @@ public class TerminalToolbarViewPager {
             if (position == 0) {
                 layout = inflater.inflate(R.layout.view_terminal_toolbar_extra_keys, collection, false);
                 ExtraKeysView extraKeysView = layout.findViewById(R.id.terminal_toolbar_extra_keys);
+                View keysScroll = layout.findViewById(R.id.terminow_keybar_keys);
                 extraKeysView.setExtraKeysViewClient(mActivity.getTermuxTerminalExtraKeys());
                 extraKeysView.setButtonTextAllCaps(mActivity.getProperties().shouldExtraKeysTextBeAllCaps());
                 mActivity.setExtraKeysView(extraKeysView);
                 extraKeysView.reload(mActivity.getTermuxTerminalExtraKeys().getExtraKeysInfo(),
                     mActivity.getTerminalToolbarDefaultHeight());
 
+                // The actions above the keys, or beside them on a wide screen, for the keys of the tab
+                TerminowKeyBar keyBar = mActivity.getTerminowKeyBar();
+                keyBar.applyLayout((LinearLayout) layout);
+                keyBar.bindActions(layout.findViewById(R.id.terminow_keybar_actions));
+
                 // Fill the toolbar if the keys fit in it, otherwise make them scrollable
-                layout.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+                keysScroll.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
                     int width = Math.max(right - left, extraKeysView.getMinimumKeysWidth());
                     ViewGroup.LayoutParams params = extraKeysView.getLayoutParams();
                     if (params.width != width) {

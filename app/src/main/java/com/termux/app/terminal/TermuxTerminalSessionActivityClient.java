@@ -155,6 +155,9 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
 
         int index = service.getIndexOfSession(finishedSession);
 
+        // Claude Code, or what else ran, ended: the keys of a terminal for that tab
+        mActivity.getTerminowKeyBar().refresh();
+
         // For plugin commands that expect the result back, we should immediately close the session
         // and send the result back instead of waiting fo the user to press enter.
         // The plugin can handle/show errors itself.
@@ -320,6 +323,8 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         // Update the selected tab
         if (mActivity.getTerminowHome() != null)
             mActivity.getTerminowHome().refresh();
+        // The keys of what the tab runs, and CTRL and ALT off
+        mActivity.getTerminowKeyBar().refresh();
     }
 
     void notifyOfSessionChange() {

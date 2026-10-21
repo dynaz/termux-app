@@ -140,9 +140,11 @@ public class TerminowSettings {
         addRow(R.string.terminow_settings_default_profile, TerminowLaunchProfilesUi.describeDefault(mActivity, mStore),
             () -> TerminowLaunchProfilesUi.pickDefault(mActivity, mStore, this::update));
 
-        final String[] launchValues = {TerminowStore.UBUNTU_LAUNCH_ASK, TerminowStore.UBUNTU_LAUNCH_CURRENT, TerminowStore.UBUNTU_LAUNCH_NEW};
+        final String[] launchValues = {TerminowStore.UBUNTU_LAUNCH_ASK, TerminowStore.UBUNTU_LAUNCH_RESUME, TerminowStore.UBUNTU_LAUNCH_CURRENT,
+            TerminowStore.UBUNTU_LAUNCH_NEW};
         final String[] launchLabels = {mActivity.getString(R.string.terminow_launch_behavior_ask),
-            mActivity.getString(R.string.terminow_launch_use_current), mActivity.getString(R.string.terminow_launch_open_new)};
+            mActivity.getString(R.string.terminow_picker_resume), mActivity.getString(R.string.terminow_launch_use_current),
+            mActivity.getString(R.string.terminow_launch_open_new)};
         addRow(TerminowWhatsNew.label(mActivity, mActivity.getText(R.string.terminow_launch_behavior), TerminowWhatsNew.Feature.UBUNTU_TAB),
             launchLabels[Math.max(0, indexOf(launchValues, mStore.getUbuntuLaunchBehavior()))], () -> {
                 TerminowWhatsNew.seen(mActivity, TerminowWhatsNew.Feature.UBUNTU_TAB);
@@ -152,6 +154,18 @@ public class TerminowSettings {
                     update();
                 });
             });
+
+        // Open Claude is remembered apart from Open Ubuntu; Ask every time forgets it
+        final String[] claudeValues = {TerminowStore.CLAUDE_LAUNCH_ASK, TerminowStore.CLAUDE_LAUNCH_RESUME, TerminowStore.CLAUDE_LAUNCH_NEW,
+            TerminowStore.CLAUDE_LAUNCH_CONTINUE};
+        final String[] claudeLabels = {mActivity.getString(R.string.terminow_launch_behavior_ask),
+            mActivity.getString(R.string.terminow_picker_claude_resume), mActivity.getString(R.string.terminow_picker_claude_new),
+            mActivity.getString(R.string.terminow_picker_claude_continue)};
+        addRow(R.string.terminow_claude_launch_behavior, claudeLabels[Math.max(0, indexOf(claudeValues, mStore.getClaudeLaunchBehavior()))], () ->
+            pick(R.string.terminow_claude_launch_behavior, claudeLabels, which -> {
+                mStore.setClaudeLaunchBehavior(claudeValues[which]);
+                update();
+            }));
 
         int[] timeouts = TerminowStore.UBUNTU_START_TIMEOUTS;
         String[] timeoutLabels = new String[timeouts.length];

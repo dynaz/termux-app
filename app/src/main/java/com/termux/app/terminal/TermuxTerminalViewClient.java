@@ -262,6 +262,9 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
                 mActivity.getDrawer().closeDrawers();
             } else if (unicodeChar == 'k'/* keyboard */) {
                 onToggleSoftKeyboardRequest();
+            } else if (unicodeChar == 's'/* shortcuts */) {
+                // The commands and shortcuts of the key bar, also with a hardware keyboard
+                mActivity.getTerminowKeyBar().showCommands();
             } else if (unicodeChar == 'm'/* menu */) {
                 mActivity.getTerminalView().showContextMenu();
             } else if (unicodeChar == 'r'/* rename */) {

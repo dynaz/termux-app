@@ -505,7 +505,8 @@ public class TerminowQuickLaunch {
         TerminowLinuxEnv linux = linuxOf(environment);
         if (environment.container != null) menu.getMenu().add(0, 12, 0, R.string.terminow_launch_menu_current);
         menu.getMenu().add(0, 9, 0, environment.container != null ? R.string.terminow_launch_menu_new : R.string.terminow_quick_new_tab);
-        if (linux != null) menu.getMenu().add(0, 13, 0, R.string.terminow_backup_restore_menu);
+        if (linux != null)
+            menu.getMenu().add(0, 13, 0, TerminowPremiumGate.withBadge(mActivity, mActivity.getString(R.string.terminow_backup_restore_menu)));
         if (linux != null) menu.getMenu().add(0, 7, 0, R.string.terminow_quick_manage);
         menu.setOnMenuItemClickListener(item -> {
             switch (item.getItemId()) {

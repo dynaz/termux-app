@@ -418,7 +418,8 @@ public final class ExtraKeysView extends GridLayout {
                 }
 
                 button.setText(buttonInfo.getDisplay());
-                button.setTextColor(mButtonTextColor);
+                // A special button keeps the color of its state, see SpecialButtonState#updateLook
+                if (!isSpecialButton(buttonInfo)) button.setTextColor(mButtonTextColor);
                 button.setAllCaps(mButtonTextAllCaps);
                 button.setPadding(0, 0, 0, 0);
                 button.setMinWidth(0);
@@ -701,11 +702,21 @@ public final class ExtraKeysView extends GridLayout {
         if (state == null) return null;
         state.setIsCreated(true);
         MaterialButton button = new MaterialButton(getContext(), null, android.R.attr.buttonBarButtonStyle);
-        button.setTextColor(state.isActive ? mButtonActiveTextColor : mButtonTextColor);
         if (needUpdate) {
             state.buttons.add(button);
+            state.updateLook(button);
+        } else {
+            button.setTextColor(state.isActive ? mButtonActiveTextColor : mButtonTextColor);
         }
         return button;
+    }
+
+    /** Turn CTRL, ALT, SHIFT and FN off and unlock them, like when another session is shown. */
+    public void resetSpecialButtons() {
+        for (SpecialButtonState state : mSpecialButtons.values()) {
+            state.isLocked = false;
+            state.setIsActive(false);
+        }
     }
 
 
