@@ -17,6 +17,9 @@ import android.widget.EditText;
 import android.widget.ListView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+
 import com.termux.R;
 import com.termux.app.TermuxActivity;
 import com.termux.app.TermuxService;
@@ -361,6 +364,34 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
     @Override
     public boolean onLongPress(MotionEvent event) {
         return false;
+    }
+
+    /** Switching sessions by dragging the terminal sideways, made when it is first dragged. */
+    @Nullable private com.termux.app.terminow.TerminowSessionSwipe mSessionSwipe;
+
+    @Override
+    public boolean canDragToSwitchSessions() {
+        TermuxService service = mActivity.getTermuxService();
+        return service != null && service.getTermuxSessionsSize() >= 2 && !mActivity.isHomeVisible();
+    }
+
+    @Override
+    public void onHorizontalDrag(float dx) {
+        sessionSwipe().drag(dx);
+    }
+
+    @Override
+    public void onHorizontalDragEnd(float dx, float velocityX, boolean cancelled) {
+        sessionSwipe().release(dx, velocityX, cancelled);
+    }
+
+    @NonNull
+    private com.termux.app.terminow.TerminowSessionSwipe sessionSwipe() {
+        if (mSessionSwipe == null)
+            mSessionSwipe = new com.termux.app.terminow.TerminowSessionSwipe(mActivity.getTerminalView(),
+                // Swiping left shows the next session, like turning a page
+                forward -> mTermuxTerminalSessionActivityClient.switchToSession(forward));
+        return mSessionSwipe;
     }
 
     @Override

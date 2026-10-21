@@ -54,6 +54,20 @@ public interface TerminalViewClient {
      */
     boolean onHorizontalSwipe(boolean toLeft);
 
+    /** Whether a sideways drag of a finger moves the terminal to another session, see {@link #onHorizontalDrag}. */
+    default boolean canDragToSwitchSessions() {
+        return false;
+    }
+
+    /** A finger drags the terminal sideways by dx pixels from where the drag began. */
+    default void onHorizontalDrag(float dx) {}
+
+    /**
+     * The finger was lifted after a sideways drag, at velocityX pixels per second, or the drag
+     * was cancelled: switch to the next session or go back.
+     */
+    default void onHorizontalDragEnd(float dx, float velocityX, boolean cancelled) {}
+
 
 
     boolean readControlKey();

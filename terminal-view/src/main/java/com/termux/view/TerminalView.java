@@ -34,6 +34,7 @@ import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import android.widget.Scroller;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 
@@ -584,6 +585,84 @@ public final class TerminalView extends View {
      * A finger fling that is mostly sideways and covers a fifth of the view. Flings that start at the
      * left edge are left alone, so that swiping in from the edge still opens the session list.
      */
+    /** A drag of a finger sideways: not decided yet, along the terminal, or moving it to another session. */
+    private static final int DRAG_NONE = 0, DRAG_UNDECIDED = 1, DRAG_VERTICAL = 2, DRAG_SESSION = 3;
+    private int mDragState = DRAG_NONE;
+    private float mDragStartX, mDragStartY, mDragOffset;
+    @Nullable private android.view.VelocityTracker mDragVelocity;
+
+    /**
+     * Follow a finger that drags the terminal sideways, so that it moves with it to the next
+     * session, see {@link TerminalViewClient#onHorizontalDrag}. A drag that is more up and down
+     * than sideways scrolls as before; the edge of the drawer, text selection and the mouse are
+     * left alone. Returns whether the event was used.
+     */
+    private boolean handleSessionDrag(@NonNull MotionEvent event) {
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN) {
+            mDragState = DRAG_NONE;
+            if (isSelectingText() || event.isFromSource(InputDevice.SOURCE_MOUSE) || !mClient.canDragToSwitchSessions()) return false;
+            float edge = 32 * getResources().getDisplayMetrics().density;
+            if (event.getX() < edge) return false;
+            mDragState = DRAG_UNDECIDED;
+            mDragStartX = event.getX();
+            mDragStartY = event.getY();
+            if (mDragVelocity != null) mDragVelocity.recycle();
+            mDragVelocity = android.view.VelocityTracker.obtain();
+            mDragVelocity.addMovement(event);
+            return false;
+        }
+        if (mDragState == DRAG_NONE || mDragState == DRAG_VERTICAL) return false;
+        if (mDragVelocity != null) mDragVelocity.addMovement(event);
+        float dx = event.getX() - mDragStartX, dy = event.getY() - mDragStartY;
+        if (action == MotionEvent.ACTION_POINTER_DOWN && mDragState == DRAG_UNDECIDED) {
+            // Two fingers are a pinch to zoom
+            mDragState = DRAG_VERTICAL;
+            return false;
+        }
+        if (mDragState == DRAG_UNDECIDED) {
+            if (action == MotionEvent.ACTION_MOVE) {
+                int slop = android.view.ViewConfiguration.get(getContext()).getScaledTouchSlop();
+                if (Math.abs(dx) > slop * 1.5f && Math.abs(dx) > 2 * Math.abs(dy)) {
+                    mDragState = DRAG_SESSION;
+                    // The finger is past the slop: the terminal moves from here, without a jump
+                    mDragOffset = Math.signum(dx) * slop * 1.5f;
+                    // What the gestures began, like a long press or a scroll, ends here
+                    MotionEvent cancel = MotionEvent.obtain(event);
+                    cancel.setAction(MotionEvent.ACTION_CANCEL);
+                    mGestureRecognizer.onTouchEvent(cancel);
+                    cancel.recycle();
+                    mClient.onHorizontalDrag(dx - mDragOffset);
+                    return true;
+                }
+                if (Math.abs(dy) > slop) mDragState = DRAG_VERTICAL;
+            } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                mDragState = DRAG_NONE;
+            }
+            return false;
+        }
+        // Moving the terminal to another session
+        switch (action) {
+            case MotionEvent.ACTION_MOVE:
+                mClient.onHorizontalDrag(dx - mDragOffset);
+                return true;
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_CANCEL:
+                float velocity = 0;
+                if (mDragVelocity != null) {
+                    mDragVelocity.computeCurrentVelocity(1000);
+                    velocity = mDragVelocity.getXVelocity();
+                    mDragVelocity.recycle();
+                    mDragVelocity = null;
+                }
+                mDragState = DRAG_NONE;
+                mClient.onHorizontalDragEnd(dx - mDragOffset, velocity, action == MotionEvent.ACTION_CANCEL);
+                return true;
+            default:
+                return true;
+        }
+    }
+
     private boolean isHorizontalSwipe(@Nullable MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
         if (e1 == null || isSelectingText() || e2.isFromSource(InputDevice.SOURCE_MOUSE)) return false;
         if (Math.abs(velocityX) < 2 * Math.abs(velocityY)) return false;
@@ -627,6 +706,7 @@ public final class TerminalView extends View {
     public boolean onTouchEvent(MotionEvent event) {
         if (mEmulator == null) return true;
         final int action = event.getAction();
+        if (handleSessionDrag(event)) return true;
 
         if (isSelectingText()) {
             updateFloatingToolbarVisibility(event);
