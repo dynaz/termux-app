@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <dimen name="terminow_key_panel_width">340dp</dimen>
-    <!-- The strip of actions of the key bar: its height above the keys, its width beside them on a wide screen -->
-    <dimen name="terminow_keybar_actions_height">40dp</dimen>
-    <dimen name="terminow_keybar_actions_width">240dp</dimen>
+    <!-- The key bar: one row, its buttons 48dp to tap with keycaps of 38dp in them -->
+    <dimen name="terminow_keybar_height">48dp</dimen>
 </resources>

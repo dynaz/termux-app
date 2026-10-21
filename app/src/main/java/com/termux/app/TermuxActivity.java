@@ -601,7 +601,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
             (mTermuxTerminalExtraKeys.getExtraKeysInfo() == null ? 0 : mTermuxTerminalExtraKeys.getExtraKeysInfo().getMatrix().length) *
             mProperties.getTerminalToolbarHeightScaleFactor());
         // The key bar has its actions too, see TerminowKeyBar: exactly as tall as what it shows
-        layoutParams.height = TerminowKeyBar.heightOf(this, keysHeight);
+        layoutParams.height = mTerminowKeyBar.heightOf(keysHeight);
         terminalToolbarViewPager.setLayoutParams(layoutParams);
     }
 
@@ -670,9 +670,6 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     @Override
     public void onConfigurationChanged(@NonNull android.content.res.Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
-        // Folded, unfolded or turned: the actions of the key bar above the keys or beside them
-        View keyBar = findViewById(R.id.terminow_keybar);
-        if (keyBar instanceof LinearLayout) mTerminowKeyBar.applyLayout((LinearLayout) keyBar);
         setTerminalToolbarHeight();
         if (mTerminowHome != null && mTermuxService != null)
             mTerminowHome.refresh();

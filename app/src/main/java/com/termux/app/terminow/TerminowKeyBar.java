@@ -12,7 +12,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
-import android.widget.PopupMenu;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
@@ -29,6 +28,7 @@ import com.termux.app.TermuxActivity;
 import com.termux.app.terminal.io.TermuxTerminalExtraKeys;
 import com.termux.shared.termux.extrakeys.ExtraKeysView;
 import com.termux.terminal.TerminalSession;
+import com.termux.shared.view.KeyboardUtils;
 import com.termux.view.TerminalView;
 
 import java.io.File;
@@ -56,12 +56,27 @@ public class TerminowKeyBar {
     private final Map<TerminalSession, TerminowKeyBarModel.Choice> mChoices = new WeakHashMap<>();
     /** Whether Claude Code was found running in a tab, the last time it was looked at. */
     private final Map<TerminalSession, Boolean> mFound = new WeakHashMap<>();
-    @Nullable private ImageButton mModeButton;
     @Nullable private TerminalSession mShownSession;
     @Nullable private TerminowKeyBarModel.Mode mShownMode;
+    private boolean mShownUserKeys;
     private boolean mScanning;
     private boolean mStarted;
     @Nullable private Dialog mDialog;
+
+    /** Ctrl and Alt of the bar, read by the terminal with {@link #readCtrl()} and {@link #readAlt()}. */
+    private static final TerminowKeyBarModel.Modifier CTRL = new TerminowKeyBarModel.Modifier();
+    private static final TerminowKeyBarModel.Modifier ALT = new TerminowKeyBarModel.Modifier();
+    /** The bar that shows the modifiers, so that it shows them used up. */
+    @Nullable private static TerminowKeyBar sShown;
+
+    @Nullable private LinearLayout mBar;
+    @Nullable private LinearLayout mRow;
+    @Nullable private TextView mCtrlCap;
+    @Nullable private TextView mAltCap;
+    @Nullable private ImageButton mKeyboardButton;
+    /** Whether the software keyboard is shown, as the insets of the window say, {@code null} until known. */
+    @Nullable private Boolean mKeyboardShown;
+    private final android.view.ViewTreeObserver.OnGlobalLayoutListener mKeyboardWatcher = this::updateKeyboardButton;
 
     private final Runnable mScan = this::scan;
 
@@ -69,70 +84,32 @@ public class TerminowKeyBar {
         mActivity = activity;
     }
 
-    /** Whether the actions are beside the keys, in one row, on a wide screen like a tablet or an unfolded phone. */
-    public static boolean isOneRow(@NonNull android.content.Context context) {
-        return context.getResources().getConfiguration().screenWidthDp >= 600;
+    /** The height of the bar: one row of keys, or the rows of keys the user set in termux.properties. */
+    public int heightOf(int userKeysHeight) {
+        int row = mActivity.getResources().getDimensionPixelSize(R.dimen.terminow_keybar_height);
+        TermuxTerminalExtraKeys extraKeys = mActivity.getTermuxTerminalExtraKeys();
+        return extraKeys != null && extraKeys.hasUserKeys() ? Math.max(row, userKeysHeight) : row;
     }
 
-    /** The height of the key bar: the keys, and the actions above them on a narrow screen. */
-    public static int heightOf(@NonNull android.content.Context context, int keysHeight) {
-        int actions = context.getResources().getDimensionPixelSize(R.dimen.terminow_keybar_actions_height);
-        return isOneRow(context) ? Math.max(keysHeight, actions) : keysHeight + actions;
-    }
-
-    /** Put the actions above the keys, or beside them on a wide screen, after the screen was folded or turned. */
-    public void applyLayout(@NonNull LinearLayout bar) {
-        LinearLayout actions = bar.findViewById(R.id.terminow_keybar_actions);
-        View keys = bar.findViewById(R.id.terminow_keybar_keys);
-        if (actions == null || keys == null) return;
-        boolean oneRow = isOneRow(mActivity);
-        bar.setOrientation(oneRow ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams actionParams = (LinearLayout.LayoutParams) actions.getLayoutParams();
-        actionParams.width = oneRow ? mActivity.getResources().getDimensionPixelSize(R.dimen.terminow_keybar_actions_width) : ViewGroup.LayoutParams.MATCH_PARENT;
-        actionParams.height = oneRow ? ViewGroup.LayoutParams.MATCH_PARENT : mActivity.getResources().getDimensionPixelSize(R.dimen.terminow_keybar_actions_height);
-        actions.setLayoutParams(actionParams);
-        LinearLayout.LayoutParams keyParams = (LinearLayout.LayoutParams) keys.getLayoutParams();
-        keyParams.width = oneRow ? 0 : ViewGroup.LayoutParams.MATCH_PARENT;
-        keyParams.height = oneRow ? ViewGroup.LayoutParams.MATCH_PARENT : 0;
-        keyParams.weight = 1;
-        keys.setLayoutParams(keyParams);
-    }
-
-    /** Fill the strip of actions, which is part of the toolbar page of the keys. */
-    public void bindActions(@NonNull LinearLayout strip) {
-        strip.removeAllViews();
-        addAction(strip, R.drawable.ic_terminow_attach, R.string.terminow_keybar_attach, v -> {
-            TerminowHome home = mActivity.getTerminowHome();
-            if (home != null && currentRunning() != null) home.attachFiles();
-        });
-        addAction(strip, R.drawable.ic_terminow_paste, R.string.terminow_keybar_paste, v -> {
-            if (currentRunning() != null && mActivity.getTermuxTerminalSessionClient() != null)
-                mActivity.getTermuxTerminalSessionClient().onPasteTextFromClipboard(null);
-        });
-        addAction(strip, R.drawable.ic_terminow_commands, R.string.terminow_keybar_commands, v -> showCommands());
-        mModeButton = addAction(strip, R.drawable.ic_terminow_terminal, R.string.terminow_keybar_mode, this::showModeMenu);
-        addAction(strip, R.drawable.ic_terminow_keyboard_hide, R.string.terminow_keybar_keyboard, v -> {
-            if (mActivity.getTermuxTerminalViewClient() != null) mActivity.getTermuxTerminalViewClient().onToggleSoftKeyboardRequest();
-        });
+    /**
+     * Use the page of the toolbar: tools, keys, arrows and More in a row that scrolls, and the
+     * keyboard button fixed at its right, which never scrolls away.
+     */
+    public void bind(@NonNull LinearLayout bar) {
+        if (mBar != null) mBar.getViewTreeObserver().removeOnGlobalLayoutListener(mKeyboardWatcher);
+        mBar = bar;
+        mRow = bar.findViewById(R.id.terminow_keybar_row);
+        mKeyboardButton = bar.findViewById(R.id.terminow_keybar_keyboard);
+        mKeyboardButton.setBackground(keycap(false, false));
+        mKeyboardButton.setImageTintList(ColorStateList.valueOf(color(R.color.terminow_text)));
+        mKeyboardButton.setOnClickListener(v -> toggleKeyboard());
+        mKeyboardShown = null;
+        // The keyboard shows and hides with a new layout of the window, which is resized for it
+        bar.getViewTreeObserver().addOnGlobalLayoutListener(mKeyboardWatcher);
+        updateKeyboardButton();
+        sShown = this;
         mShownMode = null;
         refresh();
-    }
-
-    private ImageButton addAction(@NonNull LinearLayout strip, @DrawableRes int icon, @StringRes int label, @NonNull View.OnClickListener click) {
-        ImageButton button = new ImageButton(mActivity);
-        button.setImageResource(icon);
-        button.setImageTintList(ColorStateList.valueOf(ContextCompat.getColor(mActivity, R.color.terminow_text)));
-        TypedValue ripple = new TypedValue();
-        mActivity.getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true);
-        button.setBackgroundResource(ripple.resourceId);
-        button.setScaleType(ImageButton.ScaleType.CENTER);
-        button.setPadding(0, 0, 0, 0);
-        String text = mActivity.getString(label);
-        button.setContentDescription(text);
-        TooltipCompat.setTooltipText(button, text);
-        button.setOnClickListener(click);
-        strip.addView(button, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1));
-        return button;
     }
 
     @Nullable
@@ -146,28 +123,322 @@ public class TerminowKeyBar {
         TerminalSession session = mActivity.getCurrentSession();
         if (session != mShownSession) {
             // CTRL and ALT never carry over to another tab
+            CTRL.reset();
+            ALT.reset();
             ExtraKeysView keys = mActivity.getExtraKeysView();
             if (keys != null) keys.resetSpecialButtons();
             mShownSession = session;
+            updateModifiers();
         }
         TerminowKeyBarModel.Mode mode = modeOf(session);
         TermuxTerminalExtraKeys extraKeys = mActivity.getTermuxTerminalExtraKeys();
-        ExtraKeysView keys = mActivity.getExtraKeysView();
-        if (extraKeys != null && (extraKeys.setMode(mode) || mode != mShownMode) && keys != null) {
-            keys.reload(extraKeys.getExtraKeysInfo(), mActivity.getTerminalToolbarDefaultHeight());
-            keys.resetSpecialButtons();
-        }
+        boolean userKeys = mode == TerminowKeyBarModel.Mode.TERMINAL && extraKeys != null && extraKeys.hasUserKeys();
+        if (mRow != null && (mode != mShownMode || userKeys != mShownUserKeys)) fillRow(mode, userKeys);
         mShownMode = mode;
-        if (mModeButton != null) {
-            mModeButton.setImageResource(mode == TerminowKeyBarModel.Mode.CLAUDE ? R.drawable.ic_terminow_tool_claude : R.drawable.ic_terminow_terminal);
-            // The Claude mark has its own color
-            mModeButton.setImageTintList(mode == TerminowKeyBarModel.Mode.CLAUDE ? null :
-                ColorStateList.valueOf(ContextCompat.getColor(mActivity, R.color.terminow_text)));
-            String state = mActivity.getString(mode == TerminowKeyBarModel.Mode.CLAUDE ? R.string.terminow_keybar_mode_claude : R.string.terminow_keybar_mode_terminal);
-            String label = mActivity.getString(R.string.terminow_keybar_mode_now, state);
-            mModeButton.setContentDescription(label);
-            TooltipCompat.setTooltipText(mModeButton, label);
+        mShownUserKeys = userKeys;
+    }
+
+    /**
+     * The row: tools (attach, paste, the commands and shortcuts), keys, the arrows together, and
+     * More. Every button is at least 48dp to tap; the keycaps in them are smaller.
+     */
+    private void fillRow(@NonNull TerminowKeyBarModel.Mode mode, boolean userKeys) {
+        LinearLayout row = mRow;
+        if (row == null) return;
+        ExtraKeysView extraKeysView = mActivity.getExtraKeysView();
+        // The keys of termux.properties stay in the row, the others are made again
+        for (int i = row.getChildCount() - 1; i >= 0; i--) if (row.getChildAt(i) != extraKeysView) row.removeViewAt(i);
+        mCtrlCap = null;
+        mAltCap = null;
+        int index = 0;
+        row.addView(iconCap(R.drawable.ic_terminow_attach, R.string.terminow_keybar_attach, () -> {
+            TerminowHome home = mActivity.getTerminowHome();
+            if (home != null && currentRunning() != null) home.attachFiles();
+        }), index++);
+        row.addView(iconCap(R.drawable.ic_terminow_paste, R.string.terminow_keybar_paste, () -> {
+            if (currentRunning() != null && mActivity.getTermuxTerminalSessionClient() != null)
+                mActivity.getTermuxTerminalSessionClient().onPasteTextFromClipboard(null);
+        }), index++);
+        boolean claude = mode == TerminowKeyBarModel.Mode.CLAUDE;
+        row.addView(iconCap(claude ? R.drawable.ic_terminow_tool_claude : R.drawable.ic_terminow_commands,
+            claude ? R.string.terminow_keybar_claude_shortcuts : R.string.terminow_keybar_commands, this::showCommands), index++);
+        row.addView(gap(), index++);
+        if (extraKeysView != null) extraKeysView.setVisibility(userKeys ? View.VISIBLE : View.GONE);
+        if (userKeys && extraKeysView != null) {
+            // The keys of the user, in the place of the keys of the bar
+            extraKeysView.reload(mActivity.getTermuxTerminalExtraKeys().getExtraKeysInfo(), mActivity.getTerminalToolbarDefaultHeight());
+            ViewGroup.LayoutParams params = extraKeysView.getLayoutParams();
+            params.width = extraKeysView.getMinimumKeysWidth();
+            extraKeysView.setLayoutParams(params);
+            index = row.indexOfChild(extraKeysView) + 1;
+        } else {
+            for (String key : TerminowKeyBarModel.keysOf(mode)) row.addView(keyCap(key, false), index++);
+            row.addView(gap(), index++);
+            for (String key : TerminowKeyBarModel.NAVIGATION_KEYS) row.addView(keyCap(key, true), index++);
         }
+        row.addView(gap(), index++);
+        row.addView(iconCap(R.drawable.ic_terminow_more, R.string.terminow_keybar_more, this::showMore), index);
+        updateModifiers();
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Keycaps
+
+    /**
+     * A rounded keycap with a thin border, 38dp high inside a 48dp button, with the ripple of a
+     * tap. A modifier that is on has a thicker outline, and a locked one is filled.
+     */
+    @NonNull
+    private android.graphics.drawable.Drawable keycap(boolean on, boolean locked) {
+        GradientDrawable shape = new GradientDrawable();
+        shape.setCornerRadius(dp(8));
+        int accent = color(R.color.terminow_panel_accent);
+        shape.setColor(locked ? accent : on ? (accent & 0x00FFFFFF) | 0x40000000 : color(R.color.terminow_keycap));
+        // Not told by color alone: the outline is thicker while it is on
+        shape.setStroke(on ? dp(2) : Math.max(1, dp(1)), on ? accent : color(R.color.terminow_keycap_border));
+        int insetX = dp(3), insetY = (dp(48) - dp(38)) / 2;
+        android.graphics.drawable.InsetDrawable cap = new android.graphics.drawable.InsetDrawable(shape, insetX, insetY, insetX, insetY);
+        GradientDrawable mask = new GradientDrawable();
+        mask.setCornerRadius(dp(8));
+        mask.setColor(0xFFFFFFFF);
+        return new android.graphics.drawable.RippleDrawable(ColorStateList.valueOf(0x33FFFFFF), cap,
+            new android.graphics.drawable.InsetDrawable(mask, insetX, insetY, insetX, insetY));
+    }
+
+    @NonNull
+    private View gap() {
+        View gap = new View(mActivity);
+        gap.setLayoutParams(new LinearLayout.LayoutParams(dp(6), 1));
+        return gap;
+    }
+
+    @NonNull
+    private ImageButton iconCap(@DrawableRes int icon, @StringRes int label, @NonNull Runnable action) {
+        ImageButton button = new ImageButton(mActivity);
+        button.setImageResource(icon);
+        // The Claude mark has its own color
+        if (icon != R.drawable.ic_terminow_tool_claude) button.setImageTintList(ColorStateList.valueOf(color(R.color.terminow_text)));
+        button.setScaleType(ImageButton.ScaleType.FIT_CENTER);
+        int pad = dp(14);
+        button.setPadding(pad, pad, pad, pad);
+        button.setBackground(keycap(false, false));
+        String text = mActivity.getString(label);
+        button.setContentDescription(text);
+        TooltipCompat.setTooltipText(button, text);
+        button.setOnClickListener(v -> action.run());
+        button.setLayoutParams(new LinearLayout.LayoutParams(dp(48), dp(48)));
+        return button;
+    }
+
+    /**
+     * A key: sent through the input of the terminal as a key or a character, never its name.
+     * Ctrl and Alt are on for the next key instead, and lock when held. Arrows repeat while held.
+     */
+    @NonNull
+    private TextView keyCap(@NonNull String key, boolean arrow) {
+        TextView cap = new TextView(mActivity);
+        cap.setText(labelOf(key));
+        cap.setGravity(Gravity.CENTER);
+        cap.setTextColor(color(R.color.terminow_text));
+        cap.setTypeface(Typeface.MONOSPACE);
+        cap.setMaxLines(1);
+        cap.setIncludeFontPadding(false);
+        cap.setPadding(dp(10), dp(9), dp(10), dp(9));
+        // Larger text shrinks to fit the keycap instead of being cut
+        androidx.core.widget.TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(cap, 9, arrow ? 18 : 14, 1, TypedValue.COMPLEX_UNIT_SP);
+        cap.setMinWidth(dp(48));
+        cap.setBackground(keycap(false, false));
+        String description = mActivity.getString(descriptionOf(key));
+        cap.setContentDescription(description);
+        TooltipCompat.setTooltipText(cap, description);
+        cap.setFocusable(true);
+        cap.setClickable(true);
+        cap.setLayoutParams(new LinearLayout.LayoutParams(arrow ? dp(48) : dp(56), dp(48)));
+        if (TerminowKeyBarModel.isModifier(key)) {
+            TerminowKeyBarModel.Modifier modifier = key.equals("CTRL") ? CTRL : ALT;
+            if (modifier == CTRL) mCtrlCap = cap;
+            else mAltCap = cap;
+            cap.setOnClickListener(v -> {
+                modifier.tap();
+                updateModifiers();
+            });
+            cap.setOnLongClickListener(v -> {
+                modifier.hold();
+                updateModifiers();
+                return true;
+            });
+            return cap;
+        }
+        cap.setOnClickListener(v -> sendKey(key));
+        if (arrow) repeatWhileHeld(cap, key);
+        return cap;
+    }
+
+    /** Send a key of the bar to the tab that is shown, with Ctrl and Alt of the bar if they are on. */
+    private void sendKey(@NonNull String key) {
+        if (currentRunning() == null) return;
+        TermuxTerminalExtraKeys extraKeys = mActivity.getTermuxTerminalExtraKeys();
+        if (extraKeys != null) extraKeys.sendMacro(mActivity.getTerminalView(), key);
+        updateModifiers();
+    }
+
+    /** Held, an arrow is sent again and again, like a key of a keyboard; a tap sends it once. */
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
+    private void repeatWhileHeld(@NonNull View cap, @NonNull String key) {
+        final boolean[] repeated = {false};
+        Runnable repeat = new Runnable() {
+            @Override
+            public void run() {
+                repeated[0] = true;
+                sendKey(key);
+                mHandler.postDelayed(this, 60);
+            }
+        };
+        cap.setOnTouchListener((v, event) -> {
+            switch (event.getActionMasked()) {
+                case android.view.MotionEvent.ACTION_DOWN:
+                    repeated[0] = false;
+                    v.setPressed(true);
+                    mHandler.postDelayed(repeat, android.view.ViewConfiguration.getLongPressTimeout());
+                    return true;
+                case android.view.MotionEvent.ACTION_UP:
+                    mHandler.removeCallbacks(repeat);
+                    v.setPressed(false);
+                    // A tap is a click, which TalkBack also makes
+                    if (!repeated[0]) v.performClick();
+                    return true;
+                case android.view.MotionEvent.ACTION_CANCEL:
+                    mHandler.removeCallbacks(repeat);
+                    v.setPressed(false);
+                    return true;
+                default:
+                    return true;
+            }
+        });
+    }
+
+    /** Show Ctrl and Alt as they are: off, on for the next key, or locked, also for TalkBack. */
+    private void updateModifiers() {
+        updateModifier(mCtrlCap, CTRL);
+        updateModifier(mAltCap, ALT);
+    }
+
+    private void updateModifier(@Nullable TextView cap, @NonNull TerminowKeyBarModel.Modifier modifier) {
+        if (cap == null) return;
+        boolean on = modifier.isOn(), locked = modifier.isLocked();
+        cap.setBackground(keycap(on, locked));
+        cap.setTextColor(locked ? color(R.color.terminow_keycap_on_accent) : color(R.color.terminow_text));
+        cap.setTypeface(Typeface.MONOSPACE, on ? Typeface.BOLD : Typeface.NORMAL);
+        cap.setSelected(on);
+        ViewCompat.setStateDescription(cap, mActivity.getString(locked ? R.string.terminow_keybar_modifier_locked :
+            on ? R.string.terminow_keybar_modifier_on : R.string.terminow_keybar_modifier_off));
+    }
+
+    /** Whether Ctrl of the bar applies to the key that the terminal sends now; it is used up unless locked. */
+    public static boolean readCtrl() {
+        boolean on = CTRL.consume();
+        if (on && sShown != null) sShown.updateModifiers();
+        return on;
+    }
+
+    public static boolean readAlt() {
+        boolean on = ALT.consume();
+        if (on && sShown != null) sShown.updateModifiers();
+        return on;
+    }
+
+    @NonNull
+    static String labelOf(@NonNull String key) {
+        switch (key) {
+            case "ESC": return "Esc";
+            case "TAB": return "Tab";
+            case "SHIFT TAB": return "⇧Tab";
+            case "CTRL": return "Ctrl";
+            case "ALT": return "Alt";
+            case "LEFT": return "←";
+            case "DOWN": return "↓";
+            case "UP": return "↑";
+            case "RIGHT": return "→";
+            default: return key;
+        }
+    }
+
+    @StringRes
+    static int descriptionOf(@NonNull String key) {
+        switch (key) {
+            case "ESC": return R.string.terminow_keybar_key_esc;
+            case "TAB": return R.string.terminow_keybar_key_tab;
+            case "SHIFT TAB": return R.string.terminow_keybar_key_shift_tab;
+            case "CTRL": return R.string.terminow_keybar_key_ctrl;
+            case "ALT": return R.string.terminow_keybar_key_alt;
+            case "LEFT": return R.string.terminow_keybar_key_left;
+            case "DOWN": return R.string.terminow_keybar_key_down;
+            case "UP": return R.string.terminow_keybar_key_up;
+            case "RIGHT": return R.string.terminow_keybar_key_right;
+            default: return R.string.terminow_keybar_key_slash;
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Keyboard
+
+    /** The keyboard button shows what a tap does: show the keyboard while it is hidden, hide it while it is shown. */
+    private void updateKeyboardButton() {
+        ImageButton button = mKeyboardButton;
+        if (button == null) return;
+        boolean shown = KeyboardUtils.isSoftKeyboardVisible(mActivity);
+        if (mKeyboardShown != null && mKeyboardShown == shown) return;
+        mKeyboardShown = shown;
+        button.setImageResource(shown ? R.drawable.ic_terminow_keyboard_hide : R.drawable.ic_terminow_keyboard);
+        String label = mActivity.getString(shown ? R.string.terminow_keybar_keyboard_hide : R.string.terminow_keybar_keyboard_show);
+        button.setContentDescription(label);
+        TooltipCompat.setTooltipText(button, label);
+    }
+
+    /**
+     * Show or hide the keyboard as it is now, not as it was last asked for. The settings that
+     * turn the keyboard off instead of hiding it keep doing so.
+     */
+    private void toggleKeyboard() {
+        com.termux.app.terminal.TermuxTerminalViewClient client = mActivity.getTermuxTerminalViewClient();
+        if (client == null) return;
+        if (mActivity.getProperties().shouldEnableDisableSoftKeyboardOnToggle() || !mActivity.getPreferences().isSoftKeyboardEnabled()) {
+            client.onToggleSoftKeyboardRequest();
+            return;
+        }
+        TerminalView view = mActivity.getTerminalView();
+        if (KeyboardUtils.isSoftKeyboardVisible(mActivity)) {
+            KeyboardUtils.hideSoftKeyboard(mActivity, view);
+        } else {
+            KeyboardUtils.clearDisableSoftKeyboardFlags(mActivity);
+            // The keyboard types into the terminal, which keeps the focus
+            view.requestFocus();
+            KeyboardUtils.showSoftKeyboard(mActivity, view);
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // More
+
+    /** What is used less often: the keys of the tab, more keys, snippets and the password. */
+    private void showMore() {
+        TerminalSession session = mActivity.getCurrentSession();
+        if (session == null) return;
+        LinearLayout content = openSheet(mActivity.getString(R.string.terminow_keybar_more));
+        section(content, R.string.terminow_keybar_mode);
+        TerminowKeyBarModel.Choice choice = choiceOf(session);
+        TerminowKeyBarModel.Choice[] choices = TerminowKeyBarModel.Choice.values();
+        int[] labels = {R.string.terminow_keybar_choice_auto, R.string.terminow_keybar_choice_terminal, R.string.terminow_keybar_choice_claude};
+        for (int i = 0; i < choices.length; i++) {
+            TerminowKeyBarModel.Choice option = choices[i];
+            // A mark, not only a color, says which one is chosen
+            LinearLayout row = row(content, (option == choice ? "● " : "○ ") + mActivity.getString(labels[i]), "", () -> {
+                mChoices.put(session, option);
+                refresh();
+            });
+            ViewCompat.setStateDescription(row, mActivity.getString(option == choice ? R.string.terminow_keybar_chosen : R.string.terminow_keybar_not_chosen));
+        }
+        addMore(content);
     }
 
     @NonNull
@@ -221,24 +492,6 @@ public class TerminowKeyBar {
         });
     }
 
-    private void showModeMenu(@NonNull View anchor) {
-        TerminalSession session = mActivity.getCurrentSession();
-        if (session == null) return;
-        PopupMenu menu = new PopupMenu(mActivity, anchor);
-        TerminowKeyBarModel.Choice choice = choiceOf(session);
-        TerminowKeyBarModel.Choice[] choices = TerminowKeyBarModel.Choice.values();
-        int[] labels = {R.string.terminow_keybar_choice_auto, R.string.terminow_keybar_choice_terminal, R.string.terminow_keybar_choice_claude};
-        for (int i = 0; i < choices.length; i++)
-            menu.getMenu().add(0, i, i, labels[i]).setCheckable(true).setChecked(choices[i] == choice);
-        menu.getMenu().setGroupCheckable(0, true, true);
-        menu.setOnMenuItemClickListener(item -> {
-            mChoices.put(session, choices[item.getItemId()]);
-            refresh();
-            return true;
-        });
-        menu.show();
-    }
-
     /**
      * The commands and shortcuts for what the tab runs. A command of Claude Code is put on its
      * prompt for the user to send; a shortcut sends its keys. Also opens with Ctrl+Alt+S on a
@@ -247,8 +500,29 @@ public class TerminowKeyBar {
     public void showCommands() {
         TerminalSession session = currentRunning();
         if (session == null) return;
-        if (mDialog != null && mDialog.isShowing()) mDialog.dismiss();
         boolean claude = modeOf(session) == TerminowKeyBarModel.Mode.CLAUDE;
+        LinearLayout content = openSheet(mActivity.getString(claude ? R.string.terminow_keybar_commands_claude : R.string.terminow_keybar_commands_terminal));
+        if (claude) {
+            mFilter = "";
+            mContent = content;
+            mPanelSession = session;
+            fillClaude(content, session);
+        } else {
+            section(content, R.string.terminow_keybar_section_shortcuts);
+            for (TerminowKeyBarModel.Shortcut shortcut : TerminowKeyBarModel.TERMINAL_SHORTCUTS)
+                row(content, shortcut.label, describe(shortcut.descriptionName), () -> sendKeys(session, shortcut.keys));
+        }
+    }
+
+    /**
+     * A sheet over the bottom of the terminal, a column in the middle of a tablet or an unfolded
+     * phone, never taller than most of the screen. The terminal keeps its text and selection.
+     *
+     * @return Where its content goes.
+     */
+    @NonNull
+    private LinearLayout openSheet(@NonNull String titleText) {
+        if (mDialog != null && mDialog.isShowing()) mDialog.dismiss();
         Dialog dialog = new Dialog(mActivity, R.style.TerminowPanelDialog);
         mDialog = dialog;
         LinearLayout root = new LinearLayout(mActivity);
@@ -266,8 +540,7 @@ public class TerminowKeyBar {
         background.setCornerRadii(new float[]{radius, radius, radius, radius, 0, 0, 0, 0});
         sheet.setBackground(background);
         sheet.setPadding(dp(16), dp(12), dp(16), dp(12));
-        TextView title = text(mActivity.getString(claude ? R.string.terminow_keybar_commands_claude : R.string.terminow_keybar_commands_terminal),
-            18, R.color.terminow_text);
+        TextView title = text(titleText, 18, R.color.terminow_text);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         ViewCompat.setAccessibilityHeading(title, true);
         sheet.addView(title);
@@ -276,20 +549,8 @@ public class TerminowKeyBar {
         LinearLayout content = new LinearLayout(mActivity);
         content.setOrientation(LinearLayout.VERTICAL);
         scroll.addView(content);
-        if (claude) {
-            mFilter = "";
-            mContent = content;
-            mPanelSession = session;
-            fillClaude(content, session);
-        } else {
-            section(content, R.string.terminow_keybar_section_shortcuts);
-            for (TerminowKeyBarModel.Shortcut shortcut : TerminowKeyBarModel.TERMINAL_SHORTCUTS)
-                row(content, shortcut.label, describe(shortcut.descriptionName), () -> sendKeys(session, shortcut.keys));
-        }
-        if (!claude) addMore(content);
         sheet.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         root.addView(sheet, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        // A column in the middle on a tablet or an unfolded phone, never taller than most of the screen
         root.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
             int width = Math.min(right - left, dp(560));
             int scrollMax = Math.round((bottom - top) * 0.8f) - dp(60);
@@ -306,7 +567,7 @@ public class TerminowKeyBar {
             }
         });
         dialog.setContentView(root);
-        // The keyboard only opens when the filter is tapped
+        // The keyboard only opens when a field of the sheet is tapped
         if (dialog.getWindow() != null)
             dialog.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN |
                 android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
@@ -318,6 +579,7 @@ public class TerminowKeyBar {
             }
         });
         dialog.show();
+        return content;
     }
 
     /** Snippets, more keys and the password, for a terminal. */
@@ -424,7 +686,6 @@ public class TerminowKeyBar {
             if (!state.supportsContinue && !state.supportsResume)
                 content.addView(text(mActivity.getString(R.string.terminow_picker_claude_flags_missing), 12, R.color.terminow_text_secondary));
         }
-        addMore(content);
     }
 
     /** What was typed in the filter of the commands, kept while the panel is filled again. */

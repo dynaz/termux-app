@@ -329,12 +329,13 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
     @Override
     public boolean readControlKey() {
         return readExtraKeysSpecialButton(SpecialButton.CTRL) || mVirtualControlKeyDown ||
-            com.termux.app.terminow.TerminowKeyPanel.readCtrl();
+            com.termux.app.terminow.TerminowKeyPanel.readCtrl() || com.termux.app.terminow.TerminowKeyBar.readCtrl();
     }
 
     @Override
     public boolean readAltKey() {
-        return readExtraKeysSpecialButton(SpecialButton.ALT) || com.termux.app.terminow.TerminowKeyPanel.readAlt();
+        return readExtraKeysSpecialButton(SpecialButton.ALT) || com.termux.app.terminow.TerminowKeyPanel.readAlt() ||
+            com.termux.app.terminow.TerminowKeyBar.readAlt();
     }
 
     @Override

@@ -131,4 +131,23 @@
     <string name="terminow_keybar_filter_hint">ค้นหาคำสั่ง</string>
     <string name="terminow_keybar_filter_none">ไม่มีคำสั่งที่ตรงกัน</string>
     <string name="terminow_keybar_argument_needed">พิมพ์ %1$s ต่อท้าย</string>
+    <string name="terminow_keybar_claude_shortcuts">คำสั่งและปุ่มลัดของ Claude Code</string>
+    <string name="terminow_keybar_more">เพิ่มเติม</string>
+    <string name="terminow_keybar_key_esc">Escape</string>
+    <string name="terminow_keybar_key_tab">Tab</string>
+    <string name="terminow_keybar_key_shift_tab">Shift+Tab สลับโหมดของ Claude Code</string>
+    <string name="terminow_keybar_key_ctrl">Control สำหรับปุ่มถัดไป กดค้างเพื่อล็อก</string>
+    <string name="terminow_keybar_key_alt">Alt สำหรับปุ่มถัดไป กดค้างเพื่อล็อก</string>
+    <string name="terminow_keybar_key_left">ซ้าย</string>
+    <string name="terminow_keybar_key_down">ลง</string>
+    <string name="terminow_keybar_key_up">ขึ้น</string>
+    <string name="terminow_keybar_key_right">ขวา ใช้รับคำแนะนำได้ด้วย</string>
+    <string name="terminow_keybar_key_slash">เครื่องหมาย /</string>
+    <string name="terminow_keybar_modifier_on">เปิดสำหรับปุ่มถัดไป</string>
+    <string name="terminow_keybar_modifier_off">ปิด</string>
+    <string name="terminow_keybar_modifier_locked">ล็อกไว้</string>
+    <string name="terminow_keybar_keyboard_show">แสดงคีย์บอร์ด</string>
+    <string name="terminow_keybar_keyboard_hide">ซ่อนคีย์บอร์ด</string>
+    <string name="terminow_keybar_chosen">เลือกอยู่</string>
+    <string name="terminow_keybar_not_chosen">ไม่ได้เลือก</string>
 </resources>

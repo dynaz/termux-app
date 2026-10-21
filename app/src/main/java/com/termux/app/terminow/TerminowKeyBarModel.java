@@ -33,17 +33,71 @@ public final class TerminowKeyBarModel {
     /** The key of the bar that opens the key panel with more keys. It is never typed. */
     public static final String MORE = "MORE";
 
-    /** Esc, Tab, Ctrl, Alt, the arrows and More, for a shell in Ubuntu or TermiNow. */
-    public static final String TERMINAL_KEYS = "[['ESC','TAB','CTRL','ALT','LEFT','DOWN','UP','RIGHT'," +
-        "{key: 'MORE', display: '⋯'}]]";
+    /** Esc, Tab, Ctrl, Alt and /, for a shell in Ubuntu or TermiNow. */
+    public static final List<String> TERMINAL_KEYS = Collections.unmodifiableList(Arrays.asList("ESC", "TAB", "CTRL", "ALT", "/"));
 
-    /** Esc, Tab, Shift+Tab (the mode of Claude Code), Ctrl, the arrows, / and More, for Claude Code. */
-    public static final String CLAUDE_KEYS = "[['ESC','TAB',{macro: 'SHIFT TAB', display: '⇧⇥'},'CTRL','LEFT','DOWN','UP','RIGHT'," +
-        "{key: '/', display: '/'},{key: 'MORE', display: '⋯'}]]";
+    /** The same with Shift+Tab, which switches the mode of Claude Code. */
+    public static final List<String> CLAUDE_KEYS = Collections.unmodifiableList(Arrays.asList("ESC", "TAB", "SHIFT TAB", "CTRL", "ALT", "/"));
 
+    /** The arrows, always together, in the order of Vim and of most terminal key bars. */
+    public static final List<String> NAVIGATION_KEYS = Collections.unmodifiableList(Arrays.asList("LEFT", "DOWN", "UP", "RIGHT"));
+
+    /** The keys of the bar for a mode, as the names that the extra keys send, a macro like "SHIFT TAB", or a character. */
     @NonNull
-    public static String keysOf(@NonNull Mode mode) {
+    public static List<String> keysOf(@NonNull Mode mode) {
         return mode == Mode.CLAUDE ? CLAUDE_KEYS : TERMINAL_KEYS;
+    }
+
+    /** Whether a key of the bar is a modifier, which is on for the next key instead of being sent. */
+    public static boolean isModifier(@NonNull String key) {
+        return key.equals("CTRL") || key.equals("ALT");
+    }
+
+    /** Whether a key repeats while it is held, like the arrows. */
+    public static boolean repeats(@NonNull String key) {
+        return NAVIGATION_KEYS.contains(key);
+    }
+
+    /**
+     * Ctrl or Alt of the bar: tapped, it is on for the next key and then off; held, it is locked
+     * on until it is tapped again. It is off again on another tab.
+     */
+    public static final class Modifier {
+        private boolean mOn;
+        private boolean mLocked;
+
+        public boolean isOn() {
+            return mOn;
+        }
+
+        public boolean isLocked() {
+            return mOn && mLocked;
+        }
+
+        /** A tap: on for one key, or off when it is on or locked. */
+        public void tap() {
+            mOn = !mOn;
+            mLocked = false;
+        }
+
+        /** Held: locked on, or off when it was locked. */
+        public void hold() {
+            boolean wasLocked = isLocked();
+            mOn = !wasLocked;
+            mLocked = !wasLocked;
+        }
+
+        /** Whether it applies to the key that is sent now; a modifier that is not locked is then used up. */
+        public boolean consume() {
+            if (!mOn) return false;
+            if (!mLocked) mOn = false;
+            return true;
+        }
+
+        public void reset() {
+            mOn = false;
+            mLocked = false;
+        }
     }
 
     /**

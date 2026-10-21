@@ -25,8 +25,6 @@ import org.json.JSONException;
 public class TermuxTerminalExtraKeys extends TerminalExtraKeys {
 
     private ExtraKeysInfo mExtraKeysInfo;
-    /** The keys of {@link #mExtraKeysInfo} that {@link #setMode} set, {@code null} for those of the properties. */
-    private String mKeys;
 
     final TermuxActivity mActivity;
     final TermuxTerminalViewClient mTermuxTerminalViewClient;
@@ -43,8 +41,7 @@ public class TermuxTerminalExtraKeys extends TerminalExtraKeys {
         mTermuxTerminalViewClient = termuxTerminalViewClient;
         mTermuxTerminalSessionActivityClient = termuxTerminalSessionActivityClient;
 
-        // The keys of a terminal, until the key bar finds out what the tab runs
-        if (!setMode(TerminowKeyBarModel.Mode.TERMINAL)) setExtraKeys();
+        setExtraKeys();
     }
 
 
@@ -87,27 +84,13 @@ public class TermuxTerminalExtraKeys extends TerminalExtraKeys {
     }
 
     /**
-     * The keys of the key bar for what the tab runs, see {@link TerminowKeyBarModel}. Keys that
-     * the user set in termux.properties stay for a terminal; Claude Code always has its own.
-     *
-     * @return Whether the keys changed.
+     * Whether the user set keys of their own in termux.properties: they are then shown in the
+     * key bar for a terminal, instead of its keys, see {@link com.termux.app.terminow.TerminowKeyBar}.
      */
-    public boolean setMode(@NonNull TerminowKeyBarModel.Mode mode) {
-        String keys = TerminowKeyBarModel.keysOf(mode);
+    public boolean hasUserKeys() {
         String userKeys = (String) mActivity.getProperties().getInternalPropertyValue(TermuxPropertyConstants.KEY_EXTRA_KEYS, true);
-        if (mode == TerminowKeyBarModel.Mode.TERMINAL && userKeys != null && !userKeys.isEmpty() &&
-            !TermuxPropertyConstants.DEFAULT_IVALUE_EXTRA_KEYS.equals(userKeys))
-            keys = userKeys;
-        if (keys.equals(mKeys) && mExtraKeysInfo != null) return false;
-        try {
-            String style = (String) mActivity.getProperties().getInternalPropertyValue(TermuxPropertyConstants.KEY_EXTRA_KEYS_STYLE, true);
-            mExtraKeysInfo = new ExtraKeysInfo(keys, style, ExtraKeysConstants.CONTROL_CHARS_ALIASES);
-            mKeys = keys;
-            return true;
-        } catch (JSONException e) {
-            Logger.logStackTraceWithMessage(LOG_TAG, "Could not set the keys of " + mode, e);
-            return false;
-        }
+        return userKeys != null && !userKeys.trim().isEmpty() && !TermuxPropertyConstants.DEFAULT_IVALUE_EXTRA_KEYS.equals(userKeys) &&
+            mExtraKeysInfo != null;
     }
 
     @SuppressLint("RtlHardcoded")

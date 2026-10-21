@@ -131,4 +131,23 @@
     <string name="terminow_keybar_filter_hint">Filter commands</string>
     <string name="terminow_keybar_filter_none">No command matches.</string>
     <string name="terminow_keybar_argument_needed">Type %1$s after it</string>
+    <string name="terminow_keybar_claude_shortcuts">Claude Code commands and shortcuts</string>
+    <string name="terminow_keybar_more">More</string>
+    <string name="terminow_keybar_key_esc">Escape</string>
+    <string name="terminow_keybar_key_tab">Tab</string>
+    <string name="terminow_keybar_key_shift_tab">Shift+Tab, the mode of Claude Code</string>
+    <string name="terminow_keybar_key_ctrl">Control, for the next key. Hold to lock</string>
+    <string name="terminow_keybar_key_alt">Alt, for the next key. Hold to lock</string>
+    <string name="terminow_keybar_key_left">Left</string>
+    <string name="terminow_keybar_key_down">Down</string>
+    <string name="terminow_keybar_key_up">Up</string>
+    <string name="terminow_keybar_key_right">Right, also accepts a suggestion</string>
+    <string name="terminow_keybar_key_slash">Slash</string>
+    <string name="terminow_keybar_modifier_on">on for the next key</string>
+    <string name="terminow_keybar_modifier_off">off</string>
+    <string name="terminow_keybar_modifier_locked">locked on</string>
+    <string name="terminow_keybar_keyboard_show">Show keyboard</string>
+    <string name="terminow_keybar_keyboard_hide">Hide keyboard</string>
+    <string name="terminow_keybar_chosen">chosen</string>
+    <string name="terminow_keybar_not_chosen">not chosen</string>
 </resources>

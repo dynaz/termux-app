@@ -7,8 +7,6 @@ import static org.junit.Assert.assertTrue;
 import com.termux.shared.termux.extrakeys.ExtraKeysConstants;
 import com.termux.shared.termux.extrakeys.SpecialButton;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -25,40 +23,20 @@ public class TerminowKeyBarModelTest {
     @Rule
     public TemporaryFolder temp = new TemporaryFolder();
 
-    /**
-     * The keys of a row as ExtraKeysInfo reads them: a name, or an object with "key" or "macro".
-     * Read here with org.json, since ExtraKeysInfo needs Android to join a macro.
-     */
-    private static List<String> keysOf(TerminowKeyBarModel.Mode mode) throws Exception {
-        JSONArray rows = new JSONArray(TerminowKeyBarModel.keysOf(mode));
-        assertEquals("one row", 1, rows.length());
-        JSONArray row = rows.getJSONArray(0);
-        List<String> keys = new ArrayList<>();
-        for (int i = 0; i < row.length(); i++) {
-            Object item = row.get(i);
-            if (item instanceof JSONObject) {
-                JSONObject object = (JSONObject) item;
-                keys.add(object.has("macro") ? object.getString("macro") : object.getString("key"));
-            } else {
-                keys.add((String) item);
-            }
-        }
+    private static List<String> keysOf(TerminowKeyBarModel.Mode mode) {
+        List<String> keys = new ArrayList<>(TerminowKeyBarModel.keysOf(mode));
+        keys.addAll(TerminowKeyBarModel.NAVIGATION_KEYS);
         return keys;
     }
 
-    private static boolean isMacro(TerminowKeyBarModel.Mode mode, String key) throws Exception {
-        JSONArray row = new JSONArray(TerminowKeyBarModel.keysOf(mode)).getJSONArray(0);
-        for (int i = 0; i < row.length(); i++)
-            if (row.get(i) instanceof JSONObject && key.equals(row.getJSONObject(i).optString("macro"))) return true;
-        return false;
-    }
-
     @Test
-    public void theKeysOfATerminalAndOfClaudeCode() throws Exception {
-        assertEquals(Arrays.asList("ESC", "TAB", "CTRL", "ALT", "LEFT", "DOWN", "UP", "RIGHT", "MORE"),
+    public void theKeysOfATerminalAndOfClaudeCodeWithTheArrowsTogether() {
+        assertEquals(Arrays.asList("ESC", "TAB", "CTRL", "ALT", "/", "LEFT", "DOWN", "UP", "RIGHT"),
             keysOf(TerminowKeyBarModel.Mode.TERMINAL));
-        assertEquals(Arrays.asList("ESC", "TAB", "SHIFT TAB", "CTRL", "LEFT", "DOWN", "UP", "RIGHT", "/", "MORE"),
+        assertEquals(Arrays.asList("ESC", "TAB", "SHIFT TAB", "CTRL", "ALT", "/", "LEFT", "DOWN", "UP", "RIGHT"),
             keysOf(TerminowKeyBarModel.Mode.CLAUDE));
+        for (String arrow : TerminowKeyBarModel.NAVIGATION_KEYS) assertTrue(TerminowKeyBarModel.repeats(arrow));
+        assertFalse(TerminowKeyBarModel.repeats("ESC"));
     }
 
     /**
@@ -84,13 +62,37 @@ public class TerminowKeyBarModelTest {
     }
 
     @Test
-    public void ctrlAndAltAreModifiersOfTheBar() throws Exception {
-        // Keys of their own, which stay on for the next key, never part of a macro
-        for (TerminowKeyBarModel.Mode mode : TerminowKeyBarModel.Mode.values()) {
-            assertFalse(isMacro(mode, "CTRL"));
-            assertFalse(isMacro(mode, "ALT"));
-        }
-        assertTrue("Shift+Tab is sent as Shift with Tab", isMacro(TerminowKeyBarModel.Mode.CLAUDE, "SHIFT TAB"));
+    public void ctrlAndAltAreOnForTheNextKeyOrLockedWhenHeld() {
+        assertTrue(TerminowKeyBarModel.isModifier("CTRL"));
+        assertTrue(TerminowKeyBarModel.isModifier("ALT"));
+        assertFalse(TerminowKeyBarModel.isModifier("SHIFT TAB"));
+        TerminowKeyBarModel.Modifier ctrl = new TerminowKeyBarModel.Modifier();
+        assertFalse(ctrl.consume());
+        // A tap: for one key, then off
+        ctrl.tap();
+        assertTrue(ctrl.isOn());
+        assertFalse(ctrl.isLocked());
+        assertTrue(ctrl.consume());
+        assertFalse(ctrl.isOn());
+        assertFalse(ctrl.consume());
+        // A tap again before a key: off
+        ctrl.tap();
+        ctrl.tap();
+        assertFalse(ctrl.isOn());
+        // Held: for every key until it is tapped or held again
+        ctrl.hold();
+        assertTrue(ctrl.isLocked());
+        assertTrue(ctrl.consume());
+        assertTrue(ctrl.consume());
+        ctrl.tap();
+        assertFalse(ctrl.isOn());
+        ctrl.hold();
+        ctrl.hold();
+        assertFalse(ctrl.isOn());
+        // Another tab
+        ctrl.hold();
+        ctrl.reset();
+        assertFalse(ctrl.consume());
     }
 
     @Test

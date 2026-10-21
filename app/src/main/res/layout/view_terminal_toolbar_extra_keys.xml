@@ -1,32 +1,45 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The key bar: the strip of actions above the keys, or at their left on a wide screen, see TerminowKeyBar -->
+<!-- The key bar, see TerminowKeyBar: tools, keys, arrows and More scroll; the keyboard button stays at the right -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/terminow_keybar"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical">
-
-    <LinearLayout
-        android:id="@+id/terminow_keybar_actions"
-        android:layout_width="match_parent"
-        android:layout_height="@dimen/terminow_keybar_actions_height"
-        android:gravity="center_vertical"
-        android:orientation="horizontal" />
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="4dp"
+    android:paddingEnd="2dp">
 
     <HorizontalScrollView
         android:id="@+id/terminow_keybar_keys"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
         android:layout_weight="1"
-        android:fillViewport="true"
+        android:fillViewport="false"
         android:overScrollMode="never"
         android:scrollbars="none">
 
-        <com.termux.shared.termux.extrakeys.ExtraKeysView
-            android:id="@+id/terminal_toolbar_extra_keys"
-            style="?android:attr/buttonBarStyle"
+        <LinearLayout
+            android:id="@+id/terminow_keybar_row"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
-            android:orientation="horizontal" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <!-- Keys that the user set in termux.properties, instead of the keys of the bar -->
+            <com.termux.shared.termux.extrakeys.ExtraKeysView
+                android:id="@+id/terminal_toolbar_extra_keys"
+                style="?android:attr/buttonBarStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:orientation="horizontal"
+                android:visibility="gone" />
+        </LinearLayout>
     </HorizontalScrollView>
+
+    <ImageButton
+        android:id="@+id/terminow_keybar_keyboard"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_marginStart="2dp"
+        android:scaleType="center" />
 </LinearLayout>

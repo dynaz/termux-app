@@ -43,4 +43,9 @@
     <color name="terminow_keys_text">#E6E6E6</color>
     <color name="terminow_keys_active">#3A3A3C</color>
     <color name="terminow_keys_active_text">#4DA3FF</color>
+    <!-- Keycaps of the key bar on terminow_keys_bar: a little lighter, with a thin border -->
+    <color name="terminow_keycap">#2A2A2E</color>
+    <color name="terminow_keycap_border">#45454C</color>
+    <!-- The label of a locked modifier on the accent -->
+    <color name="terminow_keycap_on_accent">#0B1F14</color>
 </resources>

@@ -170,7 +170,7 @@ public class TerminowFishShellTest {
         // The key bar sends the key, as a key event, which the terminal turns into these bytes
         assertEquals("\033[C", KeyHandler.getCode(KeyEvent.KEYCODE_DPAD_RIGHT, 0, false, false));
         assertEquals("\033OC", KeyHandler.getCode(KeyEvent.KEYCODE_DPAD_RIGHT, 0, true, false));
-        assertTrue(TerminowKeyBarModel.TERMINAL_KEYS.contains("'RIGHT'"));
+        assertTrue(TerminowKeyBarModel.NAVIGATION_KEYS.contains("RIGHT"));
     }
 
     @Test
