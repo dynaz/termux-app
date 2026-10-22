@@ -54,6 +54,20 @@ public interface TerminalViewClient {
      */
     boolean onHorizontalSwipe(boolean toLeft);
 
+    /**
+     * Open links that were in the text the user selected, in a browser, when the user asked to;
+     * more than one: let the user pick. Return false if this client can not open links, and the
+     * selection then offers no such action.
+     */
+    default boolean onOpenUrls(@androidx.annotation.NonNull java.util.List<String> urls) {
+        return false;
+    }
+
+    /** Whether {@link #onOpenUrls} opens links. */
+    default boolean canOpenUrls() {
+        return false;
+    }
+
     /** Whether a sideways drag of a finger moves the terminal to another session, see {@link #onHorizontalDrag}. */
     default boolean canDragToSwitchSessions() {
         return false;

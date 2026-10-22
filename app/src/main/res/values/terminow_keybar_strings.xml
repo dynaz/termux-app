@@ -150,4 +150,7 @@
     <string name="terminow_keybar_keyboard_hide">Hide keyboard</string>
     <string name="terminow_keybar_chosen">chosen</string>
     <string name="terminow_keybar_not_chosen">not chosen</string>
+    <string name="terminow_open_url_pick">Open which link?</string>
+    <string name="terminow_open_url_other_browser">Chrome is not available, so the link opened in your default browser.</string>
+    <string name="terminow_open_url_no_browser">No browser can open this link.</string>
 </resources>

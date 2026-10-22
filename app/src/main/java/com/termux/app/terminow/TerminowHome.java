@@ -4832,10 +4832,7 @@ public class TerminowHome {
         new TerminowAccountScreen(mActivity, mSettings.getAccountUi(), mVaultsUi).show();
     }
 
-    /**
-     * The crown of the top bar: gold for Premium, gray with an upgrade for everyone else, and its
-     * label next to it where there is room.
-     */
+    /** The crown of the top bar: gold for Premium, gray for everyone else, who can upgrade with it. */
     public void updatePremiumButton() {
         if (mPremiumButton == null) return;
         boolean premium = TerminowAccountUi.isPremium(mStore);
@@ -4844,10 +4841,11 @@ public class TerminowHome {
         icon.setColorFilter(premium ? 0xFFFFC107 : ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
         label.setText(premium ? R.string.terminow_toolbar_premium : R.string.terminow_toolbar_upgrade);
         label.setTextColor(premium ? 0xFFFFC107 : ContextCompat.getColor(mActivity, R.color.terminow_text));
-        boolean wide = mActivity.getResources().getConfiguration().screenWidthDp >= 600;
-        label.setVisibility(wide ? View.VISIBLE : View.GONE);
-        mPremiumButton.setContentDescription(mActivity.getString(premium ? R.string.terminow_toolbar_premium_active :
-            R.string.terminow_toolbar_premium_upgrade));
+        // Only the crown, on every screen; what it means is its description and tooltip
+        label.setVisibility(View.GONE);
+        String description = mActivity.getString(premium ? R.string.terminow_toolbar_premium_active : R.string.terminow_toolbar_premium_upgrade);
+        mPremiumButton.setContentDescription(description);
+        androidx.appcompat.widget.TooltipCompat.setTooltipText(mPremiumButton, description);
     }
 
     // ---------------------------------------------------------------------------------------

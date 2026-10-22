@@ -81,7 +81,7 @@
                 android:orientation="horizontal" />
         </HorizontalScrollView>
 
-        <!-- Account & Premium: a crown, with "Premium" or "Upgrade" next to it on wide screens -->
+        <!-- Account & Premium: a crown only, see TerminowHome#updatePremiumButton -->
         <LinearLayout
             android:id="@+id/terminow_premium_button"
             android:layout_width="wrap_content"
@@ -91,9 +91,9 @@
             android:clickable="true"
             android:focusable="true"
             android:gravity="center_vertical"
-            android:minWidth="44dp"
+            android:minWidth="48dp"
             android:orientation="horizontal"
-            android:paddingHorizontal="10dp">
+            android:paddingHorizontal="12dp">
 
             <ImageView
                 android:id="@+id/terminow_premium_icon"

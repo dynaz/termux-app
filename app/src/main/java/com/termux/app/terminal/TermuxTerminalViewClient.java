@@ -366,6 +366,18 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
         return false;
     }
 
+    @Override
+    public boolean canOpenUrls() {
+        return true;
+    }
+
+    /** Open in Chrome of the selection menu: in Chrome, or the default browser, outside of TermiNow. */
+    @Override
+    public boolean onOpenUrls(@NonNull java.util.List<String> urls) {
+        com.termux.app.terminow.TerminowBrowser.open(mActivity, urls);
+        return true;
+    }
+
     /** Switching sessions by dragging the terminal sideways, made when it is first dragged. */
     @Nullable private com.termux.app.terminow.TerminowSessionSwipe mSessionSwipe;
 

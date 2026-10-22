@@ -150,4 +150,7 @@
     <string name="terminow_keybar_keyboard_hide">ซ่อนคีย์บอร์ด</string>
     <string name="terminow_keybar_chosen">เลือกอยู่</string>
     <string name="terminow_keybar_not_chosen">ไม่ได้เลือก</string>
+    <string name="terminow_open_url_pick">เปิดลิงก์ไหน</string>
+    <string name="terminow_open_url_other_browser">ไม่มี Chrome จึงเปิดลิงก์ในเบราว์เซอร์เริ่มต้น</string>
+    <string name="terminow_open_url_no_browser">ไม่มีเบราว์เซอร์ที่เปิดลิงก์นี้ได้</string>
 </resources>

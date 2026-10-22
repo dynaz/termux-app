@@ -33,6 +33,11 @@ public class TextSelectionCursorController implements CursorController {
     public final int ACTION_COPY = 1;
     public final int ACTION_PASTE = 2;
     public final int ACTION_MORE = 3;
+    public final int ACTION_OPEN_URL = 4;
+
+    /** The links of the selection, found again only when the selection changed. */
+    private java.util.List<String> mUrls = new java.util.ArrayList<>();
+    private int mUrlsX1 = -1, mUrlsY1, mUrlsX2, mUrlsY2;
 
     public TextSelectionCursorController(TerminalView terminalView) {
         this.terminalView = terminalView;
@@ -115,6 +120,10 @@ public class TextSelectionCursorController implements CursorController {
 
                 ClipboardManager clipboard = (ClipboardManager) terminalView.getContext().getSystemService(Context.CLIPBOARD_SERVICE);
                 menu.add(Menu.NONE, ACTION_COPY, Menu.NONE, R.string.copy_text).setShowAsAction(show);
+                // Beside Copy, only while the selection has a link; it opens only when tapped
+                MenuItem open = menu.add(Menu.NONE, ACTION_OPEN_URL, Menu.NONE, R.string.text_selection_open_in_chrome);
+                open.setShowAsAction(show);
+                open.setVisible(terminalView.mClient.canOpenUrls() && !selectedUrls().isEmpty());
                 menu.add(Menu.NONE, ACTION_PASTE, Menu.NONE, R.string.paste_text).setEnabled(clipboard != null && clipboard.hasPrimaryClip()).setShowAsAction(show);
                 menu.add(Menu.NONE, ACTION_MORE, Menu.NONE, R.string.text_selection_more);
                 return true;
@@ -122,7 +131,13 @@ public class TextSelectionCursorController implements CursorController {
 
             @Override
             public boolean onPrepareActionMode(ActionMode mode, Menu menu) {
-                return false;
+                // The handles moved: the action follows the links of the selection
+                MenuItem open = menu.findItem(ACTION_OPEN_URL);
+                if (open == null) return false;
+                boolean visible = terminalView.mClient.canOpenUrls() && !selectedUrls().isEmpty();
+                if (open.isVisible() == visible) return false;
+                open.setVisible(visible);
+                return true;
             }
 
             @Override
@@ -138,6 +153,13 @@ public class TextSelectionCursorController implements CursorController {
                         terminalView.mTermSession.onCopyTextToClipboard(selectedText);
                         terminalView.stopTextSelectionMode();
                         break;
+                    case ACTION_OPEN_URL: {
+                        java.util.List<String> urls = new java.util.ArrayList<>(selectedUrls());
+                        // Nothing is typed or sent to the terminal, and the keyboard is left as it was
+                        terminalView.stopTextSelectionMode();
+                        if (!urls.isEmpty()) terminalView.mClient.onOpenUrls(urls);
+                        break;
+                    }
                     case ACTION_PASTE:
                         terminalView.stopTextSelectionMode();
                         terminalView.mTermSession.onPasteTextFromClipboard();
@@ -368,6 +390,23 @@ public class TextSelectionCursorController implements CursorController {
         sel[1] = mSelY2;
         sel[2] = mSelX1;
         sel[3] = mSelX2;
+    }
+
+    /**
+     * The http and https links of the selection, see {@link SelectionUrls}: rows the terminal
+     * wrapped are one line, other rows only join where a link goes on from the right edge.
+     */
+    @androidx.annotation.NonNull
+    public java.util.List<String> selectedUrls() {
+        if (mUrlsX1 == mSelX1 && mUrlsY1 == mSelY1 && mUrlsX2 == mSelX2 && mUrlsY2 == mSelY2) return mUrls;
+        java.util.List<SelectionUrls.Row> rows = SelectionUrls.rowsOf(SelectionUrls.screenOf(terminalView.mEmulator.getScreen()), terminalView.mEmulator.mColumns,
+            mSelX1, mSelY1, mSelX2, mSelY2);
+        mUrls = SelectionUrls.find(rows);
+        mUrlsX1 = mSelX1;
+        mUrlsY1 = mSelY1;
+        mUrlsX2 = mSelX2;
+        mUrlsY2 = mSelY2;
+        return mUrls;
     }
 
     /** Get the currently selected text. */
