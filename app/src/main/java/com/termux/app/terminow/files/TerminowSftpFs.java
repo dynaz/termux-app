@@ -49,6 +49,12 @@ public class TerminowSftpFs implements TerminowFs {
 
         /** {@code null} if the user cancelled, then the key is skipped. */
         @Nullable String askPassphrase(@NonNull String keyName);
+
+        /** The passphrase of a key file of `~/.ssh` that the Keychain keeps, {@code null} if none. */
+        @Nullable
+        default String savedPassphrase(@NonNull String keyName) {
+            return null;
+        }
     }
 
     public static class HostKeyChangedException extends IOException {
@@ -70,8 +76,9 @@ public class TerminowSftpFs implements TerminowFs {
     private final String mKeyPath;
     private final Prompts mPrompts;
 
-    private Session mSession;
-    private ChannelSftp mChannel;
+    // Read without the lock by isConnected, which the screen asks while a connection is being made
+    private volatile Session mSession;
+    private volatile ChannelSftp mChannel;
     private String mRootPath = "/";
 
     /**
@@ -201,8 +208,19 @@ public class TerminowSftpFs implements TerminowFs {
             return;
         }
         if (pair.isEncrypted()) {
-            String passphrase = mPrompts.askPassphrase(key.getName());
-            if (passphrase == null) return;
+            // The one of the Keychain, else asked for; one that does not fit, like after the key was changed, is asked for again
+            String passphrase = mPrompts.savedPassphrase(key.getName());
+            for (int asked = 0; passphrase == null || !pair.decrypt(passphrase.getBytes(StandardCharsets.UTF_8)); asked++) {
+                if (asked == 3) {
+                    pair.dispose();
+                    return;
+                }
+                passphrase = mPrompts.askPassphrase(key.getName());
+                if (passphrase == null) {
+                    pair.dispose();
+                    return;
+                }
+            }
             jsch.addIdentity(key.getPath(), passphrase.getBytes(StandardCharsets.UTF_8));
         } else {
             jsch.addIdentity(key.getPath());
@@ -307,9 +325,15 @@ public class TerminowSftpFs implements TerminowFs {
         }
     }
 
-    /** Whether the connection is open now, for the status in the File Manager. */
-    public synchronized boolean isConnected() {
-        return mSession != null && mSession.isConnected() && mChannel != null && mChannel.isConnected();
+    /**
+     * Whether the connection is open now, for the status in the File Manager. It never waits for
+     * the lock: a connection that is being made holds it while it asks the user for a passphrase,
+     * which the screen could then never show.
+     */
+    public boolean isConnected() {
+        Session session = mSession;
+        ChannelSftp channel = mChannel;
+        return session != null && session.isConnected() && channel != null && channel.isConnected();
     }
 
     @NonNull

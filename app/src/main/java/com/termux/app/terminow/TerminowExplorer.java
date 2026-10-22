@@ -3157,6 +3157,13 @@ public class TerminowExplorer {
         }
 
         @Nullable
+        @Override
+        public String savedPassphrase(@NonNull String keyName) {
+            String passphrase = mStore.getKeyPassphrase(keyName);
+            return passphrase.isEmpty() ? null : passphrase;
+        }
+
+        @Nullable
         private String askSecret(@NonNull String prompt) {
             AtomicReference<String> answer = new AtomicReference<>(null);
             waitForUi(latch -> {
