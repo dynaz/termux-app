@@ -37,6 +37,7 @@ import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 
 import com.termux.R;
+import com.termux.app.terminow.linux.TerminowAndroidGroups;
 import com.termux.app.terminow.linux.TerminowLinuxEnv;
 import com.termux.app.TermuxActivity;
 import com.termux.terminal.TerminalEmulator;
@@ -1222,10 +1223,34 @@ public class TerminowLauncher {
         return shell + ":" + TerminowThemes.suggestionColor(theme != null ? theme : TerminowThemes.DEFAULT_THEME);
     }
 
-    /** The name of the shell for the name of a tab: fish when it is chosen for Ubuntu, else bash, as before. */
+    /**
+     * The name of the shell for the name of a tab: fish when it is chosen for Ubuntu and is there,
+     * at a path that the start script tries, else bash, which then opens, see TerminowLaunchPlan#NO_XOFF_SHELL.
+     */
     @NonNull
     String shellNameOf(@NonNull Environment environment) {
-        return TerminowStore.UBUNTU_SHELL_FISH.equals(mStore.getUbuntuShell()) && isUbuntuEnvironment(environment) ? "fish" : "bash";
+        if (!TerminowStore.UBUNTU_SHELL_FISH.equals(mStore.getUbuntuShell()) || !isUbuntuEnvironment(environment)) return "bash";
+        TerminowLinuxEnv linux = linuxOf(environment);
+        return linux != null && hasFish(linux.rootfs) ? "fish" : "bash";
+    }
+
+    static boolean hasFish(@NonNull File rootfs) {
+        return new File(rootfs, "usr/bin/fish").isFile() || new File(rootfs, "usr/local/bin/fish").isFile();
+    }
+
+    /**
+     * Before local Ubuntu starts: names in its /etc/group for the Android groups of the app that
+     * it has none for, so `groups` in its startup files does not warn, see TerminowAndroidGroups.
+     */
+    private void nameAndroidGroups(@NonNull String executable, @NonNull SessionInfo info) {
+        if (!executable.endsWith("/bin/proot-distro") || info.environmentKey == null) return;
+        Environment environment = environmentFor(info.environmentKey);
+        if (environment != null) nameAndroidGroups(environment);
+    }
+
+    private void nameAndroidGroups(@NonNull Environment environment) {
+        TerminowLinuxEnv linux = isUbuntuEnvironment(environment) ? linuxOf(environment) : null;
+        if (linux != null) TerminowAndroidGroups.ensure(linux.rootfs);
     }
 
     static boolean isUbuntu(@NonNull TerminowLinuxEnv linux) {
@@ -1323,6 +1348,7 @@ public class TerminowLauncher {
         }
         mLaunching = true;
         try {
+            nameAndroidGroups(executable, info);
             TerminalSession session = mHost.startSession(executable, args, workingDirectory, name);
             if (session == null) {
                 showFailure(name, mActivity.getString(R.string.terminow_launcher_start_failed));
@@ -1758,6 +1784,7 @@ public class TerminowLauncher {
         mInfo.put(session, info);
         dismiss();
         mHost.showSession(session);
+        nameAndroidGroups(environment);
         session.write(enterCommand(mTargets.getPrefixDir().getPath(), environment.container.name, user, folder, bindsOf(environment),
             shellOf(environment)) + "\r");
         updateToolbar(session);

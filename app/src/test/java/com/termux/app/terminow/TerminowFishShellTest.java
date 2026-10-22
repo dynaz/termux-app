@@ -183,6 +183,21 @@ public class TerminowFishShellTest {
         assertTrue(out, out.contains("FISH_RAN -l\n"));
     }
 
+    /** The name of a tab says fish only when the start script finds a Fish to run. */
+    @Test
+    public void theTabIsNamedFishOnlyWhenFishIsInTheRootfs() throws Exception {
+        File rootfs = temp.newFolder("rootfs");
+        assertFalse(TerminowLauncher.hasFish(rootfs));
+        File local = new File(rootfs, "usr/local/bin/fish");
+        assertTrue(local.getParentFile().mkdirs());
+        Files.write(local.toPath(), new byte[0]);
+        assertTrue(TerminowLauncher.hasFish(rootfs));
+        assertTrue(local.delete());
+        assertTrue(new File(rootfs, "usr/bin/fish").mkdirs());
+        // A folder is not a Fish
+        assertFalse(TerminowLauncher.hasFish(rootfs));
+    }
+
     @Test
     public void suggestionsAreReadableInEveryTheme() {
         List<TerminowThemes.Theme> themes = new ArrayList<>(Arrays.asList(TerminowThemes.THEMES));
