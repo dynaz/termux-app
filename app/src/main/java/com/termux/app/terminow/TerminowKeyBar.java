@@ -39,7 +39,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * The key bar below the terminal: a strip of actions (attach, paste, commands and shortcuts,
+ * The key bar below the terminal: a strip of actions (paste or attach, commands and shortcuts,
  * the keys of the tab, the keyboard) and a strip of keys that scrolls. The keys follow the tab
  * that is shown: those of Claude Code while it runs in it, else those of a terminal. Nothing is
  * sent to a tab without a tap of the user; a command is only put on the prompt.
@@ -139,7 +139,7 @@ public class TerminowKeyBar {
     }
 
     /**
-     * The row: tools (attach, paste, the commands and shortcuts), keys, the arrows together, and
+     * The row: tools (paste or attach, the commands and shortcuts), keys, the arrows together, and
      * More. Every button is at least 48dp to tap; the keycaps in them are smaller.
      */
     private void fillRow(@NonNull TerminowKeyBarModel.Mode mode, boolean userKeys) {
@@ -151,14 +151,17 @@ public class TerminowKeyBar {
         mCtrlCap = null;
         mAltCap = null;
         int index = 0;
-        row.addView(iconCap(R.drawable.ic_terminow_attach, R.string.terminow_keybar_attach, () -> {
+        // The clipboard: paste text, or attach files, which go to /tmp of the tab
+        ImageButton clipboard = iconCap(R.drawable.ic_terminow_paste, R.string.terminow_keybar_paste_attach, null);
+        clipboard.setOnClickListener(v -> {
             TerminowHome home = mActivity.getTerminowHome();
-            if (home != null && currentRunning() != null) home.attachFiles();
-        }), index++);
-        row.addView(iconCap(R.drawable.ic_terminow_paste, R.string.terminow_keybar_paste, () -> {
-            if (currentRunning() != null && mActivity.getTermuxTerminalSessionClient() != null)
-                mActivity.getTermuxTerminalSessionClient().onPasteTextFromClipboard(null);
-        }), index++);
+            if (home == null || currentRunning() == null) return;
+            home.showAttachMenu(v, () -> {
+                if (currentRunning() != null && mActivity.getTermuxTerminalSessionClient() != null)
+                    mActivity.getTermuxTerminalSessionClient().onPasteTextFromClipboard(null);
+            });
+        });
+        row.addView(clipboard, index++);
         boolean claude = mode == TerminowKeyBarModel.Mode.CLAUDE;
         row.addView(iconCap(claude ? R.drawable.ic_terminow_tool_claude : R.drawable.ic_terminow_commands,
             claude ? R.string.terminow_keybar_claude_shortcuts : R.string.terminow_keybar_commands, this::showCommands), index++);
@@ -213,7 +216,7 @@ public class TerminowKeyBar {
     }
 
     @NonNull
-    private ImageButton iconCap(@DrawableRes int icon, @StringRes int label, @NonNull Runnable action) {
+    private ImageButton iconCap(@DrawableRes int icon, @StringRes int label, @Nullable Runnable action) {
         ImageButton button = new ImageButton(mActivity);
         button.setImageResource(icon);
         // The Claude mark has its own color
@@ -225,7 +228,7 @@ public class TerminowKeyBar {
         String text = mActivity.getString(label);
         button.setContentDescription(text);
         TooltipCompat.setTooltipText(button, text);
-        button.setOnClickListener(v -> action.run());
+        if (action != null) button.setOnClickListener(v -> action.run());
         button.setLayoutParams(new LinearLayout.LayoutParams(dp(48), dp(48)));
         return button;
     }

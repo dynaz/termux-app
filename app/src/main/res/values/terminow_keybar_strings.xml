@@ -2,6 +2,7 @@
 <resources>
     <string name="terminow_keybar_attach">Attach files</string>
     <string name="terminow_keybar_paste">Paste</string>
+    <string name="terminow_keybar_paste_attach">Paste or attach files</string>
     <string name="terminow_keybar_commands">Commands and shortcuts</string>
     <string name="terminow_keybar_mode">Keys of the tab</string>
     <string name="terminow_keybar_mode_now">Keys: %1$s. Change</string>

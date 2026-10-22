@@ -2,6 +2,7 @@
 <resources>
     <string name="terminow_keybar_attach">แนบไฟล์</string>
     <string name="terminow_keybar_paste">วาง</string>
+    <string name="terminow_keybar_paste_attach">วางหรือแนบไฟล์</string>
     <string name="terminow_keybar_commands">คำสั่งและปุ่มลัด</string>
     <string name="terminow_keybar_mode">ปุ่มของแท็บ</string>
     <string name="terminow_keybar_mode_now">ปุ่ม: %1$s แตะเพื่อเปลี่ยน</string>

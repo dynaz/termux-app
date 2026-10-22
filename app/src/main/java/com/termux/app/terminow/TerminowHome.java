@@ -4862,7 +4862,7 @@ public class TerminowHome {
         popup.setElevation(dp(8));
         popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         addMenuItem(menu, popup, R.drawable.ic_terminow_paste, R.string.terminow_attach_paste, paste);
-        addMenuItem(menu, popup, R.drawable.ic_terminow_import, R.string.terminow_attach_upload, this::pickFilesForTmp);
+        addMenuItem(menu, popup, R.drawable.ic_terminow_attach, R.string.terminow_attach_upload, this::pickFilesForTmp);
         menu.measure(View.MeasureSpec.makeMeasureSpec(dp(280), View.MeasureSpec.EXACTLY), View.MeasureSpec.UNSPECIFIED);
         popup.showAsDropDown(anchor, 0, -anchor.getHeight() - menu.getMeasuredHeight() - dp(8));
     }

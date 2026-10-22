@@ -66,7 +66,7 @@
     <string name="terminow_key_fido_not_touched">The security key was not touched in time</string>
     <string name="terminow_key_fido_error">The security key answered with an error: %1$s</string>
     <string name="terminow_attach_paste">Paste text</string>
-    <string name="terminow_attach_upload">Upload file to /tmp</string>
+    <string name="terminow_attach_upload">Attach files to /tmp</string>
     <string name="terminow_attach_failed">The upload failed: %1$s</string>
     <plurals name="terminow_attach_uploading">
         <item quantity="one">Uploading %d file…</item>
