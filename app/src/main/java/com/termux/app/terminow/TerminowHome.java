@@ -470,6 +470,7 @@ public class TerminowHome {
             }
         });
         mExplorer.setLinuxSessionCounter(alias -> mLauncher.sessionsOf(alias).size());
+        mSftpBrowser = new TerminowSftpBrowser(activity, mStore, activity.findViewById(R.id.terminow_sftp_browser));
         mRailSettings = activity.findViewById(R.id.terminow_rail_settings);
         mRailSettings.setOnClickListener(v -> setPage(PAGE_SETTINGS));
         mHeaderView = activity.findViewById(R.id.terminow_header);
@@ -644,10 +645,12 @@ public class TerminowHome {
         updateTabs();
         // The toolbar belongs to the terminal, the launcher button to the home screen
         boolean hasSessions = termuxService != null && !termuxService.isTermuxSessionsEmpty();
-        mTerminalToolbar.setVisibility(!homeVisible && hasSessions ? View.VISIBLE : View.GONE);
+        // An SFTP tab that shows files has its own bar, and no keys
+        boolean files = mSftpBrowser != null && mSftpBrowser.update(mActivity.getCurrentSession(), !homeVisible && hasSessions);
+        mTerminalToolbar.setVisibility(!homeVisible && hasSessions && !files ? View.VISIBLE : View.GONE);
         mLauncherButton.setVisibility(homeVisible || !hasSessions ? View.VISIBLE : View.GONE);
         mLauncher.updateToolbar(null);
-        mKeyPanel.update(!homeVisible && hasSessions);
+        mKeyPanel.update(!homeVisible && hasSessions && !files);
         // Like Termius: the vault and its switcher on the home screen, "Vaults" over a terminal
         mHomeTitle.setText(homeVisible ? mVaultsUi.getActiveName() : mActivity.getString(R.string.terminow_vaults));
         mVaultSyncIcon.setImageResource(mVaultsUi.getSyncIcon());
@@ -839,6 +842,7 @@ public class TerminowHome {
 
     /** Go back to all hosts from a group. Returns {@code false} if there was nothing to go back from. */
     public boolean onBackPressed() {
+        if (!isVisible() && mSftpBrowser != null && mSftpBrowser.onBackPressed()) return true;
         if (isVisible() && mPage == PAGE_FILES) return mExplorer.onBackPressed();
         if (!isVisible() || mPage != PAGE_HOSTS || mCurrentGroup == null) return false;
         mCurrentGroup = null;
@@ -1133,6 +1137,7 @@ public class TerminowHome {
             .setItems(items, (d, which) -> {
                 if (which == 0) showImportDialog();
                 // Shared storage is reached with the system file picker, the app has no storage permission
+                else if (!isVisible() && mSftpBrowser.has(mActivity.getCurrentSession())) mSftpBrowser.pickUpload();
                 else mFiles.importFiles(getCurrentSftpSession());
             })
             .setNegativeButton(android.R.string.cancel, null)
@@ -1173,6 +1178,9 @@ public class TerminowHome {
     /** The sessions that were started for sftp, to upload imported files in. */
     private final java.util.Set<TerminalSession> mSftpSessions =
         java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+
+    /** The SFTP tabs that show the files of their host, like Termius, instead of the sftp command line. */
+    private TerminowSftpBrowser mSftpBrowser;
 
     /** The session that is shown if it is an sftp session that is still running, otherwise {@code null}. */
     @Nullable
@@ -1453,11 +1461,40 @@ public class TerminowHome {
         tab.title = title;
         TerminowWorkspace.register(session, tab);
         mLauncher.track(session, new TerminowLauncher.SessionInfo(null, host.getTitle(), "sftp", "", ""));
+        if (isBrowsable(route)) {
+            mConnectingHosts.remove(host.getKey() + ":sftp");
+            openSftpFiles(session, host, route, tab, title, false);
+            return;
+        }
+        sftpCommandLine(session, host, route, tab, title, false);
+    }
+
+    /**
+     * Whether an SFTP tab can show the files of its host: it is reached directly, not through a
+     * jump host or a proxy, which only the sftp command can.
+     */
+    private static boolean isBrowsable(@NonNull Route route) {
+        return route.jump == null && route.proxyConnector.isEmpty() && !route.login.telnet;
+    }
+
+    /** The files of the host in the tab, like Termius; the sftp command line is in its menu. */
+    private void openSftpFiles(@NonNull TerminalSession session, @NonNull TerminowStore.Host host, @NonNull Route route,
+                               @NonNull TerminowWorkspace.Tab tab, @NonNull String title, boolean again) {
+        if (!again) mStore.addLog(title, "sftp://" + route.login.username + "@" + route.login.address + ":" + route.login.port);
+        mSftpBrowser.open(session, route.login, () -> mStore.addRecentConnection(host, true),
+            () -> sftpCommandLine(session, host, route, tab, title, again));
+        refresh();
+    }
+
+    /** The sftp command in the tab, which is how a host behind a jump host or a proxy is reached. */
+    private void sftpCommandLine(@NonNull TerminalSession session, @NonNull TerminowStore.Host host, @NonNull Route route,
+                                 @NonNull TerminowWorkspace.Tab tab, @NonNull String title, boolean again) {
         String command = route.login.getSftpCommand(route.jump, route.proxyConnector, mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
-        mStore.addLog(title, command);
+        if (!again) mStore.addLog(title, command);
         writeWhenStarted(session, command + "\r", 0);
         writePasswordsWhenAsked(session, getLoginPrompts(route.login, route.jump), 0);
-        watchConnection(session, host, true, title, 0, tab, false);
+        watchConnection(session, host, true, title, 0, tab, again);
+        refresh();
     }
 
     /** The hosts and modes that a connection is being started to, to not start another one at the same time. */
@@ -1864,10 +1901,8 @@ public class TerminowHome {
                     Route route = prepareRoute(target);
                     if (route == null) return;
                     mLauncher.track(session, new TerminowLauncher.SessionInfo(null, target.getTitle(), "sftp", "", ""));
-                    String command = route.login.getSftpCommand(route.jump, route.proxyConnector, mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax());
-                    writeWhenStarted(session, command + "\r", 0);
-                    writePasswordsWhenAsked(session, getLoginPrompts(route.login, route.jump), 0);
-                    watchConnection(session, target, true, title, 0, tab, true);
+                    if (isBrowsable(route)) openSftpFiles(session, target, route, tab, title, true);
+                    else sftpCommandLine(session, target, route, tab, title, true);
                 } else {
                     startConnection(session, target, tab, true);
                 }
@@ -4605,6 +4640,7 @@ public class TerminowHome {
     /** Handle the result of an activity that was started for the home screen. Returns {@code true} if it was for it. */
     public boolean onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         if (mExplorer.onActivityResult(requestCode, resultCode, data)) return true;
+        if (mSftpBrowser.onActivityResult(requestCode, resultCode, data)) return true;
         if (mFiles.onActivityResult(requestCode, resultCode, data)) return true;
         if (requestCode == REQUEST_IMPORT_ROOTFS) {
             if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null) {

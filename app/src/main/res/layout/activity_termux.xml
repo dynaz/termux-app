@@ -351,6 +351,13 @@
         android:paddingBottom="8dp"
         android:visibility="gone" />
 
+        <!-- An SFTP tab: the files of its host in place of the terminal, like Termius -->
+        <FrameLayout
+            android:id="@+id/terminow_sftp_browser"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
         <include layout="@layout/view_terminow_home" />
 
     </FrameLayout>

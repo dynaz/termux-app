@@ -575,6 +575,14 @@ public class TerminowStore {
     private static final String KEY_CLAUDE_FAVORITES = "claude_command_favorites";
     /** The interactive shell of new tabs of local Ubuntu. Not set: the shell Ubuntu gives, as before. */
     private static final String KEY_UBUNTU_SHELL = "ubuntu_interactive_shell";
+    private static final String KEY_SFTP_SORT = "sftp_sort";
+    private static final String KEY_SFTP_SORT_DESCENDING = "sftp_sort_descending";
+    private static final String KEY_SFTP_HIDDEN = "sftp_hidden_files";
+    private static final String KEY_SFTP_DOWNLOAD_FOLDER = "sftp_download_folder";
+    public static final String SFTP_SORT_NAME = "name";
+    public static final String SFTP_SORT_DATE = "date";
+    public static final String SFTP_SORT_SIZE = "size";
+    public static final String SFTP_SORT_KIND = "kind";
     public static final String UBUNTU_SHELL_DEFAULT = "";
     public static final String UBUNTU_SHELL_FISH = "fish";
     public static final String UBUNTU_SHELL_BASH = "bash";
@@ -1344,6 +1352,40 @@ public class TerminowStore {
 
     public void setUbuntuShell(@NonNull String shell) {
         mPreferences.edit().putString(KEY_UBUNTU_SHELL, shell).apply();
+    }
+
+    /** How the SFTP tabs sort a folder: by name, date, size or kind; folders always come first. */
+    @NonNull
+    public String getSftpSort() {
+        String value = mPreferences.getString(KEY_SFTP_SORT, SFTP_SORT_NAME);
+        return SFTP_SORT_DATE.equals(value) || SFTP_SORT_SIZE.equals(value) || SFTP_SORT_KIND.equals(value) ? value : SFTP_SORT_NAME;
+    }
+
+    public boolean isSftpSortDescending() {
+        return mPreferences.getBoolean(KEY_SFTP_SORT_DESCENDING, false);
+    }
+
+    public void setSftpSort(@NonNull String sort, boolean descending) {
+        mPreferences.edit().putString(KEY_SFTP_SORT, sort).putBoolean(KEY_SFTP_SORT_DESCENDING, descending).apply();
+    }
+
+    /** Whether the SFTP tabs show files whose name starts with a dot. */
+    public boolean isSftpHiddenShown() {
+        return mPreferences.getBoolean(KEY_SFTP_HIDDEN, false);
+    }
+
+    public void setSftpHiddenShown(boolean shown) {
+        mPreferences.edit().putBoolean(KEY_SFTP_HIDDEN, shown).apply();
+    }
+
+    /** The folder that the SFTP tabs download to, a tree picked with the system picker; empty for Download. */
+    @NonNull
+    public String getSftpDownloadFolder() {
+        return mPreferences.getString(KEY_SFTP_DOWNLOAD_FOLDER, "");
+    }
+
+    public void setSftpDownloadFolder(@NonNull String treeUri) {
+        mPreferences.edit().putString(KEY_SFTP_DOWNLOAD_FOLDER, treeUri).apply();
     }
 
     /** The commands of Claude Code that the user pinned in the commands panel, in the order they were pinned. */

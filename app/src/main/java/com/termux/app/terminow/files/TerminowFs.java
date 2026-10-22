@@ -43,6 +43,8 @@ public interface TerminowFs {
         /** Milliseconds, 0 if not known. */
         public final long modified;
         @Nullable public final String mimeType;
+        /** Like "drwxr-xr-x", for a file system that has Linux permissions; {@code null} if not known. */
+        @Nullable public String permissions;
 
         public Node(@NonNull String id, @NonNull String name, boolean directory, boolean link, long size, long modified,
                     @Nullable String mimeType) {

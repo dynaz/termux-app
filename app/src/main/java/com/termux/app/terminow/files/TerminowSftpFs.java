@@ -337,7 +337,9 @@ public class TerminowSftpFs implements TerminowFs {
                 // A dangling link
             }
         }
-        return new Node(path, name, directory, link, directory ? -1 : size, attrs.getMTime() * 1000L, null);
+        Node node = new Node(path, name, directory, link, directory ? -1 : size, attrs.getMTime() * 1000L, null);
+        node.permissions = attrs.getPermissionsString();
+        return node;
     }
 
     @NonNull
