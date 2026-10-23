@@ -68,6 +68,21 @@ public interface TerminalViewClient {
         return false;
     }
 
+    /**
+     * Open a file path that was in the selected text, resolved in the environment of the tab:
+     * directly, or with a chooser ("Open with"). The client decides where the path is and whether
+     * it can be opened, and tells the user when it can not. Return false if this client does not
+     * open files, and the selection then offers no such action.
+     */
+    default boolean onOpenPath(@androidx.annotation.NonNull String path, boolean chooser) {
+        return false;
+    }
+
+    /** Whether {@link #onOpenPath} opens files. */
+    default boolean canOpenPath() {
+        return false;
+    }
+
     /** Whether a sideways drag of a finger moves the terminal to another session, see {@link #onHorizontalDrag}. */
     default boolean canDragToSwitchSessions() {
         return false;

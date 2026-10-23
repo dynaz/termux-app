@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_open_unresolved">Can\'t open this path: %1$s</string>
+    <string name="terminow_open_no_session">the terminal session is not known</string>
+    <string name="terminow_open_not_found">%1$s was not found</string>
+    <string name="terminow_open_is_folder">That is a folder, not a file</string>
+    <string name="terminow_open_no_app">No app can open this file</string>
+    <string name="terminow_open_failed">Could not open: %1$s</string>
+    <string name="terminow_open_no_transfer">This connection can\'t transfer files</string>
+    <string name="terminow_open_downloading">Downloading %1$s…</string>
+    <string name="terminow_open_apk_source_title">Allow installing apps</string>
+    <string name="terminow_open_apk_source_message">To install this APK, allow TermiNow to install apps in the next screen, then select the APK again.</string>
+    <string name="terminow_open_apk_source_settings">Open settings</string>
+</resources>

@@ -378,6 +378,18 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
         return true;
     }
 
+    @Override
+    public boolean canOpenPath() {
+        return true;
+    }
+
+    /** Open a file path from the selection menu, resolved in the environment of the tab. */
+    @Override
+    public boolean onOpenPath(@NonNull String path, boolean chooser) {
+        com.termux.app.terminow.TerminowOpen.open(mActivity, mActivity.getCurrentSession(), path, chooser);
+        return true;
+    }
+
     /** Switching sessions by dragging the terminal sideways, made when it is first dragged. */
     @Nullable private com.termux.app.terminow.TerminowSessionSwipe mSessionSwipe;
 
