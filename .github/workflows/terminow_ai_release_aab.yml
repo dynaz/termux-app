@@ -9,9 +9,10 @@ name: Build TermiNow release AAB (Play Internal)
 # Required repository secrets (report missing by name; the build fails fast
 # without them rather than producing an unsigned bundle):
 #   TERMINOW_UPLOAD_KEYSTORE_BASE64     base64 of the upload keystore (.jks)
-#   TERMINOW_UPLOAD_KEYSTORE_PASSWORD   its store/key password
+#   TERMINOW_UPLOAD_KEYSTORE_PASSWORD   the keystore (store) password
 # Optional:
 #   TERMINOW_UPLOAD_KEY_ALIAS           key alias (defaults to "upload")
+#   TERMINOW_UPLOAD_KEY_PASSWORD        key password, only if it differs from the store password
 on:
   workflow_dispatch:
     inputs:
@@ -43,6 +44,7 @@ jobs:
         env:
           TERMINOW_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.TERMINOW_UPLOAD_KEYSTORE_PASSWORD }}
           TERMINOW_UPLOAD_KEY_ALIAS: ${{ secrets.TERMINOW_UPLOAD_KEY_ALIAS }}
+          TERMINOW_UPLOAD_KEY_PASSWORD: ${{ secrets.TERMINOW_UPLOAD_KEY_PASSWORD }}
           TERMUX_APP_VERSION_CODE: ${{ github.event.inputs.version_code }}
         run: |
           echo "${{ secrets.TERMINOW_UPLOAD_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/upload.jks"

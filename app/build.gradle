@@ -162,7 +162,8 @@ android {
                 storeFile file(System.getenv("TERMINOW_UPLOAD_KEYSTORE_FILE"))
                 storePassword System.getenv("TERMINOW_UPLOAD_KEYSTORE_PASSWORD")
                 keyAlias System.getenv("TERMINOW_UPLOAD_KEY_ALIAS") ?: "upload"
-                keyPassword System.getenv("TERMINOW_UPLOAD_KEYSTORE_PASSWORD")
+                // Key password defaults to the store password, but can differ.
+                keyPassword System.getenv("TERMINOW_UPLOAD_KEY_PASSWORD") ?: System.getenv("TERMINOW_UPLOAD_KEYSTORE_PASSWORD")
             }
         }
         debug {
