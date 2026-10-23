@@ -350,7 +350,7 @@ public class TerminowMcpPage {
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(14), dp(10), dp(8), dp(10));
         row.setBackgroundResource(R.drawable.terminow_action);
-        row.addView(letterIcon(entry.name, entry.color, 40), new LinearLayout.LayoutParams(dp(40), dp(40)));
+        row.addView(brandIcon(entry, 40), new LinearLayout.LayoutParams(dp(40), dp(40)));
         LinearLayout texts = new LinearLayout(mActivity);
         texts.setOrientation(LinearLayout.VERTICAL);
         texts.setPadding(dp(12), 0, dp(8), 0);
@@ -431,6 +431,22 @@ public class TerminowMcpPage {
         } catch (android.content.ActivityNotFoundException e) {
             mActivity.showToast(url, true);
         }
+    }
+
+    /** The official bundled logo of an entry on a neutral tile, or its letter tile when there is none. */
+    @NonNull
+    private View brandIcon(@NonNull TerminowMcpCatalog.Entry entry, int sizeDp) {
+        if (!TerminowMcpLogos.hasLogo(entry.id)) return letterIcon(entry.name, entry.color, sizeDp);
+        ImageView icon = new ImageView(mActivity);
+        icon.setImageResource(TerminowMcpLogos.logoFor(entry.id));
+        int pad = dp(sizeDp * 0.18f);
+        icon.setPadding(pad, pad, pad, pad);
+        // A white tile so a dark mark stays visible in dark mode, and sizing matches the letter tiles
+        GradientDrawable shape = new GradientDrawable();
+        shape.setCornerRadius(dp(sizeDp * 0.28f));
+        shape.setColor(0xFFFFFFFF);
+        icon.setBackground(shape);
+        return icon;
     }
 
     /** A rounded square with the first letter of a name, in a color of its own. */
