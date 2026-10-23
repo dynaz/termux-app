@@ -43,6 +43,11 @@ public class ExtraKeyButton {
     private final String display;
 
     /**
+     * If the {@link #display} text was set with {@link #KEY_DISPLAY_NAME}.
+     */
+    private final boolean customDisplay;
+
+    /**
      * The {@link ExtraKeyButton} containing the information of the popup button (triggered by swipe up).
      */
     @Nullable
@@ -101,6 +106,7 @@ public class ExtraKeyButton {
         this.key = TextUtils.join(" ", keys);
 
         String displayFromConfig = getStringFromJson(config, KEY_DISPLAY_NAME);
+        this.customDisplay = displayFromConfig != null;
         if (displayFromConfig != null) {
             this.display = displayFromConfig;
         } else {
@@ -133,6 +139,11 @@ public class ExtraKeyButton {
     /** Get {@link #display}. */
     public String getDisplay() {
         return display;
+    }
+
+    /** Check whether {@link #display} was set with {@link #KEY_DISPLAY_NAME}. */
+    public boolean hasCustomDisplay() {
+        return customDisplay;
     }
 
     /** Get {@link #popup}. */

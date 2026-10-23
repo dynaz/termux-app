@@ -110,6 +110,7 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
     @Override
     public void onCreate() {
         Logger.logVerbose(LOG_TAG, "onCreate");
+        sShuttingDown = false;
 
         // Get Termux app SharedProperties without loading from disk since TermuxApplication handles
         // load and TermuxActivity handles reloads
@@ -171,6 +172,7 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
 
         TermuxShellUtils.clearTermuxTMPDIR(true);
 
+        sShuttingDown = true;
         actionReleaseWakeLock(false);
         if (!mWantsToStop)
             killAllTermuxExecutionCommands();
@@ -219,8 +221,17 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
     }
 
     /** Process action to stop service. */
+    /**
+     * Set while the service shuts down, for whatever reason: the tabs that end then are not
+     * closed by the user, so they are not taken out of the saved tabs of TermiNow.
+     */
+    public static volatile boolean sShuttingDown;
+
     private void actionStopService() {
         mWantsToStop = true;
+        sShuttingDown = true;
+        // Exit on purpose: the tabs do not come back the next time
+        com.termux.app.terminow.TerminowWorkspace.of(this).clear();
         killAllTermuxExecutionCommands();
         requestStopService();
     }
@@ -772,7 +783,13 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
         for (int i = 0; i < mShellManager.mTermuxSessions.size(); i++)
             mShellManager.mTermuxSessions.get(i).getTerminalSession().updateTerminalSessionClient(mTermuxTerminalSessionServiceClient);
 
+        boolean wasSet = mTermuxTerminalSessionActivityClient != null;
         mTermuxTerminalSessionActivityClient = null;
+
+        // The service is kept running for the activity while there are no sessions, so stop it
+        // now if nothing else needs it
+        if (wasSet && !mWantsToStop)
+            updateNotification();
     }
 
 
@@ -784,7 +801,7 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
 
         // Set pending intent to be launched when notification is clicked
         Intent notificationIntent = TermuxActivity.newInstance(this);
-        PendingIntent contentIntent = PendingIntent.getActivity(this, 0, notificationIntent, 0);
+        PendingIntent contentIntent = PendingIntent.getActivity(this, 0, notificationIntent, PendingIntent.FLAG_IMMUTABLE);
 
 
         // Set notification text
@@ -827,7 +844,7 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
 
         // Set Exit button action
         Intent exitIntent = new Intent(this, TermuxService.class).setAction(TERMUX_SERVICE.ACTION_STOP_SERVICE);
-        builder.addAction(android.R.drawable.ic_delete, res.getString(R.string.notification_action_exit), PendingIntent.getService(this, 0, exitIntent, 0));
+        builder.addAction(android.R.drawable.ic_delete, res.getString(R.string.notification_action_exit), PendingIntent.getService(this, 0, exitIntent, PendingIntent.FLAG_IMMUTABLE));
 
 
         // Set Wakelock button actions
@@ -835,7 +852,7 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
         Intent toggleWakeLockIntent = new Intent(this, TermuxService.class).setAction(newWakeAction);
         String actionTitle = res.getString(wakeLockHeld ? R.string.notification_action_wake_unlock : R.string.notification_action_wake_lock);
         int actionIcon = wakeLockHeld ? android.R.drawable.ic_lock_idle_lock : android.R.drawable.ic_lock_lock;
-        builder.addAction(actionIcon, actionTitle, PendingIntent.getService(this, 0, toggleWakeLockIntent, 0));
+        builder.addAction(actionIcon, actionTitle, PendingIntent.getService(this, 0, toggleWakeLockIntent, PendingIntent.FLAG_IMMUTABLE));
 
 
         return builder.build();
@@ -850,8 +867,10 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
 
     /** Update the shown foreground service notification after making any changes that affect it. */
     private synchronized void updateNotification() {
-        if (mWakeLock == null && mShellManager.mTermuxSessions.isEmpty() && mShellManager.mTermuxTasks.isEmpty()) {
-            // Exit if we are updating after the user disabled all locks with no sessions or tasks running.
+        if (mWakeLock == null && mShellManager.mTermuxSessions.isEmpty() && mShellManager.mTermuxTasks.isEmpty() &&
+            mTermuxTerminalSessionActivityClient == null) {
+            // Exit if we are updating after the user disabled all locks with no sessions or tasks running
+            // and the activity is not showing its home screen to start new ones.
             requestStopService();
         } else {
             ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).notify(TermuxConstants.TERMUX_APP_NOTIFICATION_ID, buildNotification());

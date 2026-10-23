@@ -34,6 +34,7 @@ import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import android.widget.Scroller;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 
@@ -194,8 +195,10 @@ public final class TerminalView extends View {
             }
 
             @Override
-            public boolean onFling(final MotionEvent e2, float velocityX, float velocityY) {
+            public boolean onFling(final MotionEvent e1, final MotionEvent e2, float velocityX, float velocityY) {
                 if (mEmulator == null) return true;
+                if (isHorizontalSwipe(e1, e2, velocityX, velocityY) && mClient.onHorizontalSwipe(e2.getX() < e1.getX()))
+                    return true;
                 // Do not start scrolling until last fling has been taken care of:
                 if (!mScroller.isFinished()) return true;
 
@@ -258,7 +261,9 @@ public final class TerminalView extends View {
         });
         mScroller = new Scroller(context);
         AccessibilityManager am = (AccessibilityManager) context.getSystemService(Context.ACCESSIBILITY_SERVICE);
-        mAccessibilityEnabled = am.isEnabled();
+        // Only a screen reader reads the text of the view: any other accessibility service, like a
+        // password manager, got an event for every bit of output, which made busy terminals hang
+        mAccessibilityEnabled = am.isTouchExplorationEnabled();
     }
 
 
@@ -496,7 +501,11 @@ public final class TerminalView extends View {
         mEmulator.clearScrollCounter();
 
         invalidate();
-        if (mAccessibilityEnabled) setContentDescription(getText());
+        if (mAccessibilityEnabled && !mDescriptionPending) {
+            // At most twice a second, not for every bit of output
+            mDescriptionPending = true;
+            postDelayed(mUpdateDescription, 500);
+        }
     }
 
     /** This must be called by the hosting activity in {@link Activity#onContextMenuClosed(Menu)}
@@ -572,6 +581,96 @@ public final class TerminalView extends View {
     }
 
     /** Perform a scroll, either from dragging the screen or by scrolling a mouse wheel. */
+    /**
+     * A finger fling that is mostly sideways and covers a fifth of the view. Flings that start at the
+     * left edge are left alone, so that swiping in from the edge still opens the session list.
+     */
+    /** A drag of a finger sideways: not decided yet, along the terminal, or moving it to another session. */
+    private static final int DRAG_NONE = 0, DRAG_UNDECIDED = 1, DRAG_VERTICAL = 2, DRAG_SESSION = 3;
+    private int mDragState = DRAG_NONE;
+    private float mDragStartX, mDragStartY, mDragOffset;
+    @Nullable private android.view.VelocityTracker mDragVelocity;
+
+    /**
+     * Follow a finger that drags the terminal sideways, so that it moves with it to the next
+     * session, see {@link TerminalViewClient#onHorizontalDrag}. A drag that is more up and down
+     * than sideways scrolls as before; the edge of the drawer, text selection and the mouse are
+     * left alone. Returns whether the event was used.
+     */
+    private boolean handleSessionDrag(@NonNull MotionEvent event) {
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN) {
+            mDragState = DRAG_NONE;
+            if (isSelectingText() || event.isFromSource(InputDevice.SOURCE_MOUSE) || !mClient.canDragToSwitchSessions()) return false;
+            float edge = 32 * getResources().getDisplayMetrics().density;
+            if (event.getX() < edge) return false;
+            mDragState = DRAG_UNDECIDED;
+            mDragStartX = event.getX();
+            mDragStartY = event.getY();
+            if (mDragVelocity != null) mDragVelocity.recycle();
+            mDragVelocity = android.view.VelocityTracker.obtain();
+            mDragVelocity.addMovement(event);
+            return false;
+        }
+        if (mDragState == DRAG_NONE || mDragState == DRAG_VERTICAL) return false;
+        if (mDragVelocity != null) mDragVelocity.addMovement(event);
+        float dx = event.getX() - mDragStartX, dy = event.getY() - mDragStartY;
+        if (action == MotionEvent.ACTION_POINTER_DOWN && mDragState == DRAG_UNDECIDED) {
+            // Two fingers are a pinch to zoom
+            mDragState = DRAG_VERTICAL;
+            return false;
+        }
+        if (mDragState == DRAG_UNDECIDED) {
+            if (action == MotionEvent.ACTION_MOVE) {
+                int slop = android.view.ViewConfiguration.get(getContext()).getScaledTouchSlop();
+                if (Math.abs(dx) > slop * 1.5f && Math.abs(dx) > 2 * Math.abs(dy)) {
+                    mDragState = DRAG_SESSION;
+                    // The finger is past the slop: the terminal moves from here, without a jump
+                    mDragOffset = Math.signum(dx) * slop * 1.5f;
+                    // What the gestures began, like a long press or a scroll, ends here
+                    MotionEvent cancel = MotionEvent.obtain(event);
+                    cancel.setAction(MotionEvent.ACTION_CANCEL);
+                    mGestureRecognizer.onTouchEvent(cancel);
+                    cancel.recycle();
+                    mClient.onHorizontalDrag(dx - mDragOffset);
+                    return true;
+                }
+                if (Math.abs(dy) > slop) mDragState = DRAG_VERTICAL;
+            } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                mDragState = DRAG_NONE;
+            }
+            return false;
+        }
+        // Moving the terminal to another session
+        switch (action) {
+            case MotionEvent.ACTION_MOVE:
+                mClient.onHorizontalDrag(dx - mDragOffset);
+                return true;
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_CANCEL:
+                float velocity = 0;
+                if (mDragVelocity != null) {
+                    mDragVelocity.computeCurrentVelocity(1000);
+                    velocity = mDragVelocity.getXVelocity();
+                    mDragVelocity.recycle();
+                    mDragVelocity = null;
+                }
+                mDragState = DRAG_NONE;
+                mClient.onHorizontalDragEnd(dx - mDragOffset, velocity, action == MotionEvent.ACTION_CANCEL);
+                return true;
+            default:
+                return true;
+        }
+    }
+
+    private boolean isHorizontalSwipe(@Nullable MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
+        if (e1 == null || isSelectingText() || e2.isFromSource(InputDevice.SOURCE_MOUSE)) return false;
+        if (Math.abs(velocityX) < 2 * Math.abs(velocityY)) return false;
+        float edge = 32 * getResources().getDisplayMetrics().density;
+        if (e1.getX() < edge) return false;
+        return Math.abs(e2.getX() - e1.getX()) > getWidth() / 5f;
+    }
+
     void doScroll(MotionEvent event, int rowsDown) {
         boolean up = rowsDown < 0;
         int amount = Math.abs(rowsDown);
@@ -607,6 +706,7 @@ public final class TerminalView extends View {
     public boolean onTouchEvent(MotionEvent event) {
         if (mEmulator == null) return true;
         final int action = event.getAction();
+        if (handleSessionDrag(event)) return true;
 
         if (isSelectingText()) {
             updateFloatingToolbarVisibility(event);
@@ -921,6 +1021,9 @@ public final class TerminalView extends View {
         TerminalEmulator term = mTermSession.getEmulator();
         String code = KeyHandler.getCode(keyCode, keyMod, term.isCursorKeysApplicationMode(), term.isKeypadApplicationMode());
         if (code == null) return false;
+        // A host that wants ^H for Backspace gets it, and Ctrl+Backspace then sends DEL
+        if (keyCode == KeyEvent.KEYCODE_DEL && mTermSession.getBackspaceSendsCtrlH())
+            code = KeyHandler.swapBackspace(code);
         mTermSession.write(code);
         return true;
     }
@@ -978,8 +1081,23 @@ public final class TerminalView extends View {
      */
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
-        updateSize();
+        if (mEmulator == null) {
+            updateSize();
+            return;
+        }
+        // Applied once the size settled: the keyboard coming or going can change it a few times,
+        // and each change made programs like Claude Code draw all they show again
+        removeCallbacks(mApplySize);
+        postDelayed(mApplySize, RESIZE_SETTLE_MS);
     }
+
+    private static final long RESIZE_SETTLE_MS = 100;
+    private final Runnable mApplySize = this::updateSize;
+    private boolean mDescriptionPending;
+    private final Runnable mUpdateDescription = () -> {
+        mDescriptionPending = false;
+        if (mEmulator != null) setContentDescription(getText());
+    };
 
     /** Check if the terminal size in rows and columns should be updated. */
     public void updateSize() {

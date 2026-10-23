@@ -326,7 +326,8 @@ public final class TermuxPropertyConstants {
     /** Defines the key for extra keys */
     public static final String KEY_EXTRA_KEYS =  "extra-keys"; // Default: "extra-keys"
     //public static final String DEFAULT_IVALUE_EXTRA_KEYS = "[[ESC, TAB, CTRL, ALT, {key: '-', popup: '|'}, DOWN, UP]]"; // Single row
-    public static final String DEFAULT_IVALUE_EXTRA_KEYS = "[['ESC','/',{key: '-', popup: '|'},'HOME','UP','END','PGUP'], ['TAB','CTRL','ALT','LEFT','DOWN','RIGHT','PGDN']]"; // Double row
+    //public static final String DEFAULT_IVALUE_EXTRA_KEYS = "[['ESC','/',{key: '-', popup: '|'},'HOME','UP','END','PGUP'], ['TAB','CTRL','ALT','LEFT','DOWN','RIGHT','PGDN']]"; // Double row
+    public static final String DEFAULT_IVALUE_EXTRA_KEYS = "[['LEFT','UP','DOWN','RIGHT','SNIPPETS','PASSWORD','TAB','PASTE',{key: 'HOME', display: 'home'},{key: 'PGUP', display: 'pgUp'},{key: 'PGDN', display: 'pgDn'},{key: 'END', display: 'end'},{macro: 'SHIFT TAB', display: 'shift+tab'},{key: 'CTRL', display: 'ctrl', popup: {key: 'ALT', display: 'alt'}},{key: 'ESC', display: 'esc'},'KEYBOARD']]"; // Single row
 
     /** Defines the key for extra keys style */
     public static final String KEY_EXTRA_KEYS_STYLE =  "extra-keys-style"; // Default: "extra-keys-style"
@@ -444,6 +445,7 @@ public final class TermuxPropertyConstants {
         KEY_DISABLE_HARDWARE_KEYBOARD_SHORTCUTS,
         KEY_DISABLE_TERMINAL_SESSION_CHANGE_TOAST,
         KEY_ENFORCE_CHAR_BASED_INPUT,
+        KEY_EXTRA_KEYS_TEXT_ALL_CAPS,
         KEY_HIDE_SOFT_KEYBOARD_ON_STARTUP,
         KEY_TERMINAL_ONCLICK_URL_OPEN,
         KEY_USE_CTRL_SPACE_WORKAROUND,
@@ -458,7 +460,6 @@ public final class TermuxPropertyConstants {
      * default: true
      */
     public static final Set<String> TERMUX_DEFAULT_TRUE_BOOLEAN_BEHAVIOUR_PROPERTIES_LIST = new HashSet<>(Arrays.asList(
-        KEY_EXTRA_KEYS_TEXT_ALL_CAPS,
         KEY_RUN_TERMUX_AM_SOCKET_SERVER
     ));
 

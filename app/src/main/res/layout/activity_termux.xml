@@ -7,11 +7,246 @@
     android:orientation="vertical"
     android:fitsSystemWindows="true">
 
+    <LinearLayout
+        android:id="@+id/terminow_tab_bar"
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:background="@color/terminow_bar_terminal"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="8dp">
+
+        <LinearLayout
+            android:id="@+id/terminow_home_button"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:background="@drawable/terminow_tab_idle"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="10dp">
+
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:src="@drawable/ic_terminow_vault"
+                tools:ignore="ContentDescription" />
+
+            <TextView
+                android:id="@+id/terminow_home_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:ellipsize="end"
+                android:maxWidth="160dp"
+                android:maxLines="1"
+                android:text="@string/terminow_vault_personal"
+                android:textColor="@color/terminow_text"
+                android:textSize="14sp" />
+
+            <!-- Whether the vault is synced -->
+            <ImageView
+                android:id="@+id/terminow_vault_sync_icon"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:layout_marginStart="8dp"
+                android:alpha="0.7"
+                android:src="@drawable/ic_terminow_cloud_off"
+                tools:ignore="ContentDescription" />
+        </LinearLayout>
+
+        <!-- The vault switcher: Personal and Team vaults -->
+        <ImageView
+            android:id="@+id/terminow_vault_button"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_marginStart="2dp"
+            android:background="@drawable/terminow_tab_idle"
+            android:contentDescription="@string/terminow_vault_switch"
+            android:padding="8dp"
+            android:src="@drawable/ic_terminow_chevron_down" />
+
+        <HorizontalScrollView
+            android:id="@+id/terminow_tabs_scroll"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:overScrollMode="never"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/terminow_tabs"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal" />
+        </HorizontalScrollView>
+
+        <!-- Account & Premium: a crown only, see TerminowHome#updatePremiumButton -->
+        <LinearLayout
+            android:id="@+id/terminow_premium_button"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:layout_marginStart="6dp"
+            android:background="?android:attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center_vertical"
+            android:minWidth="48dp"
+            android:orientation="horizontal"
+            android:paddingHorizontal="12dp">
+
+            <ImageView
+                android:id="@+id/terminow_premium_icon"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:src="@drawable/ic_terminow_crown"
+                tools:ignore="ContentDescription" />
+
+            <TextView
+                android:id="@+id/terminow_premium_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:maxLines="1"
+                android:text="@string/terminow_toolbar_premium"
+                android:textColor="@color/terminow_text"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- The launcher: TermiNow shell, Ubuntu and Claude Code -->
+        <ImageView
+            android:id="@+id/terminow_launcher_button"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginStart="6dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/terminow_launcher_title"
+            android:padding="10dp"
+            android:src="@drawable/ic_terminow_launch" />
+
+        <FrameLayout
+            android:id="@+id/terminow_notifications_button"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginStart="6dp"
+            android:contentDescription="@string/terminow_notifications">
+
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:padding="10dp"
+                android:src="@drawable/ic_terminow_bell"
+                tools:ignore="ContentDescription" />
+
+            <!-- Shown while there are notifications that were not seen yet -->
+            <View
+                android:id="@+id/terminow_notifications_badge"
+                android:layout_width="9dp"
+                android:layout_height="9dp"
+                android:layout_gravity="top|end"
+                android:layout_marginTop="9dp"
+                android:layout_marginEnd="10dp"
+                android:background="@drawable/terminow_badge"
+                android:visibility="gone" />
+        </FrameLayout>
+    </LinearLayout>
+
+    <!-- The terminal toolbar: environment and folder of the tab, tools and more. Only over a terminal. -->
+    <LinearLayout
+        android:id="@+id/terminow_terminal_toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:background="@color/terminow_bar_terminal"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="8dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/terminow_toolbar_environment"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:background="@drawable/terminow_tab_idle"
+            android:gravity="center_vertical"
+            android:maxLines="1"
+            android:paddingHorizontal="12dp"
+            android:textColor="@color/terminow_text"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/terminow_toolbar_folder"
+            android:layout_width="0dp"
+            android:layout_height="32dp"
+            android:layout_marginStart="6dp"
+            android:layout_weight="1"
+            android:background="@drawable/terminow_tab_idle"
+            android:drawableStart="@drawable/ic_terminow_folder"
+            android:drawablePadding="6dp"
+            android:drawableTint="@color/terminow_text_secondary"
+            android:ellipsize="start"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="10dp"
+            android:singleLine="true"
+            android:textColor="@color/terminow_text_secondary"
+            android:textSize="13sp" />
+
+        <!-- Install tools and Quick Launch: icons only, each with a tooltip and a description for TalkBack -->
+        <ImageView
+            android:id="@+id/terminow_toolbar_install"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="2dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/terminow_install_title"
+            android:scaleType="center"
+            android:src="@drawable/ic_terminow_download"
+            app:tint="@color/terminow_text" />
+
+        <ImageView
+            android:id="@+id/terminow_toolbar_tools"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="2dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/terminow_quick_title"
+            android:scaleType="center"
+            android:src="@drawable/ic_terminow_launch"
+            app:tint="@color/terminow_text" />
+
+        <ImageView
+            android:id="@+id/terminow_toolbar_keys"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="4dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/terminow_keys_panel"
+            android:padding="9dp"
+            android:src="@drawable/ic_terminow_side_panel"
+            app:tint="@color/terminow_text" />
+
+        <ImageView
+            android:id="@+id/terminow_toolbar_more"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/terminow_toolbar_more"
+            android:padding="10dp"
+            android:src="@drawable/ic_terminow_more"
+            app:tint="@color/terminow_text" />
+    </LinearLayout>
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
     <RelativeLayout
         android:id="@+id/activity_termux_root_relative_layout"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
+        android:layout_height="match_parent"
         android:layout_marginHorizontal="3dp"
         android:layout_marginVertical="0dp"
         android:orientation="vertical">
@@ -98,11 +333,34 @@
             android:id="@+id/terminal_toolbar_view_pager"
             android:visibility="gone"
             android:layout_width="match_parent"
-            android:layout_height="37.5dp"
-            android:background="@color/black"
+            android:layout_height="44dp"
+            android:background="@drawable/terminow_extra_keys_bar"
             android:layout_alignParentBottom="true" />
 
     </RelativeLayout>
+
+    <!-- The key panel at the right of the terminal on a wide screen, which then leaves room for it -->
+    <FrameLayout
+        android:id="@+id/terminow_key_panel"
+        android:layout_width="@dimen/terminow_key_panel_width"
+        android:layout_height="match_parent"
+        android:layout_gravity="end"
+        android:paddingStart="4dp"
+        android:paddingTop="6dp"
+        android:paddingEnd="8dp"
+        android:paddingBottom="8dp"
+        android:visibility="gone" />
+
+        <!-- An SFTP tab: the files of its host in place of the terminal, like Termius -->
+        <FrameLayout
+            android:id="@+id/terminow_sftp_browser"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
+        <include layout="@layout/view_terminow_home" />
+
+    </FrameLayout>
 
     <View
         android:id="@+id/activity_termux_bottom_space_view"

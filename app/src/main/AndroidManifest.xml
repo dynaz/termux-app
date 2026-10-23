@@ -21,18 +21,22 @@
 
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
+    <!-- Shared storage is only used by path on Android 9 and lower, where these permissions give
+         access to it. On newer versions files are imported and exported with the system file
+         picker, which needs no permission. All files access (MANAGE_EXTERNAL_STORAGE) is added by
+         the flavors, see src/full/AndroidManifest.xml and src/play/AndroidManifest.xml. -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.READ_LOGS" />
     <uses-permission android:name="android.permission.DUMP" />
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
@@ -40,12 +44,14 @@
     <application
         android:name=".app.TermuxApplication"
         android:allowBackup="false"
+        android:networkSecurityConfig="@xml/terminow_network_security_config"
         android:banner="@drawable/banner"
+        android:enableOnBackInvokedCallback="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/application_name"
-        android:requestLegacyExternalStorage="true"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="false"
+        tools:replace="android:supportsRtl"
         android:theme="@style/Theme.TermuxApp.DayNight.DarkActionBar"
         tools:targetApi="m">
 
@@ -87,6 +93,27 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity-alias>
+
+        <!-- The built-in remote desktop. It handles rotation, folding and keyboards itself, so
+             its connection is never torn down by a configuration change. -->
+        <activity
+            android:name=".app.terminow.rdp.TerminowRdpActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|smallestScreenSize|density|screenLayout|keyboard|keyboardHidden|navigation|uiMode"
+            android:label="@string/terminow_rdp_title"
+            android:resizeableActivity="true"
+            android:theme="@android:style/Theme.Material.NoActionBar"
+            android:windowSoftInputMode="adjustResize|stateHidden" />
+
+        <!-- The PowerShell console of WinRM hosts, through the Ubuntu environment. -->
+        <activity
+            android:name=".app.terminow.winrm.TerminowWinrmActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|smallestScreenSize|density|screenLayout|keyboard|keyboardHidden|navigation|uiMode"
+            android:label="@string/terminow_winrm_title"
+            android:resizeableActivity="true"
+            android:theme="@android:style/Theme.Material.NoActionBar"
+            android:windowSoftInputMode="adjustResize" />
 
         <activity
             android:name=".app.activities.HelpActivity"
@@ -157,6 +184,17 @@
             </intent-filter>
         </activity-alias>
 
+        <!-- Content URIs of the File Explorer, for opening and sharing files. Not exported, apps only get a granted URI. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${TERMUX_PACKAGE_NAME}.explorer"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/terminow_explorer_paths" />
+        </provider>
+
         <provider
             android:name=".filepicker.TermuxDocumentsProvider"
             android:authorities="${TERMUX_PACKAGE_NAME}.documents"
@@ -195,14 +233,38 @@
 
         <service
             android:name=".app.TermuxService"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps the terminal sessions and their processes running while the app is in the background" />
+        </service>
 
         <service
             android:name=".app.RunCommandService"
             android:exported="true"
+            android:foregroundServiceType="specialUse"
             android:permission="${TERMUX_PACKAGE_NAME}.permission.RUN_COMMAND">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Runs commands requested by other apps in the terminal environment" />
             <intent-filter>
                 <action android:name="${TERMUX_PACKAGE_NAME}.RUN_COMMAND" />
+            </intent-filter>
+        </service>
+
+        <!-- Terminal sessions shown in another app (MobiClaude), see TerminowPtyService -->
+        <service
+            android:name=".app.terminow.TerminowPtyService"
+            android:exported="true"
+            android:foregroundServiceType="specialUse"
+            android:permission="${TERMUX_PACKAGE_NAME}.permission.RUN_COMMAND">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Runs terminal sessions that another app shows in its own terminal view" />
+            <intent-filter>
+                <action android:name="${TERMUX_PACKAGE_NAME}.PTY_OPEN" />
+                <action android:name="${TERMUX_PACKAGE_NAME}.PTY_STATUS" />
             </intent-filter>
         </service>
 

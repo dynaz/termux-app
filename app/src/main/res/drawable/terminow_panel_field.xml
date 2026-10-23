@@ -1,0 +1,22 @@
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <layer-list>
+            <item android:gravity="bottom">
+                <shape android:shape="rectangle">
+                    <size android:height="2dp" />
+                    <solid android:color="@color/terminow_panel_accent" />
+                </shape>
+            </item>
+        </layer-list>
+    </item>
+    <item>
+        <layer-list>
+            <item android:gravity="bottom">
+                <shape android:shape="rectangle">
+                    <size android:height="1dp" />
+                    <solid android:color="@color/terminow_panel_line" />
+                </shape>
+            </item>
+        </layer-list>
+    </item>
+</selector>

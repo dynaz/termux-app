@@ -20,9 +20,7 @@ import com.termux.shared.R;
 import com.termux.shared.data.DataUtils;
 import com.termux.shared.interact.MessageDialogUtils;
 import com.termux.shared.logger.Logger;
-import com.termux.shared.reflection.ReflectionUtils;
 
-import java.lang.reflect.Field;
 import java.security.MessageDigest;
 import java.util.List;
 
@@ -177,114 +175,6 @@ public class PackageUtils {
             return null;
         }
     }
-
-    /**
-     * Get the {@code privateFlags} {@link Field} of the {@link ApplicationInfo} class.
-     *
-     * @param applicationInfo The {@link ApplicationInfo} for the package.
-     * @return Returns the private flags or {@code null} if an exception was raised.
-     */
-    @Nullable
-    public static Integer getApplicationInfoPrivateFlagsForPackage(@NonNull final ApplicationInfo applicationInfo) {
-        ReflectionUtils.bypassHiddenAPIReflectionRestrictions();
-        try {
-            return (Integer) ReflectionUtils.invokeField(ApplicationInfo.class, "privateFlags", applicationInfo).value;
-        } catch (Exception e) {
-            // ClassCastException may be thrown
-            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to get privateFlags field value for ApplicationInfo class", e);
-            return null;
-        }
-    }
-
-    /**
-     * Get the {@code seInfo} {@link Field} of the {@link ApplicationInfo} class.
-     *
-     * String retrieved from the seinfo tag found in selinux policy. This value can be set through
-     * the mac_permissions.xml policy construct. This value is used for setting an SELinux security
-     * context on the process as well as its data directory.
-     *
-     * https://cs.android.com/android/platform/superproject/+/android-7.1.0_r1:frameworks/base/core/java/android/content/pm/ApplicationInfo.java;l=609
-     * https://cs.android.com/android/platform/superproject/+/android-12.0.0_r32:frameworks/base/core/java/android/content/pm/ApplicationInfo.java;l=981
-     * https://cs.android.com/android/platform/superproject/+/android-7.0.0_r1:frameworks/base/services/core/java/com/android/server/pm/SELinuxMMAC.java;l=282
-     * https://cs.android.com/android/platform/superproject/+/android-12.0.0_r32:frameworks/base/services/core/java/com/android/server/pm/SELinuxMMAC.java;l=375
-     * https://cs.android.com/android/_/android/platform/frameworks/base/+/be0b8896d1bc385d4c8fb54c21929745935dcbea
-     *
-     * @param applicationInfo The {@link ApplicationInfo} for the package.
-     * @return Returns the selinux info or {@code null} if an exception was raised.
-     */
-    @Nullable
-    public static String getApplicationInfoSeInfoForPackage(@NonNull final ApplicationInfo applicationInfo) {
-        ReflectionUtils.bypassHiddenAPIReflectionRestrictions();
-        try {
-            return (String) ReflectionUtils.invokeField(ApplicationInfo.class, Build.VERSION.SDK_INT < Build.VERSION_CODES.O ? "seinfo" : "seInfo", applicationInfo).value;
-        } catch (Exception e) {
-            // ClassCastException may be thrown
-            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to get seInfo field value for ApplicationInfo class", e);
-            return null;
-        }
-    }
-
-    /**
-     * Get the {@code seInfoUser} {@link Field} of the {@link ApplicationInfo} class.
-     *
-     * Also check {@link #getApplicationInfoSeInfoForPackage(ApplicationInfo)}.
-     *
-     * @param applicationInfo The {@link ApplicationInfo} for the package.
-     * @return Returns the selinux info user or {@code null} if an exception was raised.
-     */
-    @Nullable
-    public static String getApplicationInfoSeInfoUserForPackage(@NonNull final ApplicationInfo applicationInfo) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return null;
-        ReflectionUtils.bypassHiddenAPIReflectionRestrictions();
-        try {
-            return (String) ReflectionUtils.invokeField(ApplicationInfo.class, "seInfoUser", applicationInfo).value;
-        } catch (Exception e) {
-            // ClassCastException may be thrown
-            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to get seInfoUser field value for ApplicationInfo class", e);
-            return null;
-        }
-    }
-
-    /**
-     * Get the {@code privateFlags} {@link Field} of the {@link ApplicationInfo} class.
-     *
-     * @param fieldName The name of the field to get.
-     * @return Returns the field value or {@code null} if an exception was raised.
-     */
-    @Nullable
-    public static Integer getApplicationInfoStaticIntFieldValue(@NonNull String fieldName) {
-        ReflectionUtils.bypassHiddenAPIReflectionRestrictions();
-        try {
-            return (Integer) ReflectionUtils.invokeField(ApplicationInfo.class, fieldName, null).value;
-        } catch (Exception e) {
-            // ClassCastException may be thrown
-            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to get \"" + fieldName + "\" field value for ApplicationInfo class", e);
-            return null;
-        }
-    }
-
-    /**
-     * Check if the app associated with the {@code applicationInfo} has a specific flag set.
-     *
-     * @param flagToCheckName The name of the field for the flag to check.
-     * @param applicationInfo The {@link ApplicationInfo} for the package.
-     * @return Returns {@code true} if app has flag is set, otherwise {@code false}. This will be
-     * {@code null} if an exception is raised.
-     */
-    @Nullable
-    public static Boolean isApplicationInfoPrivateFlagSetForPackage(@NonNull String flagToCheckName, @NonNull final ApplicationInfo applicationInfo) {
-        Integer privateFlags = getApplicationInfoPrivateFlagsForPackage(applicationInfo);
-        if (privateFlags == null) return null;
-
-        Integer flagToCheck = getApplicationInfoStaticIntFieldValue(flagToCheckName);
-        if (flagToCheck == null) return null;
-
-        return ( 0 != ( privateFlags & flagToCheck ) );
-    }
-
-
-
-
 
     /**
      * Get the app name for the package associated with the {@code context}.
@@ -446,31 +336,21 @@ public class PackageUtils {
 
 
     /**
-     * Check if the app associated with the {@code context} has
-     * ApplicationInfo.PRIVATE_FLAG_REQUEST_LEGACY_EXTERNAL_STORAGE (requestLegacyExternalStorage)
-     * set to {@code true} in app manifest.
+     * Check if the app associated with the {@code context} runs with legacy external storage,
+     * which the app requests with {@code requestLegacyExternalStorage} in its manifest.
+     *
+     * The manifest flag itself is only in a non-SDK field of {@link ApplicationInfo}, so the public
+     * {@link android.os.Environment#isExternalStorageLegacy()} is used instead. It only matters on
+     * Android 10, the only version that honours the flag; on other versions this is {@code null}.
      *
      * @param context The {@link Context} for the package.
-     * @return Returns {@code true} if app has requested legacy external storage, otherwise
-     * {@code false}. This will be {@code null} if an exception is raised.
+     * @return Returns {@code true} if the app runs with legacy external storage, otherwise
+     * {@code false}. This will be {@code null} if it does not apply to this Android version.
      */
     @Nullable
     public static Boolean hasRequestedLegacyExternalStorage(@NonNull final Context context) {
-        return hasRequestedLegacyExternalStorage(context.getApplicationInfo());
-    }
-
-    /**
-     * Check if the app associated with the {@code applicationInfo} has
-     * ApplicationInfo.PRIVATE_FLAG_REQUEST_LEGACY_EXTERNAL_STORAGE (requestLegacyExternalStorage)
-     * set to {@code true} in app manifest.
-     *
-     * @param applicationInfo The {@link ApplicationInfo} for the package.
-     * @return Returns {@code true} if app has requested legacy external storage, otherwise
-     * {@code false}. This will be {@code null} if an exception is raised.
-     */
-    @Nullable
-    public static Boolean hasRequestedLegacyExternalStorage(@NonNull final ApplicationInfo applicationInfo) {
-        return isApplicationInfoPrivateFlagSetForPackage("PRIVATE_FLAG_REQUEST_LEGACY_EXTERNAL_STORAGE", applicationInfo);
+        if (Build.VERSION.SDK_INT != Build.VERSION_CODES.Q) return null;
+        return android.os.Environment.isExternalStorageLegacy();
     }
 
 

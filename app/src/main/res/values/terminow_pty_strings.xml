@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_pty_notification_channel">Terminals for other apps</string>
+    <string name="terminow_pty_notification_title">Terminals for MobiClaude</string>
+    <string name="terminow_pty_not_installed">TermiNow has not finished installing its environment. Open TermiNow once and wait until its terminal is ready, then try again.</string>
+    <plurals name="terminow_pty_notification_text">
+        <item quantity="one">%d terminal session is running</item>
+        <item quantity="other">%d terminal sessions are running</item>
+    </plurals>
+</resources>

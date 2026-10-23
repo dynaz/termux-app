@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_account_google_signing_in">Signing in…</string>
+    <string name="terminow_account_google_failed_title">Google sign-in did not work</string>
+    <string name="terminow_account_google_no_token">Google did not return an account. Try again, or sign in with email.</string>
+    <string name="terminow_account_google_no_account">No Google account could be used. Add one in Android Settings → Accounts and try again. If it keeps happening, sign in with email.</string>
+    <string name="terminow_account_google_interrupted">The sign-in was interrupted. Try again.</string>
+    <string name="terminow_account_google_unsupported">Google sign-in needs Google Play services. Update Google Play services, or sign in with email.</string>
+    <string name="terminow_account_google_has_password">This email already has a TermiNow account with a password. Sign in with that email and password: accounts are never joined only because their email is the same.</string>
+    <string name="terminow_account_password_show">Show password</string>
+    <string name="terminow_account_password_hide">Hide password</string>
+    <string name="terminow_premium_play_only">Premium is bought in the Google Play version of TermiNow, or at accmove.com.</string>
+    <string name="terminow_premium_sign_in_first">Sign in to get Premium.</string>
+    <string name="terminow_premium_already">You have Premium.</string>
+    <string name="terminow_account_screen_title">Account &amp; Premium</string>
+    <string name="terminow_account_screen_signed_out">Sign in to use Premium on this phone. Your hosts, keys, files and terminals stay on this phone either way.</string>
+    <string name="terminow_account_screen_email">Sign in with email</string>
+    <string name="terminow_account_plan_premium">Premium</string>
+    <string name="terminow_account_plan_free">Free</string>
+    <string name="terminow_account_plan_signed_out">Not signed in: Premium is checked with the server once you sign in.</string>
+    <string name="terminow_account_source_play">From Google Play</string>
+    <string name="terminow_account_source_accmove">From accmove.com</string>
+    <string name="terminow_account_source_both">From Google Play and accmove.com</string>
+    <string name="terminow_account_plans_note">Prices and periods come from Google Play. A subscription renews until you cancel it in Google Play.</string>
+    <string name="terminow_account_refresh">Refresh status</string>
+    <string name="terminow_account_refresh_summary">Check Premium with the server again</string>
+    <string name="terminow_account_manage_accmove">Manage at accmove.com</string>
+    <string name="terminow_account_manage_accmove_summary">Your accmove.com services and invoices</string>
+    <string name="terminow_account_screen_local_note">Signing out keeps your hosts, keys, passwords, files and terminals on this phone.</string>
+    <string name="terminow_toolbar_premium">Premium</string>
+    <string name="terminow_toolbar_upgrade">Upgrade</string>
+    <string name="terminow_toolbar_premium_active">Premium is active. Open Account and Premium</string>
+    <string name="terminow_toolbar_premium_upgrade">Get Premium. Open Account and Premium</string>
+    <string name="terminow_vault_notification_personal_off">Personal vault is not synced</string>
+    <string name="terminow_vault_personal_off_message">Your other vaults synced. The Personal vault is only on this phone: tap the cloud next to Personal and turn on sync.</string>
+    <string name="terminow_vault_offer_title">Sync your Personal vault?</string>
+    <string name="terminow_vault_offer_message">With Premium, your Personal vault can sync to your other devices. It is only on this phone until you turn sync on.</string>
+    <string name="terminow_vault_offer_later">Not now</string>
+</resources>

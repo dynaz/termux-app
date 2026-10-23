@@ -1,0 +1,191 @@
+# Builds the bootstrap archive and the package repository for the com.terminow package name
+# from termux-packages, see scripts/terminow/.
+#
+# - The packages are published as a signed apt repository on the gh-pages branch, which must be
+#   served by GitHub Pages at TERMINOW_REPO_BASE_URL of scripts/terminow/config.sh.
+# - The bootstrap archive is attached to a new release and app/terminow-bootstrap.properties is
+#   updated to it, so that the next APK build includes it.
+# - The proot loader is attached to the same release and set in the same file, since the app
+#   includes it as a native library, see scripts/terminow/configure-termux-packages.sh.
+#
+# Requires the TERMINOW_REPO_GPG_PRIVATE_KEY repository secret, see scripts/terminow/generate-repo-key.sh.
+name: TermiNow bootstrap
+
+on:
+  # A manually run workflow must exist on the default branch, so that the bootstrap can also be
+  # built from the terminow branch it is run when the files that define it are changed there.
+  push:
+    branches:
+      - terminow
+    paths:
+      - 'scripts/terminow/**'
+      - '.github/workflows/terminow_bootstrap.yml'
+  workflow_dispatch:
+    inputs:
+      packages_ref:
+        description: "termux-packages commit to build from, defaults to the one in scripts/terminow/config.sh"
+        required: false
+        default: ""
+      extra_packages:
+        description: "Comma separated packages to build in addition to the bootstrap ones, defaults to the ones in scripts/terminow/config.sh"
+        required: false
+        default: ""
+      repo_packages:
+        description: "Comma separated packages to build for the package repository only, defaults to the ones in scripts/terminow/config.sh"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: terminow-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      # Empty values fall back to the defaults of scripts/terminow/config.sh
+      TERMINOW_PACKAGES_REF: ${{ inputs.packages_ref }}
+      TERMINOW_EXTRA_PACKAGES: ${{ inputs.extra_packages }}
+      TERMINOW_REPO_PACKAGES: ${{ inputs.repo_packages }}
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v6
+        with:
+          # The full history is needed to rebase the bootstrap update on new commits
+          fetch-depth: 0
+
+      - name: Check repository key
+        env:
+          TERMINOW_REPO_GPG_PRIVATE_KEY: ${{ secrets.TERMINOW_REPO_GPG_PRIVATE_KEY }}
+        run: |
+          if [ -z "$TERMINOW_REPO_GPG_PRIVATE_KEY" ]; then
+            echo "::error::The TERMINOW_REPO_GPG_PRIVATE_KEY secret is not set, see scripts/terminow/generate-repo-key.sh"
+            exit 1
+          fi
+          printf '%s\n' "$TERMINOW_REPO_GPG_PRIVATE_KEY" | gpg --batch --quiet --import
+
+      - name: Test repository scripts
+        run: |
+          sudo apt-get install -yq --no-install-recommends apt-utils gnupg xz-utils
+          python3 -I scripts/terminow/tests/test_check_repo_deps.py
+          python3 -I scripts/terminow/tests/test_prune_bootstrap.py
+          python3 -I scripts/terminow/tests/test_check_bootstrap.py
+          ./scripts/terminow/tests/test-make-apt-repo.sh
+
+      - name: Build bootstrap and packages
+        run: |
+          [ -n "$TERMINOW_PACKAGES_REF" ] || unset TERMINOW_PACKAGES_REF
+          [ -n "$TERMINOW_EXTRA_PACKAGES" ] || unset TERMINOW_EXTRA_PACKAGES
+          [ -n "$TERMINOW_REPO_PACKAGES" ] || unset TERMINOW_REPO_PACKAGES
+          . scripts/terminow/config.sh
+
+          # Clone first to use its script for freeing the disk space needed by the build
+          git init -q "$RUNNER_TEMP/work/termux-packages"
+          git -C "$RUNNER_TEMP/work/termux-packages" remote add origin "$TERMINOW_PACKAGES_REPO"
+          git -C "$RUNNER_TEMP/work/termux-packages" fetch -q --depth 1 origin "$TERMINOW_PACKAGES_REF"
+          git -C "$RUNNER_TEMP/work/termux-packages" checkout -q FETCH_HEAD
+          "$RUNNER_TEMP/work/termux-packages/scripts/free-space.sh"
+          # python3 is used by the checks of the bootstrap and the repository, free-space.sh may remove it
+          sudo apt-get install -yq --no-install-recommends jq apt-utils gnupg xz-utils python3
+
+          ./scripts/terminow/build-bootstrap.sh "$RUNNER_TEMP/work"
+
+          echo "TERMINOW_PACKAGES_REF=$TERMINOW_PACKAGES_REF" >> "$GITHUB_ENV"
+          echo "TERMINOW_REPO_URL=$TERMINOW_REPO_URL" >> "$GITHUB_ENV"
+
+      - name: Create package repository
+        run: |
+          . scripts/terminow/config.sh
+          ./scripts/terminow/make-apt-repo.sh "$RUNNER_TEMP/work/termux-packages/output" "$RUNNER_TEMP/site/apt/terminow-main"
+          # The bootstrap gets every package the build made, also ones that the repository leaves
+          # out since they can never be installed, like dpkg-perl that needs clang. Leave them out
+          # of the bootstrap too, so that apt works on a new install.
+          for archive in "$RUNNER_TEMP"/work/termux-packages/output/bootstrap-*.zip; do
+            arch="$(basename "$archive" .zip)"; arch="${arch#bootstrap-}"
+            index="$(echo "$RUNNER_TEMP"/site/apt/terminow-main/dists/*/main/binary-"$arch"/Packages)"
+            python3 -I scripts/terminow/prune-bootstrap.py "$archive" "$index" "/data/data/$TERMINOW_PACKAGE_NAME/files/usr" \
+              --require apt bash coreutils dpkg termux-exec termux-tools termux-keyring
+            python3 -I scripts/terminow/check-bootstrap.py "$archive" "$TERMINOW_PACKAGE_NAME"
+          done
+          # Like `pkg install` on a device, before the repository is published
+          for arch in ${TERMINOW_ARCHITECTURES//,/ }; do
+            ./scripts/terminow/test-repo-install.sh "$RUNNER_TEMP/site/apt/terminow-main" "$arch" ${TERMINOW_EXTRA_PACKAGES//,/ } ${TERMINOW_REPO_PACKAGES//,/ }
+          done
+
+      - name: Publish package repository
+        run: |
+          cd "$RUNNER_TEMP/site"
+          touch .nojekyll
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Publish package repository built from termux-packages $TERMINOW_PACKAGES_REF"
+          # Every run builds all the packages, so the branch is replaced instead of growing with old packages
+          git push -q --force "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" gh-pages
+
+      - name: Check published package repository
+        run: |
+          . scripts/terminow/config.sh
+          # GitHub Pages serves the new branch after its deployment, which takes a few minutes
+          for attempt in $(seq 1 30); do
+            if curl -fsS "$TERMINOW_REPO_URL/dists/stable/InRelease" | grep -q "^Date: $(date -u -r "$RUNNER_TEMP/site/apt/terminow-main/dists/stable/Release" '+%a, %d %b %Y')"; then
+              cmp <(curl -fsS "$TERMINOW_REPO_URL/dists/stable/InRelease") "$RUNNER_TEMP/site/apt/terminow-main/dists/stable/InRelease" && break
+            fi
+            sleep 20
+          done
+          cmp <(curl -fsS "$TERMINOW_REPO_URL/dists/stable/InRelease") "$RUNNER_TEMP/site/apt/terminow-main/dists/stable/InRelease"
+          for arch in ${TERMINOW_ARCHITECTURES//,/ }; do
+            ./scripts/terminow/test-repo-install.sh "$TERMINOW_REPO_URL" "$arch" ${TERMINOW_EXTRA_PACKAGES//,/ } ${TERMINOW_REPO_PACKAGES//,/ }
+          done
+
+      - name: Release bootstrap
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="terminow-bootstrap-$(date -u +%Y.%m.%d)-r${{ github.run_number }}"
+          cd "$RUNNER_TEMP/work/termux-packages/output"
+          shopt -s nullglob
+          loaders=(proot-loader-*)
+          sha256sum bootstrap-*.zip "${loaders[@]}" > bootstrap-sha256sums
+          gh release create "$tag" bootstrap-*.zip "${loaders[@]}" bootstrap-sha256sums \
+            --repo "${{ github.repository }}" --target "${{ github.sha }}" \
+            --title "TermiNow bootstrap $tag" \
+            --notes "Bootstrap for com.terminow built from termux-packages $TERMINOW_PACKAGES_REF. Packages: $TERMINOW_REPO_URL"
+
+          # Pin the app build to the released bootstrap
+          cd "$GITHUB_WORKSPACE"
+          for archive in "$RUNNER_TEMP"/work/termux-packages/output/bootstrap-*.zip; do
+            arch="$(basename "$archive" .zip)"; arch="${arch#bootstrap-}"
+            checksum="$(sha256sum "$archive" | cut -d ' ' -f 1)"
+            url="https://github.com/${{ github.repository }}/releases/download/$tag/bootstrap-$arch.zip"
+            sed -i -E "s|^url\\.$arch=.*|url.$arch=$url|; s|^sha256\\.$arch=.*|sha256.$arch=$checksum|" app/terminow-bootstrap.properties
+            grep -q "^sha256\\.$arch=$checksum$" app/terminow-bootstrap.properties
+
+            # The proot loader of the same build, empty if proot was not built
+            loader="$RUNNER_TEMP/work/termux-packages/output/proot-loader-$arch"
+            loader_url=""; loader_checksum=""
+            if [ -f "$loader" ]; then
+              loader_url="https://github.com/${{ github.repository }}/releases/download/$tag/proot-loader-$arch"
+              loader_checksum="$(sha256sum "$loader" | cut -d ' ' -f 1)"
+            fi
+            for line in "proot-loader.url.$arch=$loader_url" "proot-loader.sha256.$arch=$loader_checksum"; do
+              key="${line%%=*}"
+              if grep -q "^${key//./\\.}=" app/terminow-bootstrap.properties; then
+                sed -i -E "s|^${key//./\\.}=.*|$line|" app/terminow-bootstrap.properties
+              else
+                echo "$line" >> app/terminow-bootstrap.properties
+              fi
+            done
+          done
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/terminow-bootstrap.properties
+          git commit -m "Changed: Update bootstrap to $tag"
+          # The branch may have new commits since the build takes more than an hour
+          git pull --rebase origin "${{ github.ref_name }}"
+          git push origin "HEAD:${{ github.ref_name }}"

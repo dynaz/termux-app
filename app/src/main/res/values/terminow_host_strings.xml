@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The host panel, laid out like the New host panel of Termius -->
+    <string name="terminow_host_vault_name">%1$s Vault</string>
+    <string name="terminow_host_vault_title">Save in vault</string>
+    <string name="terminow_host_saved_in_vault">Saved in %1$s</string>
+    <string name="terminow_host_alias">Alias</string>
+    <string name="terminow_host_address_hint">Hostname or IP Address</string>
+    <string name="terminow_host_tags">Tags</string>
+    <string name="terminow_host_tags_hint">prod, web, ubuntu</string>
+    <string name="terminow_host_backspace_ctrl_h">Delete sends Ctrl-H</string>
+    <string name="terminow_host_learn_more">Learn more…</string>
+    <string name="terminow_host_credentials">Credentials</string>
+    <string name="terminow_host_password_show">Show or hide the password</string>
+    <string name="terminow_host_key_field">SSH key</string>
+    <string name="terminow_host_snippet_field">Snippet</string>
+    <string name="terminow_host_agent_forwarding">Agent Forwarding</string>
+    <string name="terminow_host_chaining">Host Chaining</string>
+    <string name="terminow_host_chaining_through">Through %1$s</string>
+    <string name="terminow_host_chaining_none">None, connect directly</string>
+    <string name="terminow_host_proxy">Proxy</string>
+    <string name="terminow_host_proxy_value">%1$s %2$s:%3$d</string>
+    <string name="terminow_host_proxy_none">None</string>
+    <string name="terminow_host_proxy_socks5">SOCKS5</string>
+    <string name="terminow_host_proxy_http">HTTP (CONNECT)</string>
+    <string name="terminow_host_proxy_host">Proxy host</string>
+    <string name="terminow_host_proxy_note">Proxies without a login only. The connection to the host still uses ssh, so it stays encrypted.</string>
+    <string name="terminow_host_proxy_install_failed">Could not set up the proxy: %1$s</string>
+    <string name="terminow_host_env_add">+ Add Env Variable</string>
+    <string name="terminow_host_env_name">NAME</string>
+    <string name="terminow_host_env_value">Value</string>
+    <string name="terminow_host_env_remove">Remove the variable</string>
+    <string name="terminow_host_color_scheme">Color Scheme</string>
+    <string name="terminow_host_color_scheme_default">Like the settings</string>
+    <string name="terminow_host_charset">Charset</string>
+    <string name="terminow_host_charset_utf8" translatable="false">UTF-8</string>
+    <string name="terminow_host_charset_note">TermiNow terminals always use UTF-8</string>
+    <string name="terminow_host_telnet">Telnet</string>
+    <string name="terminow_host_telnet_port_default">23 (Default)</string>
+    <string name="terminow_host_no_protocol">Choose SSH or Telnet</string>
+    <string name="terminow_host_invalid_tag">Tags can not be empty, longer than 32 characters, or have commas</string>
+    <string name="terminow_host_invalid_env">Environment variables need a name of letters, digits and _, used once, and a value on one line</string>
+    <string name="terminow_host_invalid_proxy">Enter the address and port of the proxy</string>
+    <string name="terminow_host_jump_self">A host can not be chained through itself</string>
+    <string name="terminow_host_jump_missing">The host to connect through is no longer saved in this vault</string>
+    <string name="terminow_host_jump_telnet">A host can not be chained through a telnet host</string>
+    <string name="terminow_host_jump_and_proxy">Use either Host Chaining or a Proxy, not both</string>
+    <string name="terminow_host_mosh_route">Mosh connects to the host directly over UDP, so it can not use Host Chaining or a Proxy</string>
+    <string name="terminow_host_mosh_env">Environment variables are sent by ssh, which Mosh does not keep using. Turn off Mosh to use them</string>
+    <string name="terminow_host_telnet_options">Telnet has no keys, agent forwarding, chaining, proxy or environment variables. Remove them, or use SSH</string>
+    <string name="terminow_host_telnet_no_forward">Port forwarding needs SSH, this host uses Telnet</string>
+    <string name="terminow_host_telnet_no_sftp">SFTP needs SSH, this host uses Telnet</string>
+</resources>

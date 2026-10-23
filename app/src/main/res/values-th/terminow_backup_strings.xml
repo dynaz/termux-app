@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_backup_menu">สำรองข้อมูลไปยังเซิร์ฟเวอร์…</string>
+    <string name="terminow_backup_title">สำรองข้อมูล %1$s</string>
+    <string name="terminow_backup_server">เซิร์ฟเวอร์</string>
+    <string name="terminow_backup_remote_dir">โฟลเดอร์บนเซิร์ฟเวอร์</string>
+    <string name="terminow_backup_mode_folders">โฟลเดอร์ ด้วย rsync: ส่งเฉพาะส่วนที่เปลี่ยน</string>
+    <string name="terminow_backup_mode_system">ทั้งระบบ เป็นไฟล์เดียวที่นำเข้าคืนได้</string>
+    <string name="terminow_backup_folders">โฟลเดอร์ เช่น /root /home</string>
+    <string name="terminow_backup_install_rsync">ติดตั้ง rsync ใน %1$s หากยังไม่มี (apt-get install rsync)</string>
+    <string name="terminow_backup_note_folders">เซิร์ฟเวอร์ต้องมี rsync ด้วย โฟลเดอร์จะคงพาธเดิม เช่น root/… และ home/… และไม่มีการลบสิ่งใดบนเซิร์ฟเวอร์ TermiNow ลงชื่อเข้าใช้ด้วยคีย์ รหัสผ่านคีย์ และโฮสต์กระโดดของเซิร์ฟเวอร์</string>
+    <string name="terminow_backup_note_system">%1$s ทั้งหมดจะอยู่ในไฟล์ .tar.gz เดียวบนเซิร์ฟเวอร์ ตั้งชื่อตามวันที่ หากต้องการกู้คืน ให้คัดลอกมาที่โทรศัพท์แล้วใช้ เพิ่มสภาพแวดล้อม → นำเข้า ปิดแท็บอื่นของ %1$s ก่อน เพื่อไม่ให้ไฟล์เปลี่ยนระหว่างอ่าน</string>
+    <string name="terminow_backup_run">สำรองข้อมูล</string>
+    <string name="terminow_backup_tab">สำรอง · %1$s → %2$s</string>
+    <string name="terminow_backup_no_hosts">เพิ่มเซิร์ฟเวอร์ที่จะสำรองข้อมูลเป็นโฮสต์ SSH ก่อน พร้อมคีย์หรือรหัสผ่าน</string>
+    <string name="terminow_backup_invalid_dir">โฟลเดอร์ เช่น terminow-backups/ubuntu หรือ ~/backups ไม่มีช่องว่างหรือ ..</string>
+    <string name="terminow_backup_invalid_folders">โฟลเดอร์ที่ขึ้นต้นด้วย / คั่นด้วยช่องว่าง เช่น /root /home</string>
+    <string name="terminow_quick_backup">สำรอง</string>
+    <string name="terminow_phone_backup_menu">สำรองไปยังที่เก็บข้อมูลในโทรศัพท์…</string>
+    <string name="terminow_phone_backup_busy">กำลังสำรองไปยังโทรศัพท์อยู่แล้ว</string>
+    <string name="terminow_phone_backup_hide">ซ่อน</string>
+    <string name="terminow_phone_backup_cancel">หยุดสำรอง</string>
+    <string name="terminow_phone_backup_keep">ทำต่อ</string>
+    <string name="terminow_phone_backup_cancel_confirm">หยุดการสำรองหรือไม่ ไฟล์ที่ยังไม่เสร็จจะถูกลบ</string>
+    <string name="terminow_phone_backup_done_toast">สำรอง %1$s ไว้ใน %2$s แล้ว</string>
+    <string name="terminow_phone_restore_menu">กู้คืนจากที่เก็บข้อมูลในโทรศัพท์…</string>
+    <string name="terminow_phone_restore_summary">จากไฟล์ .tar.gz ที่ สำรองไปยังที่เก็บข้อมูลในโทรศัพท์ หรือ proot-distro backup บันทึกไว้</string>
+    <string name="terminow_phone_restore_title">กู้คืน %1$s</string>
+    <string name="terminow_phone_restore_replace">การกู้คืน %3$s จะแทนที่ %1$s (%2$s): ไฟล์ทั้งหมดที่มีตอนนี้จะถูกลบ และใช้ไฟล์จากข้อมูลสำรองแทน</string>
+    <string name="terminow_phone_restore_new">%2$s เป็นข้อมูลสำรองของ %1$s ซึ่งยังไม่ได้ติดตั้ง จะกู้คืนเป็นสภาพแวดล้อม %1$s</string>
+    <string name="terminow_phone_restore_confirm_check">เข้าใจแล้วว่าไฟล์ใน %1$s ตอนนี้จะถูกแทนที่</string>
+    <string name="terminow_phone_restore_run">กู้คืน</string>
+    <string name="terminow_phone_restore_close_tabs">ปิดแท็บแล้วกู้คืน</string>
+    <string name="terminow_phone_restore_done_toast">กู้คืน %1$s จาก %2$s แล้ว</string>
+</resources>

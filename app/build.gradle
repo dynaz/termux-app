@@ -12,6 +12,18 @@ ext {
     packageVariant = System.getenv("TERMUX_PACKAGE_VARIANT") ?: "apt-android-7" // Default: "apt-android-7"
 }
 
+// The bootstrap archives for the app package name, built by scripts/terminow/build-bootstrap.sh.
+// The bootstraps of termux-packages releases can not be used since they are compiled for com.termux.
+def terminowBootstrap = new Properties()
+file("terminow-bootstrap.properties").withInputStream { terminowBootstrap.load(it) }
+def terminowBootstrapArchs = (terminowBootstrap.getProperty("architectures") ?: "").split(",").collect { it.trim() }.findAll { it }
+def terminowAbiForArch = ["aarch64": "arm64-v8a", "arm": "armeabi-v7a", "i686": "x86", "x86_64": "x86_64"]
+def terminowAbis = terminowBootstrapArchs.collect {
+    if (!terminowAbiForArch.containsKey(it)) throw new GradleException("Unsupported architecture \"" + it + "\" in terminow-bootstrap.properties")
+    terminowAbiForArch[it]
+}
+if (terminowAbis.isEmpty()) throw new GradleException("No architectures are set in terminow-bootstrap.properties")
+
 android {
     namespace "com.termux"
 
@@ -28,6 +40,7 @@ android {
         implementation "androidx.drawerlayout:drawerlayout:1.2.0"
         implementation "androidx.preference:preference:1.2.1"
         implementation "androidx.viewpager:viewpager:1.0.0"
+        implementation "androidx.recyclerview:recyclerview:1.3.2"
         implementation "com.google.android.material:material:1.12.0"
         implementation "com.google.guava:guava:24.1-jre"
         implementation "io.noties.markwon:core:$markwonVersion"
@@ -35,24 +48,83 @@ android {
         implementation "io.noties.markwon:linkify:$markwonVersion"
         implementation "io.noties.markwon:recycler:$markwonVersion"
         implementation 'com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava'
+        // Sign in with Google, through the Credential Manager of Android
+        implementation "androidx.credentials:credentials:1.3.0"
+        implementation "androidx.credentials:credentials-play-services-auth:1.3.0"
+        implementation "com.google.android.libraries.identity.googleid:googleid:1.1.1"
+        // SFTP for the File Explorer, with known_hosts checking (maintained fork of JSch)
+        implementation "com.github.mwiede:jsch:0.2.20"
+        // FIDO2 security keys over USB and NFC (CTAP2), for the FIDO2 keys of the keychain
+        implementation "com.yubico.yubikit:android:3.1.0"
+        implementation "com.yubico.yubikit:fido:3.1.0"
+        // Argon2 for the passphrases of PuTTY v3 keys
+        implementation "org.bouncycastle:bcprov-jdk18on:1.78.1"
 
         implementation project(":terminal-view")
         implementation project(":termux-shared")
     }
 
     defaultConfig {
+        // The applicationId must equal TermuxConstants.TERMUX_PACKAGE_NAME and the
+        // TERMUX_APP__PACKAGE_NAME that the bootstrap packages are compiled for. The namespace
+        // above is the Java package of the app classes and is not changed with it.
+        applicationId "com.terminow"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 118
-        versionName "0.118.0"
+        versionCode 214
+        versionName "1.120.0.214"
 
         if (appVersionName) versionName = appVersionName
         validateVersionName(versionName)
 
+        // Shown in the about section of the settings, to tell which build is installed
+        def terminowBootstrapUrl = terminowBootstrap.getProperty("url." + terminowBootstrapArchs[0]) ?: ""
+        def terminowBootstrapRelease = terminowBootstrapUrl.replaceAll(".*/download/([^/]+)/.*", '$1')
+        def terminowCommit = ""
+        try {
+            terminowCommit = ["git", "-C", rootDir.path, "rev-parse", "--short=8", "HEAD"].execute().text.trim()
+        } catch (Exception ignored) {
+        }
+        buildConfigField "String", "TERMINOW_BOOTSTRAP_RELEASE", "\"" + terminowBootstrapRelease + "\""
+        buildConfigField "String", "TERMINOW_COMMIT", "\"" + terminowCommit + "\""
+
+        // The Firebase project of TermiNow accounts, from app/google-services.json, which is not
+        // committed. Without it the build works, and accounts are shown as not set up.
+        def firebaseApiKey = ""
+        def firebaseProjectId = ""
+        def googleWebClientId = ""
+        def googleServicesFile = file("google-services.json")
+        if (googleServicesFile.isFile()) {
+            def googleServices = new groovy.json.JsonSlurper().parse(googleServicesFile)
+            def firebaseClient = googleServices.client.find { it.client_info.android_client_info.package_name == "com.terminow" }
+            if (firebaseClient != null) {
+                firebaseApiKey = firebaseClient.api_key[0].current_key
+                firebaseProjectId = googleServices.project_info.project_id
+                // Google sign-in asks for an ID token for the web client of the project
+                def webClient = (firebaseClient.oauth_client ?: []).find { it.client_type == 3 }
+                if (webClient != null) googleWebClientId = webClient.client_id
+            }
+        }
+        buildConfigField "String", "TERMINOW_FIREBASE_API_KEY", "\"" + firebaseApiKey + "\""
+        buildConfigField "String", "TERMINOW_FIREBASE_PROJECT_ID", "\"" + firebaseProjectId + "\""
+        buildConfigField "String", "TERMINOW_GOOGLE_WEB_CLIENT_ID", "\"" + googleWebClientId + "\""
+        // The region of the Cloud Functions that verify Google Play purchases, see firebase/README.md
+        def billingProperties = new Properties()
+        def billingFile = file("terminow-billing.properties")
+        if (billingFile.isFile()) billingFile.withInputStream { billingProperties.load(it) }
+        def functionsRegion = billingProperties.getProperty("functionsRegion", "").trim()
+        if (!functionsRegion.isEmpty() && !(functionsRegion ==~ /[a-z]+-[a-z]+[0-9]/))
+            throw new GradleException("functionsRegion in app/terminow-billing.properties is not a region: " + functionsRegion)
+        buildConfigField "String", "TERMINOW_FUNCTIONS_REGION", "\"" + functionsRegion + "\""
+        // The Google Cloud project number for Play Integrity tokens, 0 to not ask for one
+        def integrityProjectNumber = billingProperties.getProperty("integrityCloudProjectNumber", "0").trim()
+        if (!(integrityProjectNumber ==~ /[0-9]+/))
+            throw new GradleException("integrityCloudProjectNumber in app/terminow-billing.properties is not a number: " + integrityProjectNumber)
+        buildConfigField "long", "TERMINOW_INTEGRITY_PROJECT_NUMBER", integrityProjectNumber + "L"
         buildConfigField "String", "TERMUX_PACKAGE_VARIANT", "\"" + project.ext.packageVariant + "\"" // Used by TermuxApplication class
 
-        manifestPlaceholders.TERMUX_PACKAGE_NAME = "com.termux"
-        manifestPlaceholders.TERMUX_APP_NAME = "Termux"
+        manifestPlaceholders.TERMUX_PACKAGE_NAME = "com.terminow"
+        manifestPlaceholders.TERMUX_APP_NAME = "TermiNow"
         manifestPlaceholders.TERMUX_API_APP_NAME = "Termux:API"
         manifestPlaceholders.TERMUX_BOOT_APP_NAME = "Termux:Boot"
         manifestPlaceholders.TERMUX_FLOAT_APP_NAME = "Termux:Float"
@@ -63,6 +135,8 @@ android {
         externalNativeBuild {
             ndkBuild {
                 cFlags "-std=c11", "-Wall", "-Wextra", "-Werror", "-Os", "-fno-stack-protector", "-Wl,--gc-sections"
+                // The bootstrap is only built for the architectures in terminow-bootstrap.properties
+                abiFilters(*terminowAbis)
             }
         }
 
@@ -71,13 +145,22 @@ android {
                 enable ((gradle.startParameter.taskNames.any { it.contains("Debug") } && splitAPKsForDebugBuilds == "1") ||
                     (gradle.startParameter.taskNames.any { it.contains("Release") } && splitAPKsForReleaseBuilds == "1"))
                 reset ()
-                include 'x86', 'x86_64', 'armeabi-v7a', 'arm64-v8a'
-                universalApk true
+                include(*terminowAbis)
+                universalApk false
             }
         }
     }
 
     signingConfigs {
+        // The upload key for Google Play, only set if its keystore is given in the environment
+        if (System.getenv("TERMINOW_UPLOAD_KEYSTORE_FILE")) {
+            release {
+                storeFile file(System.getenv("TERMINOW_UPLOAD_KEYSTORE_FILE"))
+                storePassword System.getenv("TERMINOW_UPLOAD_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("TERMINOW_UPLOAD_KEY_ALIAS") ?: "upload"
+                keyPassword System.getenv("TERMINOW_UPLOAD_KEYSTORE_PASSWORD")
+            }
+        }
         debug {
             storeFile file('testkey_untrusted.jks')
             keyAlias 'alias'
@@ -91,6 +174,7 @@ android {
             minifyEnabled true
             shrinkResources false // Reproducible builds
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.findByName("release")
         }
 
         debug {
@@ -122,9 +206,17 @@ android {
         }
     }
 
+    // The built-in RDP engine, libterminow-rdp.so, made by native/rdp/build.sh with the pinned
+    // OpenSSL and FreeRDP. Without it, RDP hosts say that this build has no RDP.
+    sourceSets.main.jniLibs.srcDirs += 'src/main/rdpLibs'
+
     packagingOptions {
         jniLibs {
+            // Native libraries must be extracted when the app is installed, since the proot loader
+            // is executed from the native library directory
             useLegacyPackaging true
+            // The proot loader is a static executable that is already stripped
+            keepDebugSymbols += "**/libproot-loader.so"
         }
     }
 
@@ -132,11 +224,26 @@ android {
         variant.outputs.all { output ->
             if (variant.buildType.name == "debug") {
                 def abi = output.getFilter(com.android.build.OutputFile.ABI)
-                outputFileName = new File("termux-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "debug") + "_" + (abi ? abi : "universal") + ".apk")
+                outputFileName = new File("termux-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "debug") + "_" + variant.flavorName + "_" + (abi ? abi : "universal") + ".apk")
             } else if (variant.buildType.name == "release") {
                 def abi = output.getFilter(com.android.build.OutputFile.ABI)
-                outputFileName = new File("termux-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "release") + "_" + (abi ? abi : "universal") + ".apk")
+                outputFileName = new File("termux-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "release") + "_" + variant.flavorName + "_" + (abi ? abi : "universal") + ".apk")
             }
+        }
+    }
+
+    // Two distributions, so that the Google Play build never declares All files access:
+    // "play" reaches shared storage only through folders that the user picks with the Storage
+    // Access Framework, "full" adds browsing shared storage by path for direct APK installs.
+    flavorDimensions += "distribution"
+    productFlavors {
+        play {
+            dimension "distribution"
+            buildConfigField "boolean", "TERMINOW_ALL_FILES_ACCESS", "true"
+        }
+        full {
+            dimension "distribution"
+            buildConfigField "boolean", "TERMINOW_ALL_FILES_ACCESS", "true"
         }
     }
 
@@ -146,7 +253,14 @@ android {
 }
 
 dependencies {
+    // Google Play Billing for Premium, in the Play build only
+    playImplementation "com.android.billingclient:billing:8.3.0"
+    // Play Integrity, observed by the backend only, see firebase/README.md
+    playImplementation "com.google.android.play:integrity:1.4.0"
+
     testImplementation "junit:junit:4.13.2"
+    // The real org.json for unit tests, android.jar only has stubs
+    testImplementation "org.json:json:20231013"
     testImplementation "org.robolectric:robolectric:4.10"
     coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:1.1.5"
 }
@@ -159,15 +273,19 @@ task versionName {
 
 def validateVersionName(String versionName) {
     // https://semver.org/spec/v2.0.0.html#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string
+    // Also a fourth number, like 0.119.0.1, for TermiNow's own builds
     // ^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$
-    if (!java.util.regex.Pattern.matches("^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?\$", versionName))
-        throw new GradleException("The versionName '"  + versionName + "' is not a valid version as per semantic version '2.0.0' spec in the format 'major.minor.patch(-prerelease)(+buildmetadata)'. https://semver.org/spec/v2.0.0.html.")
+    if (!java.util.regex.Pattern.matches("^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:\\.(0|[1-9]\\d*))?(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?\$", versionName))
+        throw new GradleException("The versionName '"  + versionName + "' is not a valid version as per semantic version '2.0.0' spec in the format 'major.minor.patch(.build)(-prerelease)(+buildmetadata)'. https://semver.org/spec/v2.0.0.html.")
 }
 
-def downloadBootstrap(String arch, String expectedChecksum, String version) {
+def downloadBootstrap(String arch, String expectedChecksum, String remoteUrl) {
+    downloadVerifiedFile("src/main/cpp/bootstrap-" + arch + ".zip", expectedChecksum, remoteUrl)
+}
+
+def downloadVerifiedFile(String localUrl, String expectedChecksum, String remoteUrl) {
     def digest = java.security.MessageDigest.getInstance("SHA-256")
 
-    def localUrl = "src/main/cpp/bootstrap-" + arch + ".zip"
     def file = new File(projectDir, localUrl)
     if (file.exists()) {
         def buffer = new byte[8192]
@@ -187,7 +305,6 @@ def downloadBootstrap(String arch, String expectedChecksum, String version) {
         }
     }
 
-    def remoteUrl = "https://github.com/termux/termux-packages/releases/download/bootstrap-" + version + "/bootstrap-" + arch + ".zip"
     logger.quiet("Downloading " + remoteUrl + " ...")
 
     file.parentFile.mkdirs()
@@ -212,26 +329,50 @@ clean {
         def tree = fileTree(new File(projectDir, 'src/main/cpp'))
         tree.include 'bootstrap-*.zip'
         tree.each { it.delete() }
+        def loaders = fileTree(new File(projectDir, 'src/main/jniLibs'))
+        loaders.include '**/libproot-loader.so'
+        loaders.each { it.delete() }
     }
 }
 
 task downloadBootstraps() {
     doLast {
         def packageVariant = project.ext.packageVariant
-        if (packageVariant == "apt-android-7") {
-            def version = "2026.02.12-r1" + "%2B" + "apt.android-7"
-            downloadBootstrap("aarch64", "ea2aeba8819e517db711f8c32369e89e7c52cee73e07930ff91185e1ab93f4f3", version)
-            downloadBootstrap("arm", "a38f4d3b2f735f83be2bf54eff463e86dc32a3e2f9f861c1557c4378d249c018", version)
-            downloadBootstrap("i686", "f5bc0b025b9f3b420b5fcaeefc064f888f5f22a0d6fd7090f4aac0c33eb3555b", version)
-            downloadBootstrap("x86_64", "b7fd0f2e3a4de534be3144f9f91acc768630fc463eaf134ab2e64c545e834f7a", version)
-        } else if (packageVariant == "apt-android-5") {
-            def version = "2022.04.28-r6" + "+" + packageVariant
-            downloadBootstrap("aarch64", "913609d439415c828c5640be1b0561467e539cb1c7080662decaaca2fb4820e7", version)
-            downloadBootstrap("arm", "26bfb45304c946170db69108e5eb6e3641aad751406ce106c80df80cad2eccf8", version)
-            downloadBootstrap("i686", "46dcfeb5eef67ba765498db9fe4c50dc4690805139aa0dd141a9d8ee0693cd27", version)
-            downloadBootstrap("x86_64", "615b590679ee6cd885b7fd2ff9473c845e920f9b422f790bb158c63fe42b8481", version)
-        } else {
+        if (packageVariant != "apt-android-7")
             throw new GradleException("Unsupported TERMUX_PACKAGE_VARIANT \"" + packageVariant + "\"")
+
+        terminowBootstrapArchs.each { arch ->
+            def localFile = new File(projectDir, "src/main/cpp/bootstrap-" + arch + ".zip")
+            def url = terminowBootstrap.getProperty("url." + arch) ?: ""
+            def checksum = terminowBootstrap.getProperty("sha256." + arch) ?: ""
+            if (System.getenv("TERMINOW_USE_LOCAL_BOOTSTRAP") == "1") {
+                // For testing a bootstrap that has not been released yet
+                if (!localFile.exists())
+                    throw new GradleException("TERMINOW_USE_LOCAL_BOOTSTRAP is set but \"" + localFile + "\" does not exist")
+                logger.quiet("Using local bootstrap without verifying it: " + localFile)
+            } else if (url.isEmpty() || checksum.isEmpty()) {
+                throw new GradleException("The " + arch + " bootstrap for " + android.defaultConfig.applicationId +
+                    " is not set in app/terminow-bootstrap.properties. Build it with scripts/terminow/build-bootstrap.sh" +
+                    " or the terminow_bootstrap workflow, which sets it.")
+            } else {
+                downloadBootstrap(arch, checksum, url)
+            }
+
+            // The proot loader is included as a native library, since the files that the proot
+            // package installs in the app data directory can not be executed. It is named like a
+            // library so that it is put in the APK and extracted to the native library directory.
+            def loaderUrl = "src/main/jniLibs/" + terminowAbiForArch[arch] + "/libproot-loader.so"
+            def loaderRemoteUrl = terminowBootstrap.getProperty("proot-loader.url." + arch) ?: ""
+            def loaderChecksum = terminowBootstrap.getProperty("proot-loader.sha256." + arch) ?: ""
+            if (System.getenv("TERMINOW_USE_LOCAL_BOOTSTRAP") == "1") {
+                logger.quiet((new File(projectDir, loaderUrl).exists() ? "Using" : "No") + " local proot loader: " + loaderUrl)
+            } else if (loaderRemoteUrl.isEmpty() || loaderChecksum.isEmpty()) {
+                new File(projectDir, loaderUrl).delete()
+                logger.quiet("The " + arch + " proot loader is not set in app/terminow-bootstrap.properties," +
+                    " proot and proot-distro will not work in this build.")
+            } else {
+                downloadVerifiedFile(loaderUrl, loaderChecksum, loaderRemoteUrl)
+            }
         }
     }
 }
@@ -239,5 +380,7 @@ task downloadBootstraps() {
 afterEvaluate {
     android.applicationVariants.all { variant ->
         variant.javaCompileProvider.get().dependsOn(downloadBootstraps)
+        // The proot loader must be downloaded before the native libraries are collected
+        tasks.named("merge" + variant.name.capitalize() + "JniLibFolders").configure { dependsOn(downloadBootstraps) }
     }
 }

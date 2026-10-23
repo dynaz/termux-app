@@ -1,0 +1,731 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The host panel, laid out like the New host panel of Termius: the vault, then cards for the
+     address, the protocol, the credentials, the session options and telnet. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/terminow_host_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/terminow_panel_scrim">
+
+    <!-- The width is set to a part of the screen like the Termius host panel, or all of it on narrow screens. -->
+    <LinearLayout
+        android:id="@+id/terminow_host_column"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="end"
+        android:background="@color/terminow_panel"
+        android:clickable="true"
+        android:fitsSystemWindows="true"
+        android:focusable="true"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="64dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp">
+
+            <ImageButton
+                android:id="@+id/terminow_host_close"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@null"
+                android:contentDescription="@android:string/cancel"
+                android:src="@drawable/ic_terminow_close"
+                android:tint="@color/terminow_text" />
+
+            <TextView
+                android:id="@+id/terminow_host_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:text="@string/terminow_new_host"
+                android:textColor="@color/terminow_text"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <ImageButton
+                android:id="@+id/terminow_host_save"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@null"
+                android:contentDescription="@string/terminow_save"
+                android:src="@drawable/ic_terminow_check"
+                android:tint="@color/terminow_text" />
+        </LinearLayout>
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingHorizontal="12dp"
+                android:paddingBottom="24dp">
+
+                <!-- The vault that the host is saved in -->
+                <TextView
+                    android:id="@+id/terminow_host_vault"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:layout_marginTop="4dp"
+                    android:background="@drawable/terminow_panel_card"
+                    android:drawableStart="@drawable/ic_terminow_vault"
+                    android:drawableEnd="@drawable/ic_terminow_chevron_down"
+                    android:drawablePadding="10dp"
+                    android:drawableTint="@color/terminow_text"
+                    android:gravity="center"
+                    android:paddingHorizontal="80dp"
+                    android:singleLine="true"
+                    android:textColor="@color/terminow_text"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+                <!-- Address -->
+                <LinearLayout
+                    style="@style/TerminowPanelCard"
+                    android:layout_marginTop="12dp">
+
+                    <TextView
+                        style="@style/TerminowPanelLabel"
+                        android:labelFor="@+id/terminow_host_label"
+                        android:text="@string/terminow_host_alias" />
+
+                    <EditText
+                        android:id="@+id/terminow_host_label"
+                        style="@style/TerminowPanelField"
+                        android:inputType="text" />
+
+                    <LinearLayout style="@style/TerminowPanelFieldRow">
+
+                        <EditText
+                            android:id="@+id/terminow_host_address"
+                            style="@style/TerminowPanelField"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:hint="@string/terminow_host_address_hint"
+                            android:inputType="textUri" />
+
+                        <ImageView
+                            style="@style/TerminowPanelFieldIcon"
+                            android:contentDescription="@null"
+                            android:src="@drawable/ic_terminow_hosts" />
+                    </LinearLayout>
+
+                    <LinearLayout style="@style/TerminowPanelFieldRow">
+
+                        <!-- Not editable, tapping it shows the groups to pick from -->
+                        <EditText
+                            android:id="@+id/terminow_host_group"
+                            style="@style/TerminowPanelField"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:cursorVisible="false"
+                            android:focusable="false"
+                            android:hint="@string/terminow_host_group"
+                            android:inputType="none" />
+
+                        <ImageButton
+                            android:id="@+id/terminow_host_group_button"
+                            style="@style/TerminowPanelFieldIcon"
+                            android:contentDescription="@string/terminow_host_group"
+                            android:src="@drawable/ic_terminow_group" />
+                    </LinearLayout>
+
+                    <LinearLayout style="@style/TerminowPanelFieldRow">
+
+                        <!-- Not editable, tapping it shows the tags to edit -->
+                        <EditText
+                            android:id="@+id/terminow_host_tags"
+                            style="@style/TerminowPanelField"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:cursorVisible="false"
+                            android:focusable="false"
+                            android:hint="@string/terminow_host_tags"
+                            android:inputType="none" />
+
+                        <ImageButton
+                            android:id="@+id/terminow_host_tags_button"
+                            style="@style/TerminowPanelFieldIcon"
+                            android:contentDescription="@string/terminow_host_tags"
+                            android:src="@drawable/ic_terminow_tag" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        style="@style/TerminowPanelToggleRow"
+                        android:layout_marginTop="6dp">
+
+                        <TextView
+                            style="@style/TerminowPanelToggleTitle"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:text="@string/terminow_host_backspace_ctrl_h" />
+
+                        <CheckBox
+                            android:id="@+id/terminow_host_backspace"
+                            style="@style/TerminowPanelCheck" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- The protocol: SSH (with Mosh and Telnet), RDP or WinRM -->
+                <LinearLayout
+                    style="@style/TerminowPanelCard"
+                    android:layout_marginTop="12dp">
+
+                    <TextView
+                        style="@style/TerminowPanelLabel"
+                        android:text="@string/terminow_host_protocol" />
+
+                    <LinearLayout
+                        android:id="@+id/terminow_host_protocols"
+                        android:layout_width="match_parent"
+                        android:layout_height="44dp"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal" />
+                </LinearLayout>
+
+                <!-- SSH and Mosh -->
+                <LinearLayout
+                    android:id="@+id/terminow_host_ssh_card"
+                    style="@style/TerminowPanelCard"
+                    android:layout_marginTop="12dp">
+
+                    <LinearLayout
+                        android:id="@+id/terminow_host_ssh_row"
+                        style="@style/TerminowPanelToggleRow">
+
+                        <TextView
+                            style="@style/TerminowPanelToggleTitle"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:text="@string/terminow_host_ssh" />
+
+                        <CheckBox
+                            android:id="@+id/terminow_host_ssh"
+                            style="@style/TerminowPanelCheck"
+                            android:checked="true" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/terminow_host_mosh_row"
+                        style="@style/TerminowPanelToggleRow">
+
+                        <TextView
+                            style="@style/TerminowPanelToggleTitle"
+                            android:text="@string/terminow_host_mosh_title" />
+
+                        <TextView
+                            android:id="@+id/terminow_host_mosh_learn"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="12dp"
+                            android:layout_weight="1"
+                            android:text="@string/terminow_host_learn_more"
+                            android:textColor="@color/terminow_panel_accent"
+                            android:textSize="13sp"
+                            android:textStyle="italic" />
+
+                        <CheckBox
+                            android:id="@+id/terminow_host_mosh"
+                            style="@style/TerminowPanelCheck" />
+                    </LinearLayout>
+
+                    <!-- How mosh starts its server, shown with Mosh -->
+                    <LinearLayout
+                        android:id="@+id/terminow_host_mosh_options"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <TextView
+                            style="@style/TerminowPanelLabel"
+                            android:labelFor="@+id/terminow_host_mosh_server"
+                            android:text="@string/terminow_host_mosh_server" />
+
+                        <EditText
+                            android:id="@+id/terminow_host_mosh_server"
+                            style="@style/TerminowPanelField"
+                            android:fontFamily="monospace"
+                            android:hint="@string/terminow_host_mosh_server_default"
+                            android:inputType="textVisiblePassword" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:text="@string/terminow_host_mosh_server_note"
+                            android:textColor="@color/terminow_text_secondary"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+
+                    <TextView
+                        style="@style/TerminowPanelLabel"
+                        android:layout_marginTop="4dp"
+                        android:labelFor="@+id/terminow_host_port"
+                        android:text="@string/terminow_host_port" />
+
+                    <EditText
+                        android:id="@+id/terminow_host_port"
+                        style="@style/TerminowPanelField"
+                        android:hint="@string/terminow_host_port_default"
+                        android:inputType="number"
+                        android:maxLength="5" />
+                </LinearLayout>
+
+                <!-- Windows: the domain, and the options of RDP or of WinRM -->
+                <LinearLayout
+                    android:id="@+id/terminow_host_windows_card"
+                    style="@style/TerminowPanelCard"
+                    android:layout_marginTop="12dp"
+                    android:visibility="gone">
+
+                    <TextView
+                        style="@style/TerminowPanelLabel"
+                        android:labelFor="@+id/terminow_host_domain"
+                        android:text="@string/terminow_host_domain" />
+
+                    <EditText
+                        android:id="@+id/terminow_host_domain"
+                        style="@style/TerminowPanelField"
+                        android:hint="@string/terminow_host_domain_hint"
+                        android:inputType="textVisiblePassword" />
+
+                    <LinearLayout
+                        android:id="@+id/terminow_host_rdp_options"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+
+                        <LinearLayout style="@style/TerminowPanelToggleRow">
+
+                            <TextView
+                                style="@style/TerminowPanelToggleTitle"
+                                android:layout_width="0dp"
+                                android:layout_weight="1"
+                                android:text="@string/terminow_host_rdp_nla" />
+
+                            <CheckBox
+                                android:id="@+id/terminow_host_rdp_nla"
+                                style="@style/TerminowPanelCheck"
+                                android:checked="true" />
+                        </LinearLayout>
+
+                        <LinearLayout style="@style/TerminowPanelToggleRow">
+
+                            <TextView
+                                style="@style/TerminowPanelToggleTitle"
+                                android:layout_width="0dp"
+                                android:layout_weight="1"
+                                android:text="@string/terminow_host_rdp_clipboard" />
+
+                            <CheckBox
+                                android:id="@+id/terminow_host_rdp_clipboard"
+                                style="@style/TerminowPanelCheck" />
+                        </LinearLayout>
+
+                        <TextView
+                            style="@style/TerminowPanelLabel"
+                            android:labelFor="@+id/terminow_host_rdp_size"
+                            android:text="@string/terminow_host_rdp_size" />
+
+                        <!-- Not editable, tapping it shows the sizes to pick from -->
+                        <EditText
+                            android:id="@+id/terminow_host_rdp_size"
+                            style="@style/TerminowPanelField"
+                            android:cursorVisible="false"
+                            android:focusable="false"
+                            android:inputType="none" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="@string/terminow_host_rdp_note"
+                            android:textColor="@color/terminow_text_secondary"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/terminow_host_winrm_options"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+
+                        <LinearLayout style="@style/TerminowPanelToggleRow">
+
+                            <TextView
+                                style="@style/TerminowPanelToggleTitle"
+                                android:layout_width="0dp"
+                                android:layout_weight="1"
+                                android:text="@string/terminow_host_winrm_https" />
+
+                            <CheckBox
+                                android:id="@+id/terminow_host_winrm_https"
+                                style="@style/TerminowPanelCheck"
+                                android:checked="true" />
+                        </LinearLayout>
+
+                        <LinearLayout style="@style/TerminowPanelToggleRow">
+
+                            <TextView
+                                style="@style/TerminowPanelToggleTitle"
+                                android:layout_width="0dp"
+                                android:layout_weight="1"
+                                android:text="@string/terminow_host_winrm_verify" />
+
+                            <CheckBox
+                                android:id="@+id/terminow_host_winrm_verify"
+                                style="@style/TerminowPanelCheck"
+                                android:checked="true" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="@string/terminow_host_winrm_note"
+                            android:textColor="@color/terminow_text_secondary"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Credentials -->
+                <LinearLayout
+                    style="@style/TerminowPanelCard"
+                    android:layout_marginTop="12dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="@string/terminow_host_credentials"
+                        android:textColor="@color/terminow_text"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+
+                    <!-- An identity of the keychain, whose username, password and key the host logs in with -->
+                    <LinearLayout style="@style/TerminowPanelFieldRow">
+
+                        <EditText
+                            android:id="@+id/terminow_host_identity"
+                            style="@style/TerminowPanelField"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:cursorVisible="false"
+                            android:focusable="false"
+                            android:hint="@string/terminow_host_identity_field"
+                            android:inputType="none" />
+
+                        <ImageButton
+                            android:id="@+id/terminow_host_identity_remove"
+                            android:layout_width="36dp"
+                            android:layout_height="36dp"
+                            android:background="@null"
+                            android:contentDescription="@string/terminow_host_identity_remove"
+                            android:src="@drawable/ic_terminow_close"
+                            android:tint="@color/terminow_text_secondary"
+                            android:visibility="gone" />
+
+                        <ImageView
+                            style="@style/TerminowPanelFieldIcon"
+                            android:contentDescription="@null"
+                            android:src="@drawable/ic_terminow_person_add" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/terminow_host_username_row"
+                        style="@style/TerminowPanelFieldRow">
+
+                        <EditText
+                            android:id="@+id/terminow_host_username"
+                            style="@style/TerminowPanelField"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:hint="@string/terminow_host_username"
+                            android:inputType="textVisiblePassword" />
+
+                        <ImageView
+                            style="@style/TerminowPanelFieldIcon"
+                            android:contentDescription="@null"
+                            android:src="@drawable/ic_terminow_person" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/terminow_host_password_row"
+                        style="@style/TerminowPanelFieldRow">
+
+                        <EditText
+                            android:id="@+id/terminow_host_password"
+                            style="@style/TerminowPanelField"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:hint="@string/terminow_host_password"
+                            android:inputType="textPassword" />
+
+                        <!-- Shows or hides the password -->
+                        <ImageButton
+                            android:id="@+id/terminow_host_password_show"
+                            style="@style/TerminowPanelFieldIcon"
+                            android:contentDescription="@string/terminow_host_password_show"
+                            android:src="@drawable/ic_terminow_lock" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/terminow_host_key_row"
+                        style="@style/TerminowPanelFieldRow">
+
+                        <!-- Not editable, tapping it shows the keychain to pick from -->
+                        <EditText
+                            android:id="@+id/terminow_host_key"
+                            style="@style/TerminowPanelField"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:cursorVisible="false"
+                            android:focusable="false"
+                            android:hint="@string/terminow_host_key_field"
+                            android:inputType="none" />
+
+                        <ImageButton
+                            android:id="@+id/terminow_host_key_remove"
+                            android:layout_width="36dp"
+                            android:layout_height="36dp"
+                            android:background="@null"
+                            android:contentDescription="@string/terminow_host_key_remove"
+                            android:src="@drawable/ic_terminow_close"
+                            android:tint="@color/terminow_text_secondary"
+                            android:visibility="gone" />
+
+                        <ImageButton
+                            android:id="@+id/terminow_host_keys"
+                            style="@style/TerminowPanelFieldIcon"
+                            android:contentDescription="@string/terminow_host_keys_title"
+                            android:src="@drawable/ic_terminow_key" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Session options -->
+                <LinearLayout
+                    android:id="@+id/terminow_host_session_card"
+                    style="@style/TerminowPanelCard"
+                    android:layout_marginTop="12dp">
+
+                    <LinearLayout style="@style/TerminowPanelFieldRow">
+
+                        <!-- Not editable, tapping it shows the snippets to pick from -->
+                        <EditText
+                            android:id="@+id/terminow_host_snippet"
+                            style="@style/TerminowPanelField"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:cursorVisible="false"
+                            android:focusable="false"
+                            android:hint="@string/terminow_host_snippet_field"
+                            android:inputType="none" />
+
+                        <ImageButton
+                            android:id="@+id/terminow_host_snippet_button"
+                            style="@style/TerminowPanelFieldIcon"
+                            android:contentDescription="@string/terminow_host_snippet"
+                            android:src="@drawable/ic_terminow_snippets" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        style="@style/TerminowPanelToggleRow"
+                        android:layout_marginTop="6dp">
+
+                        <TextView
+                            style="@style/TerminowPanelToggleTitle"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:text="@string/terminow_host_agent_forwarding" />
+
+                        <CheckBox
+                            android:id="@+id/terminow_host_agent"
+                            style="@style/TerminowPanelCheck" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        style="@style/TerminowPanelToggleRow"
+                        android:layout_marginTop="6dp">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                style="@style/TerminowPanelToggleTitle"
+                                android:layout_width="match_parent"
+                                android:text="@string/terminow_host_remote_tmux" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="@string/terminow_host_remote_tmux_summary"
+                                android:textColor="@color/terminow_text_secondary"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+
+                        <CheckBox
+                            android:id="@+id/terminow_host_remote_tmux"
+                            style="@style/TerminowPanelCheck" />
+                    </LinearLayout>
+
+                    <LinearLayout style="@style/TerminowPanelFieldRow">
+
+                        <EditText
+                            android:id="@+id/terminow_host_jump"
+                            style="@style/TerminowPanelField"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:cursorVisible="false"
+                            android:focusable="false"
+                            android:hint="@string/terminow_host_chaining"
+                            android:inputType="none" />
+
+                        <ImageButton
+                            android:id="@+id/terminow_host_jump_button"
+                            style="@style/TerminowPanelFieldIcon"
+                            android:contentDescription="@string/terminow_host_chaining"
+                            android:src="@drawable/ic_terminow_chain" />
+                    </LinearLayout>
+
+                    <LinearLayout style="@style/TerminowPanelFieldRow">
+
+                        <EditText
+                            android:id="@+id/terminow_host_proxy"
+                            style="@style/TerminowPanelField"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:cursorVisible="false"
+                            android:focusable="false"
+                            android:hint="@string/terminow_host_proxy"
+                            android:inputType="none" />
+
+                        <ImageButton
+                            android:id="@+id/terminow_host_proxy_button"
+                            style="@style/TerminowPanelFieldIcon"
+                            android:contentDescription="@string/terminow_host_proxy"
+                            android:src="@drawable/ic_terminow_proxy" />
+                    </LinearLayout>
+
+                    <!-- One row per environment variable, added by the link below -->
+                    <LinearLayout
+                        android:id="@+id/terminow_host_env"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical" />
+
+                    <TextView
+                        android:id="@+id/terminow_host_env_add"
+                        style="@style/TerminowPanelLink"
+                        android:layout_marginStart="0dp"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/terminow_host_env_add" />
+
+                    <LinearLayout
+                        android:id="@+id/terminow_host_scheme_row"
+                        style="@style/TerminowPanelToggleRow"
+                        android:background="?android:attr/selectableItemBackground">
+
+                        <TextView
+                            style="@style/TerminowPanelToggleTitle"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:text="@string/terminow_host_color_scheme" />
+
+                        <TextView
+                            android:id="@+id/terminow_host_scheme"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/terminow_text"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/terminow_host_charset_row"
+                        style="@style/TerminowPanelToggleRow"
+                        android:background="?android:attr/selectableItemBackground">
+
+                        <TextView
+                            style="@style/TerminowPanelToggleTitle"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:text="@string/terminow_host_charset" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/terminow_host_charset_utf8"
+                            android:textColor="@color/terminow_text"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Telnet -->
+                <LinearLayout
+                    android:id="@+id/terminow_host_telnet_card"
+                    style="@style/TerminowPanelCard"
+                    android:layout_marginTop="12dp">
+
+                    <LinearLayout style="@style/TerminowPanelToggleRow">
+
+                        <TextView
+                            style="@style/TerminowPanelToggleTitle"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:text="@string/terminow_host_telnet" />
+
+                        <CheckBox
+                            android:id="@+id/terminow_host_telnet"
+                            style="@style/TerminowPanelCheck" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/terminow_host_telnet_options"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <TextView
+                            style="@style/TerminowPanelLabel"
+                            android:layout_marginTop="4dp"
+                            android:labelFor="@+id/terminow_host_telnet_port"
+                            android:text="@string/terminow_host_port" />
+
+                        <EditText
+                            android:id="@+id/terminow_host_telnet_port"
+                            style="@style/TerminowPanelField"
+                            android:hint="@string/terminow_host_telnet_port_default"
+                            android:inputType="number"
+                            android:maxLength="5" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="4dp"
+                    android:layout_marginTop="14dp"
+                    android:text="@string/terminow_host_credentials_note"
+                    android:textColor="@color/terminow_text_secondary"
+                    android:textSize="12sp"
+                    tools:ignore="SmallSp" />
+            </LinearLayout>
+        </ScrollView>
+    </LinearLayout>
+</FrameLayout>

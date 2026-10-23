@@ -10,7 +10,6 @@ import androidx.annotation.NonNull;
 
 import com.google.common.base.Joiner;
 import com.termux.shared.R;
-import com.termux.shared.data.DataUtils;
 import com.termux.shared.logger.Logger;
 import com.termux.shared.markdown.MarkdownUtils;
 
@@ -92,10 +91,6 @@ public class AndroidUtils {
 
         AndroidUtils.appendPropertyToMarkdown(markdownString,"SE_PROCESS_CONTEXT", SELinuxUtils.getContext());
         AndroidUtils.appendPropertyToMarkdown(markdownString,"SE_FILE_CONTEXT", SELinuxUtils.getFileContext(context.getFilesDir().getAbsolutePath()));
-
-        String seInfoUser = PackageUtils.getApplicationInfoSeInfoUserForPackage(applicationInfo);
-        AndroidUtils.appendPropertyToMarkdown(markdownString,"SE_INFO", PackageUtils.getApplicationInfoSeInfoForPackage(applicationInfo) +
-            (DataUtils.isNullOrEmpty(seInfoUser) ? "" : seInfoUser));
 
         return markdownString.toString();
     }

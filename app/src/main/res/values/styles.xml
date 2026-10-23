@@ -14,4 +14,175 @@
         <item name="android:textColor">@color/white</item>
     </style>
 
+    <style name="TerminowCard">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginBottom">12dp</item>
+        <item name="android:background">@drawable/terminow_card</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:padding">14dp</item>
+    </style>
+
+    <style name="TerminowCardTitle">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColor">@color/terminow_text</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="TerminowInput">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">48dp</item>
+        <item name="android:background">@drawable/terminow_input</item>
+        <item name="android:paddingStart">14dp</item>
+        <item name="android:paddingEnd">14dp</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:textColor">@color/terminow_text</item>
+        <item name="android:textColorHint">@color/terminow_text_secondary</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:importantForAutofill">no</item>
+        <item name="android:imeOptions">flagNoFullscreen</item>
+    </style>
+
+    <!-- The host form is a panel at the side of the screen with the home screen dimmed behind it. -->
+    <style name="TerminowPanelDialog" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowAnimationStyle">@android:style/Animation.Dialog</item>
+        <item name="android:colorAccent">@color/terminow_panel_accent</item>
+        <item name="android:colorControlActivated">@color/terminow_panel_accent</item>
+    </style>
+
+    <style name="TerminowPanelSection">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginStart">14dp</item>
+        <item name="android:layout_marginTop">18dp</item>
+        <item name="android:layout_marginBottom">14dp</item>
+        <item name="android:textColor">@color/terminow_text</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="TerminowPanelCard">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:background">@drawable/terminow_panel_card</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:paddingStart">14dp</item>
+        <item name="android:paddingEnd">14dp</item>
+        <item name="android:paddingTop">6dp</item>
+        <item name="android:paddingBottom">18dp</item>
+    </style>
+
+    <style name="TerminowPanelLabel">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">14dp</item>
+        <item name="android:textColor">@color/terminow_text_secondary</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+
+    <style name="TerminowPanelField">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">40dp</item>
+        <item name="android:background">@drawable/terminow_panel_field</item>
+        <item name="android:paddingStart">0dp</item>
+        <item name="android:paddingEnd">0dp</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:textColor">@color/terminow_text</item>
+        <item name="android:textColorHint">@color/terminow_text_secondary</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:importantForAutofill">no</item>
+        <item name="android:imeOptions">flagNoFullscreen</item>
+    </style>
+
+    <style name="TerminowPanelLink">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">40dp</item>
+        <item name="android:layout_marginStart">14dp</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:textColor">@color/terminow_panel_accent</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="TerminowPanelToggleRow">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">52dp</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:orientation">horizontal</item>
+    </style>
+
+    <style name="TerminowPanelToggleTitle">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColor">@color/terminow_text</item>
+        <item name="android:textSize">16sp</item>
+    </style>
+
+    <style name="TerminowPanelSwitch">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:thumbTint">@color/terminow_panel_switch_thumb</item>
+        <item name="android:trackTint">@color/terminow_panel_switch_track</item>
+    </style>
+
+    <!-- The round button at the end of a field of the host panel -->
+    <style name="TerminowPanelFieldIcon">
+        <item name="android:layout_width">40dp</item>
+        <item name="android:layout_height">40dp</item>
+        <item name="android:layout_marginStart">12dp</item>
+        <item name="android:background">@drawable/terminow_field_icon</item>
+        <item name="android:padding">9dp</item>
+        <item name="android:scaleType">fitCenter</item>
+        <item name="android:tint">@color/terminow_bar_home</item>
+    </style>
+
+    <style name="TerminowPanelFieldRow">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">14dp</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:orientation">horizontal</item>
+    </style>
+
+    <style name="TerminowPanelCheck">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:buttonTint">@color/terminow_panel_accent</item>
+    </style>
+
+    <style name="TerminowAction">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">36dp</item>
+        <item name="android:layout_marginEnd">10dp</item>
+        <item name="android:background">@drawable/terminow_action</item>
+        <item name="android:gravity">center</item>
+        <item name="android:letterSpacing">0.04</item>
+        <item name="android:paddingStart">16dp</item>
+        <item name="android:paddingEnd">16dp</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:textColor">@color/terminow_text</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <!-- The dialogs of the home screen, in its colors instead of the grey of the app dialogs. -->
+    <style name="TerminowAlertDialog" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/terminow_dialog</item>
+        <item name="android:colorAccent">@color/terminow_accent</item>
+        <item name="android:colorControlActivated">@color/terminow_accent</item>
+        <item name="android:textColorPrimary">@color/terminow_text</item>
+        <item name="android:textColorSecondary">@color/terminow_text_secondary</item>
+        <item name="android:textColorHint">@color/terminow_text_secondary</item>
+        <item name="android:buttonBarButtonStyle">@style/TerminowAlertDialog.Button</item>
+    </style>
+
+    <style name="TerminowAlertDialog.Button" parent="@android:style/Widget.Material.Button.Borderless">
+        <item name="android:textColor">@color/terminow_accent</item>
+    </style>
+
 </resources>

@@ -1,0 +1,587 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/terminow_home"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/terminow_bar_home"
+    android:clickable="true"
+    android:focusable="true"
+    android:orientation="horizontal"
+    android:visibility="gone">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/terminow_home_panel"
+        android:orientation="horizontal">
+
+    <ScrollView
+        android:layout_width="84dp"
+        android:layout_height="match_parent"
+        android:overScrollMode="never"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingTop="20dp">
+
+            <LinearLayout
+                android:id="@+id/terminow_rail_launch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="14dp"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <ImageView
+                    android:layout_width="56dp"
+                    android:layout_height="34dp"
+                    android:duplicateParentState="true"
+                    android:padding="6dp"
+                    android:src="@drawable/ic_terminow_launch"
+                    tools:ignore="ContentDescription" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:text="@string/terminow_quick_rail"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/terminow_rail_hosts"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="14dp"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <ImageView
+                    android:layout_width="56dp"
+                    android:layout_height="34dp"
+                    android:duplicateParentState="true"
+                    android:padding="6dp"
+                    android:src="@drawable/ic_terminow_hosts"
+                    tools:ignore="ContentDescription" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:text="@string/terminow_hosts"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/terminow_rail_files"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="14dp"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <!-- The crown marks a Premium feature -->
+                <FrameLayout
+                    android:layout_width="56dp"
+                    android:layout_height="34dp"
+                    android:duplicateParentState="true">
+
+                    <ImageView
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:duplicateParentState="true"
+                        android:padding="6dp"
+                        android:src="@drawable/ic_terminow_folder"
+                        tools:ignore="ContentDescription" />
+
+                    <ImageView
+                        android:layout_width="14dp"
+                        android:layout_height="14dp"
+                        android:layout_gravity="top|end"
+                        android:layout_marginEnd="6dp"
+                        android:src="@drawable/ic_terminow_crown"
+                        tools:ignore="ContentDescription" />
+                </FrameLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:gravity="center"
+                    android:maxLines="2"
+                    android:text="@string/terminow_explorer_rail"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/terminow_rail_keychain"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="14dp"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <ImageView
+                    android:layout_width="56dp"
+                    android:layout_height="34dp"
+                    android:duplicateParentState="true"
+                    android:padding="6dp"
+                    android:src="@drawable/ic_terminow_key"
+                    tools:ignore="ContentDescription" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:text="@string/terminow_keychain"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/terminow_rail_mcp"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="14dp"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <!-- The crown marks a Premium feature, like the File Manager -->
+                <FrameLayout
+                    android:layout_width="56dp"
+                    android:layout_height="34dp"
+                    android:duplicateParentState="true">
+
+                    <ImageView
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:duplicateParentState="true"
+                        android:padding="6dp"
+                        android:src="@drawable/ic_terminow_mcp"
+                        tools:ignore="ContentDescription" />
+
+                    <ImageView
+                        android:layout_width="14dp"
+                        android:layout_height="14dp"
+                        android:layout_gravity="top|end"
+                        android:layout_marginEnd="6dp"
+                        android:src="@drawable/ic_terminow_crown"
+                        tools:ignore="ContentDescription" />
+                </FrameLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:text="@string/terminow_mcp"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/terminow_rail_ai"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="14dp"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <!-- The crown marks a Premium feature -->
+                <FrameLayout
+                    android:layout_width="56dp"
+                    android:layout_height="34dp"
+                    android:duplicateParentState="true">
+
+                    <ImageView
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:duplicateParentState="true"
+                        android:padding="6dp"
+                        android:src="@drawable/ic_terminow_ai"
+                        tools:ignore="ContentDescription" />
+
+                    <ImageView
+                        android:layout_width="14dp"
+                        android:layout_height="14dp"
+                        android:layout_gravity="top|end"
+                        android:layout_marginEnd="6dp"
+                        android:src="@drawable/ic_terminow_crown"
+                        tools:ignore="ContentDescription" />
+                </FrameLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:text="@string/terminow_ai_rail"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/terminow_rail_forwarding"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="14dp"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <ImageView
+                    android:layout_width="56dp"
+                    android:layout_height="34dp"
+                    android:duplicateParentState="true"
+                    android:padding="6dp"
+                    android:src="@drawable/ic_terminow_forward"
+                    tools:ignore="ContentDescription" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:text="@string/terminow_forwarding"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/terminow_rail_snippets"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="14dp"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <ImageView
+                    android:layout_width="56dp"
+                    android:layout_height="34dp"
+                    android:duplicateParentState="true"
+                    android:padding="6dp"
+                    android:src="@drawable/ic_terminow_snippets"
+                    tools:ignore="ContentDescription" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:text="@string/terminow_snippets"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/terminow_rail_known_hosts"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="14dp"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <ImageView
+                    android:layout_width="56dp"
+                    android:layout_height="34dp"
+                    android:duplicateParentState="true"
+                    android:padding="6dp"
+                    android:src="@drawable/ic_terminow_known_hosts"
+                    tools:ignore="ContentDescription" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:text="@string/terminow_known_hosts"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/terminow_rail_logs"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="14dp"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <ImageView
+                    android:layout_width="56dp"
+                    android:layout_height="34dp"
+                    android:duplicateParentState="true"
+                    android:padding="6dp"
+                    android:src="@drawable/ic_terminow_logs"
+                    tools:ignore="ContentDescription" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:text="@string/terminow_logs"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/terminow_rail_settings"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="14dp"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <ImageView
+                    android:layout_width="56dp"
+                    android:layout_height="34dp"
+                    android:duplicateParentState="true"
+                    android:padding="6dp"
+                    android:src="@drawable/ic_settings"
+                    tools:ignore="ContentDescription" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:text="@string/action_open_settings"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+        </LinearLayout>
+    </ScrollView>
+
+    <RelativeLayout
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:paddingEnd="12dp"
+        tools:ignore="RtlSymmetry">
+
+        <LinearLayout
+            android:id="@+id/terminow_header"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <EditText
+                    android:id="@+id/terminow_search"
+                    android:layout_width="0dp"
+                    android:layout_height="44dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/terminow_field"
+                    android:hint="@string/terminow_search_hint"
+                    android:imeOptions="actionSearch|flagNoFullscreen"
+                    android:importantForAutofill="no"
+                    android:inputType="text"
+                    android:maxLines="1"
+                    android:paddingHorizontal="20dp"
+                    android:textColor="@color/terminow_text"
+                    android:textColorHint="@color/terminow_text_secondary"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:id="@+id/terminow_sort"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:layout_marginStart="10dp"
+                    android:background="@drawable/terminow_field"
+                    android:contentDescription="@string/terminow_keychain_sort"
+                    android:gravity="center"
+                    android:text="Az"
+                    android:textColor="@color/terminow_text"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:visibility="gone"
+                    tools:ignore="HardcodedText" />
+            </LinearLayout>
+
+            <!-- The actions of the hosts, and at the end the members of the team, like Termius -->
+            <LinearLayout
+                android:id="@+id/terminow_actions"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+            <HorizontalScrollView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:overScrollMode="never"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/terminow_action_new_host"
+                        style="@style/TerminowAction"
+                        android:text="@string/terminow_action_new_host" />
+
+                    <TextView
+                        android:id="@+id/terminow_action_new_group"
+                        style="@style/TerminowAction"
+                        android:text="@string/terminow_action_new_group" />
+
+                    <TextView
+                        android:id="@+id/terminow_action_import"
+                        style="@style/TerminowAction"
+                        android:text="@string/terminow_action_import" />
+                </LinearLayout>
+            </HorizontalScrollView>
+
+                <!-- Filled with the initials of the members and a + -->
+                <LinearLayout
+                    android:id="@+id/terminow_team_chip"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:layout_marginStart="8dp"
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/terminow_team_invite_title"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/terminow_section_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_below="@id/terminow_header"
+            android:layout_marginTop="20dp"
+            android:layout_marginBottom="10dp"
+            android:text="@string/terminow_hosts"
+            android:textColor="@color/terminow_text"
+            android:textSize="15sp" />
+
+        <GridView
+            android:id="@+id/terminow_grid"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_below="@id/terminow_section_title"
+            android:clipToPadding="false"
+            android:columnWidth="260dp"
+            android:horizontalSpacing="10dp"
+            android:listSelector="@android:color/transparent"
+            android:numColumns="auto_fit"
+            android:paddingBottom="88dp"
+            android:scrollbars="none"
+            android:stretchMode="columnWidth"
+            android:verticalSpacing="10dp" />
+
+        <TextView
+            android:id="@+id/terminow_empty"
+            android:maxWidth="320dp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_centerInParent="true"
+            android:gravity="center"
+            android:textColor="@color/terminow_text_secondary"
+            android:textSize="14sp"
+            android:visibility="gone" />
+
+        <ScrollView
+            android:id="@+id/terminow_settings_scroll"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scrollbars="none"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/terminow_settings"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingStart="8dp"
+                android:paddingBottom="24dp" />
+        </ScrollView>
+
+        <!-- The File Explorer, built by TerminowExplorer, over the whole content area -->
+        <FrameLayout
+            android:id="@+id/terminow_explorer"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
+        <!-- Quick Launch, built by TerminowQuickLaunch -->
+        <ScrollView
+            android:id="@+id/terminow_quick_scroll"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:scrollbars="none"
+            android:visibility="gone" />
+
+        <!-- The MCP Servers page, built by TerminowMcpPage -->
+        <ScrollView
+            android:id="@+id/terminow_mcp_scroll"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_below="@id/terminow_section_title"
+            android:clipToPadding="false"
+            android:paddingBottom="88dp"
+            android:scrollbars="none"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/terminow_mcp"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+        </ScrollView>
+
+        <!-- The AI Integration page, built by TerminowAiSettings -->
+        <ScrollView
+            android:id="@+id/terminow_ai_scroll"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_below="@id/terminow_section_title"
+            android:clipToPadding="false"
+            android:paddingBottom="88dp"
+            android:scrollbars="none"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/terminow_ai"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+        </ScrollView>
+
+        <ImageButton
+            android:id="@+id/terminow_fab"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_alignParentEnd="true"
+            android:layout_alignParentBottom="true"
+            android:layout_marginEnd="4dp"
+            android:layout_marginBottom="16dp"
+            android:background="@drawable/terminow_fab"
+            android:contentDescription="@string/terminow_add"
+            android:src="@drawable/ic_terminow_add" />
+    </RelativeLayout>
+
+    </LinearLayout>
+</LinearLayout>

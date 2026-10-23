@@ -3,6 +3,7 @@ package com.termux.terminal;
 import android.annotation.SuppressLint;
 import android.os.Handler;
 import android.os.Message;
+import android.os.ParcelFileDescriptor;
 import android.system.ErrnoException;
 import android.system.Os;
 import android.system.OsConstants;
@@ -13,7 +14,6 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
@@ -43,11 +43,35 @@ public final class TerminalSession extends TerminalOutput {
      */
     final ByteQueue mProcessToTerminalIOQueue = new ByteQueue(64 * 1024);
     /**
-     * A queue written to from the main thread due to user interaction, and read by another thread which forwards by
-     * writing to the {@link #mTerminalFileDescriptor}.
+     * What the user typed or pasted, in order, for the writer thread, which forwards it to the
+     * {@link #mTerminalFileDescriptor}. It grows as needed, up to {@link #MAX_PENDING_INPUT}: a
+     * full queue of a fixed size made {@link #write} wait on the main thread, which froze the app
+     * when the program did not read its input, like one blocked writing its output.
      */
-    final ByteQueue mTerminalToProcessIOQueue = new ByteQueue(4096);
-    /** Buffer to write translate code points into utf8 before writing to mTerminalToProcessIOQueue */
+    private final java.util.concurrent.LinkedBlockingQueue<byte[]> mTerminalToProcessQueue = new java.util.concurrent.LinkedBlockingQueue<>();
+    private final java.util.concurrent.atomic.AtomicLong mPendingInput = new java.util.concurrent.atomic.AtomicLong();
+    private static final long MAX_PENDING_INPUT = 8 << 20;
+    /** Put in {@link #mTerminalToProcessQueue} to end the writer thread. */
+    private static final byte[] END_OF_INPUT = new byte[0];
+
+    /**
+     * The duplicate of the pty master that the reader and writer threads use, kept for as long
+     * as the session. Only its file descriptor was kept before: when the garbage collector
+     * finalized the {@link ParcelFileDescriptor}, it closed the duplicate, so the reader and the
+     * writer ended while the process went on, blocked writing to a pty that nobody read.
+     */
+    private ParcelFileDescriptor mTerminalStreams;
+
+    // What the reader and writer threads do, for diagnostics: never what they read or write
+    private volatile String mReaderState = "not started";
+    private volatile String mWriterState = "not started";
+    private volatile long mLastReadAt;
+    private volatile long mLastWriteAt;
+    private volatile long mBytesRead;
+    private volatile long mBytesWritten;
+    private volatile String mReaderError = "";
+    private volatile String mWriterError = "";
+    /** Buffer to write translate code points into utf8 before writing to mTerminalToProcessQueue */
     private final byte[] mUtf8InputBuffer = new byte[5];
 
     /** Callback which gets notified when a session finishes or changes title. */
@@ -55,6 +79,11 @@ public final class TerminalSession extends TerminalOutput {
 
     /** The pid of the shell process. 0 if not started and -1 if finished running. */
     int mShellPid;
+
+    /** The color theme of this session only, see {@link TerminalColors#setScheme}. Kept until the emulator exists. */
+    private TerminalColorScheme mColorScheme;
+    /** Whether the Backspace key sends Ctrl-H (^H) instead of DEL (^?), for a host that wants it. */
+    private volatile boolean mBackspaceSendsCtrlH;
 
     /** The exit status of the shell process. Only valid if ${@link #mShellPid} is -1. */
     int mShellExitStatus;
@@ -114,6 +143,11 @@ public final class TerminalSession extends TerminalOutput {
         return (mEmulator == null) ? null : mEmulator.getTitle();
     }
 
+    /** Shown in the terminal before the output of the process, once, when it is started. */
+    public byte[] mPrelude;
+    /** Run on the main thread once the process is started, which is when the tab is first shown. */
+    public Runnable mOnStarted;
+
     /**
      * Set the terminal emulator's window size and start terminal emulation.
      *
@@ -122,13 +156,26 @@ public final class TerminalSession extends TerminalOutput {
      */
     public void initializeEmulator(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
         mEmulator = new TerminalEmulator(this, columns, rows, cellWidthPixels, cellHeightPixels, mTranscriptRows, mClient);
+        if (mColorScheme != null) mEmulator.mColors.setScheme(mColorScheme);
+        // Text shown before anything of the new process, like the previous output of a restored tab
+        if (mPrelude != null) {
+            mEmulator.append(mPrelude, mPrelude.length);
+            mPrelude = null;
+        }
 
         int[] processId = new int[1];
         mTerminalFileDescriptor = JNI.createSubprocess(mShellPath, mCwd, mArgs, mEnv, processId, rows, columns, cellWidthPixels, cellHeightPixels);
         mShellPid = processId[0];
         mClient.setTerminalShellPid(this, mShellPid);
 
-        final FileDescriptor terminalFileDescriptorWrapped = wrapFileDescriptor(mTerminalFileDescriptor, mClient);
+        mTerminalStreams = wrapFileDescriptor(mTerminalFileDescriptor, mClient);
+        final FileDescriptor terminalFileDescriptorWrapped = mTerminalStreams.getFileDescriptor();
+
+        if (mOnStarted != null) {
+            Runnable onStarted = mOnStarted;
+            mOnStarted = null;
+            mMainThreadHandler.post(onStarted);
+        }
 
         new Thread("TermSessionInputReader[pid=" + mShellPid + "]") {
             @Override
@@ -136,13 +183,28 @@ public final class TerminalSession extends TerminalOutput {
                 try (InputStream termIn = new FileInputStream(terminalFileDescriptorWrapped)) {
                     final byte[] buffer = new byte[4096];
                     while (true) {
+                        mReaderState = "reading";
                         int read = termIn.read(buffer);
-                        if (read == -1) return;
-                        if (!mProcessToTerminalIOQueue.write(buffer, 0, read)) return;
+                        if (read == -1) {
+                            mReaderState = "end of file";
+                            return;
+                        }
+                        mLastReadAt = System.currentTimeMillis();
+                        mBytesRead += read;
+                        // Waits here only while the screen is behind by the whole queue
+                        mReaderState = "handing to the screen";
+                        if (!mProcessToTerminalIOQueue.write(buffer, 0, read)) {
+                            mReaderState = "closed";
+                            return;
+                        }
                         mMainThreadHandler.sendEmptyMessage(MSG_NEW_INPUT);
                     }
                 } catch (Exception e) {
-                    // Ignore, just shutting down.
+                    // When the process ended, reading the pty fails with EIO: that is its end
+                    mReaderError = describe(e);
+                    mReaderState = "ended: " + mReaderError;
+                    if (isRunning())
+                        Logger.logWarn(mClient, LOG_TAG, "The reader of the session with pid " + mShellPid + " ended while it runs: " + mReaderError);
                 }
             }
         }.start();
@@ -150,15 +212,26 @@ public final class TerminalSession extends TerminalOutput {
         new Thread("TermSessionOutputWriter[pid=" + mShellPid + "]") {
             @Override
             public void run() {
-                final byte[] buffer = new byte[4096];
                 try (FileOutputStream termOut = new FileOutputStream(terminalFileDescriptorWrapped)) {
                     while (true) {
-                        int bytesToWrite = mTerminalToProcessIOQueue.read(buffer, true);
-                        if (bytesToWrite == -1) return;
-                        termOut.write(buffer, 0, bytesToWrite);
+                        mWriterState = "waiting for input";
+                        byte[] chunk = mTerminalToProcessQueue.take();
+                        if (chunk == END_OF_INPUT) {
+                            mWriterState = "closed";
+                            return;
+                        }
+                        // Waits here while the program does not read its input
+                        mWriterState = "writing";
+                        termOut.write(chunk);
+                        mPendingInput.addAndGet(-chunk.length);
+                        mLastWriteAt = System.currentTimeMillis();
+                        mBytesWritten += chunk.length;
                     }
-                } catch (IOException e) {
-                    // Ignore.
+                } catch (IOException | InterruptedException e) {
+                    mWriterError = describe(e);
+                    mWriterState = "ended: " + mWriterError;
+                    if (isRunning())
+                        Logger.logWarn(mClient, LOG_TAG, "The writer of the session with pid " + mShellPid + " ended while it runs: " + mWriterError);
                 }
             }
         }.start();
@@ -176,7 +249,14 @@ public final class TerminalSession extends TerminalOutput {
     /** Write data to the shell process. */
     @Override
     public void write(byte[] data, int offset, int count) {
-        if (mShellPid > 0) mTerminalToProcessIOQueue.write(data, offset, count);
+        if (mShellPid <= 0 || count <= 0) return;
+        // Never waits: the main thread draws all tabs and takes the keys
+        if (mPendingInput.get() + count > MAX_PENDING_INPUT) {
+            mWriterError = "input dropped, " + mPendingInput.get() + " bytes were not read by the program yet";
+            return;
+        }
+        mPendingInput.addAndGet(count);
+        mTerminalToProcessQueue.offer(java.util.Arrays.copyOfRange(data, offset, offset + count));
     }
 
     /** Write the Unicode code point to the terminal encoded in UTF-8. */
@@ -216,6 +296,20 @@ public final class TerminalSession extends TerminalOutput {
         write(mUtf8InputBuffer, 0, bufferPosition);
     }
 
+    /** Use a color theme for this session only, {@code null} for the one of the settings. */
+    public void setColorScheme(TerminalColorScheme scheme) {
+        mColorScheme = scheme;
+        if (mEmulator != null) mEmulator.mColors.setScheme(scheme);
+    }
+
+    public boolean getBackspaceSendsCtrlH() {
+        return mBackspaceSendsCtrlH;
+    }
+
+    public void setBackspaceSendsCtrlH(boolean ctrlH) {
+        mBackspaceSendsCtrlH = ctrlH;
+    }
+
     public TerminalEmulator getEmulator() {
         return mEmulator;
     }
@@ -249,10 +343,18 @@ public final class TerminalSession extends TerminalOutput {
             mShellExitStatus = exitStatus;
         }
 
-        // Stop the reader and writer threads, and close the I/O streams
-        mTerminalToProcessIOQueue.close();
+        // Stop the reader and writer threads, and close the I/O streams: the duplicate only now
+        mTerminalToProcessQueue.offer(END_OF_INPUT);
         mProcessToTerminalIOQueue.close();
         JNI.close(mTerminalFileDescriptor);
+        ParcelFileDescriptor streams = mTerminalStreams;
+        if (streams != null) {
+            try {
+                streams.close();
+            } catch (IOException e) {
+                // Closed by the streams already
+            }
+        }
     }
 
     @Override
@@ -314,23 +416,51 @@ public final class TerminalSession extends TerminalOutput {
         return null;
     }
 
-    private static FileDescriptor wrapFileDescriptor(int fileDescriptor, TerminalSessionClient client) {
-        FileDescriptor result = new FileDescriptor();
-        try {
-            Field descriptorField;
-            try {
-                descriptorField = FileDescriptor.class.getDeclaredField("descriptor");
-            } catch (NoSuchFieldException e) {
-                // For desktop java:
-                descriptorField = FileDescriptor.class.getDeclaredField("fd");
-            }
-            descriptorField.setAccessible(true);
-            descriptorField.set(result, fileDescriptor);
-        } catch (NoSuchFieldException | IllegalAccessException | IllegalArgumentException e) {
-            Logger.logStackTraceWithMessage(client, LOG_TAG, "Error accessing FileDescriptor#descriptor private field", e);
-            System.exit(1);
+    /** An error, with its errno when there is one, and never what was read or written. */
+    private static String describe(Throwable e) {
+        Throwable cause = e;
+        while (cause != null) {
+            if (cause instanceof ErrnoException) return e.getClass().getSimpleName() + " " + OsConstants.errnoName(((ErrnoException) cause).errno);
+            cause = cause.getCause();
         }
-        return result;
+        return e.getClass().getSimpleName() + (e.getMessage() != null ? " " + e.getMessage() : "");
+    }
+
+    /**
+     * How the I/O of the session is, for diagnostics: its pid, what the reader and writer do,
+     * when they last read and wrote, how much, what waits in the queues, and errors. Never what
+     * was read or typed.
+     */
+    public String getIoDiagnostics() {
+        long now = System.currentTimeMillis();
+        return "pid " + mShellPid + (isRunning() ? "" : ", exited " + mShellExitStatus) +
+            "\n  reader: " + mReaderState + ", last read " + ago(now, mLastReadAt) + ", " + mBytesRead + " bytes" +
+            "\n  to the screen: " + mProcessToTerminalIOQueue.size() + " bytes waiting" +
+            "\n  writer: " + mWriterState + ", last write " + ago(now, mLastWriteAt) + ", " + mBytesWritten + " bytes, " +
+            mPendingInput.get() + " bytes typed and not read yet" +
+            (mReaderError.isEmpty() && mWriterError.isEmpty() ? "" : "\n  errors: reader " + (mReaderError.isEmpty() ? "none" : mReaderError) +
+                ", writer " + (mWriterError.isEmpty() ? "none" : mWriterError));
+    }
+
+    private static String ago(long now, long then) {
+        return then == 0 ? "never" : (now - then) / 1000 + " s ago";
+    }
+
+    /**
+     * A duplicate of the pty master, for the reader and writer streams, made with the public
+     * {@link ParcelFileDescriptor#fromFd(int)}. The caller keeps it in {@link #mTerminalStreams}
+     * until the process ended: the {@link ParcelFileDescriptor} owns the duplicate and closes it
+     * when it is finalized. {@link #cleanupResources(int)} closes the original with
+     * {@link JNI#close(int)}, and then the duplicate.
+     */
+    private static ParcelFileDescriptor wrapFileDescriptor(int fileDescriptor, TerminalSessionClient client) {
+        try {
+            return ParcelFileDescriptor.fromFd(fileDescriptor);
+        } catch (IOException e) {
+            Logger.logStackTraceWithMessage(client, LOG_TAG, "Error duplicating the terminal file descriptor", e);
+            System.exit(1);
+            return null;
+        }
     }
 
     @SuppressLint("HandlerLeak")

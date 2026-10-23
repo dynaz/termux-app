@@ -4,6 +4,7 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
+import android.widget.LinearLayout;
 
 import androidx.annotation.NonNull;
 import androidx.viewpager.widget.PagerAdapter;
@@ -11,6 +12,7 @@ import androidx.viewpager.widget.ViewPager;
 
 import com.termux.R;
 import com.termux.app.TermuxActivity;
+import com.termux.app.terminow.TerminowKeyBar;
 import com.termux.shared.termux.extrakeys.ExtraKeysView;
 import com.termux.terminal.TerminalSession;
 
@@ -43,12 +45,15 @@ public class TerminalToolbarViewPager {
             View layout;
             if (position == 0) {
                 layout = inflater.inflate(R.layout.view_terminal_toolbar_extra_keys, collection, false);
-                ExtraKeysView extraKeysView = (ExtraKeysView) layout;
+                ExtraKeysView extraKeysView = layout.findViewById(R.id.terminal_toolbar_extra_keys);
                 extraKeysView.setExtraKeysViewClient(mActivity.getTermuxTerminalExtraKeys());
                 extraKeysView.setButtonTextAllCaps(mActivity.getProperties().shouldExtraKeysTextBeAllCaps());
                 mActivity.setExtraKeysView(extraKeysView);
                 extraKeysView.reload(mActivity.getTermuxTerminalExtraKeys().getExtraKeysInfo(),
                     mActivity.getTerminalToolbarDefaultHeight());
+
+                // Tools, keys, arrows and More in one row that scrolls, the keyboard button fixed at its right
+                mActivity.getTerminowKeyBar().bind((LinearLayout) layout);
 
                 // apply extra keys fix if enabled in prefs
                 if (mActivity.getProperties().isUsingFullScreen() && mActivity.getProperties().isUsingFullScreenWorkAround()) {

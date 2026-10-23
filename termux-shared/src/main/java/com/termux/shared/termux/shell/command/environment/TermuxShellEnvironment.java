@@ -1,6 +1,7 @@
 package com.termux.shared.termux.shell.command.environment;
 
 import android.content.Context;
+import java.io.File;
 
 import androidx.annotation.NonNull;
 
@@ -38,6 +39,10 @@ public class TermuxShellEnvironment extends AndroidShellEnvironment {
     public synchronized static void init(@NonNull Context currentPackageContext) {
         TermuxAppShellEnvironment.setTermuxAppEnvironment(currentPackageContext);
     }
+
+    public static final String ENV_LD_PRELOAD = "LD_PRELOAD";
+    public static final String ENV_TERMUX__SE_PROCESS_CONTEXT = "TERMUX__SE_PROCESS_CONTEXT";
+    public static final String ENV_TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE = "TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE";
 
     /** Init {@link TermuxShellEnvironment} constants and caches. */
     public synchronized static void writeEnvironmentToFile(@NonNull Context currentPackageContext) {
@@ -90,6 +95,20 @@ public class TermuxShellEnvironment extends AndroidShellEnvironment {
                 environment.put(ENV_PATH, TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH);
                 environment.remove(ENV_LD_LIBRARY_PATH);
             }
+        }
+
+        // Done here so that it is also set up for commands that are not run in a terminal session
+        TermuxShellUtils.setupProotLoader(currentPackageContext);
+
+        // Used by the termux-exec library to decide whether to execute files with the system linker
+        ShellEnvironmentUtils.putToEnvIfSet(environment, ENV_TERMUX__SE_PROCESS_CONTEXT, TermuxShellUtils.getSeProcessContext());
+
+        if (TermuxShellUtils.isSystemLinkerExecRequired()) {
+            environment.put(ENV_TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE, "force");
+            // The first process must already load the termux-exec library, since it could not
+            // execute anything under the app data directory itself otherwise
+            if (!isFailSafe && new File(TermuxShellUtils.TERMUX_EXEC_LD_PRELOAD_LIB_PATH).isFile())
+                environment.put(ENV_LD_PRELOAD, TermuxShellUtils.TERMUX_EXEC_LD_PRELOAD_LIB_PATH);
         }
 
         return environment;

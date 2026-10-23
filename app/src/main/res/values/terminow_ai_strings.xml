@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_ai_integration">AI Integration</string>
+    <string name="terminow_ai_rail">AI</string>
+    <string name="terminow_ai_integration_summary">Let Claude Code use your hosts over authorized tools</string>
+    <string name="terminow_ai_enable">Enable Local AI Bridge</string>
+    <string name="terminow_ai_enable_desc">Claude Code in a Linux environment can use the hosts you allow, through TermiNow. Private keys, passwords and tokens stay in TermiNow and are never sent to Claude.</string>
+    <string name="terminow_ai_status_on">Listening on 127.0.0.1:%1$d · %2$d environment(s) · %3$d open · %4$d grant(s)</string>
+    <string name="terminow_ai_status_error">Not listening: %1$s</string>
+    <string name="terminow_ai_status_off">Off</string>
+    <string name="terminow_ai_restart">Restart bridge</string>
+    <string name="terminow_ai_connect_section">Connect Claude Code</string>
+    <string name="terminow_ai_connect">Connect</string>
+    <string name="terminow_ai_disconnect">Disconnect</string>
+    <string name="terminow_ai_connected">Connected · restart Claude Code to load it</string>
+    <string name="terminow_ai_not_connected">Not connected</string>
+    <string name="terminow_ai_no_env">Install a Linux environment first (File Manager → Browse Linux).</string>
+    <string name="terminow_ai_hosts_section">Hosts</string>
+    <string name="terminow_ai_host_allowed">Allowed: %1$s</string>
+    <string name="terminow_ai_host_off">AI access off</string>
+    <string name="terminow_ai_no_hosts">No SSH hosts yet.</string>
+    <string name="terminow_ai_revoke_all">Revoke all / disconnect all</string>
+    <string name="terminow_ai_revoked">All AI access revoked</string>
+    <string name="terminow_ai_access_title">AI access · %1$s</string>
+    <string name="terminow_ai_allow_host">Allow local AI access</string>
+    <string name="terminow_ai_cap_test">Test connection (ssh_test)</string>
+    <string name="terminow_ai_cap_exec">Run commands (ssh_exec)</string>
+    <string name="terminow_ai_exec_warning">A command runs with all the access of the SSH account. SFTP folder limits do not restrict commands.</string>
+    <string name="terminow_ai_policy">Approval</string>
+    <string name="terminow_ai_policy_rules">Use saved rules</string>
+    <string name="terminow_ai_policy_session">Allow for the session</string>
+    <string name="terminow_ai_policy_ask">Ask each time</string>
+    <string name="terminow_ai_not_ssh">Only SSH hosts can be used by the AI.</string>
+    <string name="terminow_ai_bridge_off_note">Turn on the Local AI Bridge above to use it.</string>
+</resources>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_connection_key_failed">ใช้คีย์ของโฮสต์นี้ไม่ได้ ตรวจสอบคีย์ในโฮสต์ หรือไฟล์ของคีย์ในพวงกุญแจ</string>
+    <string name="terminow_connection_host_key_changed">คีย์ของโฮสต์นี้เปลี่ยนไปจากที่บันทึกไว้ อาจเกิดจากการติดตั้งเซิร์ฟเวอร์ใหม่ แต่ก็อาจมีคนอยู่ระหว่างคุณกับเซิร์ฟเวอร์ หากคุณรู้สาเหตุ ให้ลบโฮสต์ออกจากโฮสต์ที่รู้จักแล้วเชื่อมต่อใหม่</string>
+    <string name="terminow_connection_address_failed">หาที่อยู่ของโฮสต์ไม่พบ ตรวจสอบที่อยู่และเครือข่าย</string>
+    <string name="terminow_connection_refused">โฮสต์ปฏิเสธการเชื่อมต่อที่พอร์ต %1$d ตรวจสอบพอร์ต และว่าเซิร์ฟเวอร์ SSH ทำงานอยู่</string>
+    <string name="terminow_connection_network_failed">ติดต่อโฮสต์จากเครือข่ายนี้ไม่ได้ ตรวจสอบที่อยู่ เครือข่าย และ VPN</string>
+    <string name="terminow_connection_mosh_server">Mosh เริ่มเซิร์ฟเวอร์บนโฮสต์ไม่ได้ ติดตั้ง mosh บนโฮสต์ (เช่น apt install mosh) หรือตั้งพาธของ mosh-server ในโฮสต์</string>
+    <string name="terminow_connection_mosh_ports">เซิร์ฟเวอร์ mosh ไม่ยอมรับพอร์ต (%1$s) ตั้งพอร์ตหรือช่วงพอร์ต เช่น 60000:60010 ในโฮสต์</string>
+    <string name="terminow_connection_mosh_udp">Mosh ลงชื่อเข้าใช้แล้ว แต่ไม่มีข้อมูลกลับมาทาง UDP เปิดพอร์ต UDP %1$s ในไฟร์วอลล์ของโฮสต์และเครือข่าย หรือปิด Mosh สำหรับโฮสต์นี้</string>
+    <string name="terminow_connection_reason">%1$s\n\nโฮสต์แจ้งว่า: %2$s</string>
+    <string name="terminow_connection_edit_host">แก้ไขโฮสต์</string>
+    <string name="terminow_host_mosh_server">คำสั่งเซิร์ฟเวอร์ Mosh</string>
+    <string name="terminow_host_mosh_server_default">mosh-server new</string>
+    <string name="terminow_host_mosh_server_default_ports">mosh-server new -p 60000:60010</string>
+    <string name="terminow_host_mosh_server_note">โปรแกรมและพอร์ต UDP ของเซิร์ฟเวอร์ เช่น mosh-server new -p 60000:60010 ไฟร์วอลล์ของโฮสต์ต้องเปิดพอร์ตเหล่านี้</string>
+    <string name="terminow_host_invalid_mosh_server">คำสั่งเซิร์ฟเวอร์ mosh มีได้เฉพาะโปรแกรม new และ -p ตามด้วยพอร์ตหรือช่วงพอร์ต เช่น 60000:60010</string>
+    <string name="terminow_keypanel_passphrase_hint">พิมพ์ให้เมื่อคีย์ถาม</string>
+</resources>

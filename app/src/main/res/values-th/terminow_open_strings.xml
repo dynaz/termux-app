@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_open_unresolved">เปิดพาธนี้ไม่ได้: %1$s</string>
+    <string name="terminow_open_no_session">ไม่ทราบเซสชันของเทอร์มินัล</string>
+    <string name="terminow_open_not_found">ไม่พบ %1$s</string>
+    <string name="terminow_open_is_folder">นี่คือโฟลเดอร์ ไม่ใช่ไฟล์</string>
+    <string name="terminow_open_no_app">ไม่มีแอปที่เปิดไฟล์นี้ได้</string>
+    <string name="terminow_open_failed">เปิดไม่ได้: %1$s</string>
+    <string name="terminow_open_no_transfer">การเชื่อมต่อนี้โอนไฟล์ไม่ได้</string>
+    <string name="terminow_open_downloading">กำลังดาวน์โหลด %1$s…</string>
+    <string name="terminow_open_apk_source_title">อนุญาตการติดตั้งแอป</string>
+    <string name="terminow_open_apk_source_message">หากต้องการติดตั้ง APK นี้ ให้อนุญาตให้ TermiNow ติดตั้งแอปในหน้าจอถัดไป แล้วเลือก APK อีกครั้ง</string>
+    <string name="terminow_open_apk_source_settings">เปิดการตั้งค่า</string>
+</resources>

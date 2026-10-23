@@ -14,6 +14,13 @@ public final class TerminalColors {
      */
     public final int[] mCurrentColors = new int[TextStyle.NUM_INDEXED_COLORS];
 
+    /**
+     * The color theme of this terminal only, like the one of a saved host, or {@code null} to use
+     * {@link #COLOR_SCHEME} of the settings. A reset keeps to it, so changing the theme of the
+     * settings does not change the colors of a host that has its own.
+     */
+    private TerminalColorScheme mScheme;
+
     /** Create a new instance with default colors from the theme. */
     public TerminalColors() {
         reset();
@@ -21,12 +28,22 @@ public final class TerminalColors {
 
     /** Reset a particular indexed color with the default color from the color theme. */
     public void reset(int index) {
-        mCurrentColors[index] = COLOR_SCHEME.mDefaultColors[index];
+        mCurrentColors[index] = getScheme().mDefaultColors[index];
+    }
+
+    /** Use a color theme for this terminal only, {@code null} for the one of the settings, and reset to it. */
+    public void setScheme(TerminalColorScheme scheme) {
+        mScheme = scheme;
+        reset();
+    }
+
+    public TerminalColorScheme getScheme() {
+        return mScheme != null ? mScheme : COLOR_SCHEME;
     }
 
     /** Reset all indexed colors with the default color from the color theme. */
     public void reset() {
-        System.arraycopy(COLOR_SCHEME.mDefaultColors, 0, mCurrentColors, 0, TextStyle.NUM_INDEXED_COLORS);
+        System.arraycopy(getScheme().mDefaultColors, 0, mCurrentColors, 0, TextStyle.NUM_INDEXED_COLORS);
     }
 
     /**

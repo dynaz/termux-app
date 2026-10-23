@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_ubuntu_setup_title">Ubuntu setup</string>
+    <string name="terminow_ubuntu_setup_intro">TermiNow prepares its own environment if it is not ready yet, installs proot-distro if needed, then uses the Ubuntu that is installed already or downloads the pinned Ubuntu release (checked with its SHA-256), and checks that it works. Nothing that exists is deleted.</string>
+    <string name="terminow_ubuntu_setup_show_details">Show details</string>
+    <string name="terminow_ubuntu_setup_hide_details">Hide details</string>
+    <string name="terminow_ubuntu_setup_idle">Not started yet.</string>
+    <string name="terminow_ubuntu_setup_running_note">You can close this screen: the setup goes on while TermiNow runs, and shows here again.</string>
+    <string name="terminow_ubuntu_setup_ready">Ubuntu is ready: %1$s, as \'%2$s\'. It starts, reads its /etc/os-release, opens its home folder and runs commands.</string>
+    <string name="terminow_ubuntu_setup_cancelled">Cancelled. Nothing that existed was removed; Retry continues.</string>
+    <string name="terminow_ubuntu_setup_failed">Failed at: %1$s\n%2$s</string>
+    <string name="terminow_ubuntu_setup_close">Close</string>
+    <string name="terminow_ubuntu_setup_copy_log">Copy log</string>
+    <string name="terminow_ubuntu_setup_open">Open Ubuntu</string>
+    <string name="terminow_ubuntu_setup_check_again">Check again</string>
+    <string name="terminow_ubuntu_setup_start">Start</string>
+    <string name="terminow_ubuntu_setup_retry">Retry</string>
+    <string name="terminow_ubuntu_setup_log_copied">Setup log copied</string>
+    <string name="terminow_ubuntu_setup_not_found">The environment %1$s was not found</string>
+    <string name="terminow_ubuntu_stage_runtime">Checking the runtime</string>
+    <string name="terminow_ubuntu_stage_dependencies">Installing dependencies</string>
+    <string name="terminow_ubuntu_stage_packages">Checking package health</string>
+    <string name="terminow_ubuntu_stage_downloading">Downloading Ubuntu</string>
+    <string name="terminow_ubuntu_stage_configuring">Extracting and configuring Ubuntu</string>
+    <string name="terminow_ubuntu_stage_verifying">Verifying Ubuntu</string>
+    <string name="terminow_ubuntu_stage_ready">Ready</string>
+    <string name="terminow_ubuntu_stage_failed">Failed</string>
+    <string name="terminow_ubuntu_stage_preparing">Preparing TermiNow</string>
+    <string name="terminow_linux_install_busy">Another Linux environment is being installed. Let it finish first.</string>
+</resources>

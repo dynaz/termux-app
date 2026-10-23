@@ -8,27 +8,20 @@ import com.termux.terminal.TerminalBuffer;
 import com.termux.terminal.TerminalEmulator;
 import com.termux.terminal.TerminalSession;
 
-import java.lang.reflect.Field;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 public class ShellUtils {
 
-    /** Get process id of {@link Process}. */
+    /**
+     * Get process id of {@link Process}. Android has no public API for it (the pid is a private
+     * field of the implementation), so this is always {@code -1}. It was only used to name the
+     * logs of {@link com.termux.shared.shell.command.runner.app.AppShell} commands, which are
+     * stopped with {@link Process#destroyForcibly()} instead of their pid.
+     */
     public static int getPid(Process p) {
-        try {
-            Field f = p.getClass().getDeclaredField("pid");
-            f.setAccessible(true);
-            try {
-                return f.getInt(p);
-            } finally {
-                f.setAccessible(false);
-            }
-        } catch (Throwable e) {
-            return -1;
-        }
+        return -1;
     }
 
     /** Setup shell command arguments for the execute. */

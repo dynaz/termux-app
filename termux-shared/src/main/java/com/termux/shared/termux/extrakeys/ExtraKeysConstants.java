@@ -2,6 +2,8 @@ package com.termux.shared.termux.extrakeys;
 
 import android.view.KeyEvent;
 
+import com.termux.shared.R;
+
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -54,6 +56,15 @@ public class ExtraKeysConstants {
      * HashMap that implements Python dict.get(key, default) function.
      * Default java.util .get(key) is then the same as .get(key, null);
      */
+    /** Keys that are shown with an icon instead of text, unless a custom display name is set for them. */
+    public static Map<String, Integer> KEY_ICONS = new HashMap<String, Integer>() {{
+        put("SNIPPETS", R.drawable.ic_extra_key_snippets);
+        put("PASSWORD", R.drawable.ic_extra_key_password);
+        put("TAB", R.drawable.ic_extra_key_tab);
+        put("PASTE", R.drawable.ic_extra_key_paste);
+        put("KEYBOARD", R.drawable.ic_extra_key_keyboard);
+    }};
+
     static class CleverMap<K,V> extends HashMap<K,V> {
         V get(K key, V defaultValue) {
             if (containsKey(key))

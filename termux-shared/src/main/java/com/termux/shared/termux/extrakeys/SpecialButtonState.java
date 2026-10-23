@@ -1,5 +1,9 @@
 package com.termux.shared.termux.extrakeys;
 
+import android.content.res.ColorStateList;
+
+import androidx.core.view.ViewCompat;
+
 import com.google.android.material.button.MaterialButton;
 
 import java.util.ArrayList;
@@ -38,14 +42,25 @@ public class SpecialButtonState {
     /** Set {@link #isActive}. */
     public void setIsActive(boolean value) {
         isActive = value;
-        for (MaterialButton button : buttons) {
-            button.setTextColor(value ? mExtraKeysView.getButtonActiveTextColor() : mExtraKeysView.getButtonTextColor());
-        }
+        for (MaterialButton button : buttons) updateLook(button);
     }
 
     /** Set {@link #isLocked}. */
     public void setIsLocked(boolean value) {
         isLocked = value;
+        for (MaterialButton button : buttons) updateLook(button);
+    }
+
+    /**
+     * Show the state on a button: the active color while it is on for the next key, and also an
+     * outline while it is locked on, so that a lock is never mistaken for a key used once.
+     */
+    void updateLook(MaterialButton button) {
+        button.setTextColor(isActive ? mExtraKeysView.getButtonActiveTextColor() : mExtraKeysView.getButtonTextColor());
+        boolean locked = isActive && isLocked;
+        button.setStrokeColor(ColorStateList.valueOf(mExtraKeysView.getButtonActiveTextColor()));
+        button.setStrokeWidth(locked ? Math.round(button.getResources().getDisplayMetrics().density * 1.5f) : 0);
+        ViewCompat.setStateDescription(button, isActive ? (locked ? "locked" : "on") : "off");
     }
 
 }

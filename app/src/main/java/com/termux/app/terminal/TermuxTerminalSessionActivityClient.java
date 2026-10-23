@@ -1,5 +1,6 @@
 package com.termux.app.terminal;
 
+import android.os.Build;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -35,7 +36,9 @@ import com.termux.terminal.TextStyle;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
+import java.util.HashSet;
 import java.util.Properties;
+import java.util.Set;
 
 /** The {@link TerminalSessionClient} implementation that may require an {@link Activity} for its interface methods. */
 public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionClientBase {
@@ -49,6 +52,9 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     private int mBellSoundId;
 
     private static final String LOG_TAG = "TermuxTerminalSessionActivityClient";
+
+    /** The sessions being closed by {@link #closeSession(TerminalSession)} whose processes have not exited yet. */
+    private final Set<TerminalSession> mSessionsToRemoveOnFinish = new HashSet<>();
 
     public TermuxTerminalSessionActivityClient(TermuxActivity activity) {
         this.mActivity = activity;
@@ -123,15 +129,12 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
 
     @Override
     public void onTitleChanged(@NonNull TerminalSession updatedSession) {
+        // The sign that Linux runs in a tab is not a title to show
+        if (com.termux.app.terminow.TerminowLauncher.onTitleChanged(updatedSession)) return;
         if (!mActivity.isVisible()) return;
 
-        if (updatedSession != mActivity.getCurrentSession()) {
-            // Only show toast for other sessions than the current one, since the user
-            // probably consciously caused the title change to change in the current session
-            // and don't want an annoying toast for that.
-            mActivity.showToast(toToastTitle(updatedSession), true);
-        }
-
+        // No toast for a title of another tab: the tabs show the titles, and programs like
+        // Claude Code animate theirs while they work, which made a toast blink again and again
         termuxSessionListNotifyUpdated();
     }
 
@@ -146,6 +149,9 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         }
 
         int index = service.getIndexOfSession(finishedSession);
+
+        // Claude Code, or what else ran, ended: the keys of a terminal for that tab
+        mActivity.getTerminowKeyBar().refresh();
 
         // For plugin commands that expect the result back, we should immediately close the session
         // and send the result back instead of waiting fo the user to press enter.
@@ -163,6 +169,12 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
             // Verify that session was not removed before we got told about it finishing:
             if (index >= 0)
                 mActivity.showToast(toToastTitle(finishedSession) + " - exited", true);
+        }
+
+        // The session was closed by the user, so do not keep it to show how its process exited
+        if (mSessionsToRemoveOnFinish.remove(finishedSession)) {
+            removeFinishedSession(finishedSession);
+            return;
         }
 
         if (mActivity.getPackageManager().hasSystemFeature(PackageManager.FEATURE_LEANBACK)) {
@@ -302,6 +314,12 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         // be stale, like current session not selected or scrolled to.
         checkAndScrollToSession(session);
         updateBackgroundColor();
+
+        // Update the selected tab
+        if (mActivity.getTerminowHome() != null)
+            mActivity.getTerminowHome().refresh();
+        // The keys of what the tab runs, and CTRL and ALT off
+        mActivity.getTerminowKeyBar().refresh();
     }
 
     void notifyOfSessionChange() {
@@ -372,7 +390,10 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
             TerminalSession currentSession = mActivity.getCurrentSession();
 
             String workingDirectory;
-            if (currentSession == null) {
+            if (mActivity.getTerminowHome() != null) {
+                // The folder set for new sessions, instead of the one of the session being shown
+                workingDirectory = mActivity.getTerminowHome().getStartDirectory();
+            } else if (currentSession == null) {
                 workingDirectory = mActivity.getProperties().getDefaultWorkingDirectory();
             } else {
                 workingDirectory = currentSession.getCwd();
@@ -385,6 +406,8 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
             setCurrentSession(newTerminalSession);
 
             mActivity.getDrawer().closeDrawers();
+            if (mActivity.getTerminowHome() != null)
+                mActivity.getTerminowHome().hide();
         }
     }
 
@@ -430,6 +453,20 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         return service.getTerminalSessionForHandle(sessionHandle);
     }
 
+    /** Close a session, its process is killed if it is still running. */
+    public void closeSession(TerminalSession session) {
+        if (session == null) return;
+
+        if (session.isRunning()) {
+            // The session can only be removed after its process has exited, which is
+            // notified to onSessionFinished()
+            mSessionsToRemoveOnFinish.add(session);
+            session.finishIfRunning();
+        } else {
+            removeFinishedSession(session);
+        }
+    }
+
     public void removeFinishedSession(TerminalSession finishedSession) {
         // Return pressed with finished session - remove it.
         TermuxService service = mActivity.getTermuxService();
@@ -439,8 +476,11 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
 
         int size = service.getTermuxSessionsSize();
         if (size == 0) {
-            // There are no sessions to show, so finish the activity.
-            mActivity.finishActivityIfNotFinishing();
+            // There are no sessions to show, so go back to the home screen.
+            if (mActivity.getTerminowHome() != null)
+                mActivity.getTerminowHome().show();
+            else
+                mActivity.finishActivityIfNotFinishing();
         } else {
             if (index >= size) {
                 index = size - 1;
@@ -491,7 +531,16 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     }
 
 
+    /** Why the last colors or font could not be used, {@code null} if they were. */
+    @Nullable private String mStyleError;
+
+    @Nullable
+    public String getStyleError() {
+        return mStyleError;
+    }
+
     public void checkForFontAndColors() {
+        mStyleError = null;
         try {
             File colorsFile = TermuxConstants.TERMUX_COLOR_PROPERTIES_FILE;
             File fontFile = TermuxConstants.TERMUX_FONT_FILE;
@@ -504,16 +553,37 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
             }
 
             TerminalColors.COLOR_SCHEME.updateWith(props);
+            // Every tab takes the new colors, not only the one that is shown
+            TermuxService service = mActivity.getTermuxService();
+            if (service != null) {
+                for (com.termux.shared.termux.shell.command.runner.terminal.TermuxSession termuxSession : service.getTermuxSessions()) {
+                    TerminalSession other = termuxSession.getTerminalSession();
+                    if (other != null && other.getEmulator() != null) other.getEmulator().mColors.reset();
+                }
+            }
             TerminalSession session = mActivity.getCurrentSession();
             if (session != null && session.getEmulator() != null) {
                 session.getEmulator().mColors.reset();
             }
             updateBackgroundColor();
+            // Draw with them now, not only when the program in the tab prints something
+            if (mActivity.getTerminalView() != null) mActivity.getTerminalView().onScreenUpdated();
 
-            final Typeface newTypeface = (fontFile.exists() && fontFile.length() > 0) ? Typeface.createFromFile(fontFile) : Typeface.MONOSPACE;
+            final Typeface newTypeface;
+            if (!fontFile.exists() || fontFile.length() == 0) {
+                newTypeface = Typeface.MONOSPACE;
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                // Use the regular weight of a variable font, whose default may be a lighter one.
+                // This is ignored for a font that is not variable.
+                Typeface typeface = new Typeface.Builder(fontFile).setFontVariationSettings("'wght' 400").build();
+                newTypeface = typeface != null ? typeface : Typeface.MONOSPACE;
+            } else {
+                newTypeface = Typeface.createFromFile(fontFile);
+            }
             mActivity.getTerminalView().setTypeface(newTypeface);
         } catch (Exception e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Error in checkForFontAndColors()", e);
+            mStyleError = String.valueOf(e.getMessage());
         }
     }
 

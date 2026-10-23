@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_import_from_config">จาก ~/.ssh/config ของ TermiNow</string>
+    <string name="terminow_import_from_file">จากไฟล์ในโทรศัพท์นี้ (SSH config หรือ CSV)</string>
+    <string name="terminow_import_termius">จาก Termius</string>
+    <string name="terminow_import_failed">นำเข้าไฟล์ไม่สำเร็จ: %1$s</string>
+    <string name="terminow_import_read_csv">อ่านเป็น CSV</string>
+    <string name="terminow_import_read_config">อ่านเป็น SSH config</string>
+    <string name="terminow_import_missing_keys">ไฟล์คีย์เหล่านี้ยังไม่มีใน TermiNow โฮสต์เหล่านั้นจึงถูกเพิ่มโดยไม่มีคีย์: %1$s นำเข้าที่ พวงกุญแจ → + → นำเข้าคีย์ SSH จากไฟล์ แล้วเลือกให้โฮสต์</string>
+    <string name="terminow_import_none_new">ไม่มีโฮสต์ใหม่ให้นำเข้า</string>
+    <plurals name="terminow_import_new">
+        <item quantity="other">โฮสต์ใหม่ %d รายการ</item>
+    </plurals>
+    <plurals name="terminow_import_existing">
+        <item quantity="other">มีโฮสต์ %d รายการอยู่ใน TermiNow แล้ว จะไม่เปลี่ยนแปลง</item>
+    </plurals>
+    <plurals name="terminow_import_skipped">
+        <item quantity="other">ใช้ไม่ได้ %d แถว:</item>
+    </plurals>
+    <plurals name="terminow_import_button">
+        <item quantity="other">นำเข้า %d โฮสต์</item>
+    </plurals>
+</resources>

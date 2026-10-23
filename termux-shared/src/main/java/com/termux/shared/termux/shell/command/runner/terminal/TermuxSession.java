@@ -16,10 +16,12 @@ import com.termux.shared.errors.Errno;
 import com.termux.shared.logger.Logger;
 import com.termux.shared.shell.command.environment.IShellEnvironment;
 import com.termux.shared.shell.ShellUtils;
+import com.termux.shared.termux.shell.TermuxShellUtils;
 import com.termux.terminal.TerminalSession;
 import com.termux.terminal.TerminalSessionClient;
 
 import java.io.File;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -91,12 +93,23 @@ public class TermuxSession {
             defaultBinPath = "/system/bin";
 
         boolean isLoginShell = false;
+        // Whether the shell is started by the app itself instead of by the login script
+        String directLoginShell = null;
         if (executionCommand.executable == null) {
             if (!executionCommand.isFailsafe) {
+                boolean systemLinkerExecRequired = TermuxShellUtils.isSystemLinkerExecRequired();
                 for (String shellBinary : UnixShellEnvironment.LOGIN_SHELL_BINARIES) {
+                    // The login script picks the shell to start with `test -x`, which is false for
+                    // the files under the app data directory if they can not be executed directly,
+                    // so it would start the system shell. Start the shell itself instead.
+                    if (systemLinkerExecRequired && "login".equals(shellBinary)) continue;
                     File shellFile = new File(defaultBinPath, shellBinary);
-                    if (shellFile.canExecute()) {
+                    // With system linker exec the file is not executed itself, so it does not
+                    // need to be reported as executable to the app
+                    if (shellFile.canExecute() || (systemLinkerExecRequired && shellFile.isFile())) {
                         executionCommand.executable = shellFile.getAbsolutePath();
+                        if (systemLinkerExecRequired)
+                            directLoginShell = executionCommand.executable;
                         break;
                     }
                 }
@@ -119,10 +132,19 @@ public class TermuxSession {
         }
 
         // Setup command args
+        TermuxShellUtils.setupSystemLinkerExecLdPreloadLib();
         String[] commandArgs = shellEnvironmentClient.setupShellCommandArguments(executionCommand.executable, executionCommand.arguments);
+        if (directLoginShell != null) {
+            // The system linker sets the name of the process to the path of the file, so the
+            // shell can not be told to be a login shell by starting its name with a dash
+            commandArgs = Arrays.copyOf(commandArgs, commandArgs.length + 1);
+            commandArgs[commandArgs.length - 1] = "-l";
+        }
 
         executionCommand.executable = commandArgs[0];
-        String processName = (isLoginShell ? "-" : "") + ShellUtils.getExecutableBasename(executionCommand.executable);
+        // If the file is executed with the system linker, then name the process after the file
+        String processExecutable = TermuxShellUtils.isSystemLinkerPath(commandArgs[0]) && commandArgs.length > 1 ? commandArgs[1] : commandArgs[0];
+        String processName = (isLoginShell ? "-" : "") + ShellUtils.getExecutableBasename(processExecutable);
 
         String[] arguments = new String[commandArgs.length];
         arguments[0] = processName;
@@ -138,6 +160,9 @@ public class TermuxSession {
             executionCommand);
         if (additionalEnvironment != null)
             environment.putAll(additionalEnvironment);
+        // Set by the login script otherwise, and used by programs like tmux to start a shell
+        if (directLoginShell != null)
+            environment.put("SHELL", directLoginShell);
         List<String> environmentList = ShellEnvironmentUtils.convertEnvironmentToEnviron(environment);
         Collections.sort(environmentList);
         String[] environmentArray = environmentList.toArray(new String[0]);

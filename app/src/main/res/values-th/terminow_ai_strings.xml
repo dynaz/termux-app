@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_ai_integration">การเชื่อมต่อ AI</string>
+    <string name="terminow_ai_rail">AI</string>
+    <string name="terminow_ai_integration_summary">ให้ Claude Code ใช้โฮสต์ของคุณผ่านเครื่องมือที่อนุญาต</string>
+    <string name="terminow_ai_enable">เปิด Local AI Bridge</string>
+    <string name="terminow_ai_enable_desc">Claude Code ในสภาพแวดล้อม Linux ใช้โฮสต์ที่คุณอนุญาตได้ผ่าน TermiNow คีย์ส่วนตัว รหัสผ่าน และโทเคนอยู่ใน TermiNow และไม่ถูกส่งให้ Claude</string>
+    <string name="terminow_ai_status_on">กำลังรับที่ 127.0.0.1:%1$d · %2$d สภาพแวดล้อม · เปิด %3$d · สิทธิ์ %4$d</string>
+    <string name="terminow_ai_status_error">ไม่ได้รับการเชื่อมต่อ: %1$s</string>
+    <string name="terminow_ai_status_off">ปิด</string>
+    <string name="terminow_ai_connect_section">เชื่อมต่อ Claude Code</string>
+    <string name="terminow_ai_connect">เชื่อมต่อ</string>
+    <string name="terminow_ai_disconnect">ยกเลิกการเชื่อมต่อ</string>
+    <string name="terminow_ai_connected">เชื่อมต่อแล้ว · รีสตาร์ท Claude Code เพื่อโหลด</string>
+    <string name="terminow_ai_not_connected">ยังไม่เชื่อมต่อ</string>
+    <string name="terminow_ai_no_env">ติดตั้งสภาพแวดล้อม Linux ก่อน (File Manager → Browse Linux)</string>
+    <string name="terminow_ai_hosts_section">โฮสต์</string>
+    <string name="terminow_ai_host_allowed">อนุญาต: %1$s</string>
+    <string name="terminow_ai_host_off">ปิดการเข้าถึงของ AI</string>
+    <string name="terminow_ai_no_hosts">ยังไม่มีโฮสต์ SSH</string>
+    <string name="terminow_ai_revoke_all">เพิกถอน / ตัดการเชื่อมต่อทั้งหมด</string>
+    <string name="terminow_ai_revoked">เพิกถอนการเข้าถึงของ AI ทั้งหมดแล้ว</string>
+    <string name="terminow_ai_access_title">การเข้าถึงของ AI · %1$s</string>
+    <string name="terminow_ai_allow_host">อนุญาตให้ AI ในเครื่องเข้าถึง</string>
+    <string name="terminow_ai_cap_test">ทดสอบการเชื่อมต่อ (ssh_test)</string>
+    <string name="terminow_ai_cap_exec">รันคำสั่ง (ssh_exec)</string>
+    <string name="terminow_ai_exec_warning">คำสั่งจะรันด้วยสิทธิ์ทั้งหมดของบัญชี SSH ขอบเขตโฟลเดอร์ SFTP ไม่จำกัดคำสั่ง</string>
+    <string name="terminow_ai_policy">การอนุมัติ</string>
+    <string name="terminow_ai_policy_rules">ใช้กฎที่บันทึกไว้</string>
+    <string name="terminow_ai_policy_session">อนุญาตสำหรับเซสชัน</string>
+    <string name="terminow_ai_policy_ask">ถามทุกครั้ง</string>
+    <string name="terminow_ai_not_ssh">เฉพาะโฮสต์ SSH เท่านั้นที่ AI ใช้ได้</string>
+    <string name="terminow_ai_bridge_off_note">เปิด Local AI Bridge ด้านบนเพื่อใช้งาน</string>
+</resources>

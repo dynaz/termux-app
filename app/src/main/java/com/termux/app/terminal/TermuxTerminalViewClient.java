@@ -17,8 +17,12 @@ import android.widget.EditText;
 import android.widget.ListView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+
 import com.termux.R;
 import com.termux.app.TermuxActivity;
+import com.termux.app.TermuxService;
 import com.termux.shared.file.FileUtils;
 import com.termux.shared.interact.MessageDialogUtils;
 import com.termux.shared.interact.ShareUtils;
@@ -198,6 +202,8 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
             }
         }
 
+        // Typing goes where the tap was, also when another view kept the focus
+        mActivity.focusTerminal();
         if (!term.isMouseTrackingActive() && !e.isFromSource(InputDevice.SOURCE_MOUSE)) {
             if (!KeyboardUtils.areDisableSoftKeyboardFlagsSet(mActivity))
                 KeyboardUtils.showSoftKeyboard(mActivity, mActivity.getTerminalView());
@@ -259,6 +265,9 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
                 mActivity.getDrawer().closeDrawers();
             } else if (unicodeChar == 'k'/* keyboard */) {
                 onToggleSoftKeyboardRequest();
+            } else if (unicodeChar == 's'/* shortcuts */) {
+                // The commands and shortcuts of the key bar, also with a hardware keyboard
+                mActivity.getTerminowKeyBar().showCommands();
             } else if (unicodeChar == 'm'/* menu */) {
                 mActivity.getTerminalView().showContextMenu();
             } else if (unicodeChar == 'r'/* rename */) {
@@ -322,12 +331,14 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
 
     @Override
     public boolean readControlKey() {
-        return readExtraKeysSpecialButton(SpecialButton.CTRL) || mVirtualControlKeyDown;
+        return readExtraKeysSpecialButton(SpecialButton.CTRL) || mVirtualControlKeyDown ||
+            com.termux.app.terminow.TerminowKeyPanel.readCtrl() || com.termux.app.terminow.TerminowKeyBar.readCtrl();
     }
 
     @Override
     public boolean readAltKey() {
-        return readExtraKeysSpecialButton(SpecialButton.ALT);
+        return readExtraKeysSpecialButton(SpecialButton.ALT) || com.termux.app.terminow.TerminowKeyPanel.readAlt() ||
+            com.termux.app.terminow.TerminowKeyBar.readAlt();
     }
 
     @Override
@@ -353,6 +364,67 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
     @Override
     public boolean onLongPress(MotionEvent event) {
         return false;
+    }
+
+    @Override
+    public boolean canOpenUrls() {
+        return true;
+    }
+
+    /** Open in Chrome of the selection menu: in Chrome, or the default browser, outside of TermiNow. */
+    @Override
+    public boolean onOpenUrls(@NonNull java.util.List<String> urls) {
+        com.termux.app.terminow.TerminowBrowser.open(mActivity, urls);
+        return true;
+    }
+
+    @Override
+    public boolean canOpenPath() {
+        return true;
+    }
+
+    /** Open a file path from the selection menu, resolved in the environment of the tab. */
+    @Override
+    public boolean onOpenPath(@NonNull String path, boolean chooser) {
+        com.termux.app.terminow.TerminowOpen.open(mActivity, mActivity.getCurrentSession(), path, chooser);
+        return true;
+    }
+
+    /** Switching sessions by dragging the terminal sideways, made when it is first dragged. */
+    @Nullable private com.termux.app.terminow.TerminowSessionSwipe mSessionSwipe;
+
+    @Override
+    public boolean canDragToSwitchSessions() {
+        TermuxService service = mActivity.getTermuxService();
+        return service != null && service.getTermuxSessionsSize() >= 2 && !mActivity.isHomeVisible();
+    }
+
+    @Override
+    public void onHorizontalDrag(float dx) {
+        sessionSwipe().drag(dx);
+    }
+
+    @Override
+    public void onHorizontalDragEnd(float dx, float velocityX, boolean cancelled) {
+        sessionSwipe().release(dx, velocityX, cancelled);
+    }
+
+    @NonNull
+    private com.termux.app.terminow.TerminowSessionSwipe sessionSwipe() {
+        if (mSessionSwipe == null)
+            mSessionSwipe = new com.termux.app.terminow.TerminowSessionSwipe(mActivity.getTerminalView(),
+                // Swiping left shows the next session, like turning a page
+                forward -> mTermuxTerminalSessionActivityClient.switchToSession(forward));
+        return mSessionSwipe;
+    }
+
+    @Override
+    public boolean onHorizontalSwipe(boolean toLeft) {
+        TermuxService service = mActivity.getTermuxService();
+        if (service == null || service.getTermuxSessionsSize() < 2) return false;
+        // Swiping left shows the next session, like turning a page.
+        mTermuxTerminalSessionActivityClient.switchToSession(toLeft);
+        return true;
     }
 
 
@@ -566,6 +638,9 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
     }
 
     public void setSoftKeyboardState(boolean isStartup, boolean isReloadTermuxProperties) {
+        // The soft keyboard is for the terminal, which is covered while the home screen is shown
+        if (mActivity.isHomeVisible()) return;
+
         boolean noShowKeyboard = false;
 
         // Requesting terminal view focus is necessary regardless of if soft keyboard is to be
@@ -612,6 +687,9 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
         mActivity.getTerminalView().setOnFocusChangeListener(new View.OnFocusChangeListener() {
             @Override
             public void onFocusChange(View view, boolean hasFocus) {
+                // Leave the soft keyboard to the home screen while it is shown, like for its search
+                if (mActivity.isHomeVisible()) return;
+
                 // Force show soft keyboard if TerminalView or toolbar text input view has
                 // focus and close it if they don't
                 boolean textInputViewHasFocus = false;
@@ -648,6 +726,8 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
     private Runnable getShowSoftKeyboardRunnable() {
         if (mShowSoftKeyboardRunnable == null) {
             mShowSoftKeyboardRunnable = () -> {
+                // The home screen may have been shown since the runnable was posted
+                if (mActivity.isHomeVisible()) return;
                 KeyboardUtils.showSoftKeyboard(mActivity, mActivity.getTerminalView());
             };
         }

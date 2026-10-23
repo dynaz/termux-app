@@ -48,6 +48,55 @@ public interface TerminalViewClient {
 
     boolean onLongPress(MotionEvent event);
 
+    /**
+     * On a horizontal swipe across the terminal. {@code toLeft} is true when the finger moved left.
+     * Return true if the swipe was handled.
+     */
+    boolean onHorizontalSwipe(boolean toLeft);
+
+    /**
+     * Open links that were in the text the user selected, in a browser, when the user asked to;
+     * more than one: let the user pick. Return false if this client can not open links, and the
+     * selection then offers no such action.
+     */
+    default boolean onOpenUrls(@androidx.annotation.NonNull java.util.List<String> urls) {
+        return false;
+    }
+
+    /** Whether {@link #onOpenUrls} opens links. */
+    default boolean canOpenUrls() {
+        return false;
+    }
+
+    /**
+     * Open a file path that was in the selected text, resolved in the environment of the tab:
+     * directly, or with a chooser ("Open with"). The client decides where the path is and whether
+     * it can be opened, and tells the user when it can not. Return false if this client does not
+     * open files, and the selection then offers no such action.
+     */
+    default boolean onOpenPath(@androidx.annotation.NonNull String path, boolean chooser) {
+        return false;
+    }
+
+    /** Whether {@link #onOpenPath} opens files. */
+    default boolean canOpenPath() {
+        return false;
+    }
+
+    /** Whether a sideways drag of a finger moves the terminal to another session, see {@link #onHorizontalDrag}. */
+    default boolean canDragToSwitchSessions() {
+        return false;
+    }
+
+    /** A finger drags the terminal sideways by dx pixels from where the drag began. */
+    default void onHorizontalDrag(float dx) {}
+
+    /**
+     * The finger was lifted after a sideways drag, at velocityX pixels per second, or the drag
+     * was cancelled: switch to the next session or go back.
+     */
+    default void onHorizontalDragEnd(float dx, float velocityX, boolean cancelled) {}
+
 
 
     boolean readControlKey();

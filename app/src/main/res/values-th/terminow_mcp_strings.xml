@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_mcp_added">ที่เพิ่มแล้ว</string>
+    <plurals name="terminow_mcp_count">
+        <item quantity="other">เซิร์ฟเวอร์ MCP %1$d รายการ</item>
+    </plurals>
+    <string name="terminow_mcp_add_short">+ เพิ่ม</string>
+    <string name="terminow_mcp_page_options">ตัวเลือก MCP</string>
+    <string name="terminow_mcp_filter_all">ทั้งหมด</string>
+    <string name="terminow_mcp_filter_remote">ระยะไกล</string>
+    <string name="terminow_mcp_filter_local">ในเครื่อง</string>
+    <string name="terminow_mcp_filter_passed">เชื่อมต่อแล้ว</string>
+    <string name="terminow_mcp_filter_needs_login">ต้องเข้าสู่ระบบ</string>
+    <string name="terminow_mcp_empty_short">เพิ่มเซิร์ฟเวอร์ MCP ระยะไกลหรือในเครื่อง เชื่อมต่อและเรียกใช้เครื่องมือ หรือเพิ่มลงใน Claude Code</string>
+    <string name="terminow_mcp_cancel_short">ยกเลิก</string>
+    <string name="terminow_mcp_actions_of">การทำงานของ %1$s</string>
+    <string name="terminow_mcp_row_secret_missing">ไม่มีข้อมูลรับรอง แก้ไขเพื่อใส่ใหม่</string>
+    <string name="terminow_mcp_row_not_tested">ยังไม่ได้ทดสอบ</string>
+    <plurals name="terminow_mcp_row_passed">
+        <item quantity="other">ทดสอบผ่าน · เครื่องมือ %1$d รายการ</item>
+    </plurals>
+    <string name="terminow_mcp_row_needs_login">ต้องเข้าสู่ระบบ</string>
+    <string name="terminow_mcp_row_failed">ทดสอบไม่ผ่าน ดูรายละเอียด</string>
+    <string name="terminow_mcp_row_in_claude">อยู่ใน Claude Code (%1$s)</string>
+    <string name="terminow_mcp_row_in_claude_unverified">เขียนให้ Claude Code (%1$s) แล้ว แต่ยังไม่ได้ยืนยัน</string>
+    <string name="terminow_mcp_footer">แตะเซิร์ฟเวอร์เพื่อเชื่อมต่อและเรียกใช้เครื่องมือ การทดสอบตรวจการเชื่อมต่อจากแอปนี้เท่านั้น ไม่ใช่จาก Claude Code</string>
+    <string name="terminow_mcp_premium_title">เซิร์ฟเวอร์ MCP เป็นฟีเจอร์ Premium</string>
+    <string name="terminow_mcp_premium_features">• บันทึกเซิร์ฟเวอร์ MCP ระยะไกลและในเครื่องพร้อมข้อมูลรับรองที่เข้ารหัส\n• เชื่อมต่อ ดูเครื่องมือ และเรียกใช้หลังจากยืนยัน\n• เพิ่มลงใน Claude Code ใน TermiNow หรือ Ubuntu พร้อมดูตัวอย่างและสำรองไฟล์</string>
+    <string name="terminow_mcp_premium_kept_none">เซิร์ฟเวอร์ที่เพิ่มลงใน Claude Code แล้วยังใช้งานได้ตามเดิม</string>
+    <plurals name="terminow_mcp_premium_kept">
+        <item quantity="other">เซิร์ฟเวอร์ที่บันทึกไว้ %1$d รายการยังอยู่ครบ และเซิร์ฟเวอร์ที่เพิ่มลงใน Claude Code แล้วยังใช้งานได้ตามเดิม</item>
+    </plurals>
+    <string name="terminow_mcp_premium_message">การจัดการเซิร์ฟเวอร์ MCP เป็นส่วนหนึ่งของ TermiNow Premium เซิร์ฟเวอร์ที่บันทึกไว้ยังอยู่ครบ และเซิร์ฟเวอร์ที่เพิ่มลงใน Claude Code แล้วยังใช้งานได้ตามเดิม</string>
+    <string name="terminow_mcp_tab_servers">เซิร์ฟเวอร์ของฉัน</string>
+    <string name="terminow_mcp_tab_browse">เรียกดู</string>
+    <string name="terminow_mcp_browse_servers">เรียกดูเซิร์ฟเวอร์</string>
+    <string name="terminow_mcp_category_developer">เครื่องมือนักพัฒนา</string>
+    <string name="terminow_mcp_category_productivity">การทำงาน</string>
+    <string name="terminow_mcp_category_business">ธุรกิจ</string>
+    <string name="terminow_mcp_category_data">ข้อมูล</string>
+    <string name="terminow_mcp_category_custom">กำหนดเอง</string>
+    <plurals name="terminow_mcp_row_connected">
+        <item quantity="other">เชื่อมต่อเมื่อ %1$s · เครื่องมือ %2$d รายการ</item>
+    </plurals>
+    <string name="terminow_mcp_catalog_footer">ที่อยู่ปลายทางมาจากเอกสารของผู้ให้บริการแต่ละราย ตรวจสอบเมื่อ %1$s TermiNow เรียกใช้เครื่องมือเฉพาะเมื่อคุณสั่งเองและยืนยันอาร์กิวเมนต์แล้วเท่านั้น</string>
+    <string name="terminow_mcp_catalog_local">ในเครื่อง</string>
+    <string name="terminow_mcp_catalog_manual">ตั้งค่าเอง</string>
+    <string name="terminow_mcp_catalog_added">เพิ่มแล้ว</string>
+    <string name="terminow_mcp_catalog_add">เพิ่ม %1$s</string>
+    <string name="terminow_mcp_catalog_publisher">ผู้เผยแพร่: %1$s</string>
+    <string name="terminow_mcp_catalog_transport_http">การเชื่อมต่อ: Streamable HTTP (ระยะไกล)</string>
+    <string name="terminow_mcp_catalog_transport_manual">การเชื่อมต่อ: ระยะไกล เอกสารไม่ได้ระบุ URL ที่แน่นอน</string>
+    <string name="terminow_mcp_catalog_transport_local">การเชื่อมต่อ: stdio (คำสั่งในเครื่อง)</string>
+    <string name="terminow_mcp_catalog_endpoint">ปลายทาง: %1$s</string>
+    <string name="terminow_mcp_catalog_command">คำสั่ง: %1$s</string>
+    <string name="terminow_mcp_catalog_auth">การเข้าสู่ระบบ: %1$s</string>
+    <string name="terminow_mcp_catalog_oauth_note">TermiNow ไม่ได้เข้าสู่ระบบด้วย OAuth เอง การทดสอบจะแสดงว่าต้องเข้าสู่ระบบ ให้เพิ่มเซิร์ฟเวอร์ลงใน Claude Code แล้วเข้าสู่ระบบที่นั่นด้วย /mcp</string>
+    <string name="terminow_mcp_catalog_verified">ปลายทางและการเข้าสู่ระบบมาจากเอกสารทางการ ตรวจสอบเมื่อ %1$s</string>
+    <string name="terminow_mcp_catalog_documented">มาจากเอกสารทางการ ตรวจสอบเมื่อ %1$s จะไม่กรอกสิ่งที่เอกสารไม่ได้ระบุไว้อย่างแน่นอน</string>
+    <string name="terminow_mcp_catalog_local_note">TermiNow ยังเรียกใช้หรือทดสอบเซิร์ฟเวอร์ในเครื่องไม่ได้ คัดลอกคำสั่งไปเพิ่มลงใน Claude Code ในสภาพแวดล้อมที่มีโปรแกรมที่ต้องใช้ เช่น Ubuntu ของคุณ</string>
+    <string name="terminow_mcp_catalog_docs">เอกสาร</string>
+    <string name="terminow_mcp_catalog_add_server">เพิ่มเซิร์ฟเวอร์</string>
+    <string name="terminow_mcp_catalog_copy_command">คัดลอกคำสั่ง</string>
+    <string name="terminow_mcp_catalog_prefilled">จากแคตตาล็อก: %1$s การเข้าสู่ระบบ: %2$s ตรวจสอบข้อมูลก่อนบันทึก</string>
+</resources>

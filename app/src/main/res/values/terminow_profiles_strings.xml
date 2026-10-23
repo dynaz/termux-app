@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Open tools -->
+    <string name="terminow_tools_title">Open tools</string>
+    <string name="terminow_tools_user">User: %1$s</string>
+    <string name="terminow_tools_available">Available</string>
+    <string name="terminow_tools_unavailable">Not available: not installed</string>
+    <string name="terminow_tools_ubuntu_terminal">Ubuntu Terminal</string>
+    <string name="terminow_tools_claude_project">Claude — %1$s</string>
+    <string name="terminow_tools_run">Run</string>
+    <string name="terminow_tools_tmux">tmux Sessions</string>
+    <string name="terminow_tools_tmux_summary">The tmux sessions running in %1$s</string>
+    <string name="terminow_tools_tmux_checking">Looking for tmux sessions…</string>
+    <string name="terminow_tools_tmux_missing">tmux is not installed in %1$s. Install it with:</string>
+    <string name="terminow_tools_tmux_missing_started">tmux is not installed in %1$s, so the tab started without it</string>
+    <string name="terminow_tools_tmux_none">No tmux sessions are running</string>
+    <string name="terminow_tools_tmux_attached">%1$s windows · attached somewhere</string>
+    <string name="terminow_tools_tmux_detached">%1$s windows · detached</string>
+    <string name="terminow_tools_tmux_attach">Open</string>
+    <string name="terminow_tools_tmux_by_hand">Attach by hand with tmux attach</string>
+    <string name="terminow_tools_tmux_new">New tmux session</string>
+    <string name="terminow_tools_tmux_name_hint">Letters, digits, - and _, not starting with -. An existing session with this name is opened instead of creating a second one.</string>
+    <string name="terminow_tools_commands">My Commands</string>
+    <string name="terminow_tools_commands_summary">Commands you saved, each opens in a new tab</string>
+    <string name="terminow_tools_commands_none">No saved commands yet. A command is shown to you before it runs the first time.</string>
+    <string name="terminow_tools_commands_add">Add command</string>
+    <string name="terminow_tools_profiles_summary">%1$d saved · new Local Terminals open: %2$s</string>
+
+    <!-- Toolbar -->
+    <string name="terminow_toolbar_more">More</string>
+    <string name="terminow_toolbar_unknown">Unknown</string>
+    <string name="terminow_toolbar_environment_description">Environment of this tab: %1$s. Change environment</string>
+    <string name="terminow_toolbar_folder_description">Working folder: %1$s. Change folder</string>
+    <string name="terminow_toolbar_already_in">This tab is already %1$s</string>
+    <string name="terminow_toolbar_switched">Switched to %1$s</string>
+    <string name="terminow_toolbar_folder_set">Working folder set</string>
+    <string name="terminow_toolbar_folder_set_message">New tabs of %2$s open in %1$s. Running tabs are not changed, nothing is typed into them.</string>
+    <string name="terminow_toolbar_open_tab_here">Open a tab here</string>
+    <string name="terminow_toolbar_folder_unknown">The folder of this tab is unknown</string>
+    <string name="terminow_toolbar_copy_folder">Copy folder path</string>
+    <string name="terminow_toolbar_session_details">Tab details</string>
+    <string name="terminow_toolbar_details">Environment: %1$s\nProgram: %2$s\nStarted in: %3$s\ntmux: %4$s\nState: %5$s</string>
+    <string name="terminow_toolbar_no_tmux">Not in tmux</string>
+    <string name="terminow_toolbar_state_running">Running</string>
+    <string name="terminow_toolbar_state_starting">Starting</string>
+    <string name="terminow_toolbar_state_ended">Ended (exit code %1$d)</string>
+    <string name="terminow_toolbar_tracked">TermiNow started this tab. What runs in it now may have changed since, for example after cd or exit.</string>
+    <string name="terminow_toolbar_untracked">TermiNow did not start this tab with the launcher, so it does not know what runs in it. Nothing is sent to it.</string>
+
+    <!-- Launch profiles -->
+    <string name="terminow_profiles_manage">Manage Launch Profiles</string>
+    <string name="terminow_profiles_manage_short">Manage</string>
+    <string name="terminow_profiles_new">New profile</string>
+    <string name="terminow_profiles_custom">Custom launch profile…</string>
+    <string name="terminow_profiles_open_from">Open a launch profile…</string>
+    <string name="terminow_profiles_empty">No launch profiles yet. A profile opens an environment, a folder and a tool, or your own command, in a new tab.</string>
+    <string name="terminow_profiles_no_secrets">Profiles are kept on this phone only. Do not put passwords, API keys or tokens in them: commands that look like they have one are not saved.</string>
+    <string name="terminow_profiles_close">Close</string>
+    <string name="terminow_profiles_open">Open</string>
+    <string name="terminow_profiles_edit">Edit profile</string>
+    <string name="terminow_profiles_save">Save</string>
+    <string name="terminow_profiles_saved">Saved %1$s</string>
+    <string name="terminow_profiles_delete">Delete</string>
+    <string name="terminow_profiles_delete_title">Delete %1$s?</string>
+    <string name="terminow_profiles_make_default">Open it for new Local Terminals</string>
+    <string name="terminow_profiles_default_set">New Local Terminals open %1$s</string>
+    <string name="terminow_profiles_is_default">default</string>
+    <string name="terminow_profiles_name">Name</string>
+    <string name="terminow_profiles_name_hint">My project</string>
+    <string name="terminow_profiles_icon">Icon</string>
+    <string name="terminow_profiles_folder">Working folder</string>
+    <string name="terminow_profiles_folder_home">Home folder</string>
+    <string name="terminow_profiles_tool">Tool</string>
+    <string name="terminow_profiles_tool_shell">Shell (bash)</string>
+    <string name="terminow_profiles_tool_claude">Claude Code, new conversation</string>
+    <string name="terminow_profiles_tool_claude_continue">Claude Code, continue latest</string>
+    <string name="terminow_profiles_tool_claude_resume">Claude Code, resume…</string>
+    <string name="terminow_profiles_tool_custom">My own command</string>
+    <string name="terminow_profiles_command">Command</string>
+    <string name="terminow_profiles_command_hint">npm run dev</string>
+    <string name="terminow_profiles_tmux">tmux</string>
+    <string name="terminow_profiles_tmux_off">No tmux</string>
+    <string name="terminow_profiles_tmux_create">Create a new tmux session</string>
+    <string name="terminow_profiles_tmux_attach">Open the tmux session of the profile, or create it</string>
+    <string name="terminow_profiles_error_name">Give the profile a name</string>
+    <string name="terminow_profiles_error_command">Enter the command to run</string>
+    <string name="terminow_profiles_error_secret">This looks like it has a password, key or token. Profiles do not keep secrets: let the program ask for it, or use its own login.</string>
+    <string name="terminow_profiles_error_environment">This environment or user is not installed</string>
+    <string name="terminow_profiles_env_gone">%1$s (not installed)</string>
+    <string name="terminow_profiles_env_missing">The environment %1$s is not installed. Set it up in Quick Launch, or edit the profile.</string>
+    <string name="terminow_profiles_user_missing">The user %1$s does not exist in %2$s. Edit the profile.</string>
+    <string name="terminow_profiles_folder_missing">The folder %1$s does not exist any more. Edit the profile.</string>
+    <string name="terminow_profiles_confirm_title">Run %1$s?</string>
+    <string name="terminow_profiles_confirm_message">This command runs in a new tab of %1$s, in %2$s. It is shown again only if you change it.</string>
+    <string name="terminow_profiles_default_local">TermiNow shell (Local)</string>
+    <string name="terminow_profiles_default_container">Ubuntu shell (%1$s)</string>
+    <string name="terminow_profiles_default_missing">The default launch profile is gone, the TermiNow shell opened instead</string>
+    <string name="terminow_settings_default_profile">Default local launch profile</string>
+    <string name="terminow_settings_default_profile_short">Default…</string>
+
+    <!-- Ubuntu setup, folders, Claude sign-in -->
+    <string name="terminow_launcher_ubuntu_setup">Set up Ubuntu</string>
+    <string name="terminow_launcher_open_plain_shell">Open plain shell</string>
+    <string name="terminow_launcher_folder_saf">This is a document of Android\'s file picker, not a folder a shell can open. Copy it into TermiNow Home with the File Manager, then choose it here.</string>
+    <string name="terminow_launcher_login_link_title">Claude sign-in link</string>
+    <string name="terminow_launcher_login_link_message">Claude Code printed a link to sign in with your Anthropic account. Open it in your browser, then paste the code it shows into the login tab if asked. TermiNow never sees your password.</string>
+    <string name="terminow_launcher_login_link_open">Open in browser</string>
+    <string name="terminow_launcher_login_link_copy">Copy link</string>
+    <string name="terminow_launcher_login_link_later">Not now</string>
+    <string name="terminow_launcher_login_link_no_browser">No browser to open it, copy the link instead</string>
+</resources>

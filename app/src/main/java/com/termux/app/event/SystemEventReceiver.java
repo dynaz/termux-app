@@ -1,6 +1,7 @@
 package com.termux.app.event;
 
 import android.content.BroadcastReceiver;
+import androidx.core.content.ContextCompat;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -81,7 +82,7 @@ public class SystemEventReceiver extends BroadcastReceiver {
         intentFilter.addAction(Intent.ACTION_PACKAGE_REMOVED);
         intentFilter.addAction(Intent.ACTION_PACKAGE_REPLACED);
         intentFilter.addDataScheme("package");
-        context.registerReceiver(getInstance(), intentFilter);
+        ContextCompat.registerReceiver(context, getInstance(), intentFilter, ContextCompat.RECEIVER_NOT_EXPORTED);
     }
 
     public synchronized static void unregisterPackageUpdateEvents(@NonNull Context context) {

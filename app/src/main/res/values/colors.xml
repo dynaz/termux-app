@@ -1,3 +1,51 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Launcher icon. -->
+    <color name="terminow_launcher_background">#101113</color>
+
+    <!-- Home screen and tab bar. -->
+    <color name="terminow_bg">#1E2132</color>
+    <color name="terminow_bar_home">#272B3D</color>
+    <color name="terminow_bar_terminal">#111111</color>
+    <color name="terminow_surface">#2E3246</color>
+    <color name="terminow_field">#14172A</color>
+    <color name="terminow_tab">#33FFFFFF</color>
+    <color name="terminow_tab_idle">#14FFFFFF</color>
+    <color name="terminow_rail_selected">#1F4E80</color>
+    <color name="terminow_text">#FFFFFFFF</color>
+    <color name="terminow_text_secondary">#8D93A8</color>
+    <color name="terminow_accent">#2196F3</color>
+    <color name="terminow_host_ssh">#F2585B</color>
+    <color name="terminow_host_mosh">#0D5C91</color>
+    <color name="terminow_host_local">#2E7D5B</color>
+    <color name="terminow_host_group">#4A5073</color>
+    <color name="terminow_host_rdp">#0078D4</color>
+    <color name="terminow_host_winrm">#2B5797</color>
+
+    <!-- Host form panel. -->
+    <color name="terminow_panel">#1E2233</color>
+    <color name="terminow_panel_card">#2B3046</color>
+    <color name="terminow_panel_line">#6B7190</color>
+    <color name="terminow_panel_accent">#21C17A</color>
+    <color name="terminow_mcp_warn">#F5A623</color>
+    <color name="terminow_panel_scrim">#99000000</color>
+    <color name="terminow_panel_button">#2F344B</color>
+
+    <!-- Quick Launch. -->
+    <color name="terminow_quick_card">#1B2236</color>
+    <color name="terminow_quick_border">#2C3650</color>
+    <color name="terminow_quick_primary">#1F6FEB</color>
+    <color name="terminow_quick_ready">#22C55E</color>
+    <color name="terminow_quick_idle">#94A3B8</color>
+
+    <!-- Extra keys bar. -->
+    <color name="terminow_keys_bar">#1C1C1E</color>
+    <color name="terminow_keys_text">#E6E6E6</color>
+    <color name="terminow_keys_active">#3A3A3C</color>
+    <color name="terminow_keys_active_text">#4DA3FF</color>
+    <!-- Keycaps of the key bar on terminow_keys_bar: a little lighter, with a thin border -->
+    <color name="terminow_keycap">#2A2A2E</color>
+    <color name="terminow_keycap_border">#45454C</color>
+    <!-- The label of a locked modifier on the accent -->
+    <color name="terminow_keycap_on_accent">#0B1F14</color>
 </resources>

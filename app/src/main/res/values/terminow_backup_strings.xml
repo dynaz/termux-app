@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_backup_menu">Back up to a server…</string>
+    <string name="terminow_backup_title">Back up %1$s</string>
+    <string name="terminow_backup_server">Server</string>
+    <string name="terminow_backup_remote_dir">Folder on the server</string>
+    <string name="terminow_backup_mode_folders">Folders, with rsync: only what changed is sent</string>
+    <string name="terminow_backup_mode_system">Whole system, as one archive that Import restores</string>
+    <string name="terminow_backup_folders">Folders, like /root /home</string>
+    <string name="terminow_backup_install_rsync">Install rsync in %1$s if it is missing (apt-get install rsync)</string>
+    <string name="terminow_backup_note_folders">rsync must also be on the server. The folders keep their paths there, like root/… and home/…, and nothing on the server is deleted. TermiNow logs in with the key, passphrase and jump host of the server.</string>
+    <string name="terminow_backup_note_system">All of %1$s goes into one .tar.gz on the server, named with the date. To restore it, copy it to the phone and use Add environment → Import. Close other tabs of %1$s first, so files do not change while they are read.</string>
+    <string name="terminow_backup_run">Back up</string>
+    <string name="terminow_backup_tab">Backup · %1$s → %2$s</string>
+    <string name="terminow_backup_no_hosts">Add the server you back up to as an SSH host first, with its key or password.</string>
+    <string name="terminow_backup_invalid_dir">A folder like terminow-backups/ubuntu or ~/backups, without spaces or ..</string>
+    <string name="terminow_backup_invalid_folders">Folders that start with /, separated by spaces, like /root /home</string>
+    <string name="terminow_quick_backup">Back up</string>
+    <string name="terminow_phone_backup_menu">Back up to phone storage…</string>
+    <string name="terminow_phone_backup_busy">A backup to the phone is running already</string>
+    <string name="terminow_phone_backup_hide">Hide</string>
+    <string name="terminow_phone_backup_cancel">Stop backup</string>
+    <string name="terminow_phone_backup_keep">Keep going</string>
+    <string name="terminow_phone_backup_cancel_confirm">Stop the backup? The unfinished file is deleted.</string>
+    <string name="terminow_phone_backup_done_toast">%1$s is backed up in %2$s</string>
+    <string name="terminow_phone_restore_menu">Restore from phone storage…</string>
+    <string name="terminow_phone_restore_summary">From a .tar.gz that Back up to phone storage or proot-distro backup saved</string>
+    <string name="terminow_phone_restore_title">Restore %1$s</string>
+    <string name="terminow_phone_restore_replace">Restoring %3$s replaces %1$s (%2$s): all of its files now are deleted, and the files of the backup take their place.</string>
+    <string name="terminow_phone_restore_new">%2$s is a backup of %1$s, which is not installed. It is restored as the environment %1$s.</string>
+    <string name="terminow_phone_restore_confirm_check">I understand that the files in %1$s now are replaced</string>
+    <string name="terminow_phone_restore_run">Restore</string>
+    <string name="terminow_phone_restore_close_tabs">Close the tabs and restore</string>
+    <string name="terminow_phone_restore_done_toast">%1$s is restored from %2$s</string>
+</resources>

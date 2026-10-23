@@ -1,0 +1,9 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <!-- A Windows desktop over RDP: four panes on blue -->
+    <path android:fillColor="#0078D4" android:pathData="M10,0h28a10,10 0,0 1,10 10v28a10,10 0,0 1,-10 10h-28a10,10 0,0 1,-10 -10v-28a10,10 0,0 1,10 -10z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M11,13.5L22,12V23H11ZM24,11.7L37,10V23H24ZM11,25H22V36L11,34.5ZM24,25H37V38L24,36.3Z" />
+</vector>
