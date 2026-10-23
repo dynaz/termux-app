@@ -97,6 +97,10 @@ test('OAuth metadata is published for discovery', async () => {
     assert.equal(prm.status, 200);
     const prmJson = JSON.parse(prm.body);
     assert.ok(prmJson.authorization_servers.length >= 1);
+    // Path-aware discovery (RFC 9728) must also resolve for the /mcp resource.
+    const prmPathAware = await request(base, 'GET', '/.well-known/oauth-protected-resource/mcp');
+    assert.equal(prmPathAware.status, 200);
+    assert.equal(JSON.parse(prmPathAware.body).resource, prmJson.resource);
     const asm = await request(base, 'GET', '/.well-known/oauth-authorization-server');
     assert.deepEqual(JSON.parse(asm.body).code_challenge_methods_supported, ['S256']);
   } finally {

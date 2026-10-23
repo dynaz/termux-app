@@ -33,9 +33,14 @@ async function handle(req, res, ctx) {
 
   if (req.method === 'GET' && path === '/healthz') return sendJson(res, 200, { ok: true });
 
-  if (req.method === 'GET' && path === '/.well-known/oauth-protected-resource')
+  // Discovery. Clients form the metadata URL path-aware per RFC 9728 — inserting the well-known
+  // segment before the resource path — so /mcp's metadata is at
+  // /.well-known/oauth-protected-resource/mcp; the root form is also served for clients that use it.
+  if (req.method === 'GET' &&
+      (path === '/.well-known/oauth-protected-resource' || path === '/.well-known/oauth-protected-resource/mcp'))
     return sendJson(res, 200, ctx.oauth.protectedResourceMetadata());
-  if (req.method === 'GET' && path === '/.well-known/oauth-authorization-server')
+  if (req.method === 'GET' &&
+      (path === '/.well-known/oauth-authorization-server' || path === '/.well-known/oauth-authorization-server/mcp'))
     return sendJson(res, 200, ctx.oauth.authorizationServerMetadata());
 
   if (req.method === 'POST' && path === '/register') {
