@@ -1,0 +1,70 @@
+name: Build TermiNow release AAB (Play Internal)
+
+# Builds a RELEASE Android App Bundle of the terminow branch (play flavor),
+# signed with the Play UPLOAD key, for Google Play Internal testing. Play App
+# Signing re-signs it with the app signing key on upload, so this does NOT
+# need to match the installed app's certificate. Does not publish anywhere;
+# it only produces the AAB artifact.
+#
+# Required repository secrets (report missing by name; the build fails fast
+# without them rather than producing an unsigned bundle):
+#   TERMINOW_UPLOAD_KEYSTORE_BASE64     base64 of the upload keystore (.jks)
+#   TERMINOW_UPLOAD_KEYSTORE_PASSWORD   its store/key password
+# Optional:
+#   TERMINOW_UPLOAD_KEY_ALIAS           key alias (defaults to "upload")
+on:
+  workflow_dispatch:
+    inputs:
+      version_code:
+        description: versionCode for this build (must exceed the live Play release)
+        required: true
+        default: "215"
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Require signing secrets
+        env:
+          KS: ${{ secrets.TERMINOW_UPLOAD_KEYSTORE_BASE64 }}
+          PW: ${{ secrets.TERMINOW_UPLOAD_KEYSTORE_PASSWORD }}
+        run: |
+          [ -n "$KS" ] || { echo "::error::Missing secret TERMINOW_UPLOAD_KEYSTORE_BASE64"; exit 1; }
+          [ -n "$PW" ] || { echo "::error::Missing secret TERMINOW_UPLOAD_KEYSTORE_PASSWORD"; exit 1; }
+
+      - name: Build signed release AAB (play flavor)
+        env:
+          TERMINOW_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.TERMINOW_UPLOAD_KEYSTORE_PASSWORD }}
+          TERMINOW_UPLOAD_KEY_ALIAS: ${{ secrets.TERMINOW_UPLOAD_KEY_ALIAS }}
+          TERMUX_APP_VERSION_CODE: ${{ github.event.inputs.version_code }}
+        run: |
+          echo "${{ secrets.TERMINOW_UPLOAD_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          export TERMINOW_UPLOAD_KEYSTORE_FILE="$RUNNER_TEMP/upload.jks"
+          ./gradlew bundlePlayRelease
+          rm -f "$RUNNER_TEMP/upload.jks"
+          AAB="$(find ./app/build/outputs/bundle -name '*.aab' | head -1)"
+          [ -n "$AAB" ] || { echo "::error::No AAB produced"; exit 1; }
+          echo "AAB=$AAB" >> $GITHUB_ENV
+          echo "Built: $AAB"
+
+      - name: Report upload-key certificate (SHA-256)
+        env:
+          PW: ${{ secrets.TERMINOW_UPLOAD_KEYSTORE_PASSWORD }}
+          ALIAS: ${{ secrets.TERMINOW_UPLOAD_KEY_ALIAS }}
+        run: |
+          echo "${{ secrets.TERMINOW_UPLOAD_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          keytool -list -v -keystore "$RUNNER_TEMP/upload.jks" -storepass "$PW" -alias "${ALIAS:-upload}" 2>/dev/null | grep -i "SHA256:" | head -1 || true
+          rm -f "$RUNNER_TEMP/upload.jks"
+
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: terminow-ai-play-release-aab
+          path: ./app/build/outputs/bundle/playRelease/*.aab

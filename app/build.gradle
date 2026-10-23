@@ -75,6 +75,10 @@ android {
         versionName "1.120.0.214"
 
         if (appVersionName) versionName = appVersionName
+        // Optional CI override so a release build can use a versionCode above the
+        // live Play release without editing this file (e.g. for Internal testing).
+        def appVersionCode = System.getenv("TERMUX_APP_VERSION_CODE") ?: ""
+        if (appVersionCode) versionCode = appVersionCode.toInteger()
         validateVersionName(versionName)
 
         // Shown in the about section of the settings, to tell which build is installed
