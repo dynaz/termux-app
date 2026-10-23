@@ -42,6 +42,7 @@ public final class TerminowAiBridgeManager {
         public int connectedEnvironments;
         public int openConnections;
         public int activeGrants;
+        public int port;
         @Nullable public String error;
     }
 
@@ -91,26 +92,15 @@ public final class TerminowAiBridgeManager {
             @NonNull @Override public File sshHome() { return mSshHome; }
         });
 
-        String socketPath = new File(mSshHome, ".terminow/ai/bridge.sock").getAbsolutePath();
-        mServer = new TerminowAiBridgeServer(context, socketPath, mSession,
+        mServer = new TerminowAiBridgeServer(mSession,
             env -> new TerminowAiMcpServer(mBridge, env, this::secrets, BuildConfig.VERSION_NAME));
     }
+
+    @Nullable private String mLastError;
 
     @NonNull
     public TerminowAiBridge getBridge() {
         return mBridge;
-    }
-
-    @NonNull
-    public String getSocketPath() {
-        return mServer.getSocketPath();
-    }
-
-    /** The directory of the socket, to bind into an environment so the helper can reach it. */
-    @NonNull
-    public String getSocketDir() {
-        File parent = new File(mServer.getSocketPath()).getParentFile();
-        return parent != null ? parent.getAbsolutePath() : mServer.getSocketPath();
     }
 
     /** The Local AI Bridge is a Premium feature. */
@@ -120,16 +110,34 @@ public final class TerminowAiBridgeManager {
 
     /** Start the listener if the bridge is enabled and Premium is active. */
     public synchronized void startIfEnabled() {
-        if (mStore.isAiBridgeEnabled() && premium() && !mServer.isRunning()) mServer.start();
+        if (mStore.isAiBridgeEnabled() && premium() && !mServer.isRunning()) startServer();
+    }
+
+    /** Try to listen; remembers the port on success and the full error on failure. */
+    private String startServer() {
+        String error = mServer.start(mStore.getAiBridgePort());
+        if (error == null) {
+            mStore.setAiBridgePort(mServer.getPort());
+            mLastError = null;
+        } else {
+            mLastError = error;
+        }
+        return error;
     }
 
     public synchronized SetupResult setEnabled(boolean enabled) {
         if (enabled && !premium()) return new SetupResult(false, "The Local AI Bridge needs TermiNow Premium");
-        mStore.setAiBridgeEnabled(enabled);
         if (enabled) {
-            String error = mServer.start();
-            return error == null ? new SetupResult(true, "The bridge is on") : new SetupResult(false, error);
+            String error = startServer();
+            if (error != null) {
+                // Not left half-on: the switch shows off and the reason is kept
+                mStore.setAiBridgeEnabled(false);
+                return new SetupResult(false, error);
+            }
+            mStore.setAiBridgeEnabled(true);
+            return new SetupResult(true, "The bridge is listening on 127.0.0.1:" + mServer.getPort());
         }
+        mStore.setAiBridgeEnabled(false);
         mServer.stop();
         return new SetupResult(true, "The bridge is off");
     }
@@ -143,9 +151,11 @@ public final class TerminowAiBridgeManager {
         Status status = new Status();
         status.enabled = mStore.isAiBridgeEnabled();
         status.listening = mServer.isRunning();
+        status.port = mServer.getPort();
         status.connectedEnvironments = mSession.count();
         status.openConnections = mServer.openConnectionCount();
         status.activeGrants = mBridge.activeGrantCount();
+        status.error = mLastError;
         return status;
     }
 
@@ -190,15 +200,12 @@ public final class TerminowAiBridgeManager {
         File guestTokenFile = underRootfs(rootfs, guestHome, TerminowAiHelper.GUEST_TOKEN_REL);
         File claudeConfig = underRootfs(rootfs, guestHome, TerminowClaudeConfig.USER_CONFIG_NAME);
 
-        // The bridge must be on for the helper to reach it
-        if (!mStore.isAiBridgeEnabled()) {
-            String error = mServer.start();
-            if (error != null) return new SetupResult(false, "The bridge could not start: " + error);
-            mStore.setAiBridgeEnabled(true);
-        } else if (!mServer.isRunning()) {
-            String error = mServer.start();
+        // The bridge must be listening for the helper to reach it
+        if (!mServer.isRunning()) {
+            String error = startServer();
             if (error != null) return new SetupResult(false, "The bridge could not start: " + error);
         }
+        mStore.setAiBridgeEnabled(true);
 
         try {
             installAsset(TerminowAiHelper.HELPER_ASSET, guestHelper);
@@ -207,7 +214,7 @@ public final class TerminowAiBridgeManager {
 
             String guestHelperPath = TerminowAiHelper.guestHelperPath(guestHome);
             String guestTokenPath = TerminowAiHelper.guestTokenPath(guestHome);
-            TerminowAiHelper.Transport transport = TerminowAiHelper.Transport.unix(mServer.getSocketPath());
+            TerminowAiHelper.Transport transport = TerminowAiHelper.Transport.loopback(mServer.getPort());
             JSONObject entry = TerminowAiHelper.registrationEntry(guestHelperPath, transport, guestTokenPath);
 
             String existing = claudeConfig.isFile() ? TerminowClaudeConfig.read(claudeConfig) : null;

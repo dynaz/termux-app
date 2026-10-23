@@ -87,8 +87,13 @@ final class TerminowAiSettings {
         enableCard.addView(enableRow, matchWrap());
         if (enabled) {
             TerminowAiBridgeManager.Status status = mManager.status();
-            enableCard.addView(text(mActivity.getString(R.string.terminow_ai_status_on,
-                status.connectedEnvironments, status.openConnections, status.activeGrants), 12, R.color.terminow_text_secondary));
+            if (status.listening) {
+                enableCard.addView(text(mActivity.getString(R.string.terminow_ai_status_on,
+                    status.port, status.connectedEnvironments, status.openConnections, status.activeGrants), 12, R.color.terminow_text_secondary));
+            } else {
+                enableCard.addView(text(mActivity.getString(R.string.terminow_ai_status_error,
+                    status.error != null ? status.error : "unknown"), 12, R.color.terminow_mcp_warn));
+            }
         }
 
         if (!enabled) {

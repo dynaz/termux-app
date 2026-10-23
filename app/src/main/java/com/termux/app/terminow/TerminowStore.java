@@ -588,6 +588,7 @@ public class TerminowStore {
     private static final String KEY_KEY_PASSPHRASES = "key_passphrases";
     private static final String KEY_AI_ENABLED = "ai_bridge_enabled";
     private static final String KEY_AI_TOKENS = "ai_bridge_tokens";
+    private static final String KEY_AI_PORT = "ai_bridge_port";
     private static final String KEY_BACKUPS = "environment_backups";
     private static final String KEY_IDENTITIES = "identities";
     private static final String KEY_KEYCHAIN_SORT = "keychain_sort";
@@ -2041,6 +2042,15 @@ public class TerminowStore {
 
     public void setAiBridgeEnabled(boolean enabled) {
         mPreferences.edit().putBoolean(KEY_AI_ENABLED, enabled).apply();
+    }
+
+    /** The loopback port the bridge tries to reuse, 0 for any free port. */
+    public int getAiBridgePort() {
+        return mPreferences.getInt(KEY_AI_PORT, 0);
+    }
+
+    public void setAiBridgePort(int port) {
+        mPreferences.edit().putInt(KEY_AI_PORT, port).apply();
     }
 
     /** The helper token of each environment that has one, decrypted. */

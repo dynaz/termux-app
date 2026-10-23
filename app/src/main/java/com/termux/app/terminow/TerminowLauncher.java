@@ -274,17 +274,8 @@ public class TerminowLauncher {
     @NonNull
     private List<String> bindsOf(@NonNull Environment environment) {
         TerminowLinuxEnv linux = linuxOf(environment);
-        List<String> binds = linux != null ? new ArrayList<>(linux.bindArguments()) : new ArrayList<>();
-        // The Local AI Bridge socket, so Claude Code's helper in this environment can reach it at
-        // the same absolute path. The directory is app-private; only the socket is shared.
-        if (mStore.isAiBridgeEnabled()) {
-            java.io.File dir = new java.io.File(TermuxConstants.TERMUX_HOME_DIR_PATH, ".terminow/ai");
-            //noinspection ResultOfMethodCallIgnored
-            dir.mkdirs();
-            binds.add("--bind");
-            binds.add(dir.getAbsolutePath() + ":" + dir.getAbsolutePath());
-        }
-        return binds;
+        // The Local AI Bridge uses a loopback port, which a proot environment shares, so no mount is needed
+        return linux != null ? new ArrayList<>(linux.bindArguments()) : new ArrayList<>();
     }
 
     /** Claude Code and tmux are found out for each environment and user, never shared. */

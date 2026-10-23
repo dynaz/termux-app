@@ -1,128 +1,180 @@
 package com.termux.app.terminow;
 
-import android.content.Context;
-import android.os.Process;
-
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-
-import com.termux.shared.errors.Error;
-import com.termux.shared.net.socket.local.ILocalSocketManager;
-import com.termux.shared.net.socket.local.LocalClientSocket;
-import com.termux.shared.net.socket.local.LocalSocketManager;
-import com.termux.shared.net.socket.local.LocalSocketManagerClientBase;
-import com.termux.shared.net.socket.local.LocalSocketRunConfig;
 
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
 import java.io.Writer;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.SocketException;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * The listener of the Local AI Bridge: a private AF_UNIX/SOCK_STREAM socket on the app's own
- * filesystem, reached from a Linux environment through a proot bind. Each connection first
- * authenticates with the per-environment token (so it is bound to one environment), then speaks
- * MCP to {@link TerminowAiMcpServer}. The token is the authority: the peer's uid is only a second
- * check, since local processes can share the app's uid, so it never stands in for the token.
+ * The listener of the Local AI Bridge, on an authenticated loopback (127.0.0.1) port. A Linux
+ * environment shares the device's network namespace through proot, so the environment's MCP helper
+ * reaches it at 127.0.0.1 with no extra mount. Only loopback peers are served, and every
+ * connection must authenticate with the per-environment token before any tool call; the token is
+ * the authority, not the address.
  *
- * <p>Connections are tracked so the bridge can close them on shutdown or when a token is revoked.
- * The authentication handshake has a short timeout; a connection that does not authenticate in
- * time is dropped.</p>
+ * <p>Loopback is used because the filesystem Unix-socket path needs a native library that is not
+ * part of this build, so it could not bind (LocalSocket error 100). The authorization is the same
+ * either way.</p>
  */
 public final class TerminowAiBridgeServer {
 
-    public static final String TITLE = "terminow-ai-bridge";
     static final int HANDSHAKE_TIMEOUT_MS = 15_000;
-    private static final int BACKLOG = 4;
+    private static final int BACKLOG = 8;
 
     /** Builds the MCP server for an environment, with the current bridge and secrets. */
     public interface ServerFactory {
         @NonNull TerminowAiMcpServer forEnvironment(@NonNull String environmentKey);
     }
 
-    private final Context mContext;
-    private final String mSocketPath;
     private final TerminowAiSession mSession;
     private final ServerFactory mFactory;
-    /** Open connections, so they can be closed on shutdown or revocation. */
-    private final Set<Connection> mConnections = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    /** Open connections and the environment each serves, so they can be closed on shutdown or revocation. */
+    private final Map<Socket, String> mConnections = new ConcurrentHashMap<>();
 
-    @Nullable private LocalSocketManager mManager;
+    @Nullable private ServerSocket mServerSocket;
+    @Nullable private Thread mAcceptThread;
+    private volatile int mPort;
 
-    public TerminowAiBridgeServer(@NonNull Context context, @NonNull String socketPath, @NonNull TerminowAiSession session,
-                                  @NonNull ServerFactory factory) {
-        mContext = context;
-        mSocketPath = socketPath;
+    public TerminowAiBridgeServer(@NonNull TerminowAiSession session, @NonNull ServerFactory factory) {
         mSession = session;
         mFactory = factory;
     }
 
     public synchronized boolean isRunning() {
-        return mManager != null;
+        return mServerSocket != null && !mServerSocket.isClosed();
+    }
+
+    /** The loopback port it listens on, 0 when not running. */
+    public int getPort() {
+        return isRunning() ? mPort : 0;
+    }
+
+    /**
+     * Start listening on 127.0.0.1, at {@code wantedPort} if it is free, otherwise any free port.
+     * Returns {@code null} on success, or the full (sanitized) reason it could not start.
+     */
+    @Nullable
+    public synchronized String start(int wantedPort) {
+        if (isRunning()) return null;
+        InetAddress loopback = InetAddress.getLoopbackAddress();
+        ServerSocket socket = null;
+        try {
+            socket = bind(loopback, wantedPort);
+        } catch (IOException first) {
+            if (wantedPort > 0) {
+                try {
+                    socket = bind(loopback, 0);
+                } catch (IOException second) {
+                    return "Could not open the loopback port: " + second;
+                }
+            } else {
+                return "Could not open the loopback port: " + first;
+            }
+        }
+        mServerSocket = socket;
+        mPort = socket.getLocalPort();
+        ServerSocket started = socket;
+        mAcceptThread = new Thread(() -> acceptLoop(started), "TerminowAiBridge accept");
+        mAcceptThread.setDaemon(true);
+        mAcceptThread.start();
+        return null;
     }
 
     @NonNull
-    public String getSocketPath() {
-        return mSocketPath;
-    }
-
-    /** Start listening. Returns {@code null} on success, or a message describing why it failed. */
-    @Nullable
-    public synchronized String start() {
-        if (mManager != null) return null;
-        try {
-            java.io.File socket = new java.io.File(mSocketPath);
-            java.io.File dir = socket.getParentFile();
-            if (dir != null && !dir.isDirectory() && !dir.mkdirs()) return "Could not create " + dir;
-            // A stale socket file from a previous run would stop bind
-            if (socket.exists() && !socket.delete()) return "Could not remove the old socket";
-            LocalSocketRunConfig config = new LocalSocketRunConfig(TITLE, mSocketPath, new Client());
-            config.setBacklog(BACKLOG);
-            LocalSocketManager manager = new LocalSocketManager(mContext, config);
-            Error error = manager.start();
-            if (error != null) return error.getErrorLogString();
-            mManager = manager;
-            try {
-                // Only the app's own user may reach it on the filesystem
-                new java.io.File(mSocketPath).setReadable(false, false);
-                new java.io.File(mSocketPath).setWritable(false, false);
-                new java.io.File(mSocketPath).setReadable(true, true);
-                new java.io.File(mSocketPath).setWritable(true, true);
-            } catch (RuntimeException ignored) {
-                // Best effort; the directory is already app-private
-            }
-            return null;
-        } catch (RuntimeException | UnsatisfiedLinkError e) {
-            return String.valueOf(e.getMessage());
-        }
+    private static ServerSocket bind(@NonNull InetAddress loopback, int port) throws IOException {
+        ServerSocket socket = new ServerSocket();
+        socket.setReuseAddress(true);
+        socket.bind(new InetSocketAddress(loopback, port), BACKLOG);
+        return socket;
     }
 
     public synchronized void stop() {
-        for (Connection connection : mConnections) connection.close();
+        for (Socket socket : mConnections.keySet()) closeSocket(socket);
         mConnections.clear();
-        if (mManager != null) {
-            mManager.stop();
-            mManager = null;
-        }
-        try {
-            new java.io.File(mSocketPath).delete();
-        } catch (RuntimeException ignored) {
-            // Nothing more to do
+        if (mServerSocket != null) {
+            try {
+                mServerSocket.close();
+            } catch (IOException ignored) {
+                // Already closing
+            }
+            mServerSocket = null;
         }
     }
 
     /** Close the open connections of an environment, so a revoked token stops working at once. */
     public void closeConnectionsOf(@NonNull String environmentKey) {
-        for (Connection connection : mConnections)
-            if (environmentKey.equals(connection.environmentKey)) connection.close();
+        for (Map.Entry<Socket, String> entry : mConnections.entrySet())
+            if (environmentKey.equals(entry.getValue())) closeSocket(entry.getKey());
     }
 
     public int openConnectionCount() {
         return mConnections.size();
+    }
+
+    private void acceptLoop(@NonNull ServerSocket serverSocket) {
+        while (!serverSocket.isClosed()) {
+            Socket socket;
+            try {
+                socket = serverSocket.accept();
+            } catch (IOException e) {
+                break; // closed
+            }
+            // Only the loopback is served; the token is still required next
+            if (socket.getInetAddress() == null || !socket.getInetAddress().isLoopbackAddress()) {
+                closeSocket(socket);
+                continue;
+            }
+            mConnections.put(socket, "");
+            Thread thread = new Thread(() -> handle(socket), "TerminowAiBridge conn");
+            thread.setDaemon(true);
+            thread.start();
+        }
+    }
+
+    private void handle(@NonNull Socket socket) {
+        try (BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+             Writer out = new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8)) {
+            // The handshake is bounded; after it the MCP loop blocks until the client closes
+            socket.setSoTimeout(HANDSHAKE_TIMEOUT_MS);
+            String firstLine;
+            try {
+                firstLine = in.readLine();
+            } catch (SocketException | java.net.SocketTimeoutException e) {
+                firstLine = null;
+            }
+            socket.setSoTimeout(0);
+            String env = serve(in, out, firstLine);
+            if (env != null) mConnections.put(socket, env);
+        } catch (IOException ignored) {
+            // The client went away
+        } finally {
+            mConnections.remove(socket);
+            closeSocket(socket);
+        }
+    }
+
+    private static void closeSocket(@NonNull Socket socket) {
+        try {
+            socket.close();
+        } catch (IOException ignored) {
+            // Nothing more to do
+        }
     }
 
     // ---------------------------------------------------------------------------------------
@@ -182,80 +234,5 @@ public final class TerminowAiBridgeServer {
             }
         }
         return server.handle(message);
-    }
-
-    // ---------------------------------------------------------------------------------------
-    // Socket wiring
-    // ---------------------------------------------------------------------------------------
-
-    private final class Client extends LocalSocketManagerClientBase {
-        @Override
-        public void onClientAccepted(@NonNull LocalSocketManager manager, @NonNull LocalClientSocket clientSocket) {
-            // The token, read next, is the real authority. The peer uid is only noted: a local
-            // process can share the app uid, so it is never enough on its own.
-            int peerUid = clientSocket.getPeerCred() != null ? clientSocket.getPeerCred().uid : -1;
-            if (peerUid != -1 && peerUid != Process.myUid()) {
-                clientSocket.closeClientSocket(false);
-                return;
-            }
-            Connection connection = new Connection(clientSocket);
-            mConnections.add(connection);
-            manager.startLocalSocketManagerClientThread(connection);
-        }
-
-        @Override
-        protected String getLogTag() {
-            return "TerminowAiBridge";
-        }
-    }
-
-    /** One accepted connection: the handshake has a timeout, then the MCP loop runs until it ends. */
-    private final class Connection implements Runnable {
-        final LocalClientSocket socket;
-        volatile String environmentKey = "";
-
-        Connection(@NonNull LocalClientSocket socket) {
-            this.socket = socket;
-        }
-
-        @Override
-        public void run() {
-            try (BufferedReader in = new BufferedReader(socket.getInputStreamReader());
-                 Writer out = socket.getOutputStreamWriter()) {
-                String firstLine = readLineWithTimeout(in, HANDSHAKE_TIMEOUT_MS);
-                String env = serve(in, out, firstLine);
-                if (env != null) environmentKey = env;
-            } catch (IOException ignored) {
-                // The client went away
-            } finally {
-                close();
-            }
-        }
-
-        void close() {
-            mConnections.remove(this);
-            socket.closeClientSocket(false);
-        }
-    }
-
-    /** Read one line, giving up after {@code timeoutMs}, so an unauthenticated peer can not linger. */
-    @Nullable
-    private static String readLineWithTimeout(@NonNull BufferedReader in, int timeoutMs) {
-        final String[] holder = new String[1];
-        Thread reader = new Thread(() -> {
-            try {
-                holder[0] = in.readLine();
-            } catch (IOException ignored) {
-                // Left null
-            }
-        }, "TerminowAiBridge handshake");
-        reader.setDaemon(true);
-        reader.start();
-        try {
-            reader.join(timeoutMs);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-        return holder[0];
     }
 }

@@ -20,7 +20,8 @@ public class TerminowAiHelperTest {
         TerminowAiHelper.Transport t = TerminowAiHelper.Transport.unix("/data/data/com.terminow/files/home/.terminow/ai/bridge.sock");
         JSONObject entry = TerminowAiHelper.registrationEntry("/root/.local/share/terminow-ai/terminow-ai-bridge.py", t,
             "/root/.config/terminow-ai/token");
-        assertEquals("stdio", entry.optString("type"));
+        // No "type" field: a bare command/args stdio entry, matching what Claude Code writes
+        assertFalse(entry.has("type"));
         assertEquals("python3", entry.optString("command"));
         assertEquals("/root/.local/share/terminow-ai/terminow-ai-bridge.py", entry.optJSONArray("args").optString(0));
         JSONObject env = entry.optJSONObject("env");

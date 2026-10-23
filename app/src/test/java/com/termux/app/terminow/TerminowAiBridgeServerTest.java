@@ -11,8 +11,14 @@ import org.junit.Test;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
 import java.io.StringReader;
 import java.io.StringWriter;
+import java.io.Writer;
+import java.net.InetAddress;
+import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -43,8 +49,7 @@ public class TerminowAiBridgeServerTest {
             @Override public String savedPassphrase(String keyName) { return null; }
             @Override public File sshHome() { return new File("/tmp"); }
         });
-        // Context is only used by start(); serve() does not touch it
-        server = new TerminowAiBridgeServer(null, "/tmp/ai.sock", session,
+        server = new TerminowAiBridgeServer(session,
             env -> new TerminowAiMcpServer(bridge, env, () -> (Collection<String>) new ArrayList<String>(), "test"));
     }
 
@@ -78,6 +83,46 @@ public class TerminowAiBridgeServerTest {
         // The initialize response follows, naming the server
         assertTrue(text.contains(TerminowAiMcpServer.SERVER_NAME));
         assertTrue(text.contains("\"id\":1"));
+    }
+
+    @Test
+    public void loopbackTransportServesAnAuthenticatedClientEndToEnd() throws Exception {
+        String token = session.mint("ubuntu");
+        assertNull(server.start(0));
+        try {
+            int port = server.getPort();
+            assertTrue(port > 0);
+            try (Socket socket = new Socket(InetAddress.getLoopbackAddress(), port)) {
+                Writer w = new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8);
+                BufferedReader r = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+                w.write("AUTH " + token + "\n");
+                w.flush();
+                assertEquals("OK", r.readLine());
+                w.write("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n");
+                w.flush();
+                String response = r.readLine();
+                assertTrue(response.contains(TerminowAiMcpServer.SERVER_NAME));
+                assertTrue(response.contains("\"id\":1"));
+            }
+        } finally {
+            server.stop();
+        }
+        assertTrue(!server.isRunning());
+    }
+
+    @Test
+    public void loopbackRejectsABadTokenEndToEnd() throws Exception {
+        session.mint("ubuntu");
+        assertNull(server.start(0));
+        try (Socket socket = new Socket(InetAddress.getLoopbackAddress(), server.getPort())) {
+            Writer w = new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8);
+            BufferedReader r = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+            w.write("AUTH not-a-real-token\n");
+            w.flush();
+            assertTrue(r.readLine().startsWith("ERR"));
+        } finally {
+            server.stop();
+        }
     }
 
     @Test

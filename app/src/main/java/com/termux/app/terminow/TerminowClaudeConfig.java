@@ -85,8 +85,9 @@ public class TerminowClaudeConfig {
     @NonNull
     public static JSONObject buildStdioEntry(@NonNull String command, @NonNull List<String> args,
                                              @NonNull Map<String, String> env) throws JSONException {
+        // No explicit "type": a stdio server in .claude.json is a command with args, the form
+        // Claude Code writes and reads, so the entry matches what already works on the device.
         JSONObject entry = new JSONObject();
-        entry.put("type", "stdio");
         entry.put("command", command);
         entry.put("args", new JSONArray(args));
         if (!env.isEmpty()) {
