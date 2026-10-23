@@ -39,11 +39,7 @@ jobs:
           CURRENT_VERSION_NAME="$(grep -m 1 -E "$CURRENT_VERSION_NAME_REGEX" ./app/build.gradle | sed -r "s/$CURRENT_VERSION_NAME_REGEX/\1/")"
           RELEASE_VERSION_NAME="v$CURRENT_VERSION_NAME+${GITHUB_SHA:0:7}"
 
-          APK_DIR_PATH="./app/build/outputs/apk/debug"
           APK_VERSION_TAG="$RELEASE_VERSION_NAME-${{ env.PACKAGE_VARIANT }}-github-debug"
-          APK_BASENAME_PREFIX="termux-app_$APK_VERSION_TAG"
-          echo "APK_DIR_PATH=$APK_DIR_PATH" >> $GITHUB_ENV
-          echo "APK_BASENAME_PREFIX=$APK_BASENAME_PREFIX" >> $GITHUB_ENV
 
           export TERMUX_APP_VERSION_NAME="${RELEASE_VERSION_NAME/v/}"
           export TERMUX_APK_VERSION_TAG="$APK_VERSION_TAG"
@@ -52,13 +48,24 @@ jobs:
             exit_on_error "Build failed for '$APK_VERSION_TAG'."
           fi
 
-          test -f "$APK_DIR_PATH/${APK_BASENAME_PREFIX}_arm64-v8a.apk" \
-            || exit_on_error "arm64-v8a APK not found. Files: $(ls "$APK_DIR_PATH")"
+          # The app has product flavors (play, full), so APKs land under
+          # app/build/outputs/apk/<flavor>/debug/ as *_<flavor>_arm64-v8a.apk.
+          FOUND="$(find ./app/build/outputs/apk -name '*_arm64-v8a.apk' 2>/dev/null)"
+          [ -n "$FOUND" ] || exit_on_error "arm64-v8a APK not found. Built: $(find ./app/build/outputs/apk -name '*.apk' 2>/dev/null)"
+          echo "Built arm64-v8a APKs:"; echo "$FOUND"
 
-      - name: Upload arm64-v8a debug APK
+      - name: Print signing certificate (SHA-256)
+        run: |
+          APKSIGNER="$(ls $ANDROID_HOME/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)"
+          for f in $(find ./app/build/outputs/apk -name '*_arm64-v8a.apk'); do
+            echo "=== $f ==="
+            "$APKSIGNER" verify --print-certs "$f" | grep -i "SHA-256 digest" || true
+          done
+
+      - name: Upload arm64-v8a debug APKs (play + full)
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ env.APK_BASENAME_PREFIX }}_arm64-v8a
+          name: terminow-ai-debug-arm64-v8a
           path: |
-            ${{ env.APK_DIR_PATH }}/${{ env.APK_BASENAME_PREFIX }}_arm64-v8a.apk
-            ${{ env.APK_DIR_PATH }}/output-metadata.json
+            ./app/build/outputs/apk/*/debug/*_arm64-v8a.apk
+            ./app/build/outputs/apk/*/debug/output-metadata.json
