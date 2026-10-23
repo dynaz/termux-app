@@ -42,6 +42,14 @@ import javax.crypto.spec.GCMParameterSpec;
 public class TerminowStore {
 
     public static class Host {
+        /**
+         * A stable id that never changes while the host exists, so authorization (such as local
+         * AI access) survives a rename or a move between groups. It is assigned once, kept in
+         * storage, and is not derived from the address or the label. Empty only before migration.
+         */
+        public String uuid = "";
+        /** Whether, and how, a local AI (Claude Code in a Linux environment) may use this host. */
+        public final AiAccess aiAccess = new AiAccess();
         public String label = "";
         public String address = "";
         public int port = 22;
@@ -322,6 +330,70 @@ public class TerminowStore {
                 return R.string.terminow_host_telnet_options;
             return null;
         }
+    }
+
+    /**
+     * Whether a local AI (Claude Code running in a Linux environment of this device) may use a
+     * host through the Local AI Bridge, and with what. It is off by default. No secret is ever
+     * part of this; the capabilities name what is allowed, never credentials. The fingerprint
+     * binds a grant to the endpoint and credentials the user allowed: when the address, port,
+     * username or credentials change it no longer matches, so grants made before are not honoured.
+     */
+    public static class AiAccess {
+        /** "test_connection": allow {@code ssh_test}. Later: command execution and file transfer. */
+        public static final String CAP_TEST_CONNECTION = "test_connection";
+
+        public boolean enabled;
+        /** The environment keys allowed to use it, empty meaning any local environment of this device. */
+        public final java.util.Set<String> envs = new java.util.LinkedHashSet<>();
+        /** The capabilities allowed, from the {@code CAP_*} names. */
+        public final java.util.Set<String> capabilities = new java.util.LinkedHashSet<>();
+        /** "ask" each time, "session" for the session, or "rules" for the saved capabilities. */
+        public String approvalPolicy = "ask";
+        /** Of the endpoint and credentials when access was allowed; a change revokes grants. */
+        public String fingerprint = "";
+
+        public boolean allows(@NonNull String capability) {
+            return enabled && capabilities.contains(capability);
+        }
+
+        public boolean allowsEnv(@NonNull String environmentKey) {
+            return enabled && (envs.isEmpty() || envs.contains(environmentKey));
+        }
+    }
+
+    /** A new stable host id: 16 random bytes as hex, like the device id. */
+    @NonNull
+    public static String newHostId() {
+        return newDeviceId();
+    }
+
+    /**
+     * What binds an AI-access grant to a host's endpoint and credentials. When any of these
+     * change the grant must not be honoured, so the user agrees again for the new target. It
+     * holds no secret: a password or key is only noted as present, never its value.
+     */
+    @NonNull
+    public static String aiFingerprint(@NonNull Host host) {
+        String material = host.address + "\n" + host.port + "\n" + host.username + "\n" + host.keyPath + "\n" +
+            host.identity + "\n" + (host.password.isEmpty() ? "0" : "1") + "\n" + host.protocol + "\n" + host.telnet;
+        try {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(material.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder out = new StringBuilder();
+            for (byte b : hash) out.append(String.format(Locale.ROOT, "%02x", b & 0xff));
+            return out.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            return material;
+        }
+    }
+
+    /** The host with the stable {@link Host#uuid}, {@code null} if none. */
+    @Nullable
+    public static Host findHostByUuid(@NonNull List<Host> hosts, @NonNull String uuid) {
+        if (uuid.isEmpty()) return null;
+        for (Host host : hosts) if (uuid.equals(host.uuid)) return host;
+        return null;
     }
 
     /** Printed on the server when it has no tmux, for the app to offer installing it. */
@@ -646,6 +718,15 @@ public class TerminowStore {
         } catch (JSONException e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Failed to load hosts", e);
         }
+        // Give older hosts a stable id, once, so authorization can anchor on it. Only while reading
+        // the active vault, so a look into another vault does not write to it.
+        boolean migrated = false;
+        for (Host host : hosts)
+            if (host.uuid.isEmpty()) {
+                host.uuid = newHostId();
+                migrated = true;
+            }
+        if (migrated && sVaultScope.get() == null) setHosts(hosts);
         return hosts;
     }
 
@@ -653,6 +734,8 @@ public class TerminowStore {
         JSONArray array = new JSONArray();
         try {
             for (Host host : hosts) {
+                // A new host gets its stable id now, so AI-access rules can anchor on it at once
+                if (host.uuid.isEmpty()) host.uuid = newHostId();
                 JSONObject object = hostToJson(host);
                 object.put("password", encryptPassword(host.password));
                 array.put(object);
@@ -690,6 +773,8 @@ public class TerminowStore {
     @NonNull
     static JSONObject hostToJson(@NonNull Host host) throws JSONException {
         JSONObject object = new JSONObject();
+        if (!host.uuid.isEmpty()) object.put("uuid", host.uuid);
+        object.put("aiAccess", aiAccessToJson(host.aiAccess));
         object.put("label", host.label);
         object.put("address", host.address);
         object.put("port", host.port);
@@ -729,6 +814,8 @@ public class TerminowStore {
     @NonNull
     static Host hostFromJson(@NonNull JSONObject object) {
         Host host = new Host();
+        host.uuid = object.optString("uuid");
+        aiAccessFromJson(host.aiAccess, object.optJSONObject("aiAccess"));
         host.label = object.optString("label");
         host.address = object.optString("address");
         host.port = object.optInt("port", 22);
@@ -763,6 +850,28 @@ public class TerminowStore {
         host.winrmHttps = object.optBoolean("winrmHttps", true);
         host.winrmVerify = object.optBoolean("winrmVerify", true);
         return host;
+    }
+
+    @NonNull
+    private static JSONObject aiAccessToJson(@NonNull AiAccess access) throws JSONException {
+        JSONObject object = new JSONObject();
+        object.put("enabled", access.enabled);
+        object.put("envs", new JSONArray(access.envs));
+        object.put("capabilities", new JSONArray(access.capabilities));
+        object.put("approvalPolicy", access.approvalPolicy);
+        object.put("fingerprint", access.fingerprint);
+        return object;
+    }
+
+    private static void aiAccessFromJson(@NonNull AiAccess access, @Nullable JSONObject object) {
+        if (object == null) return;
+        access.enabled = object.optBoolean("enabled");
+        JSONArray envs = object.optJSONArray("envs");
+        for (int i = 0; envs != null && i < envs.length(); i++) access.envs.add(envs.optString(i));
+        JSONArray caps = object.optJSONArray("capabilities");
+        for (int i = 0; caps != null && i < caps.length(); i++) access.capabilities.add(caps.optString(i));
+        access.approvalPolicy = object.optString("approvalPolicy", "ask");
+        access.fingerprint = object.optString("fingerprint");
     }
 
     /** A Windows domain: a NetBIOS or DNS name, empty for none. */

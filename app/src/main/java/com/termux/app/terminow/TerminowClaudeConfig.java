@@ -77,6 +77,26 @@ public class TerminowClaudeConfig {
         return entry;
     }
 
+    /**
+     * The entry for a stdio server: the command, its arguments and the environment it is given.
+     * The environment carries the bridge's socket and the token file, never the token itself, so
+     * no secret is written into the configuration.
+     */
+    @NonNull
+    public static JSONObject buildStdioEntry(@NonNull String command, @NonNull List<String> args,
+                                             @NonNull Map<String, String> env) throws JSONException {
+        JSONObject entry = new JSONObject();
+        entry.put("type", "stdio");
+        entry.put("command", command);
+        entry.put("args", new JSONArray(args));
+        if (!env.isEmpty()) {
+            JSONObject envObject = new JSONObject();
+            for (Map.Entry<String, String> variable : env.entrySet()) envObject.put(variable.getKey(), variable.getValue());
+            entry.put("env", envObject);
+        }
+        return entry;
+    }
+
     /** A fingerprint of an entry that does not depend on the order of its keys. */
     @NonNull
     public static String fingerprint(@NonNull JSONObject entry) {
