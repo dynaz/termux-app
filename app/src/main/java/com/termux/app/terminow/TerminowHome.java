@@ -110,8 +110,8 @@ public class TerminowHome {
     private static final int PAGE_LOGS = 6;
     private static final int PAGE_MCP = 7;
     private static final int PAGE_FILES = 8;
-    private static final int PAGE_AI = 9;
     private static final int PAGE_LAUNCH = 9;
+    private static final int PAGE_AI = 10;
 
     private static final Pattern KEY_NAME_PATTERN = Pattern.compile("[A-Za-z0-9_][A-Za-z0-9._-]*");
     private static final int KEY_FILE_MAX_SIZE = 64 * 1024;
