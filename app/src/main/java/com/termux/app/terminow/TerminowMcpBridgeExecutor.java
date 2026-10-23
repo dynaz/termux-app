@@ -1,0 +1,192 @@
+package com.termux.app.terminow;
+
+import androidx.annotation.NonNull;
+
+import com.termux.shared.logger.Logger;
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * Runs a managed task by starting Claude Code headless — {@code claude -p "<request>"
+ * --output-format stream-json --verbose} — as its own captured process in the shared session's
+ * environment, through {@link TerminowClaudeSetup}. The request is passed as a separate argument,
+ * never spliced into the script, so nothing is typed into a terminal and quoting is safe. Output
+ * is streamed to the task as it arrives, the run is stopped at the timeout or on cancel, and the
+ * final {@code result} event decides success or failure.
+ *
+ * <p>This is deliberately the reliable, structured path: it does not drive an interactive terminal
+ * and it adds no automatic-approval flag, so a task runs with Claude Code's own default
+ * permissions and cannot silently gain unrestricted shell or file access.</p>
+ */
+public final class TerminowMcpBridgeExecutor implements TerminowMcpBridge.Executor {
+
+    private static final String LOG_TAG = "TerminowMcpBridgeExecutor";
+
+    public static final int DEFAULT_TIMEOUT_S = 600;
+    public static final int MAX_TIMEOUT_S = 3600;
+
+    /** Runs {@code claude -p} in the task's folder; the request is {@code $1}, the folder {@code $2}. */
+    static final String RUN_SCRIPT =
+        "PATH=\"$HOME/.local/bin:$PATH\"; export PATH\n" +
+        "if [ -n \"$2\" ]; then cd \"$2\" || { echo \"TermiNow: the folder $2 does not exist\" >&2; exit 97; }; fi\n" +
+        "command -v claude >/dev/null 2>&1 || { echo \"TermiNow: Claude Code is not installed in this environment\" >&2; exit 98; }\n" +
+        "exec claude -p \"$1\" --output-format stream-json --verbose\n";
+
+    private final TerminowClaudeSetup mSetup;
+    private final TerminowMcpTargets mTargets;
+    private final Map<String, Run> mRuns = new ConcurrentHashMap<>();
+
+    public TerminowMcpBridgeExecutor(@NonNull TerminowClaudeSetup setup, @NonNull TerminowMcpTargets targets) {
+        mSetup = setup;
+        mTargets = targets;
+    }
+
+    private static final class Run {
+        volatile Process process;
+        volatile boolean cancelRequested;
+    }
+
+    @Override
+    public void start(@NonNull TerminowMcpBridgeTask task, @NonNull TerminowMcpBridge.Share share,
+                      @NonNull TerminowMcpBridge.Callback callback) {
+        Run run = new Run();
+        mRuns.put(task.id, run);
+        Thread thread = new Thread(() -> execute(task, share, callback, run), "TerminowMcpBridge task " + task.id);
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    @Override
+    public void cancel(@NonNull String taskId) {
+        Run run = mRuns.get(taskId);
+        if (run == null) return;
+        run.cancelRequested = true;
+        Process process = run.process;
+        if (process != null) process.destroy();
+    }
+
+    private void execute(@NonNull TerminowMcpBridgeTask task, @NonNull TerminowMcpBridge.Share share,
+                         @NonNull TerminowMcpBridge.Callback callback, @NonNull Run run) {
+        int timeout = task.timeoutSeconds <= 0 ? DEFAULT_TIMEOUT_S : Math.min(task.timeoutSeconds, MAX_TIMEOUT_S);
+        List<String> command;
+        try {
+            String target = share.environmentKey.isEmpty() ? TerminowMcpTargets.TARGET_TERMINOW : share.environmentKey;
+            command = TerminowClaudeSetup.buildCommand(mTargets.getPrefixDir(), target, share.user, RUN_SCRIPT,
+                task.request, share.folder);
+        } catch (IllegalArgumentException e) {
+            callback.failed(task.id, "The session's target is not valid: " + e.getMessage());
+            mRuns.remove(task.id);
+            return;
+        }
+
+        Process process;
+        try {
+            process = mSetup.start(command);
+        } catch (IOException | RuntimeException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Could not start the managed task", e);
+            callback.failed(task.id, "Could not start Claude Code: " + e.getMessage());
+            mRuns.remove(task.id);
+            return;
+        }
+        run.process = process;
+        try {
+            process.getOutputStream().close();
+        } catch (IOException ignored) {
+            // Nothing is sent to its input
+        }
+
+        ResultCapture result = new ResultCapture();
+        Thread stdout = streamTo(process.getInputStream(), callback, task.id, result, false);
+        Thread stderr = streamTo(process.getErrorStream(), callback, task.id, result, true);
+
+        boolean finished;
+        try {
+            finished = process.waitFor(timeout, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            process.destroy();
+            finished = false;
+        }
+        join(stdout);
+        join(stderr);
+
+        try {
+            if (run.cancelRequested) {
+                callback.cancelled(task.id);
+            } else if (!finished) {
+                process.destroy();
+                callback.failed(task.id, "The task ran longer than " + timeout + "s and was stopped");
+            } else {
+                int exit = process.exitValue();
+                if (result.isError || exit != 0) {
+                    String reason = !result.resultText.isEmpty() ? result.resultText
+                        : "Claude Code exited with code " + exit;
+                    callback.failed(task.id, reason);
+                } else {
+                    callback.completed(task.id, exit, result.resultText);
+                }
+            }
+        } finally {
+            mRuns.remove(task.id);
+        }
+    }
+
+    /** The final {@code result} event decides the outcome; everything else is streamed as output. */
+    private static final class ResultCapture {
+        volatile String resultText = "";
+        volatile boolean isError;
+    }
+
+    @NonNull
+    private Thread streamTo(@NonNull InputStream in, @NonNull TerminowMcpBridge.Callback callback,
+                            @NonNull String taskId, @NonNull ResultCapture result, boolean isStderr) {
+        Thread thread = new Thread(() -> {
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    callback.output(taskId, (isStderr ? "[stderr] " : "") + line + "\n");
+                    if (!isStderr) parseEvent(line, result);
+                }
+            } catch (IOException ignored) {
+                // The process ended
+            }
+        });
+        thread.setDaemon(true);
+        thread.start();
+        return thread;
+    }
+
+    /** Pull the result text out of a stream-json {@code result} event; ignore anything else. */
+    private static void parseEvent(@NonNull String line, @NonNull ResultCapture result) {
+        String trimmed = line.trim();
+        if (trimmed.isEmpty() || trimmed.charAt(0) != '{') return;
+        try {
+            JSONObject event = new JSONObject(trimmed);
+            if ("result".equals(event.optString("type"))) {
+                result.resultText = event.optString("result", result.resultText);
+                result.isError = event.optBoolean("is_error", false);
+            }
+        } catch (JSONException ignored) {
+            // A line that is not a JSON event is still streamed as output above
+        }
+    }
+
+    private static void join(@NonNull Thread thread) {
+        try {
+            thread.join(3000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+}

@@ -71,8 +71,8 @@ android {
         applicationId "com.terminow"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 214
-        versionName "1.120.0.214"
+        versionCode 215
+        versionName "1.120.0.215"
 
         if (appVersionName) versionName = appVersionName
         // Optional CI override so a release build can use a versionCode above the
@@ -120,6 +120,10 @@ android {
         if (!functionsRegion.isEmpty() && !(functionsRegion ==~ /[a-z]+-[a-z]+[0-9]/))
             throw new GradleException("functionsRegion in app/terminow-billing.properties is not a region: " + functionsRegion)
         buildConfigField "String", "TERMINOW_FUNCTIONS_REGION", "\"" + functionsRegion + "\""
+        // The MCP Bridge relay the app dials out to; configurable at build time (CI property
+        // mcpRelayUrl or the MCP_RELAY_URL environment variable), editable in the app.
+        def mcpRelayUrl = (project.findProperty("mcpRelayUrl") ?: System.getenv("MCP_RELAY_URL") ?: "https://mcp.terminow.online").toString().trim()
+        buildConfigField "String", "MCP_RELAY_URL", "\"" + mcpRelayUrl + "\""
         // The Google Cloud project number for Play Integrity tokens, 0 to not ask for one
         def integrityProjectNumber = billingProperties.getProperty("integrityCloudProjectNumber", "0").trim()
         if (!(integrityProjectNumber ==~ /[0-9]+/))

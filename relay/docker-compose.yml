@@ -1,0 +1,34 @@
+# The TermiNow MCP relay behind Nginx Proxy Manager (NPM). NPM terminates HTTPS and proxies to the
+# relay over the shared `proxy` network, so the relay itself is never published to the host.
+#
+#   docker network create proxy        # once, shared with your NPM stack
+#   cp .env.example .env               # edit RELAY_PUBLIC_URL, RELAY_DEVICE_TOKENS, RELAY_PAIRING_CODES
+#   docker compose up -d --build
+#
+# See deploy/DEPLOY-DOCKER-NPM.md for DNS, HTTPS, auth and persistence.
+
+services:
+  terminow-relay:
+    build: .
+    image: terminow-relay:latest
+    container_name: terminow-relay
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # The relay binds inside the container; NPM reaches it by service name on the proxy network.
+      RELAY_HOST: 0.0.0.0
+      RELAY_PORT: "8787"
+    # No host port is published on purpose: only NPM (on the `proxy` network) can reach it.
+    expose:
+      - "8787"
+    networks:
+      - proxy
+    # Config lives in .env (persistent on the host). Mount a data volume here if you later add a
+    # database for OAuth tokens; the current build keeps tokens in memory (see README).
+    volumes:
+      - ./.env:/app/.env:ro
+
+networks:
+  proxy:
+    external: true

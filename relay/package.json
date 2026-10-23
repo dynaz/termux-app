@@ -1,0 +1,14 @@
+{
+  "name": "terminow-mcp-relay",
+  "version": "1.0.0",
+  "description": "Remote MCP relay for the TermiNow MCP Bridge: a standards-compliant Streamable-HTTP MCP endpoint with OAuth 2.1 for AI clients, bridged to TermiNow devices over an outbound device channel. No public exposure of the device's local bridge.",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/"
+  },
+  "license": "MIT"
+}

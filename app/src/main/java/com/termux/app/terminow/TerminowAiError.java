@@ -22,6 +22,16 @@ public enum TerminowAiError {
     CANCELLED,
     BRIDGE_DISCONNECTED,
     BAD_REQUEST,
+    // The MCP Bridge (sessions and managed tasks) adds these; the reasons never mix up an
+    // unknown client, an unshared or changed session, a full queue and a missing task.
+    CLIENT_NOT_AUTHORIZED,
+    SESSION_NOT_FOUND,
+    SESSION_NOT_SHARED,
+    SESSION_UNSUPPORTED,
+    SESSION_CHANGED,
+    QUEUE_FULL,
+    TASK_NOT_FOUND,
+    PREMIUM_REQUIRED,
     INTERNAL;
 
     /** Thrown inside the bridge; its {@link #error} is the code returned to Claude. */

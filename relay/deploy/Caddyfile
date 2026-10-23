@@ -1,0 +1,19 @@
+# Caddy automatically obtains and renews TLS certificates. Point relay.example.com's DNS at this
+# host, then `caddy run`. Caddy terminates HTTPS/HTTP2 and proxies to the relay on localhost.
+#
+# The device channel holds a Server-Sent Events stream open, so disable response buffering and
+# allow a long-lived upstream connection.
+
+relay.example.com {
+	encode zstd gzip
+
+	@sse path /device/stream
+	reverse_proxy @sse 127.0.0.1:8787 {
+		flush_interval -1
+		transport http {
+			read_timeout 1h
+		}
+	}
+
+	reverse_proxy 127.0.0.1:8787
+}

@@ -1,0 +1,36 @@
+// Configuration for the TermiNow MCP relay, read from the environment. Nothing here is a secret
+// of a device: the relay never learns a device's local address. Device tokens and user pairing
+// codes identify who may connect, and map to a user id. In production these live in a secret store
+// or a database; for a self-host they come from the environment.
+
+function parseMap(value) {
+  // "code1=user1,code2=user2" -> { code1: "user1", code2: "user2" }
+  const out = {};
+  if (!value) return out;
+  for (const pair of value.split(',')) {
+    const i = pair.indexOf('=');
+    if (i > 0) out[pair.slice(0, i).trim()] = pair.slice(i + 1).trim();
+  }
+  return out;
+}
+
+export function loadConfig(env = process.env) {
+  const publicUrl = (env.RELAY_PUBLIC_URL || 'http://localhost:8787').replace(/\/$/, '');
+  return {
+    // The address the relay binds to. Terminate TLS in front of it (see deploy/) or set certs.
+    host: env.RELAY_HOST || '0.0.0.0',
+    port: parseInt(env.RELAY_PORT || '8787', 10),
+    // The public HTTPS origin AI clients reach, used in OAuth metadata and redirect validation.
+    publicUrl,
+    // device token -> user id. A device presents its token on the outbound channel.
+    deviceTokens: parseMap(env.RELAY_DEVICE_TOKENS),
+    // user pairing code -> user id. A human enters this code at the OAuth consent screen.
+    pairingCodes: parseMap(env.RELAY_PAIRING_CODES),
+    // How long an access token lives, and how long a relayed request waits for the device.
+    accessTokenTtlMs: parseInt(env.RELAY_ACCESS_TOKEN_TTL_MS || String(3600 * 1000), 10),
+    requestTimeoutMs: parseInt(env.RELAY_REQUEST_TIMEOUT_MS || '60000', 10),
+    // Permit dynamic client registration (RFC 7591). Trending to CIMD in newer MCP revisions,
+    // kept here for clients (including some ChatGPT/Claude Desktop builds) that rely on it.
+    allowDynamicRegistration: env.RELAY_ALLOW_DCR !== 'false',
+  };
+}

@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_mcp_bridge_rail">MCP Bridge</string>
+    <string name="terminow_mcp_bridge_title">MCP Bridge</string>
+    <string name="terminow_mcp_bridge_desc">ให้ไคลเอนต์ AI ภายนอก เช่น ChatGPT หรือ Claude Desktop ใช้งานเซสชันที่คุณแชร์ผ่านรีเลย์ โดย TermiNow เป็นผู้รันงาน และไม่มีสิ่งใดบนอุปกรณ์นี้ถูกเปิดเผย</string>
+
+    <string name="terminow_mcp_bridge_enable">เปิดใช้งาน MCP Bridge</string>
+    <string name="terminow_mcp_bridge_status_on">กำลังรับการเชื่อมต่อที่ 127.0.0.1:%1$d · จับคู่ %2$d · แชร์ %3$d · ทำงาน %4$d</string>
+    <string name="terminow_mcp_bridge_status_error">ไม่ได้รับการเชื่อมต่อ: %1$s</string>
+    <string name="terminow_mcp_bridge_off_note">เปิดบริดจ์เพื่อจับคู่ไคลเอนต์และแชร์เซสชัน</string>
+    <string name="terminow_mcp_bridge_premium">MCP Bridge เป็นฟีเจอร์ของ Premium</string>
+
+    <string name="terminow_mcp_bridge_relay_section">รีเลย์</string>
+    <string name="terminow_mcp_bridge_relay_endpoint">ปลายทางรีเลย์</string>
+    <string name="terminow_mcp_bridge_relay_state">รีเลย์: %1$s</string>
+    <string name="terminow_mcp_bridge_relay_connect">เชื่อมต่อ</string>
+    <string name="terminow_mcp_bridge_relay_disconnect">ตัดการเชื่อมต่อ</string>
+    <string name="terminow_mcp_bridge_relay_off">ยังไม่ได้เชื่อมต่อรีเลย์ เชื่อมต่อเพื่อให้ไคลเอนต์ AI ระยะไกลเข้าถึงเซสชันที่แชร์</string>
+    <string name="terminow_mcp_bridge_relay_token_title">โทเคนอุปกรณ์</string>
+    <string name="terminow_mcp_bridge_relay_token_message">เพิ่มโทเคนอุปกรณ์นี้ลงในการตั้งค่ารีเลย์เป็น RELAY_DEVICE_TOKENS=&lt;โทเคน&gt;=&lt;รหัสผู้ใช้ของคุณ&gt; แล้วรีสตาร์ตรีเลย์ โทเคนนี้แสดงเพียงครั้งเดียว</string>
+
+    <string name="terminow_mcp_bridge_clients_section">ไคลเอนต์ที่จับคู่</string>
+    <string name="terminow_mcp_bridge_pair">จับคู่ไคลเอนต์</string>
+    <string name="terminow_mcp_bridge_pair_title">จับคู่ไคลเอนต์</string>
+    <string name="terminow_mcp_bridge_pair_hint">ชื่อสำหรับไคลเอนต์นี้ (เช่น ChatGPT)</string>
+    <string name="terminow_mcp_bridge_pair_token_title">โทเคนการจับคู่</string>
+    <string name="terminow_mcp_bridge_pair_token_message">มอบโทเคนนี้ให้ไคลเอนต์ AI โทเคนแสดงเพียงครั้งเดียว บนรีเลย์ผู้ใช้จะลงชื่อเข้าด้วยรหัสจับคู่ ส่วนโทเคนนี้ใช้ระบุไคลเอนต์ต่อ TermiNow</string>
+    <string name="terminow_mcp_bridge_no_clients">ยังไม่มีไคลเอนต์ที่จับคู่</string>
+    <string name="terminow_mcp_bridge_paired_on">จับคู่เมื่อ %1$s</string>
+    <string name="terminow_mcp_bridge_revoke">เพิกถอน</string>
+    <string name="terminow_mcp_bridge_revoked">เพิกถอนไคลเอนต์แล้ว</string>
+
+    <string name="terminow_mcp_bridge_sessions_section">เซสชันที่แชร์</string>
+    <string name="terminow_mcp_bridge_share">แชร์เซสชัน</string>
+    <string name="terminow_mcp_bridge_no_sessions">ยังไม่มีเซสชันที่แชร์</string>
+    <string name="terminow_mcp_bridge_no_env">ติดตั้งสภาพแวดล้อม Linux เพื่อแชร์เซสชัน Claude Code แบบจัดการ</string>
+    <string name="terminow_mcp_bridge_share_title">แชร์เซสชันแบบจัดการ</string>
+    <string name="terminow_mcp_bridge_share_label">ชื่อ</string>
+    <string name="terminow_mcp_bridge_share_folder">โฟลเดอร์</string>
+    <string name="terminow_mcp_bridge_share_env">สภาพแวดล้อม</string>
+    <string name="terminow_mcp_bridge_managed">Claude Code แบบจัดการ (เชื่อถือได้)</string>
+    <string name="terminow_mcp_bridge_caps_title">สิทธิ์ของไคลเอนต์</string>
+    <string name="terminow_mcp_bridge_cap_submit">ส่งงาน</string>
+    <string name="terminow_mcp_bridge_cap_read">อ่านผลลัพธ์</string>
+    <string name="terminow_mcp_bridge_cap_cancel">ยกเลิกงาน</string>
+    <string name="terminow_mcp_bridge_session_shared">แชร์ · %1$s</string>
+    <string name="terminow_mcp_bridge_session_queue">คิว %1$d · %2$s</string>
+    <string name="terminow_mcp_bridge_busy">กำลังทำงาน</string>
+    <string name="terminow_mcp_bridge_idle">ว่าง</string>
+    <string name="terminow_mcp_bridge_unshare">ยกเลิกการแชร์</string>
+
+    <string name="terminow_mcp_bridge_tasks_section">งาน</string>
+    <string name="terminow_mcp_bridge_no_tasks">ยังไม่มีงาน</string>
+    <string name="terminow_mcp_bridge_task_title">งาน</string>
+    <string name="terminow_mcp_bridge_task_request">คำสั่ง</string>
+    <string name="terminow_mcp_bridge_task_target">เป้าหมาย</string>
+    <string name="terminow_mcp_bridge_task_state">สถานะ</string>
+    <string name="terminow_mcp_bridge_task_pending">กำลังรอผู้ใช้: %1$s</string>
+    <string name="terminow_mcp_bridge_task_result">ผลลัพธ์</string>
+    <string name="terminow_mcp_bridge_task_failure">ข้อผิดพลาด</string>
+    <string name="terminow_mcp_bridge_task_output">เอาต์พุต</string>
+    <string name="terminow_mcp_bridge_cancel_task">ยกเลิกงาน</string>
+
+    <string name="terminow_mcp_bridge_emergency_stop">หยุดฉุกเฉิน</string>
+    <string name="terminow_mcp_bridge_emergency_desc">ปิดบริดจ์ ตัดการเชื่อมต่อรีเลย์ และเพิกถอนไคลเอนต์ทั้งหมดทันที</string>
+    <string name="terminow_mcp_bridge_stopped">หยุดแล้ว บริดจ์ปิดและเพิกถอนไคลเอนต์ทั้งหมดแล้ว</string>
+
+    <string name="terminow_mcp_bridge_copy">คัดลอก</string>
+    <string name="terminow_mcp_bridge_copied">คัดลอกแล้ว</string>
+</resources>

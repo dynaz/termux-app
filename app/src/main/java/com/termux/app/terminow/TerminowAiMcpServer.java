@@ -17,7 +17,7 @@ import java.util.Collection;
  * checked again in {@link TerminowAiBridge} for each call. Secrets are redacted from everything
  * that goes back, as a second guard on top of the bridge never putting them there.
  */
-public final class TerminowAiMcpServer {
+public final class TerminowAiMcpServer implements TerminowAiBridgeServer.Handler {
 
     public static final String PROTOCOL_VERSION = "2024-11-05";
     public static final String SERVER_NAME = "terminow-hosts";
@@ -45,6 +45,7 @@ public final class TerminowAiMcpServer {
      * notification, which has no reply. Never throws: a failure becomes a JSON-RPC error.
      */
     @Nullable
+    @Override
     public JSONObject handle(@NonNull JSONObject message) {
         String method = message.optString("method");
         boolean isRequest = message.has("id") && !message.isNull("id");

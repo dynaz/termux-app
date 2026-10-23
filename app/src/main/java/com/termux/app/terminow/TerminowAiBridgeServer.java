@@ -37,9 +37,18 @@ public final class TerminowAiBridgeServer {
     static final int HANDSHAKE_TIMEOUT_MS = 15_000;
     private static final int BACKLOG = 8;
 
-    /** Builds the MCP server for an environment, with the current bridge and secrets. */
+    /**
+     * Answers one JSON-RPC message, the same contract {@link TerminowAiMcpServer} and
+     * {@link TerminowMcpBridgeMcpServer} both meet, so this loopback transport serves either bridge
+     * without a parallel listener. {@code null} is returned for a notification, which has no reply.
+     */
+    public interface Handler {
+        @Nullable JSONObject handle(@NonNull JSONObject message);
+    }
+
+    /** Builds the MCP handler for one authenticated peer (an environment or a paired client). */
     public interface ServerFactory {
-        @NonNull TerminowAiMcpServer forEnvironment(@NonNull String environmentKey);
+        @NonNull Handler forEnvironment(@NonNull String environmentKey);
     }
 
     private final TerminowAiSession mSession;
@@ -206,7 +215,7 @@ public final class TerminowAiBridgeServer {
         }
         out.write("OK\n");
         out.flush();
-        TerminowAiMcpServer server = mFactory.forEnvironment(environmentKey);
+        Handler server = mFactory.forEnvironment(environmentKey);
         String line;
         while ((line = in.readLine()) != null) {
             if (line.trim().isEmpty()) continue;
@@ -221,7 +230,7 @@ public final class TerminowAiBridgeServer {
     }
 
     @Nullable
-    private static JSONObject handleLine(@NonNull TerminowAiMcpServer server, @NonNull String line) {
+    private static JSONObject handleLine(@NonNull Handler server, @NonNull String line) {
         JSONObject message;
         try {
             message = new JSONObject(line);

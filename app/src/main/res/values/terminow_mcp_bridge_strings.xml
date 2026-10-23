@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_mcp_bridge_rail">MCP Bridge</string>
+    <string name="terminow_mcp_bridge_title">MCP Bridge</string>
+    <string name="terminow_mcp_bridge_desc">Let an external AI client — ChatGPT or Claude Desktop — use the sessions you share, through a relay. TermiNow runs the tasks and nothing on this device is exposed.</string>
+
+    <string name="terminow_mcp_bridge_enable">Enable MCP Bridge</string>
+    <string name="terminow_mcp_bridge_status_on">Listening on 127.0.0.1:%1$d · %2$d paired · %3$d shared · %4$d active</string>
+    <string name="terminow_mcp_bridge_status_error">Not listening: %1$s</string>
+    <string name="terminow_mcp_bridge_off_note">Turn the bridge on to pair a client and share a session.</string>
+    <string name="terminow_mcp_bridge_premium">The MCP Bridge is a Premium feature.</string>
+
+    <string name="terminow_mcp_bridge_relay_section">Relay</string>
+    <string name="terminow_mcp_bridge_relay_endpoint">Relay endpoint</string>
+    <string name="terminow_mcp_bridge_relay_state">Relay: %1$s</string>
+    <string name="terminow_mcp_bridge_relay_connect">Connect</string>
+    <string name="terminow_mcp_bridge_relay_disconnect">Disconnect</string>
+    <string name="terminow_mcp_bridge_relay_off">The relay is not connected. Connect to let a remote AI client reach your shared sessions.</string>
+    <string name="terminow_mcp_bridge_relay_token_title">Device token</string>
+    <string name="terminow_mcp_bridge_relay_token_message">Add this device token to your relay configuration as RELAY_DEVICE_TOKENS=&lt;token&gt;=&lt;your user id&gt;, then restart the relay. It is shown only once.</string>
+
+    <string name="terminow_mcp_bridge_clients_section">Paired clients</string>
+    <string name="terminow_mcp_bridge_pair">Pair a client</string>
+    <string name="terminow_mcp_bridge_pair_title">Pair a client</string>
+    <string name="terminow_mcp_bridge_pair_hint">A name for this client (e.g. ChatGPT)</string>
+    <string name="terminow_mcp_bridge_pair_token_title">Pairing token</string>
+    <string name="terminow_mcp_bridge_pair_token_message">Give this token to the AI client. It is shown only once. On the relay the person signs in with their pairing code; this token identifies the client to TermiNow.</string>
+    <string name="terminow_mcp_bridge_no_clients">No clients are paired yet.</string>
+    <string name="terminow_mcp_bridge_paired_on">Paired %1$s</string>
+    <string name="terminow_mcp_bridge_revoke">Revoke</string>
+    <string name="terminow_mcp_bridge_revoked">The client was revoked.</string>
+
+    <string name="terminow_mcp_bridge_sessions_section">Shared sessions</string>
+    <string name="terminow_mcp_bridge_share">Share a session</string>
+    <string name="terminow_mcp_bridge_no_sessions">No sessions are shared yet.</string>
+    <string name="terminow_mcp_bridge_no_env">Install a Linux environment to share a managed Claude Code session.</string>
+    <string name="terminow_mcp_bridge_share_title">Share a managed session</string>
+    <string name="terminow_mcp_bridge_share_label">Name</string>
+    <string name="terminow_mcp_bridge_share_folder">Folder</string>
+    <string name="terminow_mcp_bridge_share_env">Environment</string>
+    <string name="terminow_mcp_bridge_managed">Managed Claude Code (reliable)</string>
+    <string name="terminow_mcp_bridge_caps_title">Client permissions</string>
+    <string name="terminow_mcp_bridge_cap_submit">Submit tasks</string>
+    <string name="terminow_mcp_bridge_cap_read">Read output</string>
+    <string name="terminow_mcp_bridge_cap_cancel">Cancel tasks</string>
+    <string name="terminow_mcp_bridge_session_shared">Shared · %1$s</string>
+    <string name="terminow_mcp_bridge_session_queue">%1$d queued · %2$s</string>
+    <string name="terminow_mcp_bridge_busy">busy</string>
+    <string name="terminow_mcp_bridge_idle">idle</string>
+    <string name="terminow_mcp_bridge_unshare">Unshare</string>
+
+    <string name="terminow_mcp_bridge_tasks_section">Tasks</string>
+    <string name="terminow_mcp_bridge_no_tasks">No tasks yet.</string>
+    <string name="terminow_mcp_bridge_task_title">Task</string>
+    <string name="terminow_mcp_bridge_task_request">Request</string>
+    <string name="terminow_mcp_bridge_task_target">Target</string>
+    <string name="terminow_mcp_bridge_task_state">State</string>
+    <string name="terminow_mcp_bridge_task_pending">Waiting for the user: %1$s</string>
+    <string name="terminow_mcp_bridge_task_result">Result</string>
+    <string name="terminow_mcp_bridge_task_failure">Failure</string>
+    <string name="terminow_mcp_bridge_task_output">Output</string>
+    <string name="terminow_mcp_bridge_cancel_task">Cancel task</string>
+
+    <string name="terminow_mcp_bridge_emergency_stop">Emergency stop</string>
+    <string name="terminow_mcp_bridge_emergency_desc">Turn the bridge off, disconnect the relay, and revoke every client at once.</string>
+    <string name="terminow_mcp_bridge_stopped">Stopped. The bridge is off and all clients are revoked.</string>
+
+    <string name="terminow_mcp_bridge_copy">Copy</string>
+    <string name="terminow_mcp_bridge_copied">Copied</string>
+</resources>

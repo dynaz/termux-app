@@ -112,6 +112,7 @@ public class TerminowHome {
     private static final int PAGE_FILES = 8;
     private static final int PAGE_LAUNCH = 9;
     private static final int PAGE_AI = 10;
+    private static final int PAGE_MCP_BRIDGE = 11;
 
     private static final Pattern KEY_NAME_PATTERN = Pattern.compile("[A-Za-z0-9_][A-Za-z0-9._-]*");
     private static final int KEY_FILE_MAX_SIZE = 64 * 1024;
@@ -184,6 +185,9 @@ public class TerminowHome {
     private final View mRailAi;
     private final View mAiScrollView;
     private TerminowAiSettings mAiPage;
+    private final View mRailMcpBridge;
+    private final View mMcpBridgeScrollView;
+    private TerminowMcpBridgeUi mMcpBridgePage;
     private final View mExplorerView;
     private final TerminowExplorer mExplorer;
     private final TerminowLauncher mLauncher;
@@ -485,6 +489,14 @@ public class TerminowHome {
             new TerminowMcpTargets(new File(TermuxConstants.TERMUX_PREFIX_DIR_PATH), new File(TermuxConstants.TERMUX_HOME_DIR_PATH)));
         mAiBridge.startIfEnabled();
         mAiPage = new TerminowAiSettings(activity, mAiBridge, mStore, activity.findViewById(R.id.terminow_ai));
+        // The MCP Bridge: external AI clients reaching shared managed sessions through the relay.
+        mMcpBridge = TerminowMcpBridgeManager.getInstance(activity.getApplicationContext(), mStore,
+            new TerminowMcpTargets(new File(TermuxConstants.TERMUX_PREFIX_DIR_PATH), new File(TermuxConstants.TERMUX_HOME_DIR_PATH)));
+        mMcpBridge.startIfEnabled();
+        mMcpBridgePage = new TerminowMcpBridgeUi(activity, mMcpBridge, mStore, activity.findViewById(R.id.terminow_mcp_bridge));
+        mRailMcpBridge = activity.findViewById(R.id.terminow_rail_mcp_bridge);
+        mRailMcpBridge.setOnClickListener(v -> setPage(PAGE_MCP_BRIDGE));
+        mMcpBridgeScrollView = activity.findViewById(R.id.terminow_mcp_bridge_scroll);
         mRailSettings = activity.findViewById(R.id.terminow_rail_settings);
         mRailSettings.setOnClickListener(v -> setPage(PAGE_SETTINGS));
         mHeaderView = activity.findViewById(R.id.terminow_header);
@@ -800,7 +812,9 @@ public class TerminowHome {
             mMcpScrollView.setVisibility(View.GONE);
             mExplorerView.setVisibility(View.GONE);
             mAiScrollView.setVisibility(View.GONE);
+            mMcpBridgeScrollView.setVisibility(View.GONE);
             mActionsView.setVisibility(View.GONE);
+            setRailItemSelected(mRailMcpBridge, false);
             setRailItemSelected(mRailHosts, false);
             setRailItemSelected(mRailSnippets, false);
             setRailItemSelected(mRailSettings, false);
@@ -824,6 +838,7 @@ public class TerminowHome {
         setRailItemSelected(mRailMcp, page == PAGE_MCP);
         setRailItemSelected(mRailFiles, page == PAGE_FILES);
         setRailItemSelected(mRailAi, page == PAGE_AI);
+        setRailItemSelected(mRailMcpBridge, page == PAGE_MCP_BRIDGE);
         mActionsView.setVisibility(page == PAGE_HOSTS ? View.VISIBLE : View.GONE);
         mSortView.setVisibility(page == PAGE_KEYCHAIN ? View.VISIBLE : View.GONE);
         mSearchView.setHint(page == PAGE_KEYCHAIN ? R.string.terminow_search_keys_hint :
@@ -837,6 +852,8 @@ public class TerminowHome {
         mMcpScrollView.setVisibility(page == PAGE_MCP ? View.VISIBLE : View.GONE);
         boolean ai = page == PAGE_AI;
         mAiScrollView.setVisibility(ai ? View.VISIBLE : View.GONE);
+        boolean mcpBridge = page == PAGE_MCP_BRIDGE;
+        mMcpBridgeScrollView.setVisibility(mcpBridge ? View.VISIBLE : View.GONE);
         // The explorer has its own toolbar, search and actions over the whole content area
         boolean files = page == PAGE_FILES;
         mExplorerView.setVisibility(files ? View.VISIBLE : View.GONE);
@@ -861,6 +878,18 @@ public class TerminowHome {
             if (mAiPage == null)
                 mAiPage = new TerminowAiSettings(mActivity, mAiBridge, mStore, mActivity.findViewById(R.id.terminow_ai));
             mAiPage.render();
+            return;
+        }
+        if (mcpBridge) {
+            mHeaderView.setVisibility(View.GONE);
+            mSectionTitleView.setVisibility(View.GONE);
+            mGridView.setVisibility(View.GONE);
+            mFabView.setVisibility(View.GONE);
+            mEmptyView.setVisibility(View.GONE);
+            mSettingsScrollView.setVisibility(View.GONE);
+            if (mMcpBridgePage == null)
+                mMcpBridgePage = new TerminowMcpBridgeUi(mActivity, mMcpBridge, mStore, mActivity.findViewById(R.id.terminow_mcp_bridge));
+            mMcpBridgePage.render();
             return;
         }
         // Known hosts and logs are only added by connecting to hosts
@@ -1214,6 +1243,7 @@ public class TerminowHome {
     /** The SFTP tabs that show the files of their host, like Termius, instead of the sftp command line. */
     private TerminowSftpBrowser mSftpBrowser;
     private TerminowAiBridgeManager mAiBridge;
+    private TerminowMcpBridgeManager mMcpBridge;
 
     /** The session that is shown if it is an sftp session that is still running, otherwise {@code null}. */
     @Nullable

@@ -589,6 +589,18 @@ public class TerminowStore {
     private static final String KEY_AI_ENABLED = "ai_bridge_enabled";
     private static final String KEY_AI_TOKENS = "ai_bridge_tokens";
     private static final String KEY_AI_PORT = "ai_bridge_port";
+
+    // The MCP Bridge (shared sessions and managed tasks for an external AI client). The client
+    // pairing tokens are encrypted like host passwords; the shares and tasks are plain facts that
+    // carry no secret. The relay settings say where TermiNow dials out, never a public address of
+    // this device. See TerminowMcpBridge, TerminowMcpBridgeManager and TerminowMcpBridgeRelay.
+    private static final String KEY_MCP_ENABLED = "mcp_bridge_enabled";
+    private static final String KEY_MCP_PORT = "mcp_bridge_port";
+    private static final String KEY_MCP_MAX_QUEUE = "mcp_bridge_max_queue";
+    private static final String KEY_MCP_CLIENTS = "mcp_bridge_clients";
+    private static final String KEY_MCP_SHARES = "mcp_bridge_shares";
+    private static final String KEY_MCP_TASKS = "mcp_bridge_tasks";
+    private static final String KEY_MCP_RELAY = "mcp_bridge_relay";
     private static final String KEY_BACKUPS = "environment_backups";
     private static final String KEY_IDENTITIES = "identities";
     private static final String KEY_KEYCHAIN_SORT = "keychain_sort";
@@ -2089,6 +2101,143 @@ public class TerminowStore {
         } catch (JSONException e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Failed to remove AI token", e);
         }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // MCP Bridge: enable flag, loopback port, queue bound
+    // ---------------------------------------------------------------------------------------
+
+    public boolean isMcpBridgeEnabled() {
+        return mPreferences.getBoolean(KEY_MCP_ENABLED, false);
+    }
+
+    public void setMcpBridgeEnabled(boolean enabled) {
+        mPreferences.edit().putBoolean(KEY_MCP_ENABLED, enabled).apply();
+    }
+
+    /** The loopback port the local MCP leg tries to reuse, 0 for any free port. */
+    public int getMcpBridgePort() {
+        return mPreferences.getInt(KEY_MCP_PORT, 0);
+    }
+
+    public void setMcpBridgePort(int port) {
+        mPreferences.edit().putInt(KEY_MCP_PORT, port).apply();
+    }
+
+    public int getMcpBridgeMaxQueue() {
+        return mPreferences.getInt(KEY_MCP_MAX_QUEUE, 8);
+    }
+
+    public void setMcpBridgeMaxQueue(int maxQueue) {
+        mPreferences.edit().putInt(KEY_MCP_MAX_QUEUE, Math.max(0, maxQueue)).apply();
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // MCP Bridge: paired client tokens (the secret is encrypted) with a label for the UI
+    // ---------------------------------------------------------------------------------------
+
+    /** The token of each paired client, by client id, decrypted. */
+    @NonNull
+    public Map<String, String> getMcpClientTokens() {
+        Map<String, String> tokens = new LinkedHashMap<>();
+        try {
+            JSONObject object = new JSONObject(mPreferences.getString(KEY_MCP_CLIENTS, "{}"));
+            JSONArray names = object.names();
+            for (int i = 0; names != null && i < names.length(); i++) {
+                String id = names.optString(i);
+                JSONObject client = object.optJSONObject(id);
+                String token = client != null ? decryptPassword(client.optString("token")) : "";
+                if (!token.isEmpty()) tokens.put(id, token);
+            }
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to read MCP clients", e);
+        }
+        return tokens;
+    }
+
+    /** The label and pairing time of each client, by id, for the UI (no secret). */
+    @NonNull
+    public Map<String, JSONObject> getMcpClientsMeta() {
+        Map<String, JSONObject> meta = new LinkedHashMap<>();
+        try {
+            JSONObject object = new JSONObject(mPreferences.getString(KEY_MCP_CLIENTS, "{}"));
+            JSONArray names = object.names();
+            for (int i = 0; names != null && i < names.length(); i++) {
+                String id = names.optString(i);
+                JSONObject client = object.optJSONObject(id);
+                if (client == null) continue;
+                meta.put(id, new JSONObject()
+                    .put("label", client.optString("label"))
+                    .put("createdAt", client.optLong("createdAt")));
+            }
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to read MCP client metadata", e);
+        }
+        return meta;
+    }
+
+    public void setMcpClient(@NonNull String clientId, @NonNull String token, @NonNull String label) {
+        try {
+            JSONObject object = new JSONObject(mPreferences.getString(KEY_MCP_CLIENTS, "{}"));
+            JSONObject existing = object.optJSONObject(clientId);
+            long createdAt = existing != null ? existing.optLong("createdAt", System.currentTimeMillis()) : System.currentTimeMillis();
+            object.put(clientId, new JSONObject()
+                .put("token", encryptPassword(token))
+                .put("label", label)
+                .put("createdAt", createdAt));
+            mPreferences.edit().putString(KEY_MCP_CLIENTS, object.toString()).apply();
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to save MCP client", e);
+        }
+    }
+
+    public void removeMcpClient(@NonNull String clientId) {
+        try {
+            JSONObject object = new JSONObject(mPreferences.getString(KEY_MCP_CLIENTS, "{}"));
+            object.remove(clientId);
+            mPreferences.edit().putString(KEY_MCP_CLIENTS, object.toString()).apply();
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to remove MCP client", e);
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // MCP Bridge: shared sessions and persisted tasks (plain facts, no secret)
+    // ---------------------------------------------------------------------------------------
+
+    @NonNull
+    public String getMcpSharesJson() {
+        return mPreferences.getString(KEY_MCP_SHARES, "[]");
+    }
+
+    public void setMcpSharesJson(@NonNull String json) {
+        mPreferences.edit().putString(KEY_MCP_SHARES, json).apply();
+    }
+
+    @NonNull
+    public String getMcpTasksJson() {
+        return mPreferences.getString(KEY_MCP_TASKS, "[]");
+    }
+
+    public void setMcpTasksJson(@NonNull String json) {
+        mPreferences.edit().putString(KEY_MCP_TASKS, json).apply();
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // MCP Bridge: relay settings (where TermiNow dials out; never an address of this device)
+    // ---------------------------------------------------------------------------------------
+
+    @NonNull
+    public JSONObject getMcpRelay() {
+        try {
+            return new JSONObject(mPreferences.getString(KEY_MCP_RELAY, "{}"));
+        } catch (JSONException e) {
+            return new JSONObject();
+        }
+    }
+
+    public void setMcpRelay(@NonNull JSONObject relay) {
+        mPreferences.edit().putString(KEY_MCP_RELAY, relay.toString()).apply();
     }
 
     /**
