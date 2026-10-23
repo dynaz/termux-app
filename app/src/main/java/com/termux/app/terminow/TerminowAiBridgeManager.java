@@ -113,12 +113,18 @@ public final class TerminowAiBridgeManager {
         return parent != null ? parent.getAbsolutePath() : mServer.getSocketPath();
     }
 
-    /** Start the listener if the bridge is enabled. Call when the app starts and after enabling. */
+    /** The Local AI Bridge is a Premium feature. */
+    private boolean premium() {
+        return TerminowAccountUi.isPremium(mStore);
+    }
+
+    /** Start the listener if the bridge is enabled and Premium is active. */
     public synchronized void startIfEnabled() {
-        if (mStore.isAiBridgeEnabled() && !mServer.isRunning()) mServer.start();
+        if (mStore.isAiBridgeEnabled() && premium() && !mServer.isRunning()) mServer.start();
     }
 
     public synchronized SetupResult setEnabled(boolean enabled) {
+        if (enabled && !premium()) return new SetupResult(false, "The Local AI Bridge needs TermiNow Premium");
         mStore.setAiBridgeEnabled(enabled);
         if (enabled) {
             String error = mServer.start();
@@ -175,6 +181,7 @@ public final class TerminowAiBridgeManager {
      */
     @NonNull
     public synchronized SetupResult connectClaude(@NonNull String environmentKey, @NonNull String user) {
+        if (!premium()) return new SetupResult(false, "The Local AI Bridge needs TermiNow Premium");
         TerminowMcpTargets.Container container = mTargets.getContainer(environmentKey);
         if (container == null) return new SetupResult(false, "The environment " + environmentKey + " is not installed");
         String guestHome = TerminowMcpTargets.getGuestHome(container, user);

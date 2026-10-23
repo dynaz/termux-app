@@ -1,24 +1,21 @@
 package com.termux.app.terminow;
 
 import android.app.AlertDialog;
-import android.app.Dialog;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.Window;
 import android.widget.CheckBox;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
-import android.widget.ScrollView;
 import android.widget.Switch;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 
 import com.termux.R;
@@ -27,58 +24,46 @@ import com.termux.app.TermuxActivity;
 import java.util.List;
 
 /**
- * Settings → AI Integration: turn the Local AI Bridge on, connect Claude Code of an environment,
- * see the status, allow or stop hosts for the AI, and revoke everything. No secret is shown or
- * entered here; a host is allowed by its stable id, and its credentials stay in TermiNow.
+ * The AI Integration page in the left rail (a Premium feature, after MCP Servers): turn the Local
+ * AI Bridge on, connect Claude Code of an environment, see the status, allow or stop hosts for the
+ * AI, and revoke everything. No secret is shown or entered here; a host is allowed by its stable
+ * id, and its credentials stay in TermiNow.
  */
 final class TerminowAiSettings {
 
     private final TermuxActivity mActivity;
     private final TerminowAiBridgeManager mManager;
     private final TerminowStore mStore;
-    @Nullable private Dialog mDialog;
-    @Nullable private LinearLayout mContent;
+    private final LinearLayout mContent;
+    private final TerminowAccountUi mAccountUi;
     private List<TerminowStore.Host> mHosts;
 
-    TerminowAiSettings(@NonNull TermuxActivity activity, @NonNull TerminowAiBridgeManager manager, @NonNull TerminowStore store) {
+    TerminowAiSettings(@NonNull TermuxActivity activity, @NonNull TerminowAiBridgeManager manager, @NonNull TerminowStore store,
+                       @NonNull LinearLayout container) {
         mActivity = activity;
         mManager = manager;
         mStore = store;
+        mContent = container;
+        mAccountUi = new TerminowAccountUi(activity, store, this::render);
     }
 
-    void show() {
-        mHosts = mStore.getHosts();
-        Dialog dialog = new Dialog(mActivity, R.style.TerminowPanelDialog);
-        mDialog = dialog;
-        LinearLayout root = new LinearLayout(mActivity);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(color(R.color.terminow_panel));
-        ScrollView scroll = new ScrollView(mActivity);
-        LinearLayout content = new LinearLayout(mActivity);
-        content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(18), dp(18), dp(18), dp(24));
-        scroll.addView(content);
-        root.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        mContent = content;
-        dialog.setContentView(root);
-        Window window = dialog.getWindow();
-        if (window != null) window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
-        render();
-        dialog.show();
-    }
-
-    private void render() {
-        LinearLayout content = mContent;
-        if (content == null) return;
-        content.removeAllViews();
+    /** Fill the page. Called when the rail opens it and after a change. */
+    void render() {
+        mContent.removeAllViews();
+        mContent.setPadding(dp(18), dp(16), dp(18), dp(24));
 
         TextView title = text(mActivity.getString(R.string.terminow_ai_integration), 22, R.color.terminow_text);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        content.addView(title);
+        mContent.addView(title);
+
+        if (!TerminowAccountUi.isPremium(mStore)) {
+            renderLocked();
+            return;
+        }
+        mHosts = mStore.getHosts();
 
         boolean enabled = mManager.isEnabled();
-        // Enable switch
-        LinearLayout enableCard = card(content);
+        LinearLayout enableCard = card(mContent);
         LinearLayout enableRow = new LinearLayout(mActivity);
         enableRow.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout enableTexts = new LinearLayout(mActivity);
@@ -107,18 +92,17 @@ final class TerminowAiSettings {
         }
 
         if (!enabled) {
-            content.addView(note(mActivity.getString(R.string.terminow_ai_bridge_off_note)));
+            mContent.addView(note(mActivity.getString(R.string.terminow_ai_bridge_off_note)));
             return;
         }
 
-        // Connect Claude Code per environment
-        content.addView(section(mActivity.getString(R.string.terminow_ai_connect_section)));
+        mContent.addView(section(mActivity.getString(R.string.terminow_ai_connect_section)));
         List<TerminowMcpTargets.Container> environments = mManager.environments();
         if (environments.isEmpty()) {
-            content.addView(note(mActivity.getString(R.string.terminow_ai_no_env)));
+            mContent.addView(note(mActivity.getString(R.string.terminow_ai_no_env)));
         } else {
             for (TerminowMcpTargets.Container container : environments) {
-                LinearLayout row = card(content);
+                LinearLayout row = card(mContent);
                 LinearLayout line = new LinearLayout(mActivity);
                 line.setGravity(Gravity.CENTER_VERTICAL);
                 LinearLayout texts = new LinearLayout(mActivity);
@@ -142,13 +126,12 @@ final class TerminowAiSettings {
             }
         }
 
-        // Hosts and their AI access
-        content.addView(section(mActivity.getString(R.string.terminow_ai_hosts_section)));
+        mContent.addView(section(mActivity.getString(R.string.terminow_ai_hosts_section)));
         boolean anyHost = false;
         for (TerminowStore.Host host : mHosts) {
             if (host.telnet || !host.isTerminal()) continue;
             anyHost = true;
-            LinearLayout row = card(content);
+            LinearLayout row = card(mContent);
             LinearLayout line = new LinearLayout(mActivity);
             line.setGravity(Gravity.CENTER_VERTICAL);
             LinearLayout texts = new LinearLayout(mActivity);
@@ -164,9 +147,8 @@ final class TerminowAiSettings {
             row.addView(line, matchWrap());
             row.setOnClickListener(v -> editHostAccess(host));
         }
-        if (!anyHost) content.addView(note(mActivity.getString(R.string.terminow_ai_no_hosts)));
+        if (!anyHost) mContent.addView(note(mActivity.getString(R.string.terminow_ai_no_hosts)));
 
-        // Revoke all
         View revoke = button(mActivity.getString(R.string.terminow_ai_revoke_all), false, () -> {
             mManager.revokeAll();
             mActivity.showToast(mActivity.getString(R.string.terminow_ai_revoked), false);
@@ -174,7 +156,29 @@ final class TerminowAiSettings {
         });
         LinearLayout.LayoutParams p = (LinearLayout.LayoutParams) revoke.getLayoutParams();
         p.topMargin = dp(16);
-        content.addView(revoke);
+        mContent.addView(revoke);
+    }
+
+    /** The Premium wall, like the File Manager shows for free users. */
+    private void renderLocked() {
+        LinearLayout card = card(mContent);
+        card.setGravity(Gravity.CENTER_HORIZONTAL);
+        ImageView crown = new ImageView(mActivity);
+        crown.setImageResource(R.drawable.ic_terminow_crown);
+        card.addView(crown, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        TextView heading = text(mActivity.getString(R.string.terminow_ai_integration), 18, R.color.terminow_text);
+        heading.setTypeface(Typeface.DEFAULT_BOLD);
+        heading.setGravity(Gravity.CENTER);
+        heading.setPadding(0, dp(10), 0, dp(6));
+        card.addView(heading, matchWrap());
+        TextView desc = text(mActivity.getString(R.string.terminow_ai_enable_desc), 14, R.color.terminow_text_secondary);
+        desc.setGravity(Gravity.CENTER);
+        card.addView(desc, matchWrap());
+        View upgrade = button(mActivity.getString(R.string.terminow_premium_get), true, mAccountUi::buyPremium);
+        LinearLayout.LayoutParams p = (LinearLayout.LayoutParams) upgrade.getLayoutParams();
+        p.topMargin = dp(16);
+        p.gravity = Gravity.CENTER_HORIZONTAL;
+        card.addView(upgrade);
     }
 
     @NonNull
@@ -234,7 +238,6 @@ final class TerminowAiSettings {
                 if (test.isChecked()) host.aiAccess.capabilities.add(TerminowStore.AiAccess.CAP_TEST_CONNECTION);
                 if (exec.isChecked()) host.aiAccess.capabilities.add(TerminowStore.AiAccess.CAP_RUN_COMMAND);
                 host.aiAccess.approvalPolicy = session.isChecked() ? "session" : ask.isChecked() ? "ask" : "rules";
-                // Bless the current endpoint and credentials, so a later change asks again
                 host.aiAccess.fingerprint = TerminowStore.aiFingerprint(host);
                 mStore.setHosts(mHosts);
                 mManager.onHostSaved(host);

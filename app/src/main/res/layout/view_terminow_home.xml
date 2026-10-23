@@ -189,6 +189,47 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/terminow_rail_ai"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="14dp"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <!-- The crown marks a Premium feature -->
+                <FrameLayout
+                    android:layout_width="56dp"
+                    android:layout_height="34dp"
+                    android:duplicateParentState="true">
+
+                    <ImageView
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:duplicateParentState="true"
+                        android:padding="6dp"
+                        android:src="@drawable/ic_terminow_ai"
+                        tools:ignore="ContentDescription" />
+
+                    <ImageView
+                        android:layout_width="14dp"
+                        android:layout_height="14dp"
+                        android:layout_gravity="top|end"
+                        android:layout_marginEnd="6dp"
+                        android:src="@drawable/ic_terminow_crown"
+                        tools:ignore="ContentDescription" />
+                </FrameLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:text="@string/terminow_ai_rail"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <LinearLayout
                 android:id="@+id/terminow_rail_forwarding"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -506,6 +547,24 @@
 
             <LinearLayout
                 android:id="@+id/terminow_mcp"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+        </ScrollView>
+
+        <!-- The AI Integration page, built by TerminowAiSettings -->
+        <ScrollView
+            android:id="@+id/terminow_ai_scroll"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_below="@id/terminow_section_title"
+            android:clipToPadding="false"
+            android:paddingBottom="88dp"
+            android:scrollbars="none"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/terminow_ai"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical" />

@@ -110,6 +110,7 @@ public class TerminowHome {
     private static final int PAGE_LOGS = 6;
     private static final int PAGE_MCP = 7;
     private static final int PAGE_FILES = 8;
+    private static final int PAGE_AI = 9;
     private static final int PAGE_LAUNCH = 9;
 
     private static final Pattern KEY_NAME_PATTERN = Pattern.compile("[A-Za-z0-9_][A-Za-z0-9._-]*");
@@ -180,6 +181,9 @@ public class TerminowHome {
     private final View mMcpScrollView;
     private final TerminowMcpPage mMcpPage;
     private final View mRailFiles;
+    private final View mRailAi;
+    private final View mAiScrollView;
+    private TerminowAiSettings mAiPage;
     private final View mExplorerView;
     private final TerminowExplorer mExplorer;
     private final TerminowLauncher mLauncher;
@@ -441,6 +445,9 @@ public class TerminowHome {
         mMcpPage = new TerminowMcpPage(activity, mStore, activity.findViewById(R.id.terminow_mcp));
         mRailFiles = activity.findViewById(R.id.terminow_rail_files);
         mRailFiles.setOnClickListener(v -> setPage(PAGE_FILES));
+        mRailAi = activity.findViewById(R.id.terminow_rail_ai);
+        mRailAi.setOnClickListener(v -> setPage(PAGE_AI));
+        mAiScrollView = activity.findViewById(R.id.terminow_ai_scroll);
         mExplorerView = activity.findViewById(R.id.terminow_explorer);
         mExplorer = new TerminowExplorer(activity, mStore, activity.findViewById(R.id.terminow_explorer), new TerminowExplorer.Host() {
             @Override
@@ -476,6 +483,7 @@ public class TerminowHome {
             new TerminowMcpTargets(new File(TermuxConstants.TERMUX_PREFIX_DIR_PATH), new File(TermuxConstants.TERMUX_HOME_DIR_PATH)),
             mVaultsUi::isKeychainUnlocked);
         mAiBridge.startIfEnabled();
+        mAiPage = new TerminowAiSettings(activity, mAiBridge, mStore, activity.findViewById(R.id.terminow_ai));
         mRailSettings = activity.findViewById(R.id.terminow_rail_settings);
         mRailSettings.setOnClickListener(v -> setPage(PAGE_SETTINGS));
         mHeaderView = activity.findViewById(R.id.terminow_header);
@@ -790,6 +798,7 @@ public class TerminowHome {
             mSettingsScrollView.setVisibility(View.GONE);
             mMcpScrollView.setVisibility(View.GONE);
             mExplorerView.setVisibility(View.GONE);
+            mAiScrollView.setVisibility(View.GONE);
             mActionsView.setVisibility(View.GONE);
             setRailItemSelected(mRailHosts, false);
             setRailItemSelected(mRailSnippets, false);
@@ -800,6 +809,7 @@ public class TerminowHome {
             setRailItemSelected(mRailLogs, false);
             setRailItemSelected(mRailMcp, false);
             setRailItemSelected(mRailFiles, false);
+            setRailItemSelected(mRailAi, false);
             mQuickLaunch.show();
             return;
         }
@@ -812,6 +822,7 @@ public class TerminowHome {
         setRailItemSelected(mRailLogs, page == PAGE_LOGS);
         setRailItemSelected(mRailMcp, page == PAGE_MCP);
         setRailItemSelected(mRailFiles, page == PAGE_FILES);
+        setRailItemSelected(mRailAi, page == PAGE_AI);
         mActionsView.setVisibility(page == PAGE_HOSTS ? View.VISIBLE : View.GONE);
         mSortView.setVisibility(page == PAGE_KEYCHAIN ? View.VISIBLE : View.GONE);
         mSearchView.setHint(page == PAGE_KEYCHAIN ? R.string.terminow_search_keys_hint :
@@ -823,6 +834,8 @@ public class TerminowHome {
         mSectionTitleView.setVisibility(settings ? View.GONE : View.VISIBLE);
         mGridView.setVisibility(settings || page == PAGE_MCP ? View.GONE : View.VISIBLE);
         mMcpScrollView.setVisibility(page == PAGE_MCP ? View.VISIBLE : View.GONE);
+        boolean ai = page == PAGE_AI;
+        mAiScrollView.setVisibility(ai ? View.VISIBLE : View.GONE);
         // The explorer has its own toolbar, search and actions over the whole content area
         boolean files = page == PAGE_FILES;
         mExplorerView.setVisibility(files ? View.VISIBLE : View.GONE);
@@ -834,6 +847,16 @@ public class TerminowHome {
             mEmptyView.setVisibility(View.GONE);
             mSettingsScrollView.setVisibility(View.GONE);
             mExplorer.show();
+            return;
+        }
+        if (ai) {
+            mHeaderView.setVisibility(View.GONE);
+            mSectionTitleView.setVisibility(View.GONE);
+            mGridView.setVisibility(View.GONE);
+            mFabView.setVisibility(View.GONE);
+            mEmptyView.setVisibility(View.GONE);
+            mSettingsScrollView.setVisibility(View.GONE);
+            if (mAiPage != null) mAiPage.render();
             return;
         }
         // Known hosts and logs are only added by connecting to hosts

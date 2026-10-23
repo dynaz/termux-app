@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="terminow_ai_integration">การเชื่อมต่อ AI</string>
+    <string name="terminow_ai_rail">AI</string>
     <string name="terminow_ai_integration_summary">ให้ Claude Code ใช้โฮสต์ของคุณผ่านเครื่องมือที่อนุญาต</string>
     <string name="terminow_ai_enable">เปิด Local AI Bridge</string>
     <string name="terminow_ai_enable_desc">Claude Code ในสภาพแวดล้อม Linux ใช้โฮสต์ที่คุณอนุญาตได้ผ่าน TermiNow คีย์ส่วนตัว รหัสผ่าน และโทเคนอยู่ใน TermiNow และไม่ถูกส่งให้ Claude</string>

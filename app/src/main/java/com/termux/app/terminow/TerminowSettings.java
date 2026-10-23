@@ -124,11 +124,6 @@ public class TerminowSettings {
         mAccountUi.addRows(this::addRow);
         if (mVaultSettings != null)
             addRow(R.string.terminow_vault_settings, mActivity.getString(R.string.terminow_vault_settings_summary), mVaultSettings);
-        if (mActivity.getTerminowHome() != null)
-            addRow(R.string.terminow_ai_integration, mActivity.getString(R.string.terminow_ai_integration_summary), () -> {
-                TerminowHome home = mActivity.getTerminowHome();
-                if (home != null) new TerminowAiSettings(mActivity, home.getAiBridge(), mStore).show();
-            });
 
         addSection(R.string.terminow_settings_terminal, false);
 

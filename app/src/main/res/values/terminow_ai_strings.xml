@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="terminow_ai_integration">AI Integration</string>
+    <string name="terminow_ai_rail">AI</string>
     <string name="terminow_ai_integration_summary">Let Claude Code use your hosts over authorized tools</string>
     <string name="terminow_ai_enable">Enable Local AI Bridge</string>
     <string name="terminow_ai_enable_desc">Claude Code in a Linux environment can use the hosts you allow, through TermiNow. Private keys, passwords and tokens stay in TermiNow and are never sent to Claude.</string>
