@@ -96,6 +96,53 @@ public final class TerminowAiBridgeManager {
             env -> new TerminowAiMcpServer(mBridge, env, this::secrets, BuildConfig.VERSION_NAME));
     }
 
+    // ---------------------------------------------------------------------------------------
+    // Process-lifetime ownership
+    //
+    // The listener must outlive the GUI Activity: Claude Code reaches the bridge from a Linux
+    // environment while TerminowHome is backgrounded or recreated, and the Termux foreground
+    // service keeps the process alive while sessions run. Owning the manager here as a process
+    // singleton keeps one listener on a stable port across Activity recreation, instead of a
+    // per-Activity server that died on teardown and drifted to a fresh random port when the next
+    // Activity re-bound (the old socket still held the saved port). The unlock check is backed by
+    // the store, not an Activity, so it stays valid when no Activity is attached.
+    // ---------------------------------------------------------------------------------------
+
+    @Nullable private static volatile TerminowAiBridgeManager sInstance;
+
+    /** The one manager for the process, created on first use with the application context. */
+    @NonNull
+    public static TerminowAiBridgeManager getInstance(@NonNull Context context, @NonNull TerminowStore store,
+                                                      @NonNull TerminowMcpTargets targets) {
+        TerminowAiBridgeManager instance = sInstance;
+        if (instance == null) {
+            synchronized (TerminowAiBridgeManager.class) {
+                instance = sInstance;
+                if (instance == null) {
+                    instance = new TerminowAiBridgeManager(context.getApplicationContext(), store, targets,
+                        storeUnlocked(store));
+                    sInstance = instance;
+                }
+            }
+        }
+        return instance;
+    }
+
+    /**
+     * A keychain-unlocked check backed only by the store, valid at process scope with no Activity.
+     * Mirrors {@link TerminowVaults#isUnlocked()}: the vault password was entered on this device
+     * for the signed-in account.
+     */
+    @NonNull
+    private static Unlocked storeUnlocked(@NonNull TerminowStore store) {
+        return () -> {
+            JSONObject vault = store.getVaultAccount();
+            TerminowAccount.Session session = store.getAccount();
+            return vault != null && session != null
+                && vault.optString("email").equalsIgnoreCase(session.email);
+        };
+    }
+
     @Nullable private String mLastError;
 
     @NonNull

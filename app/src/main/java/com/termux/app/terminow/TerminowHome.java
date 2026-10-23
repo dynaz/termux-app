@@ -479,9 +479,10 @@ public class TerminowHome {
         mExplorer.setLinuxSessionCounter(alias -> mLauncher.sessionsOf(alias).size());
         mSftpBrowser = new TerminowSftpBrowser(activity, mStore, activity.findViewById(R.id.terminow_sftp_browser));
         // The Local AI Bridge: Claude Code in a Linux environment using allowed hosts over authorized tools
-        mAiBridge = new TerminowAiBridgeManager(activity.getApplicationContext(), mStore,
-            new TerminowMcpTargets(new File(TermuxConstants.TERMUX_PREFIX_DIR_PATH), new File(TermuxConstants.TERMUX_HOME_DIR_PATH)),
-            mVaultsUi::isKeychainUnlocked);
+        // Process-scoped singleton: the listener must survive this Activity being backgrounded or
+        // recreated while Claude Code keeps using the bridge from a Linux environment.
+        mAiBridge = TerminowAiBridgeManager.getInstance(activity.getApplicationContext(), mStore,
+            new TerminowMcpTargets(new File(TermuxConstants.TERMUX_PREFIX_DIR_PATH), new File(TermuxConstants.TERMUX_HOME_DIR_PATH)));
         mAiBridge.startIfEnabled();
         mAiPage = new TerminowAiSettings(activity, mAiBridge, mStore, activity.findViewById(R.id.terminow_ai));
         mRailSettings = activity.findViewById(R.id.terminow_rail_settings);
