@@ -74,4 +74,8 @@
     <string name="terminow_settings_ubuntu_shell_fish">Fish</string>
     <string name="terminow_settings_ubuntu_shell_bash">Bash</string>
     <string name="terminow_settings_ubuntu_shell_changed">แท็บ Ubuntu ใหม่จะเปิดด้วย %1$s แท็บที่เปิดอยู่ใช้ shell เดิมต่อ</string>
+    <string name="terminow_install_ssh_label">SSH · %1$s</string>
+    <string name="terminow_install_ssh_start_fish">เริ่ม Fish ในเทอร์มินัลนี้</string>
+    <string name="terminow_install_ssh_tab_gone">เทอร์มินัลของโฮสต์นี้ถูกปิดไปแล้ว</string>
+    <string name="terminow_install_ssh_unresolved">“%1$s” ไม่ใช่โฮสต์ SSH ที่บันทึกไว้แล้ว จึงจัดการเครื่องมือไม่ได้</string>
 </resources>

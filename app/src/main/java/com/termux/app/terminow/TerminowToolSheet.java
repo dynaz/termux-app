@@ -25,6 +25,7 @@ import androidx.core.content.ContextCompat;
 import com.termux.R;
 import com.termux.app.TermuxActivity;
 import com.termux.app.terminow.linux.TerminowLinuxEnv;
+import com.termux.terminal.TerminalSession;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -34,10 +35,11 @@ import java.util.concurrent.Executors;
 
 /**
  * The Install tools sheet of the terminal toolbar: Claude Code, Cursor CLI, gstack, Git, curl
- * and tmux in the environment of the tab, as its user, with their real state, and plugins of the
- * official Claude Code marketplace, chosen in {@link TerminowPluginPicker}. Installing is done by
- * {@link TerminowToolInstaller}, whose jobs outlive this sheet; the sheet only shows them, and
- * finds out again what is installed when it opens and after each install ends.
+ * and tmux, and plugins of the official Claude Code marketplace, in the environment of the tab,
+ * as its user, with their real state. The tab decides the target: a local Linux environment, or
+ * a saved SSH host, whose server the tools go onto over its own connection, never the local one.
+ * Installing is done by {@link TerminowToolInstaller}, whose jobs outlive this sheet; the sheet
+ * only shows them, and finds out again what is installed when it opens and after each install.
  */
 final class TerminowToolSheet {
 
@@ -51,20 +53,65 @@ final class TerminowToolSheet {
         TerminowToolInstaller.Tool.GIT, TerminowToolInstaller.Tool.CURL, TerminowToolInstaller.Tool.TMUX,
         TerminowToolInstaller.Tool.FISH, TerminowToolInstaller.Tool.PLUGINS};
 
+    /**
+     * Where tools are installed: a local Linux environment, or a saved SSH host over its own
+     * connection. It keeps the runner, the key that scopes the jobs and the user, so a job stays
+     * bound to it even if the tab changes.
+     */
+    static final class Target {
+        final boolean ssh;
+        final String key;
+        final String user;
+        final TerminowToolInstaller.Runner runner;
+        /** The local environment, {@code null} for an SSH host. */
+        @Nullable final TerminowLauncher.Environment environment;
+        /** The SSH host, {@code null} for a local environment. */
+        @Nullable final TerminowStore.Host host;
+        /** The SSH tab the tools belong to, for Open and Start Fish; {@code null} for local. */
+        @Nullable final TerminalSession session;
+
+        private Target(boolean ssh, @NonNull String key, @NonNull String user, @NonNull TerminowToolInstaller.Runner runner,
+                       @Nullable TerminowLauncher.Environment environment, @Nullable TerminowStore.Host host,
+                       @Nullable TerminalSession session) {
+            this.ssh = ssh;
+            this.key = key;
+            this.user = user;
+            this.runner = runner;
+            this.environment = environment;
+            this.host = host;
+            this.session = session;
+        }
+
+        @NonNull
+        static Target local(@NonNull TerminowLauncher.Environment environment, @NonNull String user,
+                            @NonNull TerminowToolInstaller.Runner runner) {
+            return new Target(false, environment.key, user, runner, environment, null, null);
+        }
+
+        @NonNull
+        static Target ssh(@NonNull TerminowStore.Host host, @NonNull TerminalSession session,
+                          @NonNull TerminowToolInstaller.Runner runner) {
+            return new Target(true, TerminowRemoteTools.aliasOf(host), host.username.isEmpty() ? "root" : host.username, runner,
+                null, host, session);
+        }
+    }
+
     private final TermuxActivity mActivity;
     private final TerminowLauncher mLauncher;
     private final Handler mHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService mExecutor = Executors.newSingleThreadExecutor();
-    private final TerminowToolInstaller.Runner mRunner;
+    /** Runs the scripts in a local environment with proot-distro. */
+    private final TerminowToolInstaller.Runner mLocalRunner;
 
     @Nullable private Dialog mDialog;
     @Nullable private LinearLayout mContent;
-    @Nullable private TerminowLauncher.Environment mEnvironment;
-    private String mUser = "root";
-    /** What the environment has, {@code null} while it is being checked. */
+    @Nullable private Target mTarget;
+    /** Set while the target is a host, to close its connection when the sheet is closed. */
+    @Nullable private TerminowRemoteTools mRemoteTools;
+    /** What the target has, {@code null} while it is being checked. */
     @Nullable private TerminowToolInstaller.Detection mDetection;
     private boolean mDetecting;
-    /** The jobs whose end was seen, so their environment is checked again only once each. */
+    /** The jobs whose end was seen, so their target is checked again only once each. */
     private final List<TerminowToolInstaller.Job> mSeenEnded = new ArrayList<>();
     /** The tools whose log is shown in full. */
     private final java.util.Set<TerminowToolInstaller.Tool> mLogOpen = java.util.EnumSet.noneOf(TerminowToolInstaller.Tool.class);
@@ -76,7 +123,7 @@ final class TerminowToolSheet {
         mLauncher = launcher;
         TerminowClaudeSetup setup = new TerminowClaudeSetup(activity, new TerminowMcpTargets(prefixDir,
             new File(com.termux.shared.termux.TermuxConstants.TERMUX_HOME_DIR_PATH)));
-        mRunner = (alias, user, script, args) -> setup.start(TerminowToolInstaller.command(prefixDir, alias, user, script, args));
+        mLocalRunner = (alias, user, script, args) -> setup.start(TerminowToolInstaller.command(prefixDir, alias, user, script, args));
     }
 
     /**
@@ -84,9 +131,28 @@ final class TerminowToolSheet {
      * as the user of the tab, or else the user chosen for the environment.
      */
     void show(@NonNull TerminowLauncher.Environment environment, @Nullable String user) {
+        TerminowLauncher.Environment chosen = environment;
+        if (chosen.isLocal()) {
+            for (TerminowLauncher.Environment other : mLauncher.environments())
+                if (!other.isLocal()) {
+                    chosen = other;
+                    break;
+                }
+        }
+        String chosenUser = user != null && chosen == environment ? user : mLauncher.getUser(chosen);
+        mRemoteTools = null;
+        open(Target.local(chosen, chosenUser, mLocalRunner));
+    }
+
+    /** Open the sheet for a saved SSH host: tools go onto that server over its own connection. */
+    void showSsh(@NonNull TerminowStore.Host host, @NonNull TerminalSession session, @NonNull TerminowRemoteTools remoteTools) {
+        mRemoteTools = remoteTools;
+        open(Target.ssh(host, session, remoteTools.runnerFor(host)));
+    }
+
+    private void open(@NonNull Target target) {
         if (mDialog != null && mDialog.isShowing()) mDialog.dismiss();
-        select(environment);
-        if (user != null && mEnvironment == environment) mUser = user;
+        select(target);
         Dialog dialog = new Dialog(mActivity, R.style.TerminowPanelDialog);
         mDialog = dialog;
         LinearLayout root = new LinearLayout(mActivity);
@@ -156,6 +222,8 @@ final class TerminowToolSheet {
         }
         dialog.setOnDismissListener(d -> {
             TerminowToolInstaller.removeListener(mOnJobs);
+            // The SSH connection is kept only while an install is still running
+            if (mRemoteTools != null) mRemoteTools.closeAllIdle();
             if (mDialog == dialog) {
                 mDialog = null;
                 mContent = null;
@@ -167,39 +235,30 @@ final class TerminowToolSheet {
         detect();
     }
 
-    private void select(@NonNull TerminowLauncher.Environment environment) {
-        TerminowLauncher.Environment chosen = environment;
-        if (chosen.isLocal()) {
-            // Tools go into a Linux environment: the first one, if there is one
-            for (TerminowLauncher.Environment other : mLauncher.environments())
-                if (!other.isLocal()) {
-                    chosen = other;
-                    break;
-                }
-        }
-        mEnvironment = chosen;
-        mUser = mLauncher.getUser(chosen);
+    private void select(@NonNull Target target) {
+        mTarget = target;
         mDetection = null;
         mSeenEnded.clear();
         for (TerminowToolInstaller.Tool tool : JOBS) {
-            TerminowToolInstaller.Job job = TerminowToolInstaller.jobOf(chosen.key, mUser, tool);
+            TerminowToolInstaller.Job job = TerminowToolInstaller.jobOf(target.key, target.user, tool);
             if (job != null && job.getState() != TerminowToolInstaller.State.RUNNING) mSeenEnded.add(job);
         }
     }
 
     /** Find out what is installed, in the background; never while it is being found out already. */
     private void detect() {
-        TerminowLauncher.Environment environment = mEnvironment;
-        if (environment == null || environment.isLocal() || unsupportedReason(environment) != null || mDetecting) return;
+        Target target = mTarget;
+        // A local target with no Linux environment has nothing to check
+        if (target == null || (!target.ssh && target.environment != null && target.environment.isLocal()) ||
+            (!target.ssh && unsupportedReason(target) != null) || mDetecting) return;
         mDetecting = true;
         mDetection = null;
-        String user = mUser;
         render();
         mExecutor.execute(() -> {
-            TerminowToolInstaller.Detection detection = TerminowToolInstaller.detect(mRunner, environment.key, user);
+            TerminowToolInstaller.Detection detection = TerminowToolInstaller.detect(target.runner, target.key, target.user);
             mHandler.post(() -> {
                 mDetecting = false;
-                if (environment != mEnvironment || !user.equals(mUser)) {
+                if (target != mTarget) {
                     detect();
                     return;
                 }
@@ -211,15 +270,16 @@ final class TerminowToolSheet {
 
     private void onJobsChanged() {
         if (mDialog == null || !mDialog.isShowing()) return;
-        TerminowLauncher.Environment environment = mEnvironment;
+        Target target = mTarget;
         boolean ended = false;
-        if (environment != null) {
+        if (target != null) {
             for (TerminowToolInstaller.Tool tool : JOBS) {
-                TerminowToolInstaller.Job job = TerminowToolInstaller.jobOf(environment.key, mUser, tool);
+                TerminowToolInstaller.Job job = TerminowToolInstaller.jobOf(target.key, target.user, tool);
                 if (job != null && job.getState() != TerminowToolInstaller.State.RUNNING && !mSeenEnded.contains(job)) {
                     mSeenEnded.add(job);
                     ended = true;
-                    if (job.getState() == TerminowToolInstaller.State.SUCCEEDED) mLauncher.onToolInstalled(environment, tool);
+                    if (job.getState() == TerminowToolInstaller.State.SUCCEEDED && !target.ssh && target.environment != null)
+                        mLauncher.onToolInstalled(target.environment, tool);
                 }
             }
         }
@@ -228,9 +288,11 @@ final class TerminowToolSheet {
         else render();
     }
 
-    /** Why tools can not be installed in the environment, {@code null} if they can. */
+    /** Why tools can not be installed in a local environment, {@code null} if they can. */
     @Nullable
-    private String unsupportedReason(@NonNull TerminowLauncher.Environment environment) {
+    private String unsupportedReason(@NonNull Target target) {
+        if (target.ssh || target.environment == null) return null;
+        TerminowLauncher.Environment environment = target.environment;
         if (environment.isLocal()) return null;
         TerminowLinuxEnv linux = mLauncher.linuxEnvOf(environment);
         if (linux == null) return mActivity.getString(R.string.terminow_install_unknown_env, environment.label);
@@ -241,45 +303,48 @@ final class TerminowToolSheet {
 
     private void render() {
         LinearLayout content = mContent;
-        TerminowLauncher.Environment environment = mEnvironment;
-        if (content == null || environment == null) return;
+        Target target = mTarget;
+        if (content == null || target == null) return;
         content.removeAllViews();
-        TerminowLinuxEnv linux = environment.isLocal() ? null : mLauncher.linuxEnvOf(environment);
+        boolean local = !target.ssh;
+        boolean noLinux = local && target.environment != null && target.environment.isLocal();
+        TerminowLinuxEnv linux = local && !noLinux && target.environment != null ? mLauncher.linuxEnvOf(target.environment) : null;
 
-        // The environment, big: tools always go into exactly this one, as this user
+        // The target, big: tools always go into exactly this one, as this user
         LinearLayout envCard = card(content);
         LinearLayout envRow = new LinearLayout(mActivity);
         envRow.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout envTexts = new LinearLayout(mActivity);
         envTexts.setOrientation(LinearLayout.VERTICAL);
-        TextView envName = text(environment.isLocal() ? mActivity.getString(R.string.terminow_install_no_linux_title) : environment.shortName(),
-            22, R.color.terminow_text);
+        TextView envName = text(targetName(target, noLinux), 22, R.color.terminow_text);
         envName.setTypeface(Typeface.DEFAULT_BOLD);
         envTexts.addView(envName);
-        if (!environment.isLocal()) {
-            String arch = mDetection != null && !mDetection.arch.isEmpty() ? mDetection.arch : linux != null ? linux.arch : "";
-            String version = linux != null ? linux.getTitle() : environment.label;
-            envTexts.addView(text(mActivity.getString(R.string.terminow_install_env_details, mUser, arch.isEmpty() ? "?" : arch, version),
-                13, R.color.terminow_text_secondary));
+        if (!noLinux) {
+            String detail = targetDetail(target, linux);
+            if (!detail.isEmpty()) envTexts.addView(text(detail, 13, R.color.terminow_text_secondary));
         }
         envRow.addView(envTexts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        List<TerminowLauncher.Environment> linuxEnvironments = new ArrayList<>();
-        for (TerminowLauncher.Environment other : mLauncher.environments()) if (!other.isLocal()) linuxEnvironments.add(other);
-        if (linuxEnvironments.size() > 1) envRow.addView(button(mActivity.getString(R.string.terminow_install_change), false, true, () -> {
-            CharSequence[] names = new CharSequence[linuxEnvironments.size()];
-            for (int i = 0; i < names.length; i++) names[i] = linuxEnvironments.get(i).label;
-            new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
-                .setTitle(R.string.terminow_launcher_environment)
-                .setItems(names, (d, which) -> {
-                    select(linuxEnvironments.get(which));
-                    detect();
-                    render();
-                })
-                .show();
-        }));
+        // Changing the environment is only among the local Linux ones; an SSH tab is fixed to its host
+        if (local) {
+            List<TerminowLauncher.Environment> linuxEnvironments = new ArrayList<>();
+            for (TerminowLauncher.Environment other : mLauncher.environments()) if (!other.isLocal()) linuxEnvironments.add(other);
+            if (linuxEnvironments.size() > 1) envRow.addView(button(mActivity.getString(R.string.terminow_install_change), false, true, () -> {
+                CharSequence[] names = new CharSequence[linuxEnvironments.size()];
+                for (int i = 0; i < names.length; i++) names[i] = linuxEnvironments.get(i).label;
+                new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                    .setTitle(R.string.terminow_launcher_environment)
+                    .setItems(names, (d, which) -> {
+                        TerminowLauncher.Environment picked = linuxEnvironments.get(which);
+                        select(Target.local(picked, mLauncher.getUser(picked), mLocalRunner));
+                        detect();
+                        render();
+                    })
+                    .show();
+            }));
+        }
         envCard.addView(envRow, matchWrap());
 
-        if (environment.isLocal()) {
+        if (noLinux) {
             // No Linux environment at all: tools of Ubuntu are not installed into TermiNow itself
             envCard.addView(note(mActivity.getString(R.string.terminow_install_no_linux)));
             envCard.addView(button(mActivity.getString(R.string.terminow_launcher_ubuntu_setup), true, false, () -> {
@@ -288,7 +353,7 @@ final class TerminowToolSheet {
             }));
             return;
         }
-        String unsupported = unsupportedReason(environment);
+        String unsupported = unsupportedReason(target);
         if (unsupported != null) {
             envCard.addView(note(unsupported));
             return;
@@ -298,19 +363,50 @@ final class TerminowToolSheet {
             error.setPadding(0, dp(8), 0, 0);
             envCard.addView(error, matchWrap());
             envCard.addView(button(mActivity.getString(R.string.terminow_install_check_again), false, false, this::detect));
+            // A host that can not be reached never installs anything locally instead
+            if (target.ssh) return;
         }
 
-        TerminowToolInstaller.Job running = TerminowToolInstaller.runningIn(environment.key);
-        for (TerminowToolInstaller.Tool tool : TOOLS) toolRow(content, environment, tool, running);
-        pluginsRow(content, environment, running);
+        TerminowToolInstaller.Job running = TerminowToolInstaller.runningIn(target.key);
+        for (TerminowToolInstaller.Tool tool : TOOLS) toolRow(content, target, tool, running);
+        pluginsRow(content, target, running);
 
         TextView footer = note(mActivity.getString(mDetection != null && mDetection.isRoot() ? R.string.terminow_install_note_root :
-            R.string.terminow_install_note_user, environment.shortName(), mUser));
+            R.string.terminow_install_note_user, targetName(target, false), target.user));
         footer.setPadding(dp(4), dp(12), dp(4), 0);
         content.addView(footer, matchWrap());
     }
 
-    private void toolRow(@NonNull LinearLayout content, @NonNull TerminowLauncher.Environment environment,
+    @NonNull
+    private String targetName(@NonNull Target target, boolean noLinux) {
+        if (target.ssh && target.host != null) return target.host.getTitle();
+        if (noLinux) return mActivity.getString(R.string.terminow_install_no_linux_title);
+        return target.environment != null ? target.environment.shortName() : "";
+    }
+
+    /** The line under the name: "SSH · root@host · aarch64 · Ubuntu" for a host, user/arch/OS for a local one. */
+    @NonNull
+    private String targetDetail(@NonNull Target target, @Nullable TerminowLinuxEnv linux) {
+        String arch = mDetection != null && !mDetection.arch.isEmpty() ? mDetection.arch :
+            linux != null ? linux.arch : "";
+        String os = mDetection != null && !mDetection.os.isEmpty() ? mDetection.os :
+            linux != null ? linux.getTitle() : "";
+        if (target.ssh && target.host != null) {
+            StringBuilder detail = new StringBuilder(mActivity.getString(R.string.terminow_install_ssh_label, hostTarget(target.host)));
+            if (!arch.isEmpty()) detail.append(" · ").append(arch);
+            if (!os.isEmpty()) detail.append(" · ").append(os);
+            return detail.toString();
+        }
+        return mActivity.getString(R.string.terminow_install_env_details, target.user, arch.isEmpty() ? "?" : arch,
+            os.isEmpty() ? (target.environment != null ? target.environment.label : "") : os);
+    }
+
+    @NonNull
+    private static String hostTarget(@NonNull TerminowStore.Host host) {
+        return (host.username.isEmpty() ? "" : host.username + "@") + host.address;
+    }
+
+    private void toolRow(@NonNull LinearLayout content, @NonNull Target target,
                          @NonNull TerminowToolInstaller.Tool tool, @Nullable TerminowToolInstaller.Job running) {
         LinearLayout card = card(content);
         LinearLayout row = new LinearLayout(mActivity);
@@ -337,7 +433,7 @@ final class TerminowToolSheet {
         row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         card.addView(row, matchWrap());
 
-        TerminowToolInstaller.Job job = TerminowToolInstaller.jobOf(environment.key, mUser, tool);
+        TerminowToolInstaller.Job job = TerminowToolInstaller.jobOf(target.key, target.user, tool);
         String version = mDetection != null ? mDetection.versions.get(tool) : null;
         String arch = mDetection != null ? mDetection.arch : "";
         if (job != null && job.getState() == TerminowToolInstaller.State.RUNNING) {
@@ -371,18 +467,13 @@ final class TerminowToolSheet {
         if (version != null) {
             status.setText(mActivity.getString(R.string.terminow_install_installed, version));
             status.setTextColor(color(R.color.terminow_quick_ready));
-            // gstack is used from Claude Code, as its skills
             if (tool == TerminowToolInstaller.Tool.FISH) {
-                fishInstalled(row, status, environment, version);
+                fishInstalled(row, status, target, version);
                 return;
             }
             boolean claude = tool == TerminowToolInstaller.Tool.CLAUDE || tool == TerminowToolInstaller.Tool.GSTACK;
             String open = claude ? mActivity.getString(R.string.terminow_install_open_claude) : mActivity.getString(R.string.terminow_install_open);
-            row.addView(button(open, tool == TerminowToolInstaller.Tool.CLAUDE, true, () -> {
-                dismiss();
-                if (claude) mLauncher.openClaudeWithSignInHelp(environment, mUser);
-                else mLauncher.openTerminal(environment);
-            }));
+            row.addView(button(open, tool == TerminowToolInstaller.Tool.CLAUDE, true, () -> openTool(target, claude)));
             return;
         }
         if (tool != TerminowToolInstaller.Tool.GIT && tool != TerminowToolInstaller.Tool.CURL && tool != TerminowToolInstaller.Tool.TMUX &&
@@ -413,12 +504,12 @@ final class TerminowToolSheet {
         } else {
             status.setText(R.string.terminow_install_not_installed);
         }
-        // Fish is installed and made the shell of new tabs in one go
+        // Fish of local Ubuntu is installed and made the shell of new tabs in one go; on a host it is only installed
         int label = failed ? R.string.terminow_install_retry :
-            tool == TerminowToolInstaller.Tool.FISH ? R.string.terminow_install_fish_enable : R.string.terminow_install_install;
-        View action = button(mActivity.getString(label), true, true, () -> install(environment, tool));
+            tool == TerminowToolInstaller.Tool.FISH && !target.ssh ? R.string.terminow_install_fish_enable : R.string.terminow_install_install;
+        View action = button(mActivity.getString(label), true, true, () -> install(target, tool));
         if (running != null) {
-            // apt runs once at a time in an environment
+            // apt runs once at a time in a target
             action.setEnabled(false);
             action.setAlpha(0.4f);
             status.setText(mActivity.getString(R.string.terminow_install_waiting, nameOf(running.tool)));
@@ -427,7 +518,7 @@ final class TerminowToolSheet {
     }
 
     /** The plugins of the official marketplace: chosen in the picker, installed as one job. */
-    private void pluginsRow(@NonNull LinearLayout content, @NonNull TerminowLauncher.Environment environment,
+    private void pluginsRow(@NonNull LinearLayout content, @NonNull Target target,
                             @Nullable TerminowToolInstaller.Job running) {
         TerminowToolInstaller.Tool tool = TerminowToolInstaller.Tool.PLUGINS;
         LinearLayout card = card(content);
@@ -454,7 +545,7 @@ final class TerminowToolSheet {
         row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         card.addView(row, matchWrap());
 
-        TerminowToolInstaller.Job job = TerminowToolInstaller.jobOf(environment.key, mUser, tool);
+        TerminowToolInstaller.Job job = TerminowToolInstaller.jobOf(target.key, target.user, tool);
         if (job != null && job.getState() == TerminowToolInstaller.State.RUNNING) {
             status.setText(mActivity.getString(R.string.terminow_install_running, job.getStage().ordinal() + 1,
                 TerminowToolInstaller.Stage.values().length, stageName(job.getStage())));
@@ -505,10 +596,10 @@ final class TerminowToolSheet {
             status.setText(R.string.terminow_install_plugins_needs_claude);
         }
         View action = button(mActivity.getString(R.string.terminow_install_plugins_choose), hasClaude, true, () ->
-            new TerminowPluginPicker(mActivity, mRunner, environment.key, mUser, names -> {
-                TerminowToolInstaller.Job started = TerminowToolInstaller.install(mRunner, environment.key, mUser, tool, names);
+            new TerminowPluginPicker(mActivity, target.runner, target.key, target.user, names -> {
+                TerminowToolInstaller.Job started = TerminowToolInstaller.install(target.runner, target.key, target.user, tool, names);
                 if (started == null) {
-                    TerminowToolInstaller.Job other = TerminowToolInstaller.runningIn(environment.key);
+                    TerminowToolInstaller.Job other = TerminowToolInstaller.runningIn(target.key);
                     mActivity.showToast(mActivity.getString(R.string.terminow_install_waiting, other != null ? nameOf(other.tool) : ""), false);
                 }
                 mLogOpen.remove(tool);
@@ -522,14 +613,37 @@ final class TerminowToolSheet {
         row.addView(action);
     }
 
-    private void install(@NonNull TerminowLauncher.Environment environment, @NonNull TerminowToolInstaller.Tool tool) {
-        TerminowToolInstaller.Job job = TerminowToolInstaller.install(mRunner, environment.key, mUser, tool);
+    private void install(@NonNull Target target, @NonNull TerminowToolInstaller.Tool tool) {
+        TerminowToolInstaller.Job job = TerminowToolInstaller.install(target.runner, target.key, target.user, tool);
         if (job == null) {
-            TerminowToolInstaller.Job running = TerminowToolInstaller.runningIn(environment.key);
+            TerminowToolInstaller.Job running = TerminowToolInstaller.runningIn(target.key);
             mActivity.showToast(mActivity.getString(R.string.terminow_install_waiting, running != null ? nameOf(running.tool) : ""), false);
         }
         mLogOpen.remove(tool);
         render();
+    }
+
+    /** Open a tool: a local one in a new tab, a tool of a host in the tab the host is in. */
+    private void openTool(@NonNull Target target, boolean claude) {
+        dismiss();
+        if (target.ssh) {
+            openInSshSession(claude ? "claude" : null);
+            return;
+        }
+        if (target.environment == null) return;
+        if (claude) mLauncher.openClaudeWithSignInHelp(target.environment, target.user);
+        else mLauncher.openTerminal(target.environment);
+    }
+
+    /** Switch to the SSH tab and, for a tool, type its command at its prompt. */
+    private void openInSshSession(@Nullable String command) {
+        TerminalSession session = mTarget != null ? mTarget.session : null;
+        if (session == null || !session.isRunning()) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_install_ssh_tab_gone), true);
+            return;
+        }
+        mActivity.getTermuxTerminalSessionClient().setCurrentSession(session);
+        if (command != null) session.write(command + "\r");
     }
 
     void dismiss() {
@@ -569,15 +683,25 @@ final class TerminowToolSheet {
     }
 
     /**
-     * Fish that is installed: whether new Ubuntu tabs open with it, and Enable when they do not.
-     * Tabs that are open keep the shell they have.
+     * Fish that is installed. In local Ubuntu it can become the shell of new tabs; on a host, or
+     * another local environment, it is started in the tab it belongs to. Tabs that are open keep
+     * the shell they have.
      */
-    private void fishInstalled(@NonNull LinearLayout row, @NonNull TextView status, @NonNull TerminowLauncher.Environment environment,
+    private void fishInstalled(@NonNull LinearLayout row, @NonNull TextView status, @NonNull Target target,
                                @NonNull String version) {
-        boolean ubuntu = mLauncher.isUbuntuEnvironment(environment);
+        if (target.ssh) {
+            // Start Fish only in the SSH tab; the login shell of the server is a separate choice of the user
+            row.addView(button(mActivity.getString(R.string.terminow_install_ssh_start_fish), true, true, () -> {
+                dismiss();
+                openInSshSession("fish");
+            }));
+            return;
+        }
+        TerminowLauncher.Environment environment = target.environment;
+        boolean ubuntu = environment != null && mLauncher.isUbuntuEnvironment(environment);
         boolean enabled = ubuntu && TerminowStore.UBUNTU_SHELL_FISH.equals(mLauncher.getStore().getUbuntuShell());
         status.setText(mActivity.getString(enabled ? R.string.terminow_install_fish_enabled : R.string.terminow_install_installed, version));
-        if (!ubuntu) return;
+        if (!ubuntu || environment == null) return;
         if (enabled) {
             row.addView(button(mActivity.getString(R.string.terminow_install_open), true, true, () -> {
                 dismiss();

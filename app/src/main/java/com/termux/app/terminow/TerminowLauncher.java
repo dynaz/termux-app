@@ -483,15 +483,39 @@ public class TerminowLauncher {
     }
 
     @Nullable private TerminowToolSheet mToolSheet;
+    @Nullable private TerminowRemoteTools mRemoteTools;
 
     /** Install tools into the environment of the tab, as its user. */
     void showInstallTools() {
         TerminalSession session = mActivity.getCurrentSession();
         SessionInfo info = session != null ? mInfo.get(session) : null;
+        if (mToolSheet == null) mToolSheet = new TerminowToolSheet(mActivity, this, mTargets.getPrefixDir());
+        // A tab connected to a saved SSH host: tools go onto that server over its own connection,
+        // never the local environment. A host that is gone is said so, with no local fallback.
+        if (session != null && info != null && info.environmentKey == null && ("ssh".equals(info.tool) || "mosh".equals(info.tool))) {
+            TerminowStore.Host host = findTerminalHost(info.environmentLabel);
+            if (host != null) {
+                if (mRemoteTools == null) mRemoteTools = new TerminowRemoteTools(mActivity, mStore);
+                mToolSheet.showSsh(host, session, mRemoteTools);
+            } else {
+                mActivity.showToast(mActivity.getString(R.string.terminow_install_ssh_unresolved, info.environmentLabel), true);
+            }
+            return;
+        }
         Environment environment = info != null && info.environmentKey != null ? environmentFor(info.environmentKey) : null;
         if (environment == null) environment = currentEnvironment();
-        if (mToolSheet == null) mToolSheet = new TerminowToolSheet(mActivity, this, mTargets.getPrefixDir());
         mToolSheet.show(environment, info != null && environment.key.equals(info.environmentKey) && !info.user.isEmpty() ? info.user : null);
+    }
+
+    /** A saved SSH host by its title, with its credentials; {@code null} if it is gone or not an SSH terminal. */
+    @Nullable
+    private TerminowStore.Host findTerminalHost(@NonNull String title) {
+        for (TerminowStore.Host host : mStore.getHosts()) {
+            if (!host.getTitle().equals(title)) continue;
+            if (host.telnet || !host.isTerminal()) return null;
+            return TerminowStore.resolve(host, mStore.getIdentities());
+        }
+        return null;
     }
 
     @Nullable

@@ -181,6 +181,8 @@ public final class TerminowToolInstaller {
         public boolean ran;
         public String uid = "";
         public String arch = "";
+        /** The OS, like "Ubuntu 24.04 LTS", from /etc/os-release, empty if not known. */
+        public String os = "";
         public boolean hasApt;
         public boolean hasSudo;
         /** The first line of `--version` of each tool that is there. */
@@ -233,6 +235,7 @@ public final class TerminowToolInstaller {
         OWN_PATH +
         "echo \"TERMINOW_UID=$(id -u)\"\n" +
         "echo \"TERMINOW_ARCH=$(uname -m)\"\n" +
+        "( . /etc/os-release 2>/dev/null; [ -n \"$PRETTY_NAME\" ] && echo \"TERMINOW_OS=$PRETTY_NAME\" ) 2>/dev/null\n" +
         "command -v apt-get >/dev/null 2>&1 && echo TERMINOW_APT=yes\n" +
         "command -v sudo >/dev/null 2>&1 && echo TERMINOW_SUDO=yes\n" +
         "for t in claude cursor gstack git curl tmux fish; do\n" +
@@ -563,6 +566,8 @@ public final class TerminowToolInstaller {
                 detection.uid = line.substring("TERMINOW_UID=".length());
             } else if (line.startsWith("TERMINOW_ARCH=")) {
                 detection.arch = line.substring("TERMINOW_ARCH=".length());
+            } else if (line.startsWith("TERMINOW_OS=")) {
+                detection.os = line.substring("TERMINOW_OS=".length());
             } else if (line.equals("TERMINOW_APT=yes")) {
                 detection.hasApt = true;
             } else if (line.equals("TERMINOW_SUDO=yes")) {

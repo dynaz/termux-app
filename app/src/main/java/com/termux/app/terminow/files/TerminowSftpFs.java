@@ -3,6 +3,7 @@ package com.termux.app.terminow.files;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.jcraft.jsch.ChannelExec;
 import com.jcraft.jsch.ChannelSftp;
 import com.jcraft.jsch.HostKey;
 import com.jcraft.jsch.HostKeyRepository;
@@ -497,6 +498,30 @@ public class TerminowSftpFs implements TerminowFs {
             ChannelSftp channel = (ChannelSftp) mSession.openChannel("sftp");
             channel.connect(CONNECT_TIMEOUT_MS);
             return channel;
+        } catch (JSchException e) {
+            throw toIOException(e);
+        }
+    }
+
+    /**
+     * Run a command on the host over an exec channel of its own, as a {@link Process}. It uses
+     * the one connection, with the credentials and host key already checked, and asks for no
+     * terminal, so it never disturbs an interactive session of the host. Each call is a new
+     * channel; SSH carries them on the same connection at the same time.
+     */
+    @NonNull
+    public synchronized Process exec(@NonNull String command) throws IOException {
+        connect();
+        try {
+            ChannelExec channel = (ChannelExec) mSession.openChannel("exec");
+            channel.setCommand(command);
+            channel.setPty(false);
+            // The streams must be taken before the channel connects
+            InputStream in = channel.getInputStream();
+            InputStream err = channel.getErrStream();
+            OutputStream out = channel.getOutputStream();
+            channel.connect(CONNECT_TIMEOUT_MS);
+            return new TerminowExecProcess(channel, in, err, out);
         } catch (JSchException e) {
             throw toIOException(e);
         }

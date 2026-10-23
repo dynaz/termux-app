@@ -76,4 +76,8 @@
     <string name="terminow_settings_ubuntu_shell_fish">Fish</string>
     <string name="terminow_settings_ubuntu_shell_bash">Bash</string>
     <string name="terminow_settings_ubuntu_shell_changed">New Ubuntu tabs open with %1$s. Tabs that are open keep their shell.</string>
+    <string name="terminow_install_ssh_label">SSH · %1$s</string>
+    <string name="terminow_install_ssh_start_fish">Start Fish in this terminal</string>
+    <string name="terminow_install_ssh_tab_gone">The terminal of this host has closed</string>
+    <string name="terminow_install_ssh_unresolved">“%1$s” is not a saved SSH host any more, so its tools can not be managed</string>
 </resources>
