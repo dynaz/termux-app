@@ -10,6 +10,7 @@ import android.view.ViewGroup;
 import android.widget.CheckBox;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.Switch;
@@ -49,6 +50,7 @@ final class TerminowAiSettings {
 
     /** Fill the page. Called when the rail opens it and after a change. */
     void render() {
+        if (mContent == null) return;
         mContent.removeAllViews();
         mContent.setPadding(dp(18), dp(16), dp(18), dp(24));
 
@@ -56,10 +58,9 @@ final class TerminowAiSettings {
         title.setTypeface(Typeface.DEFAULT_BOLD);
         mContent.addView(title);
 
-        if (!TerminowAccountUi.isPremium(mStore)) {
-            renderLocked();
-            return;
-        }
+        // A Premium feature: show the page only when Premium is active; otherwise give clear
+        // feedback (checking, an error with Retry, or the upgrade), never a silent nothing.
+        if (!gateEntitlement()) return;
         mHosts = mStore.getHosts();
 
         boolean enabled = mManager.isEnabled();
@@ -164,8 +165,43 @@ final class TerminowAiSettings {
         mContent.addView(revoke);
     }
 
-    /** The Premium wall, like the File Manager shows for free users. */
-    private void renderLocked() {
+    /**
+     * Whether Premium is active, so the page may show. Otherwise it shows visible feedback and
+     * returns {@code false}: a spinner while the subscription is being checked, an error with
+     * Retry, or the upgrade wall. The account UI calls {@link #render()} again when the check ends.
+     */
+    private boolean gateEntitlement() {
+        TerminowEntitlement.State state = TerminowEntitlement.get(mStore);
+        if (state == TerminowEntitlement.State.ACTIVE) return true;
+        if (mAccountUi.isCheckingPremium()) {
+            renderChecking();
+            return false;
+        }
+        // Not known for sure yet: check now (offline-stale or never checked) and show the spinner
+        if (state == TerminowEntitlement.State.UNKNOWN || state == TerminowEntitlement.State.NEEDS_CHECK) {
+            mAccountUi.checkPremiumNow();
+            renderChecking();
+            return false;
+        }
+        renderUpgrade(state);
+        return false;
+    }
+
+    /** While the subscription is being checked. */
+    private void renderChecking() {
+        LinearLayout card = card(mContent);
+        card.setGravity(Gravity.CENTER_HORIZONTAL);
+        ProgressBar spinner = new ProgressBar(mActivity);
+        spinner.setIndeterminateTintList(android.content.res.ColorStateList.valueOf(color(R.color.terminow_panel_accent)));
+        card.addView(spinner, new LinearLayout.LayoutParams(dp(36), dp(36)));
+        TextView checking = text(mActivity.getString(R.string.terminow_account_premium_checking), 14, R.color.terminow_text_secondary);
+        checking.setGravity(Gravity.CENTER);
+        checking.setPadding(0, dp(12), 0, 0);
+        card.addView(checking, matchWrap());
+    }
+
+    /** The Premium wall for free users, or an error with Retry when the check did not succeed. */
+    private void renderUpgrade(@NonNull TerminowEntitlement.State state) {
         LinearLayout card = card(mContent);
         card.setGravity(Gravity.CENTER_HORIZONTAL);
         ImageView crown = new ImageView(mActivity);
@@ -179,11 +215,33 @@ final class TerminowAiSettings {
         TextView desc = text(mActivity.getString(R.string.terminow_ai_enable_desc), 14, R.color.terminow_text_secondary);
         desc.setGravity(Gravity.CENTER);
         card.addView(desc, matchWrap());
-        View upgrade = button(mActivity.getString(R.string.terminow_premium_get), true, mAccountUi::buyPremium);
-        LinearLayout.LayoutParams p = (LinearLayout.LayoutParams) upgrade.getLayoutParams();
-        p.topMargin = dp(16);
-        p.gravity = Gravity.CENTER_HORIZONTAL;
-        card.addView(upgrade);
+
+        String error = mAccountUi.getPremiumError();
+        boolean signedOut = state == TerminowEntitlement.State.SIGNED_OUT;
+        if (error != null) {
+            TextView errorView = text(error, 13, R.color.terminow_mcp_warn);
+            errorView.setGravity(Gravity.CENTER);
+            errorView.setPadding(0, dp(10), 0, 0);
+            card.addView(errorView, matchWrap());
+        }
+
+        LinearLayout buttons = new LinearLayout(mActivity);
+        buttons.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams buttonsParams = matchWrap();
+        buttonsParams.topMargin = dp(16);
+        // Retry the check, and offer Premium (or sign-in, when signed out)
+        View retry = button(mActivity.getString(R.string.terminow_install_check_again), false, () -> {
+            mAccountUi.checkPremiumNow();
+            render();
+        });
+        buttons.addView(retry);
+        if (!signedOut) {
+            View upgrade = button(mActivity.getString(R.string.terminow_premium_get), true, mAccountUi::buyPremium);
+            LinearLayout.LayoutParams p = (LinearLayout.LayoutParams) upgrade.getLayoutParams();
+            p.setMarginStart(dp(10));
+            buttons.addView(upgrade);
+        }
+        card.addView(buttons, buttonsParams);
     }
 
     @NonNull

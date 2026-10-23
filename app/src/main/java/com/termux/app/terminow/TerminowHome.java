@@ -856,7 +856,10 @@ public class TerminowHome {
             mFabView.setVisibility(View.GONE);
             mEmptyView.setVisibility(View.GONE);
             mSettingsScrollView.setVisibility(View.GONE);
-            if (mAiPage != null) mAiPage.render();
+            // Built lazily too, so a tap is never ignored even if construction order changes
+            if (mAiPage == null)
+                mAiPage = new TerminowAiSettings(mActivity, mAiBridge, mStore, mActivity.findViewById(R.id.terminow_ai));
+            mAiPage.render();
             return;
         }
         // Known hosts and logs are only added by connecting to hosts
