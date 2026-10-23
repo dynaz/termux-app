@@ -189,6 +189,16 @@ public final class TerminowAiBridgeManager {
         return new SetupResult(true, "The bridge is off");
     }
 
+    /** Stop and re-start the listener, for the UI restart action. Returns the resulting state. */
+    public synchronized SetupResult restart() {
+        if (!mStore.isAiBridgeEnabled()) return new SetupResult(false, "The bridge is off");
+        if (!premium()) return new SetupResult(false, "The Local AI Bridge needs TermiNow Premium");
+        mServer.stop();
+        String error = startServer();
+        if (error != null) return new SetupResult(false, error);
+        return new SetupResult(true, "The bridge is listening on 127.0.0.1:" + mServer.getPort());
+    }
+
     public synchronized boolean isEnabled() {
         return mStore.isAiBridgeEnabled();
     }

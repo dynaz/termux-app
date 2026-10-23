@@ -95,6 +95,11 @@ final class TerminowAiSettings {
                 enableCard.addView(text(mActivity.getString(R.string.terminow_ai_status_error,
                     status.error != null ? status.error : "unknown"), 12, R.color.terminow_mcp_warn));
             }
+            enableCard.addView(button(mActivity.getString(R.string.terminow_ai_restart), false, () -> {
+                TerminowAiBridgeManager.SetupResult result = mManager.restart();
+                mActivity.showToast(result.message, !result.ok);
+                render();
+            }));
         }
 
         if (!enabled) {

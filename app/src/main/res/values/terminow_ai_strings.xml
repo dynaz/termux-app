@@ -8,6 +8,7 @@
     <string name="terminow_ai_status_on">Listening on 127.0.0.1:%1$d · %2$d environment(s) · %3$d open · %4$d grant(s)</string>
     <string name="terminow_ai_status_error">Not listening: %1$s</string>
     <string name="terminow_ai_status_off">Off</string>
+    <string name="terminow_ai_restart">Restart bridge</string>
     <string name="terminow_ai_connect_section">Connect Claude Code</string>
     <string name="terminow_ai_connect">Connect</string>
     <string name="terminow_ai_disconnect">Disconnect</string>
