@@ -248,6 +248,130 @@ public final class TerminowAiBridge {
         return result;
     }
 
+    /** Output read from a command is capped; the default and most anyone may ask for. */
+    public static final int EXEC_OUTPUT_LIMIT = 64 * 1024;
+    public static final int EXEC_TIMEOUT_DEFAULT_S = 30;
+    public static final int EXEC_TIMEOUT_MAX_S = 300;
+
+    /**
+     * Run a command on a host over SSH and return its exit code and output. The command has all
+     * the access of the SSH account; the SFTP directory limits do not sandbox it, which the UI
+     * makes clear before this is allowed. Output is bounded and the command is stopped at the
+     * timeout. No secret is returned.
+     */
+    @NonNull
+    public JSONObject sshExec(@NonNull String envKey, @NonNull String hostUuid, @NonNull String command, int timeoutSeconds)
+            throws TerminowAiError.Exception {
+        if (command.trim().isEmpty()) throw TerminowAiError.BAD_REQUEST.of("The command is empty");
+        TerminowStore.Host host = authorize(envKey, hostUuid, TerminowStore.AiAccess.CAP_RUN_COMMAND);
+        if (host.telnet || !host.isTerminal()) throw TerminowAiError.BAD_REQUEST.of("This host is not an SSH connection");
+        int timeout = timeoutSeconds <= 0 ? EXEC_TIMEOUT_DEFAULT_S : Math.min(timeoutSeconds, EXEC_TIMEOUT_MAX_S);
+        TestPrompts prompts = new TestPrompts(hostUuid);
+        TerminowSftpFs fs = new TerminowSftpFs(mDeps.sshHome(), "aiexec:" + hostUuid, host.getTitle(), host.address,
+            host.port, host.username, host.password, host.keyPath, prompts);
+        long started = mClock.now();
+        Process process;
+        try {
+            // A login shell, so PATH and the environment are the user's, and the command as one argument
+            process = fs.exec("/bin/sh -lc " + TerminowStore.shellQuote(command));
+        } catch (TerminowSftpFs.HostKeyChangedException e) {
+            closeQuietly(fs);
+            throw TerminowAiError.HOST_KEY_CHANGED.of("The host key changed since it was saved; verify it in TermiNow");
+        } catch (IOException | RuntimeException e) {
+            closeQuietly(fs);
+            if (prompts.unknownHostKey)
+                throw TerminowAiError.HOST_KEY_UNKNOWN.of("The host key is not known yet; connect once in TermiNow to verify it");
+            throw mapConnectError(e);
+        }
+        try {
+            BoundedReader out = new BoundedReader(process.getInputStream());
+            BoundedReader err = new BoundedReader(process.getErrorStream());
+            out.start();
+            err.start();
+            boolean finished;
+            try {
+                finished = process.waitFor(timeout, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                process.destroy();
+                throw TerminowAiError.CANCELLED.of("The command was interrupted");
+            }
+            if (!finished) {
+                process.destroy();
+                out.joinQuietly();
+                err.joinQuietly();
+                throw TerminowAiError.TIMEOUT.of("The command ran longer than " + timeout + "s and was stopped");
+            }
+            out.joinQuietly();
+            err.joinQuietly();
+            int exit = process.exitValue();
+            JSONObject result = new JSONObject();
+            result.put("host_id", hostUuid);
+            result.put("exit_code", exit);
+            result.put("stdout", out.text());
+            result.put("stderr", err.text());
+            result.put("truncated", out.truncated() || err.truncated());
+            result.put("duration_ms", mClock.now() - started);
+            return result;
+        } catch (org.json.JSONException e) {
+            throw TerminowAiError.INTERNAL.of("Could not build the result");
+        } finally {
+            closeQuietly(fs);
+        }
+    }
+
+    private static void closeQuietly(@NonNull TerminowSftpFs fs) {
+        new Thread(fs::close, "TermiNow ai ssh close").start();
+    }
+
+    /** Reads a stream into memory up to {@link #EXEC_OUTPUT_LIMIT}, dropping the rest but noting it. */
+    private static final class BoundedReader extends Thread {
+        private final java.io.InputStream mStream;
+        private final java.io.ByteArrayOutputStream mBuffer = new java.io.ByteArrayOutputStream();
+        private volatile boolean mTruncated;
+
+        BoundedReader(@NonNull java.io.InputStream stream) {
+            mStream = stream;
+            setDaemon(true);
+        }
+
+        @Override
+        public void run() {
+            byte[] chunk = new byte[8192];
+            int read;
+            try {
+                while ((read = mStream.read(chunk)) != -1) {
+                    int room = EXEC_OUTPUT_LIMIT - mBuffer.size();
+                    if (room <= 0) {
+                        mTruncated = true;
+                        continue; // drain so the command is not blocked on a full pipe
+                    }
+                    mBuffer.write(chunk, 0, Math.min(read, room));
+                    if (read > room) mTruncated = true;
+                }
+            } catch (IOException ignored) {
+                // The stream closed with the channel
+            }
+        }
+
+        void joinQuietly() {
+            try {
+                join();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        @NonNull
+        String text() {
+            return new String(mBuffer.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+
+        boolean truncated() {
+            return mTruncated;
+        }
+    }
+
     @NonNull
     private static TerminowAiError.Exception mapConnectError(@NonNull Throwable e) {
         String message = String.valueOf(e.getMessage()).toLowerCase(java.util.Locale.ROOT);

@@ -108,6 +108,22 @@ public final class TerminowAiMcpServer {
             .put("additionalProperties", false));
         tools.put(sshTest);
 
+        JSONObject sshExec = new JSONObject();
+        sshExec.put("name", "ssh_exec");
+        sshExec.put("description", "Run a command over SSH on an allowed host (needs the run_command capability). " +
+            "The command has all the access of the SSH account. Returns exit_code, stdout, stderr, whether output was truncated, and duration. No secrets are returned.");
+        JSONObject execProps = new JSONObject();
+        execProps.put("host_id", new JSONObject().put("type", "string").put("description", "The host_id from hosts_list."));
+        execProps.put("command", new JSONObject().put("type", "string").put("description", "The command to run, via /bin/sh -lc."));
+        execProps.put("timeout_seconds", new JSONObject().put("type", "integer")
+            .put("description", "How long to allow, up to " + TerminowAiBridge.EXEC_TIMEOUT_MAX_S + "; default " + TerminowAiBridge.EXEC_TIMEOUT_DEFAULT_S + "."));
+        sshExec.put("inputSchema", new JSONObject()
+            .put("type", "object")
+            .put("properties", execProps)
+            .put("required", new JSONArray().put("host_id").put("command"))
+            .put("additionalProperties", false));
+        tools.put(sshExec);
+
         return new JSONObject().put("tools", tools);
     }
 
@@ -125,6 +141,14 @@ public final class TerminowAiMcpServer {
                     String hostId = args.optString("host_id");
                     if (hostId.isEmpty()) return toolError(TerminowAiError.BAD_REQUEST, "host_id is required");
                     return toolContent(mBridge.sshTest(mEnvKey, hostId));
+                }
+                case "ssh_exec": {
+                    String hostId = args.optString("host_id");
+                    String command = args.optString("command");
+                    if (hostId.isEmpty()) return toolError(TerminowAiError.BAD_REQUEST, "host_id is required");
+                    if (command.isEmpty()) return toolError(TerminowAiError.BAD_REQUEST, "command is required");
+                    int timeout = args.optInt("timeout_seconds", TerminowAiBridge.EXEC_TIMEOUT_DEFAULT_S);
+                    return toolContent(mBridge.sshExec(mEnvKey, hostId, command, timeout));
                 }
                 default:
                     return toolError(TerminowAiError.BAD_REQUEST, "Unknown tool: " + name);

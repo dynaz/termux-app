@@ -471,6 +471,11 @@ public class TerminowHome {
         });
         mExplorer.setLinuxSessionCounter(alias -> mLauncher.sessionsOf(alias).size());
         mSftpBrowser = new TerminowSftpBrowser(activity, mStore, activity.findViewById(R.id.terminow_sftp_browser));
+        // The Local AI Bridge: Claude Code in a Linux environment using allowed hosts over authorized tools
+        mAiBridge = new TerminowAiBridgeManager(activity.getApplicationContext(), mStore,
+            new TerminowMcpTargets(new File(TermuxConstants.TERMUX_PREFIX_DIR_PATH), new File(TermuxConstants.TERMUX_HOME_DIR_PATH)),
+            mVaultsUi::isKeychainUnlocked);
+        mAiBridge.startIfEnabled();
         mRailSettings = activity.findViewById(R.id.terminow_rail_settings);
         mRailSettings.setOnClickListener(v -> setPage(PAGE_SETTINGS));
         mHeaderView = activity.findViewById(R.id.terminow_header);
@@ -1181,6 +1186,7 @@ public class TerminowHome {
 
     /** The SFTP tabs that show the files of their host, like Termius, instead of the sftp command line. */
     private TerminowSftpBrowser mSftpBrowser;
+    private TerminowAiBridgeManager mAiBridge;
 
     /** The session that is shown if it is an sftp session that is still running, otherwise {@code null}. */
     @Nullable
@@ -4917,6 +4923,11 @@ public class TerminowHome {
     @NonNull
     TerminowStore getStore() {
         return mStore;
+    }
+
+    @NonNull
+    TerminowAiBridgeManager getAiBridge() {
+        return mAiBridge;
     }
 
     /** The launcher of tabs, for the key bar: what a tab runs and Claude Code in a new tab. */

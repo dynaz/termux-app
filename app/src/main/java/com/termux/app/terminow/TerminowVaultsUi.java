@@ -64,6 +64,11 @@ public class TerminowVaultsUi {
     private long mLastSync;
     private final Runnable mSyncSoon = () -> syncQuietly(false);
 
+    /** Whether the keychain (vault) is unlocked, so saved credentials can be resolved. */
+    public boolean isKeychainUnlocked() {
+        return mVaults.isUnlocked();
+    }
+
     public TerminowVaultsUi(@NonNull TermuxActivity activity, @NonNull TerminowStore store, @NonNull Listener listener) {
         mActivity = activity;
         mStore = store;

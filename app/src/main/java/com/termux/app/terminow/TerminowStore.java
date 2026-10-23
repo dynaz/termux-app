@@ -342,6 +342,8 @@ public class TerminowStore {
     public static class AiAccess {
         /** "test_connection": allow {@code ssh_test}. Later: command execution and file transfer. */
         public static final String CAP_TEST_CONNECTION = "test_connection";
+        /** "run_command": allow {@code ssh_exec}. An authorized command runs with all the access of the SSH account. */
+        public static final String CAP_RUN_COMMAND = "run_command";
 
         public boolean enabled;
         /** The environment keys allowed to use it, empty meaning any local environment of this device. */
@@ -584,6 +586,8 @@ public class TerminowStore {
     private static final String KEY_GROUPS = "groups";
     private static final String KEY_KEY_LABELS = "key_labels";
     private static final String KEY_KEY_PASSPHRASES = "key_passphrases";
+    private static final String KEY_AI_ENABLED = "ai_bridge_enabled";
+    private static final String KEY_AI_TOKENS = "ai_bridge_tokens";
     private static final String KEY_BACKUPS = "environment_backups";
     private static final String KEY_IDENTITIES = "identities";
     private static final String KEY_KEYCHAIN_SORT = "keychain_sort";
@@ -2022,6 +2026,58 @@ public class TerminowStore {
             mPreferences.edit().putString(KEY_BACKUPS, backups.toString()).apply();
         } catch (JSONException e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Failed to save backup settings", e);
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Local AI Bridge: the global switch and the per-environment helper tokens. Tokens are app
+    // wide (not per vault) and stored encrypted; they prove which environment a helper is, never
+    // a host. See TerminowAiSession and TerminowAiBridge.
+    // ---------------------------------------------------------------------------------------
+
+    public boolean isAiBridgeEnabled() {
+        return mPreferences.getBoolean(KEY_AI_ENABLED, false);
+    }
+
+    public void setAiBridgeEnabled(boolean enabled) {
+        mPreferences.edit().putBoolean(KEY_AI_ENABLED, enabled).apply();
+    }
+
+    /** The helper token of each environment that has one, decrypted. */
+    @NonNull
+    public Map<String, String> getAiTokens() {
+        Map<String, String> tokens = new LinkedHashMap<>();
+        try {
+            JSONObject object = new JSONObject(mPreferences.getString(KEY_AI_TOKENS, "{}"));
+            JSONArray names = object.names();
+            for (int i = 0; names != null && i < names.length(); i++) {
+                String env = names.optString(i);
+                String token = decryptPassword(object.optString(env));
+                if (!token.isEmpty()) tokens.put(env, token);
+            }
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to read AI tokens", e);
+        }
+        return tokens;
+    }
+
+    public void setAiToken(@NonNull String environmentKey, @NonNull String token) {
+        try {
+            JSONObject object = new JSONObject(mPreferences.getString(KEY_AI_TOKENS, "{}"));
+            object.put(environmentKey, encryptPassword(token));
+            mPreferences.edit().putString(KEY_AI_TOKENS, object.toString()).apply();
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to save AI token", e);
+        }
+    }
+
+    public void removeAiToken(@NonNull String environmentKey) {
+        try {
+            JSONObject object = new JSONObject(mPreferences.getString(KEY_AI_TOKENS, "{}"));
+            object.remove(environmentKey);
+            mPreferences.edit().putString(KEY_AI_TOKENS, object.toString()).apply();
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to remove AI token", e);
         }
     }
 
