@@ -17,10 +17,11 @@ use WHMCS\Database\Capsule;
 function terminow_play_config()
 {
     return [
-        'name' => 'TermiNow Google Play',
-        'description' => 'Clients and services of TermiNow Premium bought with Google Play. Google Play collects the payments; '
+        'name' => 'TermiNow',
+        'description' => 'TermiNow integration: Google Play subscriptions (clients and services) and the '
+            . 'shared secret the TermiNow MCP relay uses to verify Premium. Google Play collects the payments; '
             . 'the product must have the pay type Free so that WHMCS never invoices them.',
-        'version' => '1.0',
+        'version' => '1.1',
         'author' => 'TermiNow',
         'fields' => [
             'syncSecret' => [
@@ -34,6 +35,13 @@ function terminow_play_config()
                 'Type' => 'text',
                 'Size' => '30',
                 'Description' => 'The module name of an active gateway, required by AddOrder. No invoice is ever created.',
+            ],
+            'relaySecret' => [
+                'FriendlyName' => 'MCP relay secret',
+                'Type' => 'password',
+                'Size' => '64',
+                'Description' => 'Shared secret the TermiNow MCP relay sends as X-Relay-Secret to relay_check.php. '
+                    . 'Use the same value as RELAY_BACKEND_SECRET on the relay server. At least 16 characters.',
             ],
         ],
     ];
@@ -74,6 +82,10 @@ function terminow_play_output($vars)
             echo '<div class="errorbox">' . $h($e->errorCode . ': ' . $e->getMessage()) . '</div>';
         }
     }
+
+    $relayReady = strlen((string)($vars['relaySecret'] ?? '')) >= 16;
+    echo '<p>MCP relay secret: <b>' . ($relayReady ? 'configured' : 'not set') . '</b>'
+        . ($relayReady ? '' : ' — set it in Setup → Addon Modules → TermiNow to enable "Sign in with Google" on the MCP relay') . '.</p>';
 
     $rows = $db->query('SELECT * FROM mod_terminow_play_sync ORDER BY updated_at DESC LIMIT 500')->fetchAll(PDO::FETCH_ASSOC);
     $live = count(array_filter($rows, fn($r) => !(int)$r['test'] && (int)$r['premium']));
