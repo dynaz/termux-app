@@ -8,6 +8,8 @@
 // back these maps with shared storage (see README). No token is ever logged.
 
 import crypto from 'node:crypto';
+import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs';
+import path from 'node:path';
 
 const b64url = (buf) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const randomToken = () => b64url(crypto.randomBytes(32));
@@ -28,6 +30,10 @@ export class OAuth {
     this.codes = new Map();          // code -> { userId, challenge, redirectUri, clientId, expiresAt }
     this.accessTokens = new Map();   // token -> { userId, expiresAt }
     this.refreshTokens = new Map();  // token -> { userId }
+    // Persist OAuth tokens and registered clients so a relay restart does not invalidate a client's
+    // session (otherwise ChatGPT must reconnect after every restart). In-memory only when unset.
+    this.statePath = config && config.statePath ? path.join(config.statePath, 'oauth-state.json') : '';
+    this._loadState();
     // Pairing codes a connected device registered for its user, in addition to the static env map.
     // This lets the app push the codes it shows in "Pair a client" so the user need not edit .env.
     this.dynamicCodes = new Map();   // pairing code -> userId
@@ -36,6 +42,37 @@ export class OAuth {
     // In-flight "Sign in with Google" requests: the original client params kept across the Google
     // round-trip, keyed by an opaque state we send to Google and get back on the callback.
     this.googleStates = new Map();   // gstate -> { clientId, redirectUri, challenge, state, expiresAt }
+  }
+
+  _loadState() {
+    if (!this.statePath) return;
+    let data;
+    try {
+      data = JSON.parse(readFileSync(this.statePath, 'utf8'));
+    } catch {
+      return; // no state yet, or unreadable
+    }
+    const now = Date.now();
+    for (const [t, e] of data.accessTokens || []) if (e && e.expiresAt > now) this.accessTokens.set(t, e);
+    for (const [t, e] of data.refreshTokens || []) if (e) this.refreshTokens.set(t, e);
+    for (const [id, uris] of data.clients || []) this.clients.set(id, { redirectUris: new Set(uris) });
+  }
+
+  _saveState() {
+    if (!this.statePath) return;
+    const data = {
+      accessTokens: [...this.accessTokens.entries()],
+      refreshTokens: [...this.refreshTokens.entries()],
+      clients: [...this.clients.entries()].map(([id, c]) => [id, [...c.redirectUris]]),
+    };
+    try {
+      mkdirSync(path.dirname(this.statePath), { recursive: true });
+      const tmp = this.statePath + '.' + crypto.randomBytes(4).toString('hex');
+      writeFileSync(tmp, JSON.stringify(data), { mode: 0o600 });
+      renameSync(tmp, this.statePath);
+    } catch {
+      // Best effort; tokens still work in memory until the next restart.
+    }
   }
 
   setGoogleEmails(userId, emails) {
@@ -126,6 +163,7 @@ export class OAuth {
     const clientId = 'mcp-' + randomToken().slice(0, 24);
     const redirectUris = Array.isArray(body.redirect_uris) ? body.redirect_uris : [];
     this.clients.set(clientId, { redirectUris: new Set(redirectUris) });
+    this._saveState();
     return {
       client_id: clientId,
       redirect_uris: redirectUris,
@@ -182,6 +220,7 @@ export class OAuth {
     const refreshToken = randomToken();
     this.accessTokens.set(accessToken, { userId, expiresAt: Date.now() + this.config.accessTokenTtlMs });
     this.refreshTokens.set(refreshToken, { userId });
+    this._saveState();
     return {
       access_token: accessToken,
       token_type: 'Bearer',
@@ -208,5 +247,6 @@ export class OAuth {
   revokeUser(userId) {
     for (const [token, entry] of this.accessTokens) if (entry.userId === userId) this.accessTokens.delete(token);
     for (const [token, entry] of this.refreshTokens) if (entry.userId === userId) this.refreshTokens.delete(token);
+    this._saveState();
   }
 }

@@ -583,3 +583,19 @@ test('the relay serves /icon.png and brands serverInfo on initialize', async () 
     assert.ok(Array.isArray(info.icons) && info.icons[0].src.endsWith('/icon.png'), 'icon added');
   } finally { dev.destroy(); server.close(); }
 });
+
+// Token persistence: a relay restart must not force clients to reconnect.
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import nodePath from 'node:path';
+test('OAuth tokens persist across a restart', () => {
+  const dir = mkdtempSync(nodePath.join(tmpdir(), 'relay-state-'));
+  const cfg = { pairingCodes: {}, accessTokenTtlMs: 3600000, statePath: dir };
+  const o1 = new OAuth(cfg);
+  const t = o1.issueTokens('user-x');
+  // A fresh OAuth = a restart; it loads the persisted state.
+  const o2 = new OAuth(cfg);
+  assert.equal(o2.userForBearer('Bearer ' + t.access_token), 'user-x', 'access token survives restart');
+  const r = o2.refresh(t.refresh_token);
+  assert.ok(r.access_token, 'refresh token survives restart');
+});

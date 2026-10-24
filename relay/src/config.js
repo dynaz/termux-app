@@ -55,6 +55,9 @@ export function loadConfig(env = process.env) {
     // How long a device-registered dynamic pairing code lives before the app must re-register it.
     // Longer than the app's re-register interval, so a connected device's codes never lapse.
     pairingTtlMs: parseInt(env.RELAY_PAIRING_TTL_MS || String(2 * 60 * 60 * 1000), 10),
+    // A writable directory to persist OAuth tokens across restarts (so clients need not reconnect).
+    // systemd sets STATE_DIRECTORY when StateDirectory= is configured; empty keeps in-memory only.
+    statePath: env.RELAY_STATE_DIR || env.STATE_DIRECTORY || '',
     // Public Firebase web config for "Sign in with Google" on the consent page (not secrets). The
     // browser signs in and submits a Firebase ID token, which the backend authority then verifies.
     firebaseWeb: {
