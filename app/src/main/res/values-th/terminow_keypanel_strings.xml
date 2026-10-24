@@ -39,6 +39,8 @@
     <string name="terminow_keypanel_file_path">ไฟล์: %1$s</string>
     <string name="terminow_keypanel_public">คีย์สาธารณะ</string>
     <string name="terminow_keypanel_share">ส่งออกหรือแชร์คีย์สาธารณะ</string>
+    <string name="terminow_keypanel_export_ppk">ส่งออกคีย์ส่วนตัวเป็น .ppk</string>
+    <string name="terminow_keypanel_export_ppk_failed">ส่งออกคีย์ไม่สำเร็จ: %1$s</string>
     <string name="terminow_keypanel_no_public">ไม่มีไฟล์คีย์สาธารณะ โฮสต์ยังลงชื่อเข้าใช้ด้วยคีย์ได้ แต่ใบรับรองต้องใช้ไฟล์นี้</string>
     <string name="terminow_keypanel_make_public">สร้างคีย์สาธารณะ</string>
     <string name="terminow_keypanel_certificate">ใบรับรอง</string>

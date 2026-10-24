@@ -3,10 +3,15 @@ package com.termux.app.terminow;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.jcraft.jsch.JSch;
+import com.jcraft.jsch.JSchException;
+import com.jcraft.jsch.KeyPair;
+
 import org.bouncycastle.crypto.generators.Argon2BytesGenerator;
 import org.bouncycastle.crypto.params.Argon2Parameters;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
@@ -314,6 +319,280 @@ public class TerminowPpk {
         return new Result(pem.toString(), publicKey, comment);
     }
 
+    // ---------------------------------------------------------------------------------------
+    // Writing a .ppk (version 3): the reverse of convert(), with the same MAC and crypto so a
+    // file written here is read back by convert() and loads in PuTTY. The caller gives the SSH
+    // public blob and the PuTTY private blob (the private fields of the type, without the type).
+    // ---------------------------------------------------------------------------------------
+
+    @NonNull
+    public static String toPpk(@NonNull String algorithm, @NonNull byte[] publicBlob, @NonNull byte[] privateBlob,
+                               @NonNull String comment, @Nullable String passphrase) throws PpkException {
+        boolean encrypted = passphrase != null && !passphrase.isEmpty();
+        String encryption = encrypted ? "aes256-cbc" : "none";
+        byte[] plaintext = privateBlob;
+        String kdfLines = "";
+        byte[] stored;
+        byte[] macKey;
+        try {
+            if (encrypted) {
+                // Pad the plaintext to the AES block; the padding is covered by the MAC and ignored
+                // by the reader, so its content does not matter.
+                int pad = (16 - plaintext.length % 16) % 16;
+                if (pad != 0) {
+                    byte[] padded = Arrays.copyOf(plaintext, plaintext.length + pad);
+                    byte[] random = new byte[pad];
+                    new SecureRandom().nextBytes(random);
+                    System.arraycopy(random, 0, padded, plaintext.length, pad);
+                    plaintext = padded;
+                }
+                byte[] salt = new byte[16];
+                new SecureRandom().nextBytes(salt);
+                int memory = 8192, passes = 21, parallelism = 1;
+                byte[] derived = argon2Write(salt, memory, passes, parallelism, passphrase.getBytes(StandardCharsets.UTF_8));
+                byte[] cipherKey = Arrays.copyOfRange(derived, 0, 32);
+                byte[] iv = Arrays.copyOfRange(derived, 32, 48);
+                macKey = Arrays.copyOfRange(derived, 48, 80);
+                stored = encrypt(plaintext, cipherKey, iv);
+                kdfLines = "Key-Derivation: Argon2id\n"
+                    + "Argon2-Memory: " + memory + "\n"
+                    + "Argon2-Passes: " + passes + "\n"
+                    + "Argon2-Parallelism: " + parallelism + "\n"
+                    + "Argon2-Salt: " + toHex(salt) + "\n";
+            } else {
+                macKey = new byte[0];
+                stored = plaintext;
+            }
+            byte[] mac = computeMac("HmacSHA256", macKey, algorithm, encryption, comment, publicBlob, plaintext);
+            StringBuilder out = new StringBuilder();
+            out.append("PuTTY-User-Key-File-3: ").append(algorithm).append('\n');
+            out.append("Encryption: ").append(encryption).append('\n');
+            out.append("Comment: ").append(comment).append('\n');
+            appendBase64Lines(out, "Public-Lines", publicBlob);
+            out.append(kdfLines);
+            appendBase64Lines(out, "Private-Lines", stored);
+            out.append("Private-MAC: ").append(toHex(mac)).append('\n');
+            return out.toString();
+        } catch (GeneralSecurityException e) {
+            throw new PpkException("Failed to build the key: " + e.getMessage());
+        }
+    }
+
+    private static void appendBase64Lines(@NonNull StringBuilder out, @NonNull String label, @NonNull byte[] data) {
+        String base64 = encodeBase64(data);
+        int lines = Math.max(1, (base64.length() + 63) / 64);
+        out.append(label).append(": ").append(lines).append('\n');
+        for (int i = 0; i < base64.length(); i += 64)
+            out.append(base64, i, Math.min(base64.length(), i + 64)).append('\n');
+        if (base64.isEmpty()) out.append('\n');
+    }
+
+    @NonNull
+    private static byte[] encrypt(@NonNull byte[] data, @NonNull byte[] key, @NonNull byte[] iv) throws GeneralSecurityException {
+        Cipher cipher = Cipher.getInstance("AES/CBC/NoPadding");
+        cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(key, "AES"), new IvParameterSpec(iv));
+        return cipher.doFinal(data);
+    }
+
+    @NonNull
+    private static byte[] computeMac(@NonNull String macAlgorithm, @NonNull byte[] macKey, @NonNull String algorithm,
+                                     @NonNull String encryption, @NonNull String comment, @NonNull byte[] publicBlob,
+                                     @NonNull byte[] privateBlob) throws GeneralSecurityException {
+        SshWriter data = new SshWriter();
+        data.string(algorithm.getBytes(StandardCharsets.UTF_8));
+        data.string(encryption.getBytes(StandardCharsets.UTF_8));
+        data.string(comment.getBytes(StandardCharsets.UTF_8));
+        data.string(publicBlob);
+        data.string(privateBlob);
+        if (macKey.length == 0) return emptyKeyHmac(macAlgorithm, data.toByteArray());
+        Mac mac = Mac.getInstance(macAlgorithm);
+        mac.init(new SecretKeySpec(macKey, macAlgorithm));
+        return mac.doFinal(data.toByteArray());
+    }
+
+    @NonNull
+    private static byte[] argon2Write(@NonNull byte[] salt, int memory, int passes, int parallelism, @NonNull byte[] passphrase) {
+        Argon2Parameters parameters = new Argon2Parameters.Builder(Argon2Parameters.ARGON2_id)
+            .withVersion(Argon2Parameters.ARGON2_VERSION_13)
+            .withMemoryAsKB(memory).withIterations(passes).withParallelism(parallelism).withSalt(salt).build();
+        Argon2BytesGenerator generator = new Argon2BytesGenerator();
+        generator.init(parameters);
+        byte[] out = new byte[80];
+        generator.generateBytes(passphrase, out);
+        return out;
+    }
+
+    @NonNull
+    private static String toHex(@NonNull byte[] data) {
+        StringBuilder sb = new StringBuilder(data.length * 2);
+        for (byte b : data) sb.append(Character.forDigit((b >> 4) & 0xf, 16)).append(Character.forDigit(b & 0xf, 16));
+        return sb.toString();
+    }
+
+    /** An SSH mpint of a non-negative integer: its two's-complement big-endian bytes (0 -> empty). */
+    @NonNull
+    static byte[] mpint(@NonNull BigInteger value) {
+        if (value.signum() == 0) return new byte[0];
+        return value.toByteArray();
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Exporting a stored key file to .ppk: JSch reads and decrypts it (any format, including the
+    // bcrypt/aes/3des OpenSSH encryption), then the private material is re-encoded into PuTTY's
+    // blobs and written with toPpk(). The .ppk keeps the same passphrase. ed25519, RSA and ECDSA.
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * Read the private key at {@code keyFile}, decrypting with {@code passphrase} if it has one, and
+     * return it as a PuTTY {@code .ppk} (version 3) with the same passphrase and the given comment.
+     */
+    @NonNull
+    public static String exportKeyFile(@NonNull File keyFile, @Nullable String passphrase, @NonNull String comment)
+            throws PpkException {
+        JSch jsch = new JSch();
+        KeyPair pair = null;
+        try {
+            pair = KeyPair.load(jsch, keyFile.getPath());
+            if (pair.isEncrypted()) {
+                if (passphrase == null || passphrase.isEmpty())
+                    throw new PassphraseException("The key is protected with a passphrase");
+                if (!pair.decrypt(passphrase.getBytes(StandardCharsets.UTF_8)))
+                    throw new PassphraseException("The passphrase is wrong");
+            }
+            byte[] publicBlob = pair.getPublicKeyBlob();
+            if (publicBlob == null || publicBlob.length == 0)
+                throw new PpkException("The key has no public key to export");
+            String algorithm = TerminowKeyFormat.blobType(publicBlob);
+            if (algorithm.isEmpty()) throw new PpkException("The key type is not known");
+            byte[] privateBlob;
+            if (algorithm.equals("ssh-ed25519")) {
+                // JSch can decrypt an Ed25519 key but can not re-serialize it (writePrivateKey is
+                // unsupported for EdDSA), so the 32-byte seed is read from the decrypted key pair.
+                privateBlob = new SshWriter().string(ed25519Seed(pair)).toByteArray();
+            } else {
+                ByteArrayOutputStream prv = new ByteArrayOutputStream();
+                pair.writePrivateKey(prv);
+                privateBlob = puttyPrivateBlob(algorithm, prv.toByteArray());
+            }
+            return toPpk(algorithm, publicBlob, privateBlob, comment, passphrase);
+        } catch (JSchException e) {
+            throw new PpkException("The key could not be read: " + e.getMessage());
+        } finally {
+            if (pair != null) pair.dispose();
+        }
+    }
+
+    /**
+     * The 32-byte Ed25519 seed of a decrypted JSch key pair. JSch holds it after {@code decrypt()}
+     * but does not expose it (getPrivateKey throws), so it is read from the key pair's field. The
+     * caller verifies correctness: the seed derives the same public key.
+     */
+    @NonNull
+    private static byte[] ed25519Seed(@NonNull KeyPair pair) throws PpkException {
+        // prv_array is declared on the KeyPairEdDSA superclass, so walk up to find it.
+        for (Class<?> c = pair.getClass(); c != null; c = c.getSuperclass()) {
+            try {
+                java.lang.reflect.Field field = c.getDeclaredField("prv_array");
+                field.setAccessible(true);
+                byte[] value = (byte[]) field.get(pair);
+                if (value == null || value.length < 32) throw new PpkException("The Ed25519 key could not be read");
+                return Arrays.copyOfRange(value, 0, 32);
+            } catch (NoSuchFieldException e) {
+                // try the superclass
+            } catch (ReflectiveOperationException | RuntimeException e) {
+                throw new PpkException("This Ed25519 key can not be exported to .ppk");
+            }
+        }
+        throw new PpkException("This Ed25519 key can not be exported to .ppk");
+    }
+
+    /** The PuTTY private blob (the private fields only) from the unencrypted key JSch wrote. */
+    @NonNull
+    private static byte[] puttyPrivateBlob(@NonNull String algorithm, @NonNull byte[] keyBytes) throws PpkException {
+        String text = new String(keyBytes, StandardCharsets.UTF_8);
+        if (text.contains("BEGIN OPENSSH PRIVATE KEY")) return fromOpenSsh(text);
+        if (text.contains("BEGIN RSA PRIVATE KEY")) return fromRsaPem(text);
+        if (text.contains("BEGIN EC PRIVATE KEY")) return fromEcPem(text);
+        throw new PpkException("This key can not be exported to .ppk (unsupported format)");
+    }
+
+    /** Parse an unencrypted openssh-key-v1 and build the PuTTY private blob for its one key. */
+    @NonNull
+    private static byte[] fromOpenSsh(@NonNull String pem) throws PpkException {
+        byte[] data = decodeBase64(stripArmor(pem));
+        byte[] magic = "openssh-key-v1\0".getBytes(StandardCharsets.US_ASCII);
+        if (data.length < magic.length) throw new PpkException("The key file is damaged");
+        for (int i = 0; i < magic.length; i++) if (data[i] != magic[i]) throw new PpkException("The key file is damaged");
+        SshReader r = new SshReader(data);
+        r.skip(magic.length);
+        r.string();              // cipher (none, it was decrypted)
+        r.string();              // kdfname
+        r.string();              // kdfoptions
+        r.uint32();              // number of keys
+        r.string();              // the public key
+        SshReader p = new SshReader(r.string()); // the private section (plaintext)
+        p.uint32();              // check int 1
+        p.uint32();              // check int 2
+        String type = new String(p.string(), StandardCharsets.US_ASCII);
+        SshWriter blob = new SshWriter();
+        if (type.equals("ssh-ed25519")) {
+            p.string();                                  // public key (32)
+            byte[] secret = p.string();                  // seed(32) || public(32)
+            if (secret.length < 32) throw new PpkException("The key file is damaged");
+            blob.string(Arrays.copyOfRange(secret, 0, 32));
+        } else if (type.equals("ssh-rsa")) {
+            p.mpint(); p.mpint();                        // n, e
+            BigInteger d = p.mpintValue(), iqmp = p.mpintValue(), pp = p.mpintValue(), q = p.mpintValue();
+            blob.string(mpint(d)).string(mpint(pp)).string(mpint(q)).string(mpint(iqmp));
+        } else if (type.startsWith("ecdsa-sha2-")) {
+            p.string(); p.string();                      // curve, point
+            blob.string(mpint(p.mpintValue()));          // d
+        } else {
+            throw new PpkException("Keys of type " + type + " can not be exported to .ppk");
+        }
+        return blob.toByteArray();
+    }
+
+    /** PKCS#1 RSA private key (-----BEGIN RSA PRIVATE KEY-----) -> PuTTY private blob. */
+    @NonNull
+    private static byte[] fromRsaPem(@NonNull String pem) throws PpkException {
+        try {
+            org.bouncycastle.asn1.pkcs.RSAPrivateKey rsa =
+                org.bouncycastle.asn1.pkcs.RSAPrivateKey.getInstance(decodeBase64(stripArmor(pem)));
+            return new SshWriter()
+                .string(mpint(rsa.getPrivateExponent()))
+                .string(mpint(rsa.getPrime1()))
+                .string(mpint(rsa.getPrime2()))
+                .string(mpint(rsa.getCoefficient()))
+                .toByteArray();
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            throw new PpkException("The RSA key could not be read");
+        }
+    }
+
+    /** SEC1 EC private key (-----BEGIN EC PRIVATE KEY-----) -> PuTTY private blob (the scalar). */
+    @NonNull
+    private static byte[] fromEcPem(@NonNull String pem) throws PpkException {
+        try {
+            org.bouncycastle.asn1.sec.ECPrivateKey ec =
+                org.bouncycastle.asn1.sec.ECPrivateKey.getInstance(decodeBase64(stripArmor(pem)));
+            return new SshWriter().string(mpint(ec.getKey())).toByteArray();
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            throw new PpkException("The ECDSA key could not be read");
+        }
+    }
+
+    @NonNull
+    private static String stripArmor(@NonNull String pem) {
+        StringBuilder out = new StringBuilder();
+        for (String line : pem.split("\n")) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty() || trimmed.startsWith("-----")) continue;
+            out.append(trimmed);
+        }
+        return out.toString();
+    }
+
     @NonNull
     private static byte[] sha1(@NonNull byte[] prefix, @NonNull byte[] data) throws GeneralSecurityException {
         MessageDigest digest = MessageDigest.getInstance("SHA-1");
@@ -393,6 +672,25 @@ public class TerminowPpk {
         @NonNull
         byte[] mpint() throws PpkException {
             return new BigInteger(1, string()).toByteArray();
+        }
+
+        /** The mpint as a BigInteger, for re-encoding. */
+        @NonNull
+        BigInteger mpintValue() throws PpkException {
+            return new BigInteger(1, string());
+        }
+
+        int uint32() throws PpkException {
+            if (mPosition + 4 > mData.length) throw new PpkException("The key file is damaged");
+            int value = (mData[mPosition] & 0xff) << 24 | (mData[mPosition + 1] & 0xff) << 16 |
+                (mData[mPosition + 2] & 0xff) << 8 | (mData[mPosition + 3] & 0xff);
+            mPosition += 4;
+            return value;
+        }
+
+        void skip(int n) throws PpkException {
+            if (mPosition + n > mData.length) throw new PpkException("The key file is damaged");
+            mPosition += n;
         }
     }
 

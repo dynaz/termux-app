@@ -39,6 +39,8 @@
     <string name="terminow_keypanel_file_path">File: %1$s</string>
     <string name="terminow_keypanel_public">Public key</string>
     <string name="terminow_keypanel_share">Export or share public key</string>
+    <string name="terminow_keypanel_export_ppk">Export private key as .ppk</string>
+    <string name="terminow_keypanel_export_ppk_failed">Could not export the key: %1$s</string>
     <string name="terminow_keypanel_no_public">There is no public key file. Hosts can still log in with the key; a certificate needs it.</string>
     <string name="terminow_keypanel_make_public">Create public key</string>
     <string name="terminow_keypanel_certificate">Certificate</string>

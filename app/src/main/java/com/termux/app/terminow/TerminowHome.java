@@ -4182,6 +4182,44 @@ public class TerminowHome {
     }
 
     /**
+     * Export a key as a PuTTY {@code .ppk}, keeping its passphrase, and open the share sheet so the
+     * file can be sent or saved. The stored passphrase is tried first; if the key needs one and none
+     * is given, it asks for it.
+     */
+    private void exportKeyToPpk(@NonNull KeyItem key, @Nullable String passphrase) {
+        String pass = passphrase == null ? "" : passphrase.trim();
+        try {
+            String ppk = TerminowPpk.exportKeyFile(key.file, pass.isEmpty() ? null : pass, key.getTitle());
+            java.io.File dir = new java.io.File(mActivity.getCacheDir(), "explorer");
+            //noinspection ResultOfMethodCallIgnored
+            dir.mkdirs();
+            String safe = key.getTitle().replaceAll("[^A-Za-z0-9._-]", "_");
+            if (safe.isEmpty()) safe = "key";
+            java.io.File out = new java.io.File(dir, safe + ".ppk");
+            try (java.io.FileOutputStream fos = new java.io.FileOutputStream(out)) {
+                fos.write(ppk.getBytes(StandardCharsets.UTF_8));
+            }
+            android.net.Uri uri = androidx.core.content.FileProvider.getUriForFile(
+                mActivity, mActivity.getPackageName() + ".explorer", out);
+            Intent share = new Intent(Intent.ACTION_SEND).setType("application/octet-stream")
+                .putExtra(Intent.EXTRA_STREAM, uri)
+                .putExtra(Intent.EXTRA_SUBJECT, safe + ".ppk")
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            mActivity.startActivity(Intent.createChooser(share, mActivity.getString(R.string.terminow_keypanel_export_ppk)));
+        } catch (TerminowPpk.PassphraseException e) {
+            LinearLayout form = createForm();
+            EditText passphraseView = addField(form, R.string.terminow_key_passphrase,
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+            showFormDialog(R.string.terminow_keypanel_export_ppk, form, () -> {
+                exportKeyToPpk(key, passphraseView.getText().toString());
+                return true;
+            });
+        } catch (TerminowPpk.PpkException | java.io.IOException | RuntimeException e) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_keypanel_export_ppk_failed, String.valueOf(e.getMessage())), true);
+        }
+    }
+
+    /**
      * A key: its type and fingerprint, its name, its public key to copy or share, its
      * certificate, and the hosts and identities that log in with it.
      */
@@ -4263,6 +4301,14 @@ public class TerminowHome {
                         return true;
                     });
                 });
+        }
+
+        // Export the private key as a PuTTY .ppk, for tools (PuTTY, WinSCP, some servers) that want
+        // that format. Uses the stored passphrase, or asks for it, and keeps the same passphrase.
+        if (key.biometricId == null && key.fidoId == null && key.file.isFile()) {
+            EditText passphraseForExport = finalPassphraseView;
+            panel.primaryButton(top, mActivity.getString(R.string.terminow_keypanel_export_ppk), () ->
+                exportKeyToPpk(key, passphraseForExport != null ? passphraseForExport.getText().toString() : ""));
         }
 
         // The certificate of the key, which ssh uses with it
