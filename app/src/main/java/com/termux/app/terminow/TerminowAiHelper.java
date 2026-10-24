@@ -31,6 +31,8 @@ public final class TerminowAiHelper {
     public static final String GUEST_HELPER_REL = ".local/share/terminow-ai/terminow-ai-bridge.py";
     /** Where the token file is kept in the guest home, with 0600 permissions. */
     public static final String GUEST_TOKEN_REL = ".config/terminow-ai/token";
+    /** Where the bridge's current loopback port is kept, refreshed on every bind, read fresh by the helper. */
+    public static final String GUEST_PORT_REL = ".config/terminow-ai/port";
 
     private TerminowAiHelper() {}
 
@@ -72,13 +74,19 @@ public final class TerminowAiHelper {
     }
 
     @NonNull
+    public static String guestPortPath(@NonNull String guestHome) {
+        return join(guestHome, GUEST_PORT_REL);
+    }
+
+    @NonNull
     private static String join(@NonNull String home, @NonNull String rel) {
         return (home.endsWith("/") ? home.substring(0, home.length() - 1) : home) + "/" + rel;
     }
 
     /** The environment Claude Code gives the helper: the transport and the token file, no secret. */
     @NonNull
-    public static Map<String, String> registrationEnv(@NonNull Transport transport, @NonNull String guestTokenFile) {
+    public static Map<String, String> registrationEnv(@NonNull Transport transport, @NonNull String guestTokenFile,
+                                                      @NonNull String guestPortFile) {
         Map<String, String> env = new LinkedHashMap<>();
         env.put("TERMINOW_AI_TOKEN_FILE", guestTokenFile);
         if (transport.kind == Transport.Kind.UNIX) {
@@ -87,7 +95,10 @@ public final class TerminowAiHelper {
         } else {
             env.put("TERMINOW_AI_TRANSPORT", "tcp");
             env.put("TERMINOW_AI_HOST", transport.host);
+            // The port at registration is a starting value; the helper reads the live port from the
+            // port file each time it connects, so a bridge restart on a different port still works.
             env.put("TERMINOW_AI_PORT", String.valueOf(transport.port));
+            env.put("TERMINOW_AI_PORT_FILE", guestPortFile);
         }
         return env;
     }
@@ -95,8 +106,8 @@ public final class TerminowAiHelper {
     /** The {@code mcpServers} entry that runs the helper with python3, carrying no secret. */
     @NonNull
     public static JSONObject registrationEntry(@NonNull String guestHelperPath, @NonNull Transport transport,
-                                               @NonNull String guestTokenFile) throws JSONException {
+                                               @NonNull String guestTokenFile, @NonNull String guestPortFile) throws JSONException {
         return TerminowClaudeConfig.buildStdioEntry("python3", Collections.singletonList(guestHelperPath),
-            registrationEnv(transport, guestTokenFile));
+            registrationEnv(transport, guestTokenFile, guestPortFile));
     }
 }

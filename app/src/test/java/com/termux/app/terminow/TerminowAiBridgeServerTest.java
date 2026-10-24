@@ -132,4 +132,97 @@ public class TerminowAiBridgeServerTest {
         server.serve(new BufferedReader(new StringReader("not json\n")), out, "AUTH " + token);
         assertTrue(out.toString().contains("-32700"));
     }
+
+    /**
+     * Bridge restart: the process-singleton listener is stopped and started again (a new port), and
+     * the same per-environment token still authenticates. The grant lives in the session, not in the
+     * socket, so a restart must not force the user to re-pair.
+     */
+    @Test
+    public void sameTokenAuthenticatesAcrossABridgeRestart() throws Exception {
+        String token = session.mint("ubuntu");
+        assertNull(server.start(0));
+        assertTrue(server.getPort() > 0);
+        server.stop();
+        assertTrue(!server.isRunning());
+        assertEquals(0, server.getPort());
+
+        assertNull(server.start(0));
+        try {
+            int secondPort = server.getPort();
+            assertTrue(secondPort > 0);
+            // A fresh listener; the helper re-reads the live port before it reconnects.
+            try (Socket socket = new Socket(InetAddress.getLoopbackAddress(), secondPort)) {
+                Writer w = new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8);
+                BufferedReader r = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+                w.write("AUTH " + token + "\n");
+                w.flush();
+                assertEquals("OK", r.readLine());
+            }
+        } finally {
+            server.stop();
+        }
+    }
+
+    /**
+     * Terminal reconnect leaves a stale connection for an environment. closeConnectionsOf() must end
+     * the live connection (not only a finished one), so the reconnecting helper is not shut out and
+     * no second session lingers under the same grant.
+     */
+    @Test
+    public void closeConnectionsOfEndsALiveConnection() throws Exception {
+        String token = session.mint("ubuntu");
+        assertNull(server.start(0));
+        try (Socket socket = new Socket(InetAddress.getLoopbackAddress(), server.getPort())) {
+            Writer w = new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8);
+            BufferedReader r = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+            w.write("AUTH " + token + "\n");
+            w.flush();
+            assertEquals("OK", r.readLine());
+
+            // Round-trip one request so the server has entered its serve loop and mapped the socket
+            // to its environment (the mapping is set just before the loop). No arbitrary sleep.
+            w.write("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n");
+            w.flush();
+            assertTrue(r.readLine().contains("\"id\":1"));
+
+            // A reconnect/revoke closes the live connection the way disconnectClaude does.
+            server.closeConnectionsOf("ubuntu");
+
+            // The client sees the stream end (null), not a hang.
+            assertNull(r.readLine());
+        } finally {
+            server.stop();
+        }
+    }
+
+    /** A revoke of one environment must not close another environment's live connection. */
+    @Test
+    public void closeConnectionsOfLeavesOtherEnvironmentsAlone() throws Exception {
+        String ubuntuToken = session.mint("ubuntu");
+        session.mint("debian");
+        assertNull(server.start(0));
+        try (Socket socket = new Socket(InetAddress.getLoopbackAddress(), server.getPort())) {
+            Writer w = new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8);
+            BufferedReader r = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+            w.write("AUTH " + ubuntuToken + "\n");
+            w.flush();
+            assertEquals("OK", r.readLine());
+
+            // Establish the mapped, live connection first.
+            w.write("{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"initialize\",\"params\":{}}\n");
+            w.flush();
+            assertTrue(r.readLine().contains("\"id\":7"));
+
+            // Revoking a different environment must not touch this one.
+            server.closeConnectionsOf("debian");
+
+            w.write("{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"initialize\",\"params\":{}}\n");
+            w.flush();
+            String response = r.readLine();
+            assertTrue(response != null && response.contains("\"id\":8"));
+        } finally {
+            server.stop();
+        }
+    }
 }

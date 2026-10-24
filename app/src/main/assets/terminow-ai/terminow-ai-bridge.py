@@ -14,7 +14,8 @@
 #   TERMINOW_AI_TRANSPORT   "unix" (default) or "tcp"
 #   TERMINOW_AI_SOCK        unix socket path          (transport unix)
 #   TERMINOW_AI_HOST        host, default 127.0.0.1   (transport tcp)
-#   TERMINOW_AI_PORT        port                      (transport tcp)
+#   TERMINOW_AI_PORT        port, a starting value    (transport tcp)
+#   TERMINOW_AI_PORT_FILE   file holding the live port, read fresh each connect (transport tcp)
 #   TERMINOW_AI_TOKEN_FILE  path to a file holding the token (preferred)
 #   TERMINOW_AI_TOKEN       the token itself (fallback; discouraged)
 
@@ -22,6 +23,7 @@ import os
 import sys
 import socket
 import threading
+import time
 
 
 def log(*a):
@@ -40,17 +42,38 @@ def read_token():
     return os.environ.get("TERMINOW_AI_TOKEN", "").strip()
 
 
+def read_port():
+    # The live port, written by TermiNow on every bind; falls back to the registration env.
+    path = os.environ.get("TERMINOW_AI_PORT_FILE", "")
+    if path:
+        try:
+            with open(path, "r") as f:
+                value = f.read().strip()
+            if value.isdigit() and int(value) > 0:
+                return int(value)
+        except OSError:
+            pass
+    try:
+        return int(os.environ.get("TERMINOW_AI_PORT", "0"))
+    except ValueError:
+        return 0
+
+
 def connect():
     transport = os.environ.get("TERMINOW_AI_TRANSPORT", "unix").lower()
     if transport == "tcp":
         host = os.environ.get("TERMINOW_AI_HOST", "127.0.0.1")
-        port = int(os.environ.get("TERMINOW_AI_PORT", "0"))
+        port = read_port()
         if not port:
-            log("TERMINOW_AI_PORT not set")
+            log("no bridge port (set TERMINOW_AI_PORT or TERMINOW_AI_PORT_FILE)")
             return None
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(15)
-        s.connect((host, port))
+        try:
+            s.connect((host, port))
+        except OSError:
+            s.close()  # do not leak the socket when the bridge is down
+            raise
         log("connected tcp", host, port)
     else:
         path = os.environ.get("TERMINOW_AI_SOCK", "")
@@ -59,7 +82,11 @@ def connect():
             return None
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         s.settimeout(15)
-        s.connect(path)
+        try:
+            s.connect(path)
+        except OSError:
+            s.close()
+            raise
         log("connected unix", path)
     s.settimeout(None)
     return s
@@ -88,25 +115,54 @@ def pump(src_recv, dst_write, name):
         log(name, "ended:", e)
 
 
+# How long to keep trying to reach the bridge before giving up, so a terminal reconnect or a
+# bridge restart (a brief window where the listener is down or on a new port) heals itself.
+CONNECT_DEADLINE_S = 60.0
+
+
+def connect_with_backoff():
+    """Connect and authenticate, retrying with bounded backoff. Returns (sock, error)."""
+    deadline = time.monotonic() + CONNECT_DEADLINE_S
+    delay = 0.5
+    last = "unknown"
+    while True:
+        token = read_token()
+        if not token:
+            return None, "no token; run 'Connect Claude Code' in TermiNow"
+        sock = None
+        try:
+            sock = connect()  # reads the live port each attempt
+        except OSError as e:
+            last = str(e)
+        if sock is not None:
+            try:
+                ok = authenticate(sock, token)
+            except OSError as e:
+                ok = False
+                last = str(e)
+            if ok:
+                return sock, None
+            try:
+                sock.close()
+            except OSError:
+                pass
+            last = "the bridge rejected authentication"
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return None, last
+        time.sleep(min(delay, remaining))
+        delay = min(delay * 2, 8.0)
+
+
 def main():
-    token = read_token()
-    if not token:
+    if not read_token():
         log("no token; run 'Connect Claude Code' in TermiNow")
         return 2
-    try:
-        sock = connect()
-    except OSError as e:
-        log("connect failed:", e)
-        return 3
+    sock, error = connect_with_backoff()
     if sock is None:
+        log("could not reach the TermiNow Local AI Bridge (" + str(error) + "). "
+            "Open TermiNow > AI, turn the Local AI Bridge on, then reconnect Claude Code.")
         return 3
-    if not authenticate(sock, token):
-        log("authentication rejected by the bridge")
-        try:
-            sock.close()
-        except OSError:
-            pass
-        return 4
 
     stdin = sys.stdin.buffer
     stdout = sys.stdout.buffer
