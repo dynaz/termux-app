@@ -493,7 +493,7 @@ public class TerminowHome {
         mMcpBridge = TerminowMcpBridgeManager.getInstance(activity.getApplicationContext(), mStore,
             new TerminowMcpTargets(new File(TermuxConstants.TERMUX_PREFIX_DIR_PATH), new File(TermuxConstants.TERMUX_HOME_DIR_PATH)));
         mMcpBridge.startIfEnabled();
-        mMcpBridgePage = new TerminowMcpBridgeUi(activity, mMcpBridge, mStore, activity.findViewById(R.id.terminow_mcp_bridge), this::openMcpTaskInTerminal);
+        mMcpBridgePage = new TerminowMcpBridgeUi(activity, mMcpBridge, mStore, activity.findViewById(R.id.terminow_mcp_bridge), this::openMcpTaskInTerminal, this::openSessionTerminal);
         mRailMcpBridge = activity.findViewById(R.id.terminow_rail_mcp_bridge);
         mRailMcpBridge.setOnClickListener(v -> setPage(PAGE_MCP_BRIDGE));
         mMcpBridgeScrollView = activity.findViewById(R.id.terminow_mcp_bridge_scroll);
@@ -888,7 +888,7 @@ public class TerminowHome {
             mEmptyView.setVisibility(View.GONE);
             mSettingsScrollView.setVisibility(View.GONE);
             if (mMcpBridgePage == null)
-                mMcpBridgePage = new TerminowMcpBridgeUi(mActivity, mMcpBridge, mStore, mActivity.findViewById(R.id.terminow_mcp_bridge), this::openMcpTaskInTerminal);
+                mMcpBridgePage = new TerminowMcpBridgeUi(mActivity, mMcpBridge, mStore, mActivity.findViewById(R.id.terminow_mcp_bridge), this::openMcpTaskInTerminal, this::openSessionTerminal);
             mMcpBridgePage.render();
             return;
         }
@@ -1796,6 +1796,15 @@ public class TerminowHome {
         String bash = new File(TermuxConstants.TERMUX_PREFIX_DIR_PATH, "bin/bash").getAbsolutePath();
         String command = "clear 2>/dev/null; tail -n +1 -F " + TerminowStore.shellQuote(logFile.getAbsolutePath());
         startSession(bash, new String[]{"-lc", command}, TermuxConstants.TERMUX_HOME_DIR_PATH, "task: " + title);
+    }
+
+    /** Open an interactive terminal in a shared session's environment at its folder. */
+    private void openSessionTerminal(@NonNull String environmentKey, @NonNull String user, @NonNull String folder) {
+        if (environmentKey.isEmpty() || TerminowMcpTargets.TARGET_TERMINOW.equals(environmentKey)) {
+            openTerminalAt(new File(folder.isEmpty() ? TermuxConstants.TERMUX_HOME_DIR_PATH : folder));
+        } else {
+            mLauncher.openLinuxTerminal(environmentKey, user.isEmpty() ? "root" : user, folder);
+        }
     }
 
     /** The vault was switched or synced: show its hosts, groups, snippets and forwards. */

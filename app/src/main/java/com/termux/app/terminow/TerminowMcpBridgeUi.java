@@ -44,21 +44,28 @@ final class TerminowMcpBridgeUi {
         void open(@NonNull java.io.File logFile, @NonNull String title);
     }
 
+    /** Opens an interactive terminal in a shared session's environment at its folder. */
+    interface OpenSessionTerminal {
+        void open(@NonNull String environmentKey, @NonNull String user, @NonNull String folder);
+    }
+
     private final TermuxActivity mActivity;
     private final TerminowMcpBridgeManager mManager;
     private final TerminowStore mStore;
     private final LinearLayout mContent;
     private final TerminowAccountUi mAccountUi;
     @NonNull private final OpenInTerminal mOpenInTerminal;
+    @NonNull private final OpenSessionTerminal mOpenSessionTerminal;
 
     TerminowMcpBridgeUi(@NonNull TermuxActivity activity, @NonNull TerminowMcpBridgeManager manager,
                         @NonNull TerminowStore store, @NonNull LinearLayout container,
-                        @NonNull OpenInTerminal openInTerminal) {
+                        @NonNull OpenInTerminal openInTerminal, @NonNull OpenSessionTerminal openSessionTerminal) {
         mActivity = activity;
         mManager = manager;
         mStore = store;
         mContent = container;
         mOpenInTerminal = openInTerminal;
+        mOpenSessionTerminal = openSessionTerminal;
         mAccountUi = new TerminowAccountUi(activity, store, this::render);
     }
 
@@ -343,6 +350,8 @@ final class TerminowMcpBridgeUi {
                 }
                 render();
             })
+            .setNeutralButton(R.string.terminow_mcp_bridge_open_terminal, (d, w) ->
+                mOpenSessionTerminal.open(share.environmentKey, share.user, share.folder))
             .setNegativeButton(android.R.string.cancel, null)
             .show();
     }
