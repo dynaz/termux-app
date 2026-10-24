@@ -69,12 +69,12 @@ function connectFakeDevice(base, deviceToken, answer) {
   return req;
 }
 
-async function getAccessToken(base) {
+async function getAccessToken(base, pairingCode = 'PAIR-123') {
   const verifier = b64url(crypto.randomBytes(32));
   const challenge = b64url(crypto.createHash('sha256').update(verifier).digest());
   const form = new URLSearchParams({
     client_id: 'static-client', redirect_uri: 'https://client.example/cb', state: 'xyz',
-    code_challenge: challenge, code_challenge_method: 'S256', response_type: 'code', pairing_code: 'PAIR-123',
+    code_challenge: challenge, code_challenge_method: 'S256', response_type: 'code', pairing_code: pairingCode,
   }).toString();
   const authorize = await request(base, 'POST', '/authorize',
     { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(form) }, body: form });
@@ -166,5 +166,34 @@ test('when no device is connected, a call fails cleanly rather than hanging fore
     assert.ok(JSON.parse(res.body).error, 'a JSON-RPC error is returned');
   } finally {
     server.close();
+  }
+});
+
+test("an OAuth token for one user is routed only to that user's device", async () => {
+  // Two users, each with their own device and pairing code.
+  const config = {
+    host: '127.0.0.1', port: 0, publicUrl: 'http://127.0.0.1',
+    deviceTokens: { 'dev-1': 'user-1', 'dev-2': 'user-2' },
+    pairingCodes: { 'PAIR-1': 'user-1', 'PAIR-2': 'user-2' },
+    accessTokenTtlMs: 3600 * 1000, requestTimeoutMs: 5000, allowDynamicRegistration: true,
+  };
+  const server = createServer(config);
+  await new Promise((r) => server.listen(0, '127.0.0.1', () => { server.config.publicUrl = `http://127.0.0.1:${server.address().port}`; r(); }));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  let hit1 = 0, hit2 = 0;
+  const d1 = connectFakeDevice(base, 'dev-1', (m) => { hit1++; return { jsonrpc: '2.0', id: m.id, result: { who: 'device-1' } }; });
+  const d2 = connectFakeDevice(base, 'dev-2', (m) => { hit2++; return { jsonrpc: '2.0', id: m.id, result: { who: 'device-2' } }; });
+  try {
+    await new Promise((r) => setTimeout(r, 200));
+    const at = await getAccessToken(base, 'PAIR-1'); // token bound to user-1
+    const call = JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'tools/list' });
+    const res = await request(base, 'POST', '/mcp',
+      { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${at}`, 'Content-Length': Buffer.byteLength(call) }, body: call });
+    assert.equal(res.status, 200);
+    assert.equal(JSON.parse(res.body).result.who, 'device-1', 'user-1 token must reach user-1 device');
+    assert.equal(hit1, 1, 'user-1 device answered');
+    assert.equal(hit2, 0, "user-2 device must NOT be reachable with user-1's token");
+  } finally {
+    d1.destroy(); d2.destroy(); server.close();
   }
 });
