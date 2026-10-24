@@ -197,3 +197,47 @@ test("an OAuth token for one user is routed only to that user's device", async (
     d1.destroy(); d2.destroy(); server.close();
   }
 });
+
+// Phase 1: the device registers the pairing codes it shows in "Pair a client", so the consent
+// screen accepts them without editing RELAY_PAIRING_CODES. Only its own device token may set them.
+test('a device can register dynamic pairing codes that the consent screen then accepts', async () => {
+  const { server, base } = await startRelay();
+  try {
+    const dynCode = 'DYN-ABCDEFGH';
+    // Before registration, a code not in the env map is rejected at /authorize.
+    const verifier = b64url(crypto.randomBytes(32));
+    const challenge = b64url(crypto.createHash('sha256').update(verifier).digest());
+    const form = new URLSearchParams({
+      client_id: 'c', redirect_uri: 'https://client.example/cb',
+      code_challenge: challenge, code_challenge_method: 'S256', response_type: 'code', pairing_code: dynCode,
+    }).toString();
+    const before = await request(base, 'POST', '/authorize',
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(form) }, body: form });
+    assert.equal(before.status, 403, 'an unregistered code is not recognised');
+
+    // The device registers the code with its device token.
+    const reg = JSON.stringify({ codes: [dynCode] });
+    const regRes = await request(base, 'POST', '/device/pairing-codes',
+      { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer device-secret', 'Content-Length': Buffer.byteLength(reg) }, body: reg });
+    assert.equal(regRes.status, 200);
+    assert.equal(JSON.parse(regRes.body).count, 1);
+
+    // Now the same code is accepted and yields a working access token bound to user-1.
+    const at = await getAccessToken(base, dynCode);
+    assert.ok(at, 'an access token is issued for the dynamically registered code');
+  } finally {
+    server.close();
+  }
+});
+
+test('a wrong device token cannot register pairing codes', async () => {
+  const { server, base } = await startRelay();
+  try {
+    const reg = JSON.stringify({ codes: ['SOME-OTHER-CODE'] });
+    const res = await request(base, 'POST', '/device/pairing-codes',
+      { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer not-a-device', 'Content-Length': Buffer.byteLength(reg) }, body: reg });
+    assert.equal(res.status, 401);
+  } finally {
+    server.close();
+  }
+});

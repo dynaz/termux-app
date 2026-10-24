@@ -40,9 +40,15 @@ public final class TerminowMcpBridgeRelay {
         @NonNull TerminowAiBridgeServer.Handler handler();
     }
 
+    /** Supplies the pairing codes to register with the relay (the tokens shown in "Pair a client"). */
+    public interface CodesProvider {
+        @NonNull java.util.List<String> pairingCodes();
+    }
+
     public enum State { OFF, CONNECTING, CONNECTED, ERROR }
 
     private final HandlerFactory mFactory;
+    @Nullable private final CodesProvider mCodes;
     private volatile String mBaseUrl = "";
     private volatile String mDeviceToken = "";
     private volatile boolean mRunning;
@@ -52,7 +58,12 @@ public final class TerminowMcpBridgeRelay {
     @Nullable private volatile String mLastError;
 
     public TerminowMcpBridgeRelay(@NonNull HandlerFactory factory) {
+        this(factory, null);
+    }
+
+    public TerminowMcpBridgeRelay(@NonNull HandlerFactory factory, @Nullable CodesProvider codes) {
         mFactory = factory;
+        mCodes = codes;
     }
 
     public synchronized void start(@NonNull String baseUrl, @NonNull String deviceToken) {
@@ -133,6 +144,9 @@ public final class TerminowMcpBridgeRelay {
         }
         mState = State.CONNECTED;
         mLastError = null;
+        // Register the current pairing codes so the relay's consent screen accepts them without the
+        // operator editing RELAY_PAIRING_CODES; re-sent on every (re)connect.
+        pushPairingCodes();
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
             String line;
             while (mRunning && (line = reader.readLine()) != null) {
@@ -178,6 +192,39 @@ public final class TerminowMcpBridgeRelay {
             connection.disconnect();
         } catch (IOException | org.json.JSONException e) {
             Logger.logDebug(LOG_TAG, "Could not post a relay response: " + e.getMessage());
+        }
+    }
+
+    /** Re-send the pairing codes to the relay, off the caller's thread. Call after pairing or revoking. */
+    public void refreshPairingCodes() {
+        if (!mRunning || mState != State.CONNECTED) return;
+        Thread thread = new Thread(this::pushPairingCodes, "TerminowMcpBridge codes");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    /** POST the current pairing codes to the relay. Best effort: a failure is retried on reconnect. */
+    private void pushPairingCodes() {
+        if (mCodes == null || mBaseUrl.isEmpty() || mDeviceToken.isEmpty()) return;
+        try {
+            org.json.JSONArray codes = new org.json.JSONArray();
+            for (String code : mCodes.pairingCodes()) if (code != null && !code.isEmpty()) codes.put(code);
+            byte[] body = new JSONObject().put("codes", codes).toString().getBytes(StandardCharsets.UTF_8);
+            URL url = new URL(mBaseUrl + "/device/pairing-codes");
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setRequestProperty("Authorization", "Bearer " + mDeviceToken);
+            connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            connection.setReadTimeout(CONNECT_TIMEOUT_MS);
+            try (OutputStream out = connection.getOutputStream()) {
+                out.write(body);
+            }
+            connection.getResponseCode();
+            connection.disconnect();
+        } catch (IOException | org.json.JSONException e) {
+            Logger.logDebug(LOG_TAG, "Could not register pairing codes: " + e.getMessage());
         }
     }
 

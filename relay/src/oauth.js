@@ -28,6 +28,22 @@ export class OAuth {
     this.codes = new Map();          // code -> { userId, challenge, redirectUri, clientId, expiresAt }
     this.accessTokens = new Map();   // token -> { userId, expiresAt }
     this.refreshTokens = new Map();  // token -> { userId }
+    // Pairing codes a connected device registered for its user, in addition to the static env map.
+    // This lets the app push the codes it shows in "Pair a client" so the user need not edit .env.
+    this.dynamicCodes = new Map();   // pairing code -> userId
+  }
+
+  /**
+   * Replace the dynamic pairing codes of one user with the given set. Only a device authenticated
+   * with that user's device token reaches this (via the device endpoint), so a user can set codes
+   * only for themselves. The static env codes are never touched.
+   */
+  setPairingCodes(userId, codes) {
+    for (const [code, uid] of this.dynamicCodes) if (uid === userId) this.dynamicCodes.delete(code);
+    for (const code of codes) {
+      const c = String(code || '').trim();
+      if (c) this.dynamicCodes.set(c, userId);
+    }
   }
 
   protectedResourceMetadata() {
@@ -79,7 +95,7 @@ export class OAuth {
 
   // The user approves at /authorize by entering a pairing code; a valid code identifies the user.
   issueCode({ pairingCode, clientId, redirectUri, challenge }) {
-    const userId = this.config.pairingCodes[pairingCode];
+    const userId = this.config.pairingCodes[pairingCode] || this.dynamicCodes.get(pairingCode);
     if (!userId) return null;
     if (!challenge) return null; // PKCE is required
     const code = randomToken();

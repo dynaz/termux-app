@@ -110,7 +110,22 @@ public final class TerminowMcpBridgeManager {
         // The relay dials out to a remote MCP endpoint; its traffic is answered as the relay's own
         // paired client, so the same per-session authorization applies to remote AI clients.
         mRelay = new TerminowMcpBridgeRelay(
-            () -> new TerminowMcpBridgeMcpServer(mBridge, relayClientKey(), this::secrets, BuildConfig.VERSION_NAME));
+            () -> new TerminowMcpBridgeMcpServer(mBridge, relayClientKey(), this::secrets, BuildConfig.VERSION_NAME),
+            this::relayPairingCodes);
+    }
+
+    /**
+     * The pairing codes to register with the relay: the tokens shown in "Pair a client". The relay's
+     * own entry (its clientId is {@link #relayClientKey()}, whose token is the device token) is left
+     * out, so the device token is never registered as a pairing code.
+     */
+    @NonNull
+    private synchronized List<String> relayPairingCodes() {
+        String relayKey = relayClientKey();
+        List<String> codes = new ArrayList<>();
+        for (Map.Entry<String, String> entry : mStore.getMcpClientTokens().entrySet())
+            if (!entry.getKey().equals(relayKey) && !entry.getValue().isEmpty()) codes.add(entry.getValue());
+        return codes;
     }
 
     // ---------------------------------------------------------------------------------------
@@ -203,6 +218,7 @@ public final class TerminowMcpBridgeManager {
         String token = mClients.mint(clientId);
         String safeLabel = label.trim().isEmpty() ? "AI client" : label.trim();
         mStore.setMcpClient(clientId, token, safeLabel);
+        mRelay.refreshPairingCodes();
         return new PairResult(clientId, token, safeLabel);
     }
 
@@ -210,11 +226,13 @@ public final class TerminowMcpBridgeManager {
     public synchronized void revokeClient(@NonNull String clientId) {
         mClients.revoke(clientId);
         mServer.closeConnectionsOf(clientId);
+        mRelay.refreshPairingCodes();
     }
 
     public synchronized void revokeAllClients() {
         for (String id : new HashSet<>(mStore.getMcpClientTokens().keySet())) mServer.closeConnectionsOf(id);
         mClients.revokeAll();
+        mRelay.refreshPairingCodes();
     }
 
     /** The paired clients for the UI: id, label, pairing time. No token is returned. */

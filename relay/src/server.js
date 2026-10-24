@@ -56,6 +56,7 @@ async function handle(req, res, ctx) {
 
   if (req.method === 'GET' && path === '/device/stream') return handleDeviceStream(req, res, ctx, url);
   if (req.method === 'POST' && path === '/device/rpc') return handleDeviceRpc(req, res, ctx);
+  if (req.method === 'POST' && path === '/device/pairing-codes') return handleDevicePairingCodes(req, res, ctx);
 
   sendJson(res, 404, { error: 'not_found' });
 }
@@ -161,6 +162,25 @@ async function handleDeviceRpc(req, res, ctx) {
   const body = await readJson(req);
   const delivered = ctx.hub.deliverResponse(userId, body || {});
   return sendJson(res, delivered ? 200 : 409, { delivered });
+}
+
+// The device registers the pairing codes it shows in "Pair a client", so the consent screen
+// accepts them without the operator editing RELAY_PAIRING_CODES. Authenticated by the device token,
+// so a user can set codes only for their own account; the static env codes remain a fallback.
+const MAX_PAIRING_CODES = 64;
+async function handleDevicePairingCodes(req, res, ctx) {
+  const token = bearerOrQueryToken(req, new URL(req.url, ctx.config.publicUrl));
+  const userId = ctx.hub.userForDeviceToken(token);
+  if (!userId) return sendJson(res, 401, { error: 'invalid_device_token' });
+  const body = await readJson(req);
+  const list = body && Array.isArray(body.codes) ? body.codes : null;
+  if (!list) return sendJson(res, 400, { error: 'invalid_request', message: 'codes[] required' });
+  const codes = list
+    .map((c) => String(c == null ? '' : c).trim())
+    .filter((c) => c.length >= 8 && c.length <= 256)
+    .slice(0, MAX_PAIRING_CODES);
+  ctx.oauth.setPairingCodes(userId, codes);
+  return sendJson(res, 200, { ok: true, count: codes.length });
 }
 
 // ---------------------------------------------------------------------------------------
