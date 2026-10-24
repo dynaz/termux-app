@@ -9,6 +9,7 @@ import { URL } from 'node:url';
 import { loadConfig } from './config.js';
 import { OAuth } from './oauth.js';
 import { DeviceHub } from './deviceHub.js';
+import { googleConfigured, googleAuthUrl, fetchGoogleEmail } from './google.js';
 
 const MAX_BODY = 1024 * 1024;
 
@@ -51,12 +52,15 @@ async function handle(req, res, ctx) {
 
   if (path === '/authorize') return handleAuthorize(req, res, ctx, url);
   if (req.method === 'POST' && path === '/token') return handleToken(req, res, ctx);
+  if (req.method === 'GET' && path === '/oauth/google/start') return handleGoogleStart(req, res, ctx, url);
+  if (req.method === 'GET' && path === '/oauth/google/callback') return handleGoogleCallback(req, res, ctx, url);
 
   if (path === '/mcp') return handleMcp(req, res, ctx);
 
   if (req.method === 'GET' && path === '/device/stream') return handleDeviceStream(req, res, ctx, url);
   if (req.method === 'POST' && path === '/device/rpc') return handleDeviceRpc(req, res, ctx);
   if (req.method === 'POST' && path === '/device/pairing-codes') return handleDevicePairingCodes(req, res, ctx);
+  if (req.method === 'POST' && path === '/device/google-emails') return handleDeviceGoogleEmails(req, res, ctx);
 
   sendJson(res, 404, { error: 'not_found' });
 }
@@ -70,7 +74,7 @@ async function handleAuthorize(req, res, ctx, url) {
     const q = Object.fromEntries(url.searchParams);
     if ((q.code_challenge_method || 'S256') !== 'S256')
       return sendHtml(res, 400, '<p>Only PKCE S256 is supported.</p>');
-    return sendHtml(res, 200, consentPage(q));
+    return sendHtml(res, 200, consentPage(q, { googleEnabled: googleConfigured(ctx.config) }));
   }
   if (req.method === 'POST') {
     const form = await readForm(req);
@@ -83,7 +87,8 @@ async function handleAuthorize(req, res, ctx, url) {
       redirectUri,
       challenge: form.code_challenge,
     });
-    if (!code) return sendHtml(res, 403, consentPage(form, 'That pairing code was not recognised. Check it in TermiNow.'));
+    if (!code) return sendHtml(res, 403, consentPage(form,
+      { error: 'That pairing code was not recognised. Check it in TermiNow.', googleEnabled: googleConfigured(ctx.config) }));
     const location = new URL(redirectUri);
     location.searchParams.set('code', code);
     if (form.state) location.searchParams.set('state', form.state);
@@ -107,6 +112,48 @@ async function handleToken(req, res, ctx) {
   if (result.error) return sendJson(res, 400, result);
   res.setHeader('Cache-Control', 'no-store');
   return sendJson(res, 200, result);
+}
+
+// "Sign in with Google": send the user to Google, keeping the client's OAuth params for the return.
+function handleGoogleStart(req, res, ctx, url) {
+  if (!googleConfigured(ctx.config)) return sendHtml(res, 404, '<p>Google sign-in is not configured.</p>');
+  const q = Object.fromEntries(url.searchParams);
+  if (!q.redirect_uri || !ctx.oauth.knownRedirect(q.client_id, q.redirect_uri))
+    return sendHtml(res, 400, '<p>Unknown redirect_uri.</p>');
+  if ((q.code_challenge_method || 'S256') !== 'S256') return sendHtml(res, 400, '<p>Only PKCE S256 is supported.</p>');
+  if (!q.code_challenge) return sendHtml(res, 400, '<p>PKCE is required.</p>');
+  const gstate = ctx.oauth.startGoogleLogin(
+    { clientId: q.client_id, redirectUri: q.redirect_uri, challenge: q.code_challenge, state: q.state });
+  res.writeHead(302, { Location: googleAuthUrl(ctx.config, gstate) });
+  res.end();
+}
+
+// Google returns here; verify the email, map it to a user, and issue our authorization code.
+async function handleGoogleCallback(req, res, ctx, url) {
+  const saved = ctx.oauth.takeGoogleState(url.searchParams.get('state'));
+  if (!saved) return sendHtml(res, 400, '<p>This sign-in link has expired. Start again from your AI client.</p>');
+  const code = url.searchParams.get('code');
+  if (!code) return backToConsent(res, ctx, saved, 'Google sign-in was cancelled.');
+  const result = await fetchGoogleEmail(ctx.config, code);
+  if (result.error) return backToConsent(res, ctx, saved, 'Google sign-in failed. Try again.');
+  const userId = ctx.oauth.userForEmail(result.email);
+  if (!userId) return backToConsent(res, ctx, saved, 'That Google account is not linked to a TermiNow device.');
+  const authCode = ctx.oauth.issueCodeForUser(userId,
+    { clientId: saved.clientId, redirectUri: saved.redirectUri, challenge: saved.challenge });
+  if (!authCode) return backToConsent(res, ctx, saved, 'Could not complete sign-in.');
+  const location = new URL(saved.redirectUri);
+  location.searchParams.set('code', authCode);
+  if (saved.state) location.searchParams.set('state', saved.state);
+  res.writeHead(302, { Location: location.toString() });
+  res.end();
+}
+
+function backToConsent(res, ctx, saved, errorText) {
+  const q = {
+    client_id: saved.clientId, redirect_uri: saved.redirectUri, state: saved.state || '',
+    code_challenge: saved.challenge, code_challenge_method: 'S256', response_type: 'code', scope: 'mcp',
+  };
+  return sendHtml(res, 200, consentPage(q, { error: errorText, googleEnabled: googleConfigured(ctx.config) }));
 }
 
 // ---------------------------------------------------------------------------------------
@@ -183,6 +230,25 @@ async function handleDevicePairingCodes(req, res, ctx) {
   return sendJson(res, 200, { ok: true, count: codes.length });
 }
 
+// The device registers the owner's Google email(s) so "Sign in with Google" maps to this account
+// without editing RELAY_GOOGLE_USERS. The app only sends these for a Premium account. Authenticated
+// by the device token, so a user links only their own email.
+const MAX_GOOGLE_EMAILS = 8;
+async function handleDeviceGoogleEmails(req, res, ctx) {
+  const token = bearerOrQueryToken(req, new URL(req.url, ctx.config.publicUrl));
+  const userId = ctx.hub.userForDeviceToken(token);
+  if (!userId) return sendJson(res, 401, { error: 'invalid_device_token' });
+  const body = await readJson(req);
+  const list = body && Array.isArray(body.emails) ? body.emails : null;
+  if (!list) return sendJson(res, 400, { error: 'invalid_request', message: 'emails[] required' });
+  const emails = list
+    .map((e) => String(e == null ? '' : e).trim().toLowerCase())
+    .filter((e) => e.length <= 320 && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e))
+    .slice(0, MAX_GOOGLE_EMAILS);
+  ctx.oauth.setGoogleEmails(userId, emails);
+  return sendJson(res, 200, { ok: true, count: emails.length });
+}
+
 // ---------------------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------------------
@@ -253,18 +319,29 @@ function escapeHtml(s) {
   return String(s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-function consentPage(q, errorText) {
-  const hidden = ['client_id', 'redirect_uri', 'state', 'code_challenge', 'code_challenge_method', 'response_type', 'scope']
-    .map((k) => `<input type="hidden" name="${k}" value="${escapeHtml(q[k])}">`).join('\n');
-  const error = errorText ? `<p style="color:#b00">${escapeHtml(errorText)}</p>` : '';
+function consentPage(q, opts = {}) {
+  const keys = ['client_id', 'redirect_uri', 'state', 'code_challenge', 'code_challenge_method', 'response_type', 'scope'];
+  const hidden = keys.map((k) => `<input type="hidden" name="${k}" value="${escapeHtml(q[k])}">`).join('\n');
+  const error = opts.error ? `<p style="color:#b00">${escapeHtml(opts.error)}</p>` : '';
+  let google = '';
+  if (opts.googleEnabled) {
+    const params = new URLSearchParams();
+    for (const k of keys) if (q[k]) params.set(k, q[k]);
+    google = `
+    <a href="/oauth/google/start?${escapeHtml(params.toString())}"
+       style="display:inline-block;padding:.6rem 1rem;font-size:1rem;border:1px solid #888;border-radius:.4rem;text-decoration:none;color:#111">
+      Sign in with Google</a>
+    <p style="color:#888;margin:1rem 0 .5rem">or enter a pairing code</p>`;
+  }
   return `
   <div style="font-family:system-ui;max-width:28rem;margin:4rem auto">
     <h1>Connect to TermiNow</h1>
-    <p>Enter the pairing code from TermiNow (MCP Bridge → Pair a client) to let this AI client use your shared sessions.</p>
+    <p>Let this AI client use your shared sessions.</p>
     ${error}
+    ${google}
     <form method="post" action="/authorize">
       ${hidden}
-      <input name="pairing_code" placeholder="Pairing code" autofocus
+      <input name="pairing_code" placeholder="Pairing code"
         style="width:100%;padding:.6rem;font-size:1rem;margin:.5rem 0">
       <button type="submit" style="padding:.6rem 1rem;font-size:1rem">Allow access</button>
     </form>

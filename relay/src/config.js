@@ -32,5 +32,15 @@ export function loadConfig(env = process.env) {
     // Permit dynamic client registration (RFC 7591). Trending to CIMD in newer MCP revisions,
     // kept here for clients (including some ChatGPT/Claude Desktop builds) that rely on it.
     allowDynamicRegistration: env.RELAY_ALLOW_DCR !== 'false',
+    // "Sign in with Google" at the consent screen, as an alternative to the pairing code. The relay
+    // is a Google OAuth web client; set the id and secret from the Google Cloud console, and add
+    // <publicUrl>/oauth/google/callback as an authorized redirect URI. A signed-in Google email is
+    // mapped to a user id through RELAY_GOOGLE_USERS ("email=userId,...") or a device registration.
+    google: {
+      clientId: env.RELAY_GOOGLE_CLIENT_ID || '',
+      clientSecret: env.RELAY_GOOGLE_CLIENT_SECRET || '',
+      redirectUri: env.RELAY_GOOGLE_REDIRECT_URI || (publicUrl + '/oauth/google/callback'),
+      users: parseMap(env.RELAY_GOOGLE_USERS), // Google email -> user id
+    },
   };
 }

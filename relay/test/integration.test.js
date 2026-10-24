@@ -241,3 +241,111 @@ test('a wrong device token cannot register pairing codes', async () => {
     server.close();
   }
 });
+
+// Phase 2: "Sign in with Google" at the consent screen. The relay is a Google OAuth client; a
+// signed-in email maps to a user via RELAY_GOOGLE_USERS or a device registration. These tests stub
+// Google's token endpoint (globalThis.fetch) so no real Google call is made.
+function startGoogleRelay(users = { 'owner@example.com': 'user-1' }) {
+  return new Promise((resolve) => {
+    const config = {
+      host: '127.0.0.1', port: 0, publicUrl: 'http://127.0.0.1',
+      deviceTokens: { 'device-secret': 'user-1' }, pairingCodes: {},
+      accessTokenTtlMs: 3600 * 1000, requestTimeoutMs: 5000, allowDynamicRegistration: true,
+      google: { clientId: 'gid', clientSecret: 'gsecret', redirectUri: 'http://127.0.0.1/oauth/google/callback', users },
+    };
+    const server = createServer(config);
+    server.listen(0, '127.0.0.1', () => {
+      const bPort = server.address().port;
+      server.config.publicUrl = `http://127.0.0.1:${bPort}`;
+      server.config.google.redirectUri = `http://127.0.0.1:${bPort}/oauth/google/callback`;
+      resolve({ server, base: `http://127.0.0.1:${bPort}` });
+    });
+  });
+}
+
+function fakeIdToken(email, verified = true) {
+  const payload = b64url(Buffer.from(JSON.stringify({ email, email_verified: verified })));
+  return `h.${payload}.s`;
+}
+
+async function googleSignInToToken(base, email) {
+  const verifier = b64url(crypto.randomBytes(32));
+  const challenge = b64url(crypto.createHash('sha256').update(verifier).digest());
+  const startQ = new URLSearchParams({
+    client_id: 'c', redirect_uri: 'https://client.example/cb', state: 'xyz',
+    code_challenge: challenge, code_challenge_method: 'S256', response_type: 'code', scope: 'mcp',
+  }).toString();
+  const start = await request(base, 'GET', '/oauth/google/start?' + startQ);
+  assert.equal(start.status, 302, 'start redirects to Google');
+  const gstate = new URL(start.headers.location).searchParams.get('state');
+  assert.ok(gstate, 'a state is carried to Google');
+  // Stub the Google token exchange for this email.
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ id_token: fakeIdToken(email) }) });
+  try {
+    const cb = await request(base, 'GET', `/oauth/google/callback?state=${gstate}&code=abc`);
+    if (cb.status !== 302) return { consent: cb };
+    const authCode = new URL(cb.headers.location).searchParams.get('code');
+    const tokenForm = new URLSearchParams({
+      grant_type: 'authorization_code', code: authCode, code_verifier: verifier, redirect_uri: 'https://client.example/cb',
+    }).toString();
+    const token = await request(base, 'POST', '/token',
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(tokenForm) }, body: tokenForm });
+    return { token };
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+}
+
+test('the consent screen offers Sign in with Google when configured', async () => {
+  const { server, base } = await startGoogleRelay();
+  try {
+    const q = new URLSearchParams({ client_id: 'c', redirect_uri: 'https://client.example/cb', code_challenge: 'x', response_type: 'code' }).toString();
+    const page = await request(base, 'GET', '/authorize?' + q);
+    assert.equal(page.status, 200);
+    assert.match(page.body, /Sign in with Google/);
+    assert.match(page.body, /\/oauth\/google\/start\?/);
+  } finally { server.close(); }
+});
+
+test('a mapped Google account signs in and gets a working access token', async () => {
+  const { server, base } = await startGoogleRelay();
+  try {
+    const { token } = await googleSignInToToken(base, 'owner@example.com');
+    assert.equal(token.status, 200);
+    assert.ok(JSON.parse(token.body).access_token, 'an access token is issued via Google login');
+  } finally { server.close(); }
+});
+
+test('an unmapped Google account is refused, not signed in', async () => {
+  const { server, base } = await startGoogleRelay();
+  try {
+    const { consent } = await googleSignInToToken(base, 'stranger@example.com');
+    assert.ok(consent, 'the callback returns the consent page, not a redirect');
+    assert.equal(consent.status, 200);
+    assert.match(consent.body, /not linked to a TermiNow device/);
+  } finally { server.close(); }
+});
+
+test('a device can register a Google email that then signs in', async () => {
+  const { server, base } = await startGoogleRelay({}); // no static users
+  try {
+    const reg = JSON.stringify({ emails: ['owner@example.com'] });
+    const regRes = await request(base, 'POST', '/device/google-emails',
+      { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer device-secret', 'Content-Length': Buffer.byteLength(reg) }, body: reg });
+    assert.equal(regRes.status, 200);
+    assert.equal(JSON.parse(regRes.body).count, 1);
+    const { token } = await googleSignInToToken(base, 'owner@example.com');
+    assert.equal(token.status, 200);
+  } finally { server.close(); }
+});
+
+test('a wrong device token cannot register Google emails', async () => {
+  const { server, base } = await startGoogleRelay();
+  try {
+    const reg = JSON.stringify({ emails: ['x@example.com'] });
+    const res = await request(base, 'POST', '/device/google-emails',
+      { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer nope', 'Content-Length': Buffer.byteLength(reg) }, body: reg });
+    assert.equal(res.status, 401);
+  } finally { server.close(); }
+});

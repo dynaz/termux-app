@@ -31,6 +31,42 @@ export class OAuth {
     // Pairing codes a connected device registered for its user, in addition to the static env map.
     // This lets the app push the codes it shows in "Pair a client" so the user need not edit .env.
     this.dynamicCodes = new Map();   // pairing code -> userId
+    // Google emails a connected device registered for its user, in addition to the static env map.
+    this.dynamicEmails = new Map();  // Google email (lowercased) -> userId
+    // In-flight "Sign in with Google" requests: the original client params kept across the Google
+    // round-trip, keyed by an opaque state we send to Google and get back on the callback.
+    this.googleStates = new Map();   // gstate -> { clientId, redirectUri, challenge, state, expiresAt }
+  }
+
+  setGoogleEmails(userId, emails) {
+    for (const [email, uid] of this.dynamicEmails) if (uid === userId) this.dynamicEmails.delete(email);
+    for (const email of emails) {
+      const e = String(email || '').trim().toLowerCase();
+      if (e) this.dynamicEmails.set(e, userId);
+    }
+  }
+
+  // The user id a verified Google email belongs to, from the static env map or a device registration.
+  userForEmail(email) {
+    const e = String(email || '').trim().toLowerCase();
+    if (!e) return null;
+    return this.config.google?.users?.[e] || this.dynamicEmails.get(e) || null;
+  }
+
+  // Stash the client's OAuth params for the Google round-trip; returns the opaque state to send.
+  startGoogleLogin({ clientId, redirectUri, challenge, state }) {
+    const gstate = randomToken();
+    this.googleStates.set(gstate, { clientId, redirectUri, challenge, state, expiresAt: Date.now() + 10 * 60 * 1000 });
+    return gstate;
+  }
+
+  // Take back the params for a Google callback, once. Null if unknown or expired.
+  takeGoogleState(gstate) {
+    const entry = this.googleStates.get(gstate);
+    if (!entry) return null;
+    this.googleStates.delete(gstate);
+    if (entry.expiresAt < Date.now()) return null;
+    return entry;
   }
 
   /**
@@ -96,6 +132,12 @@ export class OAuth {
   // The user approves at /authorize by entering a pairing code; a valid code identifies the user.
   issueCode({ pairingCode, clientId, redirectUri, challenge }) {
     const userId = this.config.pairingCodes[pairingCode] || this.dynamicCodes.get(pairingCode);
+    if (!userId) return null;
+    return this.issueCodeForUser(userId, { clientId, redirectUri, challenge });
+  }
+
+  // Issue an authorization code for a user already identified (by pairing code or Google login).
+  issueCodeForUser(userId, { clientId, redirectUri, challenge }) {
     if (!userId) return null;
     if (!challenge) return null; // PKCE is required
     const code = randomToken();
