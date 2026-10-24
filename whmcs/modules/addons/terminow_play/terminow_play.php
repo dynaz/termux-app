@@ -17,9 +17,8 @@ use WHMCS\Database\Capsule;
 function terminow_play_config()
 {
     return [
-        'name' => 'TermiNow',
-        'description' => 'TermiNow integration: Google Play subscriptions (clients and services) and the '
-            . 'shared secret the TermiNow MCP relay uses to verify Premium. Google Play collects the payments; '
+        'name' => 'TermiNow Google Play',
+        'description' => 'Clients and services of TermiNow Premium bought with Google Play. Google Play collects the payments; '
             . 'the product must have the pay type Free so that WHMCS never invoices them.',
         'version' => '1.1',
         'author' => 'TermiNow',
@@ -83,37 +82,45 @@ function terminow_play_output($vars)
         }
     }
 
-    $relayReady = strlen((string)($vars['relaySecret'] ?? '')) >= 16;
-    echo '<p>MCP relay secret: <b>' . ($relayReady ? 'configured' : 'not set') . '</b>'
-        . ($relayReady ? '' : ' — set it in Setup → Addon Modules → TermiNow to enable "Sign in with Google" on the MCP relay') . '.</p>';
-
     $rows = $db->query('SELECT * FROM mod_terminow_play_sync ORDER BY updated_at DESC LIMIT 500')->fetchAll(PDO::FETCH_ASSOC);
     $live = count(array_filter($rows, fn($r) => !(int)$r['test'] && (int)$r['premium']));
     $test = count(array_filter($rows, fn($r) => (int)$r['test']));
     $free = count(array_filter($rows, fn($r) => !(int)$r['test'] && !(int)$r['premium']));
     echo '<p>Live Premium accounts: <b>' . $live . '</b> · Free members: <b>' . $free . '</b> · Test purchases (license testers, not revenue): <b>' . $test . '</b>. '
         . 'Google Play collects all payments; WHMCS keeps no invoices for these services.</p>';
-    echo '<table class="datatable" width="100%"><tr><th>TermiNow account</th><th>Client</th><th>Service</th><th>Play plan</th>'
-        . '<th>State</th><th>Expires (UTC)</th><th>Live/Test</th><th>Verified</th><th>Synced</th><th>Status</th><th></th></tr>';
+    $relayReady = strlen((string)($vars['relaySecret'] ?? '')) >= 16;
+    echo '<p>MCP relay secret: <b>' . ($relayReady ? 'configured' : 'not set') . '</b>'
+        . ($relayReady ? '' : ' — set it to enable "Sign in with Google" on the MCP relay') . '.</p>';
+    // Below 768px each row becomes a small card: account and Retry on top, the rest in a 3-column grid
+    echo '<style>.tnp-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}.tnp-table td{word-break:break-word}'
+        . '@media(max-width:767px){.tnp-table thead{display:none}.tnp-table,.tnp-table tbody{display:block;width:100%}'
+        . '.tnp-table tr{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 8px;border:1px solid #ddd;border-radius:4px;margin-bottom:6px;padding:6px 8px;font-size:12px;line-height:1.3}'
+        . '.tnp-table td{display:block;border:0!important;padding:0!important;background:none!important;text-align:left;min-width:0}'
+        . '.tnp-table td[data-label]::before{content:attr(data-label);display:block;font-size:10px;text-transform:uppercase;letter-spacing:.02em;color:#888}'
+        . '.tnp-table td.tnp-uid{grid-column:1/3;grid-row:1;font-weight:600;word-break:break-all}.tnp-table td.tnp-uid small{font-weight:400}'
+        . '.tnp-table td.tnp-act{grid-column:3;grid-row:1;text-align:right}.tnp-table td.tnp-act .btn{padding:2px 8px;font-size:11px}'
+        . '.tnp-table td.tnp-status{grid-column:1/-1;order:1}.tnp-table td.tnp-late{order:2}}</style>';
+    echo '<div class="tnp-wrap"><table class="datatable tnp-table" width="100%"><thead><tr><th>TermiNow account</th><th>Client</th><th>Service</th><th>Play plan</th>'
+        . '<th>State</th><th>Expires (UTC)</th><th>Live/Test</th><th>Verified</th><th>Synced</th><th>Status</th><th></th></tr></thead><tbody>';
     foreach ($rows as $r) {
         $client = $r['client_id'] ? '<a href="clientssummary.php?userid=' . (int)$r['client_id'] . '">#' . (int)$r['client_id'] . '</a>' : '—';
         $service = $r['service_id'] ? '<a href="clientsservices.php?userid=' . (int)$r['client_id'] . '&id=' . (int)$r['service_id'] . '">#' . (int)$r['service_id'] . '</a>' : '—';
         echo '<tr>'
-            . '<td title="Firebase uid">' . $h($r['uid']) . ($r['email'] ? '<br><small>' . $h($r['email']) . '</small>' : '') . '</td>'
-            . '<td>' . $client . '</td><td>' . $service . '</td>'
-            . '<td>' . $h(($r['product_id'] ?? '—') . ' / ' . ($r['base_plan_id'] ?? '—')) . '</td>'
-            . '<td>' . $h(str_replace('SUBSCRIPTION_STATE_', '', (string)$r['state'])) . ((int)$r['auto_renew'] ? '' : '<br><small>no renewal</small>') . '</td>'
-            . '<td>' . ($r['expires_at'] ? gmdate('Y-m-d H:i', intdiv((int)$r['expires_at'], 1000)) : '—') . '</td>'
-            . '<td>' . ((int)$r['test'] ? '<b>TEST</b>' : 'Live') . '</td>'
-            . '<td>' . ($r['last_verified_at'] ? gmdate('Y-m-d H:i', intdiv((int)$r['last_verified_at'], 1000)) : '—') . '</td>'
-            . '<td>' . ($r['last_sync_at'] ? gmdate('Y-m-d H:i', (int)$r['last_sync_at']) : '—') . '</td>'
-            . '<td>' . $h($r['status']) . ($r['last_error'] ? '<br><small>' . $h($r['last_error']) . '</small>' : '') . '</td>'
-            . '<td><form method="post" action="' . $h($link) . '">' . generate_token('form')
+            . '<td class="tnp-uid" title="Firebase uid">' . $h($r['uid']) . ($r['email'] ? '<br><small>' . $h($r['email']) . '</small>' : '') . '</td>'
+            . '<td data-label="Client">' . $client . '</td><td data-label="Service">' . $service . '</td>'
+            . '<td data-label="Play plan">' . $h(($r['product_id'] ?? '—') . ' / ' . ($r['base_plan_id'] ?? '—')) . '</td>'
+            . '<td data-label="State">' . $h(str_replace('SUBSCRIPTION_STATE_', '', (string)$r['state'])) . ((int)$r['auto_renew'] ? '' : '<br><small>no renewal</small>') . '</td>'
+            . '<td data-label="Expires (UTC)">' . ($r['expires_at'] ? gmdate('Y-m-d H:i', intdiv((int)$r['expires_at'], 1000)) : '—') . '</td>'
+            . '<td data-label="Live/Test">' . ((int)$r['test'] ? '<b>TEST</b>' : 'Live') . '</td>'
+            . '<td class="tnp-late" data-label="Verified">' . ($r['last_verified_at'] ? gmdate('Y-m-d H:i', intdiv((int)$r['last_verified_at'], 1000)) : '—') . '</td>'
+            . '<td class="tnp-late" data-label="Synced">' . ($r['last_sync_at'] ? gmdate('Y-m-d H:i', (int)$r['last_sync_at']) : '—') . '</td>'
+            . '<td class="tnp-status" data-label="Status">' . $h($r['status']) . ($r['last_error'] ? '<br><small>' . $h($r['last_error']) . '</small>' : '') . '</td>'
+            . '<td class="tnp-act"><form method="post" action="' . $h($link) . '">' . generate_token('form')
             . '<input type="hidden" name="action" value="retry"><input type="hidden" name="uid" value="' . $h($r['uid']) . '">'
             . '<button type="submit" class="btn btn-default btn-xs">Retry sync</button></form></td>'
             . '</tr>';
     }
-    echo '</table>';
+    echo '</tbody></table></div>';
 }
 
 /**
