@@ -36,12 +36,16 @@ public final class TerminowMcpBridgeExecutor implements TerminowMcpBridge.Execut
     public static final int DEFAULT_TIMEOUT_S = 600;
     public static final int MAX_TIMEOUT_S = 3600;
 
-    /** Runs {@code claude -p} in the task's folder; the request is {@code $1}, the folder {@code $2}. */
+    /**
+     * Runs {@code claude -p} in the task's folder; the request is {@code $1}, the folder {@code $2}.
+     * Every option comes first and {@code --} ends them, so a request that starts with {@code -}
+     * (say {@code --dangerously-skip-permissions}) is the prompt, never parsed as a flag.
+     */
     static final String RUN_SCRIPT =
         "PATH=\"$HOME/.local/bin:$PATH\"; export PATH\n" +
-        "if [ -n \"$2\" ]; then cd \"$2\" || { echo \"TermiNow: the folder $2 does not exist\" >&2; exit 97; }; fi\n" +
+        "if [ -n \"$2\" ]; then cd -- \"$2\" || { echo \"TermiNow: the folder $2 does not exist\" >&2; exit 97; }; fi\n" +
         "command -v claude >/dev/null 2>&1 || { echo \"TermiNow: Claude Code is not installed in this environment\" >&2; exit 98; }\n" +
-        "exec claude -p \"$1\" --output-format stream-json --verbose\n";
+        "exec claude -p --output-format stream-json --verbose -- \"$1\"\n";
 
     private final TerminowClaudeSetup mSetup;
     private final TerminowMcpTargets mTargets;
@@ -52,9 +56,30 @@ public final class TerminowMcpBridgeExecutor implements TerminowMcpBridge.Execut
         mTargets = targets;
     }
 
-    private static final class Run {
-        volatile Process process;
-        volatile boolean cancelRequested;
+    /** The process and a cancel request meet under the run's lock, so neither can miss the other. */
+    static final class Run {
+        private Process process;
+        private boolean cancelRequested;
+
+        /** Record a cancel; stop the process if it has started. */
+        synchronized void cancel() {
+            cancelRequested = true;
+            if (process != null) process.destroy();
+        }
+
+        /** Hand over the started process; false (and it is stopped) when a cancel came first. */
+        synchronized boolean attach(@NonNull Process started) {
+            process = started;
+            if (cancelRequested) {
+                started.destroy();
+                return false;
+            }
+            return true;
+        }
+
+        synchronized boolean isCancelRequested() {
+            return cancelRequested;
+        }
     }
 
     @Override
@@ -70,10 +95,7 @@ public final class TerminowMcpBridgeExecutor implements TerminowMcpBridge.Execut
     @Override
     public void cancel(@NonNull String taskId) {
         Run run = mRuns.get(taskId);
-        if (run == null) return;
-        run.cancelRequested = true;
-        Process process = run.process;
-        if (process != null) process.destroy();
+        if (run != null) run.cancel();
     }
 
     private void execute(@NonNull TerminowMcpBridgeTask task, @NonNull TerminowMcpBridge.Share share,
@@ -90,6 +112,12 @@ public final class TerminowMcpBridgeExecutor implements TerminowMcpBridge.Execut
             return;
         }
 
+        // A cancel that arrived before the process existed must stop it, not let it run to the end
+        if (run.isCancelRequested()) {
+            mRuns.remove(task.id);
+            callback.cancelled(task.id);
+            return;
+        }
         Process process;
         try {
             process = mSetup.start(command);
@@ -99,7 +127,11 @@ public final class TerminowMcpBridgeExecutor implements TerminowMcpBridge.Execut
             mRuns.remove(task.id);
             return;
         }
-        run.process = process;
+        if (!run.attach(process)) {
+            mRuns.remove(task.id);
+            callback.cancelled(task.id);
+            return;
+        }
         try {
             process.getOutputStream().close();
         } catch (IOException ignored) {
@@ -115,17 +147,17 @@ public final class TerminowMcpBridgeExecutor implements TerminowMcpBridge.Execut
             finished = process.waitFor(timeout, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            process.destroy();
             finished = false;
         }
+        // Stop a run that outlived its timeout before draining its output
+        if (!finished) process.destroy();
         join(stdout);
         join(stderr);
 
         try {
-            if (run.cancelRequested) {
+            if (run.isCancelRequested()) {
                 callback.cancelled(task.id);
             } else if (!finished) {
-                process.destroy();
                 callback.failed(task.id, "The task ran longer than " + timeout + "s and was stopped");
             } else {
                 int exit = process.exitValue();
