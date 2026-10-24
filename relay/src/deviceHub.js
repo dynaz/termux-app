@@ -55,6 +55,7 @@ export class DeviceHub {
       this.byUser.set(userId, conns);
     }
     conns.set(connId, conn);
+    console.log('relay: device connected uid=%s', userId);
 
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -74,6 +75,7 @@ export class DeviceHub {
       clearInterval(keepAlive);
       conns.delete(connId);
       if (conns.size === 0) this.byUser.delete(userId);
+      console.log('relay: device disconnected uid=%s', userId);
       for (const pending of conn.pending.values()) {
         clearTimeout(pending.timer);
         pending.reject(new Error('The device disconnected before it answered'));

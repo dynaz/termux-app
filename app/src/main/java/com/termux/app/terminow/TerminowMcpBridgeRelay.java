@@ -61,9 +61,20 @@ public final class TerminowMcpBridgeRelay {
         this(factory, null);
     }
 
+    private final java.util.concurrent.ScheduledExecutorService mRepush =
+        java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "TerminowMcpBridge repush");
+            t.setDaemon(true);
+            return t;
+        });
+
     public TerminowMcpBridgeRelay(@NonNull HandlerFactory factory, @Nullable CodesProvider codes) {
         mFactory = factory;
         mCodes = codes;
+        // Re-register the pairing codes periodically so the relay (which expires dynamic codes) keeps
+        // them valid during a long connection. A no-op while disconnected; a drop/restart re-registers
+        // on reconnect. Runs for the connector's lifetime.
+        mRepush.scheduleWithFixedDelay(this::refreshPairingCodes, 45, 45, java.util.concurrent.TimeUnit.MINUTES);
     }
 
     public synchronized void start(@NonNull String baseUrl, @NonNull String deviceToken) {

@@ -244,7 +244,8 @@ async function handleDevicePairingCodes(req, res, ctx) {
     .map((c) => String(c == null ? '' : c).trim())
     .filter((c) => c.length >= 8 && c.length <= 256)
     .slice(0, MAX_PAIRING_CODES);
-  ctx.oauth.setPairingCodes(userId, codes);
+  ctx.oauth.setPairingCodes(userId, codes, ctx.config.pairingTtlMs);
+  console.log('relay: pairing codes registered uid=%s count=%d', userId, codes.length);
   return sendJson(res, 200, { ok: true, count: codes.length });
 }
 
@@ -257,7 +258,11 @@ async function handleDeviceEnroll(req, res, ctx) {
   if (info.error === 'backend_not_configured') return sendJson(res, 501, { error: 'enrollment_not_configured' });
   if (info.error === 'unauthorized' || info.error === 'no_token') return sendJson(res, 401, { error: 'invalid_token' });
   if (info.error) return sendJson(res, 503, { error: 'try_again' });
-  if (!info.premium) return sendJson(res, 403, { error: 'not_premium' });
+  if (!info.premium) {
+    console.log('relay: enroll refused (not premium) uid=%s', info.uid);
+    return sendJson(res, 403, { error: 'not_premium' });
+  }
+  console.log('relay: enroll ok uid=%s', info.uid);
   const { credential, expiresAt } = ctx.hub.enrollDevice(info.uid, ctx.config.enrollTtlMs);
   return sendJson(res, 200, {
     device_token: credential,

@@ -74,12 +74,26 @@ export class OAuth {
    * with that user's device token reaches this (via the device endpoint), so a user can set codes
    * only for themselves. The static env codes are never touched.
    */
-  setPairingCodes(userId, codes) {
-    for (const [code, uid] of this.dynamicCodes) if (uid === userId) this.dynamicCodes.delete(code);
+  setPairingCodes(userId, codes, ttlMs) {
+    // Ownership: replace only this user's own dynamic codes. Expiry: each code lives for ttlMs, so
+    // codes of a device that stopped re-registering (e.g. disconnected) stop working on their own.
+    for (const [code, e] of this.dynamicCodes) if (e.userId === userId) this.dynamicCodes.delete(code);
+    const expiresAt = Date.now() + (ttlMs > 0 ? ttlMs : 2 * 60 * 60 * 1000);
     for (const code of codes) {
       const c = String(code || '').trim();
-      if (c) this.dynamicCodes.set(c, userId);
+      if (c) this.dynamicCodes.set(c, { userId, expiresAt });
     }
+  }
+
+  // The user of a dynamic pairing code, if present and not expired. Expired entries are dropped.
+  userForDynamicCode(code) {
+    const e = this.dynamicCodes.get(code);
+    if (!e) return null;
+    if (e.expiresAt < Date.now()) {
+      this.dynamicCodes.delete(code);
+      return null;
+    }
+    return e.userId;
   }
 
   protectedResourceMetadata() {
@@ -131,7 +145,7 @@ export class OAuth {
 
   // The user approves at /authorize by entering a pairing code; a valid code identifies the user.
   issueCode({ pairingCode, clientId, redirectUri, challenge }) {
-    const userId = this.config.pairingCodes[pairingCode] || this.dynamicCodes.get(pairingCode);
+    const userId = this.config.pairingCodes[pairingCode] || this.userForDynamicCode(pairingCode);
     if (!userId) return null;
     return this.issueCodeForUser(userId, { clientId, redirectUri, challenge });
   }

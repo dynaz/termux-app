@@ -516,3 +516,49 @@ test('Google sign-in can be temporarily disabled with a message, pairing retaine
     assert.equal(res.status, 503);
   } finally { server.close(); }
 });
+
+// Dynamic pairing codes: expiry + ownership, and re-registration after a relay restart.
+import { OAuth } from '../src/oauth.js';
+
+test('dynamic pairing codes expire and are per-user (ownership)', async () => {
+  const o = new OAuth({ pairingCodes: {}, publicUrl: 'http://x', accessTokenTtlMs: 1000 });
+  o.setPairingCodes('u1', ['CODE-A'], 60000);
+  o.setPairingCodes('u2', ['CODE-U2'], 60000);
+  assert.equal(o.userForDynamicCode('CODE-A'), 'u1');
+  assert.equal(o.userForDynamicCode('CODE-U2'), 'u2');
+  // Re-registering u1 replaces only u1's codes, never u2's (ownership).
+  o.setPairingCodes('u1', ['CODE-B'], 60000);
+  assert.equal(o.userForDynamicCode('CODE-A'), null, 'old u1 code gone after re-register');
+  assert.equal(o.userForDynamicCode('CODE-B'), 'u1');
+  assert.equal(o.userForDynamicCode('CODE-U2'), 'u2', "u2's code untouched");
+  // Expiry: a code past its TTL no longer authenticates.
+  o.setPairingCodes('u1', ['CODE-EXP'], 10);
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(o.userForDynamicCode('CODE-EXP'), null, 'expired code rejected');
+  assert.equal(o.userForDynamicCode('CODE-U2'), 'u2', 'a live code of another user is unaffected');
+});
+
+test('a device re-registers its pairing codes after a relay restart', async () => {
+  const CODE = 'DYN-RESTART-CODE';
+  const reg = JSON.stringify({ codes: [CODE] });
+  const regOn = (base) => request(base, 'POST', '/device/pairing-codes',
+    { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer device-secret', 'Content-Length': Buffer.byteLength(reg) }, body: reg });
+
+  // Instance 1: register the code, it authorizes.
+  const a = await startRelay();
+  try {
+    assert.equal((await regOn(a.base)).status, 200);
+    assert.ok(await getAccessToken(a.base, CODE), 'code works on the first instance');
+  } finally { a.server.close(); }
+
+  // Instance 2 = a restart: fresh in-memory state, so the code is gone until the device re-registers.
+  const b = await startRelay();
+  try {
+    const before = await request(b.base, 'POST', '/authorize', { headers: {
+      'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ client_id: 'c', redirect_uri: 'https://client.example/cb', code_challenge: 'x', code_challenge_method: 'S256', response_type: 'code', pairing_code: CODE }).toString() });
+    assert.equal(before.status, 403, 'code not recognised after restart until re-registered');
+    assert.equal((await regOn(b.base)).status, 200, 'device re-registers on reconnect');
+    assert.ok(await getAccessToken(b.base, CODE), 'code works again after re-registration');
+  } finally { b.server.close(); }
+});
