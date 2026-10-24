@@ -562,3 +562,24 @@ test('a device re-registers its pairing codes after a relay restart', async () =
     assert.ok(await getAccessToken(b.base, CODE), 'code works again after re-registration');
   } finally { b.server.close(); }
 });
+
+// Connector branding: the relay serves a logo and adds a title + icon to serverInfo on initialize.
+test('the relay serves /icon.png and brands serverInfo on initialize', async () => {
+  const { server, base } = await startRelay();
+  const dev = connectFakeDevice(base, 'device-secret', (m) =>
+    ({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: '2025-06-18', capabilities: {}, serverInfo: { name: 'terminow-sessions', version: '1.0' } } }));
+  try {
+    await new Promise((r) => setTimeout(r, 150));
+    const icon = await request(base, 'GET', '/icon.png');
+    assert.equal(icon.status, 200);
+    assert.match(icon.headers['content-type'], /image\/png/);
+    const at = await getAccessToken(base, 'PAIR-123');
+    const call = JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'initialize', params: {} });
+    const res = await request(base, 'POST', '/mcp',
+      { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${at}`, 'Content-Length': Buffer.byteLength(call) }, body: call });
+    const info = JSON.parse(res.body).result.serverInfo;
+    assert.equal(info.name, 'terminow-sessions', 'stable name kept');
+    assert.equal(info.title, 'TermiNow', 'display title added');
+    assert.ok(Array.isArray(info.icons) && info.icons[0].src.endsWith('/icon.png'), 'icon added');
+  } finally { dev.destroy(); server.close(); }
+});

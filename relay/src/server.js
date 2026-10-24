@@ -11,6 +11,16 @@ import { OAuth } from './oauth.js';
 import { DeviceHub } from './deviceHub.js';
 import { googleConfigured, googleAuthUrl, fetchGoogleEmail } from './google.js';
 import { checkPremium, backendConfigured } from './backend.js';
+import { readFileSync } from 'node:fs';
+
+// The connector logo, loaded once; served at /icon.png and referenced from serverInfo.icons.
+const ICON = (() => {
+  try {
+    return readFileSync(new URL('./icon.png', import.meta.url));
+  } catch {
+    return null;
+  }
+})();
 
 const MAX_BODY = 1024 * 1024;
 
@@ -34,6 +44,12 @@ async function handle(req, res, ctx) {
   const path = url.pathname;
 
   if (req.method === 'GET' && path === '/healthz') return sendJson(res, 200, { ok: true });
+
+  if (req.method === 'GET' && path === '/icon.png') {
+    if (!ICON) return sendJson(res, 404, { error: 'not_found' });
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': ICON.length, 'Cache-Control': 'public, max-age=86400' });
+    return res.end(ICON);
+  }
 
   // Discovery. Clients form the metadata URL path-aware per RFC 9728 — inserting the well-known
   // segment before the resource path — so /mcp's metadata is at
@@ -201,6 +217,13 @@ async function handleMcp(req, res, ctx) {
   }
   try {
     const response = await ctx.hub.callDevice(userId, message);
+    // Brand the connector: add a display title and icon to the device's serverInfo on initialize,
+    // without changing its stable name. Clients that render these (e.g. ChatGPT) show TermiNow.
+    if (message.method === 'initialize' && response && response.result && response.result.serverInfo) {
+      response.result.serverInfo.title = 'TermiNow';
+      response.result.serverInfo.websiteUrl = 'https://terminow.online';
+      response.result.serverInfo.icons = [{ src: ctx.config.publicUrl + '/icon.png', mimeType: 'image/png', sizes: ['192x192'] }];
+    }
     return sendJson(res, 200, response);
   } catch (e) {
     return sendJson(res, 200, jsonRpcError(message.id, -32001, String(e && e.message || e)));
