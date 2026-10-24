@@ -375,17 +375,27 @@ final class TerminowMcpBridgeUi {
             state.setTypeface(Typeface.DEFAULT_BOLD);
             card.addView(state);
             card.addView(text(oneLine(task.request), 14, R.color.terminow_text));
+            card.addView(text(mActivity.getString(R.string.terminow_mcp_bridge_task_session, sessionLabel(task.sessionId)),
+                12, R.color.terminow_text_secondary));
             if (task.state() == TerminowMcpBridgeTask.State.WAITING_FOR_USER && !task.pendingAction().isEmpty())
                 card.addView(text(mActivity.getString(R.string.terminow_mcp_bridge_task_pending, task.pendingAction()), 12, R.color.terminow_mcp_warn));
             card.setOnClickListener(v -> taskDialog(task));
         }
     }
 
+    /** The shared session a task belongs to, by its id. Falls back to the id if it was unshared. */
+    @NonNull
+    private String sessionLabel(@NonNull String sessionId) {
+        for (TerminowMcpBridge.Share share : mManager.listShares())
+            if (share.id.equals(sessionId)) return share.label;
+        return sessionId;
+    }
+
     private void taskDialog(@NonNull TerminowMcpBridgeTask task) {
         LinearLayout box = dialogBox();
         addField(box, R.string.terminow_mcp_bridge_task_state, task.state().name().toLowerCase(java.util.Locale.ROOT));
         addField(box, R.string.terminow_mcp_bridge_task_request, task.request);
-        addField(box, R.string.terminow_mcp_bridge_task_target, task.sessionId);
+        addField(box, R.string.terminow_mcp_bridge_task_target, sessionLabel(task.sessionId));
         if (!task.pendingAction().isEmpty()) addField(box, R.string.terminow_mcp_bridge_task_pending, task.pendingAction());
         if (!task.result().isEmpty()) addField(box, R.string.terminow_mcp_bridge_task_result, task.result());
         if (!task.failureReason().isEmpty()) addField(box, R.string.terminow_mcp_bridge_task_failure, task.failureReason());

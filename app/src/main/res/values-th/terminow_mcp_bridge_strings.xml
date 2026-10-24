@@ -54,6 +54,7 @@
     <string name="terminow_mcp_bridge_task_title">งาน</string>
     <string name="terminow_mcp_bridge_task_request">คำสั่ง</string>
     <string name="terminow_mcp_bridge_task_target">เป้าหมาย</string>
+    <string name="terminow_mcp_bridge_task_session">เซสชัน · %1$s</string>
     <string name="terminow_mcp_bridge_task_state">สถานะ</string>
     <string name="terminow_mcp_bridge_task_pending">กำลังรอผู้ใช้: %1$s</string>
     <string name="terminow_mcp_bridge_task_result">ผลลัพธ์</string>

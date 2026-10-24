@@ -54,6 +54,7 @@
     <string name="terminow_mcp_bridge_task_title">Task</string>
     <string name="terminow_mcp_bridge_task_request">Request</string>
     <string name="terminow_mcp_bridge_task_target">Target</string>
+    <string name="terminow_mcp_bridge_task_session">Session · %1$s</string>
     <string name="terminow_mcp_bridge_task_state">State</string>
     <string name="terminow_mcp_bridge_task_pending">Waiting for the user: %1$s</string>
     <string name="terminow_mcp_bridge_task_result">Result</string>
