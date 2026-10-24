@@ -241,10 +241,14 @@ public final class TerminowMcpBridgeManager {
         return loadShares();
     }
 
-    /** Add or replace a shared session. If its target changed, bound tasks are interrupted. */
+    /**
+     * Add or replace a shared session. If its target changed, bound tasks are interrupted. Only
+     * narrowing an existing share's capabilities is never gated, so access can always be reduced.
+     */
     public synchronized void putShare(@NonNull TerminowMcpBridge.Share share) {
-        if (!premium()) throw new IllegalStateException("The MCP Bridge needs TermiNow Premium");
         List<TerminowMcpBridge.Share> shares = loadShares();
+        if (!premium() && !narrowsExisting(shares, share))
+            throw new IllegalStateException("The MCP Bridge needs TermiNow Premium");
         List<TerminowMcpBridge.Share> next = new ArrayList<>();
         boolean replaced = false;
         for (TerminowMcpBridge.Share existing : shares) {
@@ -259,6 +263,16 @@ public final class TerminowMcpBridgeManager {
         }
         if (!replaced) next.add(share);
         saveShares(next);
+    }
+
+    /** Whether {@code share} only removes capabilities from an existing share with the same target. */
+    static boolean narrowsExisting(@NonNull List<TerminowMcpBridge.Share> shares, @NonNull TerminowMcpBridge.Share share) {
+        for (TerminowMcpBridge.Share existing : shares) {
+            if (!existing.id.equals(share.id)) continue;
+            return existing.fingerprint().equals(share.fingerprint())
+                && existing.capabilities.containsAll(share.capabilities);
+        }
+        return false;
     }
 
     public synchronized void removeShare(@NonNull String sessionId) {

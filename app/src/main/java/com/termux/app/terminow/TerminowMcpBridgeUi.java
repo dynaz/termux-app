@@ -327,8 +327,12 @@ final class TerminowMcpBridgeUi {
                 if (submit.isChecked()) caps.add(TerminowMcpBridge.CAP_SUBMIT);
                 if (read.isChecked()) caps.add(TerminowMcpBridge.CAP_READ);
                 if (cancel.isChecked()) caps.add(TerminowMcpBridge.CAP_CANCEL);
-                mManager.putShare(new TerminowMcpBridge.Share(share.id, share.label, share.managed,
-                    share.environmentKey, share.user, share.folder, caps));
+                try {
+                    mManager.putShare(new TerminowMcpBridge.Share(share.id, share.label, share.managed,
+                        share.environmentKey, share.user, share.folder, caps));
+                } catch (IllegalStateException e) {
+                    mActivity.showToast(e.getMessage(), true);
+                }
                 render();
             })
             .setNegativeButton(android.R.string.cancel, null)
