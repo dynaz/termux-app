@@ -486,3 +486,33 @@ test('an expired device credential is rejected (Premium must be re-confirmed)', 
   hub.revokeDevice(live.credential);
   assert.equal(hub.userForDeviceToken(live.credential), null, 'a revoked credential stops working');
 });
+
+// Temporary disable: when RELAY_GOOGLE_SIGNIN_DISABLED is set, the consent page hides the Google
+// button behind a "temporarily unavailable" note and refuses a posted Firebase token, while the
+// pairing code still works and RELAY_BACKEND_URL stays configured.
+test('Google sign-in can be temporarily disabled with a message, pairing retained', async () => {
+  const config = {
+    host: '127.0.0.1', port: 0, publicUrl: 'http://127.0.0.1',
+    deviceTokens: {}, pairingCodes: { 'PAIR-OK': 'user-1' },
+    accessTokenTtlMs: 3600 * 1000, requestTimeoutMs: 5000, allowDynamicRegistration: true,
+    backend: { url: 'https://backend.test/relay_check.php', secret: 'shhhhhhhhhhhhhhhh' },
+    firebaseWeb: { apiKey: 'k', authDomain: 'd', projectId: 'p' },
+    googleSigninDisabled: true, enrollTtlMs: 1000,
+  };
+  const server = createServer(config);
+  await new Promise((r) => server.listen(0, '127.0.0.1', () => { server.config.publicUrl = `http://127.0.0.1:${server.address().port}`; r(); }));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const q = new URLSearchParams({ client_id: 'c', redirect_uri: 'https://client.example/cb', code_challenge: 'x', response_type: 'code' }).toString();
+    const page = await request(base, 'GET', '/authorize?' + q);
+    assert.match(page.body, /temporarily unavailable/);
+    assert.ok(!/gstatic\.com\/firebasejs/.test(page.body), 'the Firebase SDK is not loaded while disabled');
+    assert.match(page.body, /Pairing code/, 'the pairing code field remains');
+    // A posted Firebase token is refused while disabled.
+    const form = new URLSearchParams({ client_id: 'c', redirect_uri: 'https://client.example/cb',
+      code_challenge: 'x', code_challenge_method: 'S256', response_type: 'code', firebase_id_token: 'fb' }).toString();
+    const res = await request(base, 'POST', '/authorize',
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(form) }, body: form });
+    assert.equal(res.status, 503);
+  } finally { server.close(); }
+});

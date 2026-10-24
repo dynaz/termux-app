@@ -86,6 +86,8 @@ async function handleAuthorize(req, res, ctx, url) {
     // Multi-tenant sign-in: a Firebase ID token the browser obtained, verified for Premium by the
     // central authority. The identity is the verified uid, never anything the page claimed.
     if (form.firebase_id_token) {
+      if (ctx.config.googleSigninDisabled)
+        return sendHtml(res, 503, consentPage(form, consentOpts(ctx, 'Sign in with Google is temporarily unavailable. Please use a pairing code.')));
       const info = await checkPremium(ctx.config, form.firebase_id_token);
       if (info.error || !info.premium) return sendHtml(res, 403, consentPage(form, consentOpts(ctx,
         info.premium === false ? 'This account does not have TermiNow Premium.' : 'Sign-in could not be verified. Try again.')));
@@ -359,6 +361,7 @@ function consentOpts(ctx, error) {
     error,
     googleEnabled: googleConfigured(ctx.config),
     firebase: backendConfigured(ctx.config) ? ctx.config.firebaseWeb : null,
+    firebaseDisabled: !!ctx.config.googleSigninDisabled,
   };
 }
 
@@ -371,7 +374,11 @@ function consentPage(q, opts = {}) {
   // backend authority verifies for Premium. The original OAuth request is preserved in the hidden
   // fields and validated server-side (redirect_uri, PKCE); only the verified uid is trusted.
   let firebaseBlock = '';
-  if (opts.firebase && opts.firebase.apiKey) {
+  if (opts.firebase && opts.firebaseDisabled) {
+    firebaseBlock = `
+    <p style="padding:.6rem;border:1px solid #ddd;border-radius:.4rem;background:#fafafa;color:#555">
+      Sign in with Google is temporarily unavailable. Please use a pairing code below.</p>`;
+  } else if (opts.firebase && opts.firebase.apiKey) {
     const cfg = JSON.stringify({ apiKey: opts.firebase.apiKey, authDomain: opts.firebase.authDomain, projectId: opts.firebase.projectId });
     firebaseBlock = `
     <form id="fbform" method="post" action="/authorize">

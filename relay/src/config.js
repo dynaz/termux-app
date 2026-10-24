@@ -59,5 +59,8 @@ export function loadConfig(env = process.env) {
       authDomain: env.RELAY_FIREBASE_AUTH_DOMAIN || 'linex-bf945.firebaseapp.com',
       projectId: env.RELAY_FIREBASE_PROJECT_ID || 'linex-bf945',
     },
+    // Temporarily hide "Sign in with Google" on the consent page (e.g. while the backend authority
+    // is being deployed) without unsetting RELAY_BACKEND_URL. The pairing code stays as a fallback.
+    googleSigninDisabled: env.RELAY_GOOGLE_SIGNIN_DISABLED === 'true' || env.RELAY_GOOGLE_SIGNIN_DISABLED === '1',
   };
 }
