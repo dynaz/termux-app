@@ -493,7 +493,7 @@ public class TerminowHome {
         mMcpBridge = TerminowMcpBridgeManager.getInstance(activity.getApplicationContext(), mStore,
             new TerminowMcpTargets(new File(TermuxConstants.TERMUX_PREFIX_DIR_PATH), new File(TermuxConstants.TERMUX_HOME_DIR_PATH)));
         mMcpBridge.startIfEnabled();
-        mMcpBridgePage = new TerminowMcpBridgeUi(activity, mMcpBridge, mStore, activity.findViewById(R.id.terminow_mcp_bridge));
+        mMcpBridgePage = new TerminowMcpBridgeUi(activity, mMcpBridge, mStore, activity.findViewById(R.id.terminow_mcp_bridge), this::openMcpTaskInTerminal);
         mRailMcpBridge = activity.findViewById(R.id.terminow_rail_mcp_bridge);
         mRailMcpBridge.setOnClickListener(v -> setPage(PAGE_MCP_BRIDGE));
         mMcpBridgeScrollView = activity.findViewById(R.id.terminow_mcp_bridge_scroll);
@@ -888,7 +888,7 @@ public class TerminowHome {
             mEmptyView.setVisibility(View.GONE);
             mSettingsScrollView.setVisibility(View.GONE);
             if (mMcpBridgePage == null)
-                mMcpBridgePage = new TerminowMcpBridgeUi(mActivity, mMcpBridge, mStore, mActivity.findViewById(R.id.terminow_mcp_bridge));
+                mMcpBridgePage = new TerminowMcpBridgeUi(mActivity, mMcpBridge, mStore, mActivity.findViewById(R.id.terminow_mcp_bridge), this::openMcpTaskInTerminal);
             mMcpBridgePage.render();
             return;
         }
@@ -1786,6 +1786,16 @@ public class TerminowHome {
         mActivity.getTermuxTerminalSessionClient().setCurrentSession(session.getTerminalSession());
         hide();
         return session.getTerminalSession();
+    }
+
+    /**
+     * Open an MCP task's mirrored stream in a terminal tab: it shows the output from the start and
+     * follows it live while the task runs. The tab stays open after the task ends.
+     */
+    private void openMcpTaskInTerminal(@NonNull File logFile, @NonNull String title) {
+        String bash = new File(TermuxConstants.TERMUX_PREFIX_DIR_PATH, "bin/bash").getAbsolutePath();
+        String command = "clear 2>/dev/null; tail -n +1 -F " + TerminowStore.shellQuote(logFile.getAbsolutePath());
+        startSession(bash, new String[]{"-lc", command}, TermuxConstants.TERMUX_HOME_DIR_PATH, "task: " + title);
     }
 
     /** The vault was switched or synced: show its hosts, groups, snippets and forwards. */
