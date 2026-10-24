@@ -266,6 +266,23 @@ public class TerminowMcpBridgeTest {
         }
     }
 
+    // Reading output requires the read_output capability (CAP_READ).
+    @Test
+    public void readingOutputNeedsReadCapability() throws Exception {
+        shares.add(managed("s1", TerminowMcpBridge.CAP_SUBMIT, TerminowMcpBridge.CAP_CANCEL)); // no read
+        String a = submit("s1");
+        executor.output(a, "secret output");
+        try {
+            bridge.taskOutput(CLIENT, a, 0, 100);
+            fail("expected capability denied");
+        } catch (TerminowAiError.Exception e) {
+            assertEquals(TerminowAiError.CAPABILITY_DENIED, e.error);
+        }
+        // Granting read_output then allows it
+        shares.set(0, managed("s1", TerminowMcpBridge.CAP_SUBMIT, TerminowMcpBridge.CAP_READ, TerminowMcpBridge.CAP_CANCEL));
+        assertEquals("secret output", bridge.taskOutput(CLIENT, a, 0, 100).getString("output"));
+    }
+
     // ---------------------------------------------------------------------------------------
 
     private TerminowAiError lastError;

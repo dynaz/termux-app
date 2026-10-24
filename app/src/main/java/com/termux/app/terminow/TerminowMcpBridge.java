@@ -141,6 +141,10 @@ public final class TerminowMcpBridge {
 
     private final Callback mCallback = new BridgeCallback();
 
+    /** Output persistence is throttled while a task streams; state changes and the end flush. */
+    private static final long PERSIST_THROTTLE_MS = 2000;
+    private long mLastPersistMs;
+
     public TerminowMcpBridge(@NonNull Deps deps, @NonNull Executor executor, @NonNull Persistence persistence,
                              @NonNull Clock clock) {
         mDeps = deps;
@@ -273,6 +277,9 @@ public final class TerminowMcpBridge {
             throws TerminowAiError.Exception {
         requireClient(clientKey);
         TerminowMcpBridgeTask task = ownTask(clientKey, taskId);
+        Share share = shareFor(task.sessionId);
+        if (share == null || !share.allows(CAP_READ))
+            throw TerminowAiError.CAPABILITY_DENIED.of("This session does not allow reading task output");
         TerminowMcpBridgeTask.Page page = task.outputFrom(cursor, maxChars <= 0 ? 32 * 1024 : Math.min(maxChars, TerminowMcpBridgeTask.OUTPUT_MAX));
         try {
             return new JSONObject()
@@ -383,7 +390,7 @@ public final class TerminowMcpBridge {
             synchronized (TerminowMcpBridge.this) {
                 TerminowMcpBridgeTask task = mTasks.get(taskId);
                 if (task != null) task.appendOutput(chunk);
-                persist();
+                maybePersist();
             }
         }
 
@@ -522,7 +529,13 @@ public final class TerminowMcpBridge {
         }
     }
 
+    /** Persist at most once per throttle window; used while a task streams output. */
+    private void maybePersist() {
+        if (mClock.now() - mLastPersistMs >= PERSIST_THROTTLE_MS) persist();
+    }
+
     private void persist() {
+        mLastPersistMs = mClock.now();
         mPersistence.save(new ArrayList<>(mTasks.values()));
     }
 
