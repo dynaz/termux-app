@@ -10,6 +10,8 @@
 // gets a fresh stream and the old pending requests are rejected so the client can retry.
 
 import crypto from 'node:crypto';
+import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs';
+import path from 'node:path';
 
 export class DeviceHub {
   constructor(config) {
@@ -20,6 +22,35 @@ export class DeviceHub {
     // it can be revoked and so access stops when Premium is not re-confirmed. In addition to the
     // static config.deviceTokens map (the single-tenant/self-host fallback).
     this.deviceCreds = new Map(); // credential -> { userId, expiresAt }
+    // Persist device credentials so a relay restart does not invalidate an enrolled device's
+    // connection (otherwise the device can't reconnect until its re-enroll timer fires, and MCP
+    // calls fail meanwhile). In-memory only when no state path is set.
+    this.statePath = config && config.statePath ? path.join(config.statePath, 'device-creds.json') : '';
+    this._loadCreds();
+  }
+
+  _loadCreds() {
+    if (!this.statePath) return;
+    let data;
+    try {
+      data = JSON.parse(readFileSync(this.statePath, 'utf8'));
+    } catch {
+      return;
+    }
+    const now = Date.now();
+    for (const [cred, e] of data.deviceCreds || []) if (e && e.expiresAt > now) this.deviceCreds.set(cred, e);
+  }
+
+  _saveCreds() {
+    if (!this.statePath) return;
+    try {
+      mkdirSync(path.dirname(this.statePath), { recursive: true });
+      const tmp = this.statePath + '.' + crypto.randomBytes(4).toString('hex');
+      writeFileSync(tmp, JSON.stringify({ deviceCreds: [...this.deviceCreds.entries()] }), { mode: 0o600 });
+      renameSync(tmp, this.statePath);
+    } catch {
+      // Best effort.
+    }
   }
 
   userForDeviceToken(token) {
@@ -36,13 +67,17 @@ export class DeviceHub {
   // Issue (or refresh) a per-device credential for a user. Called after Premium is confirmed.
   enrollDevice(userId, ttlMs) {
     const credential = crypto.randomBytes(32).toString('base64url');
-    this.deviceCreds.set(credential, { userId, expiresAt: Date.now() + ttlMs });
-    return { credential, expiresAt: Date.now() + ttlMs };
+    const expiresAt = Date.now() + ttlMs;
+    this.deviceCreds.set(credential, { userId, expiresAt });
+    this._saveCreds();
+    return { credential, expiresAt };
   }
 
   // Revoke one device credential (e.g. the user unpaired a device or Premium ended).
   revokeDevice(credential) {
-    return this.deviceCreds.delete(credential);
+    const ok = this.deviceCreds.delete(credential);
+    if (ok) this._saveCreds();
+    return ok;
   }
 
   // Register an SSE stream for a device. Returns a disposer to call when the request closes.

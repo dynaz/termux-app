@@ -217,15 +217,17 @@ async function handleMcp(req, res, ctx) {
   }
   try {
     const response = await ctx.hub.callDevice(userId, message);
+    console.log('relay: mcp ok method=%s uid=%s', message.method, userId);
     // Brand the connector: add a display title and icon to the device's serverInfo on initialize,
     // without changing its stable name. Clients that render these (e.g. ChatGPT) show TermiNow.
     if (message.method === 'initialize' && response && response.result && response.result.serverInfo) {
       response.result.serverInfo.title = 'TermiNow';
       response.result.serverInfo.websiteUrl = 'https://terminow.online';
-      response.result.serverInfo.icons = [{ src: ctx.config.publicUrl + '/icon.png', mimeType: 'image/png', sizes: ['192x192'] }];
+      response.result.serverInfo.icons = [{ src: ctx.config.publicUrl + '/icon.png', mimeType: 'image/png', sizes: '192x192' }];
     }
     return sendJson(res, 200, response);
   } catch (e) {
+    console.log('relay: mcp FAILED method=%s uid=%s err=%s', message.method, userId, String(e && e.message || e));
     return sendJson(res, 200, jsonRpcError(message.id, -32001, String(e && e.message || e)));
   }
 }

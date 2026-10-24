@@ -599,3 +599,15 @@ test('OAuth tokens persist across a restart', () => {
   const r = o2.refresh(t.refresh_token);
   assert.ok(r.access_token, 'refresh token survives restart');
 });
+
+test('device credentials persist across a restart', () => {
+  const dir = mkdtempSync(nodePath.join(tmpdir(), 'relay-dev-'));
+  const cfg = { deviceTokens: {}, statePath: dir };
+  const h1 = new DeviceHub(cfg);
+  const { credential } = h1.enrollDevice('u-dev', 60000);
+  const h2 = new DeviceHub(cfg); // a restart reloads the persisted credential
+  assert.equal(h2.userForDeviceToken(credential), 'u-dev', 'credential survives restart');
+  h2.revokeDevice(credential);
+  const h3 = new DeviceHub(cfg);
+  assert.equal(h3.userForDeviceToken(credential), null, 'revoked credential stays revoked across restart');
+});
