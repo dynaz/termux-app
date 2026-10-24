@@ -92,6 +92,10 @@ public class TerminowStore {
         public final Map<String, String> env = new LinkedHashMap<>();
         /** The name of a terminal theme for the sessions of the host, empty for the one of the settings. */
         public String colorScheme = "";
+        /** A custom icon key for the host in the list (see TerminowHome host icons), empty for the protocol's icon. */
+        public String icon = "";
+        /** A custom icon background color like "#E53935", empty for the protocol's color. */
+        public String iconColor = "";
         /** The {@link Identity#id} whose username, password and key the host logs in with, empty for its own. */
         public String identity = "";
         /** {@link #PROTOCOL_SSH} (also Mosh and Telnet), {@link #PROTOCOL_RDP} or {@link #PROTOCOL_WINRM}. */
@@ -786,6 +790,28 @@ public class TerminowStore {
         }
     }
 
+    /** The snippets of a vault, which may not be the one that is shown. "" is the personal vault. */
+    @NonNull
+    public List<Snippet> getSnippetsIn(@NonNull String scope) {
+        String previous = sVaultScope.get();
+        sVaultScope.set(scope);
+        try {
+            return getSnippets();
+        } finally {
+            sVaultScope.set(previous);
+        }
+    }
+
+    public void setSnippetsIn(@NonNull String scope, @NonNull List<Snippet> snippets) {
+        String previous = sVaultScope.get();
+        sVaultScope.set(scope);
+        try {
+            setSnippets(snippets);
+        } finally {
+            sVaultScope.set(previous);
+        }
+    }
+
     /** A host without its password, which is stored encrypted or synced in clear by the caller. */
     @NonNull
     static JSONObject hostToJson(@NonNull Host host) throws JSONException {
@@ -815,6 +841,8 @@ public class TerminowStore {
         for (Map.Entry<String, String> variable : host.env.entrySet()) env.put(variable.getKey(), variable.getValue());
         object.put("env", env);
         object.put("colorScheme", host.colorScheme);
+        if (!host.icon.isEmpty()) object.put("icon", host.icon);
+        if (!host.iconColor.isEmpty()) object.put("iconColor", host.iconColor);
         object.put("identity", host.identity);
         object.put("protocol", host.protocol);
         object.put("domain", host.domain);
@@ -857,6 +885,8 @@ public class TerminowStore {
         JSONArray names = env != null ? env.names() : null;
         for (int i = 0; names != null && i < names.length(); i++) host.env.put(names.optString(i), env.optString(names.optString(i)));
         host.colorScheme = object.optString("colorScheme");
+        host.icon = object.optString("icon");
+        host.iconColor = object.optString("iconColor");
         host.identity = object.optString("identity");
         host.protocol = object.optString("protocol", Host.PROTOCOL_SSH);
         host.domain = object.optString("domain");
@@ -889,6 +919,22 @@ public class TerminowStore {
         for (int i = 0; caps != null && i < caps.length(); i++) access.capabilities.add(caps.optString(i));
         access.approvalPolicy = object.optString("approvalPolicy", "ask");
         access.fingerprint = object.optString("fingerprint");
+    }
+
+    /**
+     * Carry the stable identity of an edited host onto the new object the editor builds: its uuid,
+     * so authorization (such as local AI access) survives the edit instead of the host getting a
+     * fresh id on reload, and the AI access policy itself, which the editor does not otherwise keep.
+     */
+    public static void copyIdentity(@NonNull Host dest, @NonNull Host src) {
+        dest.uuid = src.uuid;
+        dest.aiAccess.enabled = src.aiAccess.enabled;
+        dest.aiAccess.envs.clear();
+        dest.aiAccess.envs.addAll(src.aiAccess.envs);
+        dest.aiAccess.capabilities.clear();
+        dest.aiAccess.capabilities.addAll(src.aiAccess.capabilities);
+        dest.aiAccess.approvalPolicy = src.aiAccess.approvalPolicy;
+        dest.aiAccess.fingerprint = src.aiAccess.fingerprint;
     }
 
     /** A Windows domain: a NetBIOS or DNS name, empty for none. */

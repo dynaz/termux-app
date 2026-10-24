@@ -32,6 +32,10 @@
     <string name="terminow_host_env_remove">Remove the variable</string>
     <string name="terminow_host_color_scheme">Color Scheme</string>
     <string name="terminow_host_color_scheme_default">Like the settings</string>
+    <string name="terminow_host_icon">Icon</string>
+    <string name="terminow_host_color">Color</string>
+    <string name="terminow_host_icon_default">Default (protocol)</string>
+    <string name="terminow_host_color_auto">Automatic</string>
     <string name="terminow_host_charset">Charset</string>
     <string name="terminow_host_charset_utf8" translatable="false">UTF-8</string>
     <string name="terminow_host_charset_note">TermiNow terminals always use UTF-8</string>

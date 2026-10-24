@@ -635,6 +635,48 @@
                         android:text="@string/terminow_host_env_add" />
 
                     <LinearLayout
+                        android:id="@+id/terminow_host_icon_row"
+                        style="@style/TerminowPanelToggleRow"
+                        android:background="?android:attr/selectableItemBackground">
+
+                        <TextView
+                            style="@style/TerminowPanelToggleTitle"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:text="@string/terminow_host_icon" />
+
+                        <ImageView
+                            android:id="@+id/terminow_host_icon_preview"
+                            android:layout_width="34dp"
+                            android:layout_height="34dp"
+                            android:layout_gravity="center_vertical"
+                            android:background="@drawable/terminow_host_icon"
+                            android:padding="7dp"
+                            android:src="@drawable/ic_terminow_hosts"
+                            tools:ignore="ContentDescription" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/terminow_host_color_row"
+                        style="@style/TerminowPanelToggleRow"
+                        android:background="?android:attr/selectableItemBackground">
+
+                        <TextView
+                            style="@style/TerminowPanelToggleTitle"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:text="@string/terminow_host_color" />
+
+                        <TextView
+                            android:id="@+id/terminow_host_color"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/terminow_text"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <LinearLayout
                         android:id="@+id/terminow_host_scheme_row"
                         style="@style/TerminowPanelToggleRow"
                         android:background="?android:attr/selectableItemBackground">

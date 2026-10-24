@@ -2651,6 +2651,8 @@ public class TerminowHome {
         EditText proxyView = dialog.findViewById(R.id.terminow_host_proxy);
         LinearLayout envList = dialog.findViewById(R.id.terminow_host_env);
         TextView schemeView = dialog.findViewById(R.id.terminow_host_scheme);
+        ImageView iconPreview = dialog.findViewById(R.id.terminow_host_icon_preview);
+        TextView colorValue = dialog.findViewById(R.id.terminow_host_color);
         CheckBox telnetView = dialog.findViewById(R.id.terminow_host_telnet);
         View telnetOptions = dialog.findViewById(R.id.terminow_host_telnet_options);
         EditText telnetPortView = dialog.findViewById(R.id.terminow_host_telnet_port);
@@ -2721,6 +2723,8 @@ public class TerminowHome {
             draft.proxyHost = existingHost.proxyHost;
             draft.proxyPort = existingHost.proxyPort;
             draft.colorScheme = existingHost.colorScheme;
+            draft.icon = existingHost.icon;
+            draft.iconColor = existingHost.iconColor;
             for (Map.Entry<String, String> variable : existingHost.env.entrySet())
                 addEnvRow(envList, variable.getKey(), variable.getValue());
         }
@@ -2933,6 +2937,23 @@ public class TerminowHome {
             mActivity.getString(R.string.terminow_host_color_scheme_default) : draft.colorScheme);
         showScheme.run();
         dialog.findViewById(R.id.terminow_host_scheme_row).setOnClickListener(v -> showSchemePicker(draft, showScheme));
+
+        // Icon and color: a custom look for the host in the list, or the protocol's default
+        Runnable showIcon = () -> {
+            iconPreview.setImageResource(hostIconDrawable(draft.icon, protocolIconDrawable(protocol[0])));
+            Integer custom = parseHostColor(draft.iconColor);
+            iconPreview.getBackground().mutate().setColorFilter(
+                custom != null ? custom : ContextCompat.getColor(mActivity, R.color.terminow_host_ssh), PorterDuff.Mode.SRC_IN);
+        };
+        showIcon.run();
+        dialog.findViewById(R.id.terminow_host_icon_row).setOnClickListener(v -> showHostIconPicker(draft, showIcon));
+        Runnable showColor = () -> colorValue.setText(draft.iconColor.isEmpty() ?
+            mActivity.getString(R.string.terminow_host_color_auto) : draft.iconColor);
+        showColor.run();
+        dialog.findViewById(R.id.terminow_host_color_row).setOnClickListener(v -> showHostColorPicker(draft, () -> {
+            showColor.run();
+            showIcon.run();
+        }));
         dialog.findViewById(R.id.terminow_host_charset_row).setOnClickListener(v ->
             mActivity.showToast(mActivity.getString(R.string.terminow_host_charset_note), true));
 
@@ -2979,6 +3000,8 @@ public class TerminowHome {
             }
 
             TerminowStore.Host host = new TerminowStore.Host();
+            // An edited host keeps its stable id and AI access, which are not shown in this form
+            if (existingHost != null) TerminowStore.copyIdentity(host, existingHost);
             host.label = labelView.getText().toString().trim();
             host.address = address;
             host.port = port;
@@ -3005,6 +3028,8 @@ public class TerminowHome {
             host.proxyHost = host.proxyType.isEmpty() ? "" : draft.proxyHost;
             host.proxyPort = host.proxyType.isEmpty() ? 0 : draft.proxyPort;
             host.colorScheme = draft.colorScheme;
+            host.icon = draft.icon;
+            host.iconColor = draft.iconColor;
             host.identity = host.telnet ? "" : draft.identity;
             host.protocol = protocol[0];
             host.domain = windows ? domain : "";
@@ -3232,6 +3257,147 @@ public class TerminowHome {
                 onChanged.run();
             })
             .show();
+    }
+
+    // Host icon and color customization --------------------------------------------------------
+
+    /** The icon keys a host may store, in picker order; "" means the protocol's default icon. */
+    private static final String[] HOST_ICON_KEYS = {
+        "server", "desktop", "terminal", "cloud", "folder", "star", "lock", "key", "person", "phone", "github"};
+
+    /** A preset palette for the host icon color; "" means the protocol's default color. */
+    private static final String[] HOST_COLORS = {
+        "#E53935", "#FB8C00", "#FDD835", "#43A047", "#00897B", "#1E88E5",
+        "#3949AB", "#8E24AA", "#D81B60", "#6D4C41", "#607D8B", "#757575"};
+
+    /** The drawable for a host icon key, or {@code fallback} for an unknown or empty key. */
+    static int hostIconDrawable(@NonNull String key, int fallback) {
+        switch (key) {
+            case "server": return R.drawable.ic_terminow_hosts;
+            case "desktop": return R.drawable.ic_terminow_desktop;
+            case "terminal": return R.drawable.ic_terminow_terminal;
+            case "cloud": return R.drawable.ic_terminow_cloud;
+            case "folder": return R.drawable.ic_terminow_folder;
+            case "star": return R.drawable.ic_terminow_star;
+            case "lock": return R.drawable.ic_terminow_lock;
+            case "key": return R.drawable.ic_terminow_key;
+            case "person": return R.drawable.ic_terminow_person;
+            case "phone": return R.drawable.ic_terminow_phone;
+            case "github": return R.drawable.ic_terminow_logo_github;
+            default: return fallback;
+        }
+    }
+
+    /** The default list icon of a protocol, used when a host sets no custom icon. */
+    private static int protocolIconDrawable(@NonNull String protocol) {
+        if (TerminowStore.Host.PROTOCOL_RDP.equals(protocol)) return R.drawable.ic_terminow_desktop;
+        if (TerminowStore.Host.PROTOCOL_WINRM.equals(protocol)) return R.drawable.ic_terminow_terminal;
+        return R.drawable.ic_terminow_hosts;
+    }
+
+    /** A host's custom icon color as an ARGB int, or {@code null} when it has none or it is invalid. */
+    static Integer parseHostColor(@NonNull String value) {
+        if (value.isEmpty()) return null;
+        try {
+            return android.graphics.Color.parseColor(value);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    private void showHostIconPicker(@NonNull TerminowStore.Host draft, @NonNull Runnable onChanged) {
+        List<String> keys = new ArrayList<>();
+        keys.add("");
+        keys.addAll(java.util.Arrays.asList(HOST_ICON_KEYS));
+        Integer custom = parseHostColor(draft.iconColor);
+        int tint = custom != null ? custom : ContextCompat.getColor(mActivity, R.color.terminow_host_ssh);
+        android.widget.GridLayout grid = new android.widget.GridLayout(mActivity);
+        grid.setColumnCount(5);
+        int pad = dp(16);
+        grid.setPadding(pad, pad, pad, pad);
+        AlertDialog[] ref = new AlertDialog[1];
+        for (String key : keys) {
+            ImageView tile = new ImageView(mActivity);
+            tile.setBackgroundResource(R.drawable.terminow_host_icon);
+            tile.getBackground().mutate().setColorFilter(tint, PorterDuff.Mode.SRC_IN);
+            tile.setImageResource(hostIconDrawable(key, R.drawable.ic_terminow_hosts));
+            int p = dp(9);
+            tile.setPadding(p, p, p, p);
+            tile.setAlpha(key.equals(draft.icon) ? 1f : 0.55f);
+            int size = dp(46), m = dp(6);
+            android.widget.GridLayout.LayoutParams lp = new android.widget.GridLayout.LayoutParams();
+            lp.width = size;
+            lp.height = size;
+            lp.setMargins(m, m, m, m);
+            tile.setLayoutParams(lp);
+            tile.setOnClickListener(v -> {
+                draft.icon = key;
+                onChanged.run();
+                if (ref[0] != null) ref[0].dismiss();
+            });
+            grid.addView(tile);
+        }
+        ref[0] = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_host_icon)
+            .setView(wrapCenter(grid))
+            .setNeutralButton(R.string.terminow_host_icon_default, (d, w) -> { draft.icon = ""; onChanged.run(); })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    private void showHostColorPicker(@NonNull TerminowStore.Host draft, @NonNull Runnable onChanged) {
+        List<String> values = new ArrayList<>();
+        values.add("");
+        values.addAll(java.util.Arrays.asList(HOST_COLORS));
+        android.widget.GridLayout grid = new android.widget.GridLayout(mActivity);
+        grid.setColumnCount(6);
+        int pad = dp(16);
+        grid.setPadding(pad, pad, pad, pad);
+        AlertDialog[] ref = new AlertDialog[1];
+        for (String value : values) {
+            ImageView dot = new ImageView(mActivity);
+            android.graphics.drawable.GradientDrawable shape = new android.graphics.drawable.GradientDrawable();
+            shape.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+            Integer color = parseHostColor(value);
+            if (color != null) {
+                shape.setColor(color);
+            } else {
+                shape.setColor(android.graphics.Color.TRANSPARENT);
+                shape.setStroke(dp(2), ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+            }
+            if (value.equals(draft.iconColor))
+                shape.setStroke(dp(3), ContextCompat.getColor(mActivity, R.color.terminow_text));
+            dot.setBackground(shape);
+            int size = dp(44), m = dp(7);
+            android.widget.GridLayout.LayoutParams lp = new android.widget.GridLayout.LayoutParams();
+            lp.width = size;
+            lp.height = size;
+            lp.setMargins(m, m, m, m);
+            dot.setLayoutParams(lp);
+            dot.setOnClickListener(v -> {
+                draft.iconColor = value;
+                onChanged.run();
+                if (ref[0] != null) ref[0].dismiss();
+            });
+            grid.addView(dot);
+        }
+        ref[0] = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_host_color)
+            .setView(wrapCenter(grid))
+            .setNeutralButton(R.string.terminow_host_color_auto, (d, w) -> { draft.iconColor = ""; onChanged.run(); })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    /** Center a picker grid inside its dialog. */
+    @NonNull
+    private View wrapCenter(@NonNull View child) {
+        android.widget.FrameLayout frame = new android.widget.FrameLayout(mActivity);
+        android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.gravity = Gravity.CENTER;
+        frame.addView(child, lp);
+        return frame;
     }
 
     /** A row of an environment variable: its name, its value and a button to remove it. */
@@ -4998,6 +5164,38 @@ public class TerminowHome {
 
     private void showSnippetDialog(@Nullable TerminowStore.Snippet existingSnippet) {
         LinearLayout form = createForm();
+
+        // The vault the snippet is saved in — Personal or a team the phone has the key of. Shown only
+        // when there is more than one, so a snippet can be moved into a shared (team) vault like a host.
+        List<String[]> vaults = mVaultsUi.getHostVaults();
+        String currentScope = mStore.getActiveVault();
+        final String[] scope = {currentScope};
+        if (vaults.size() > 1) {
+            TextView vaultRow = new TextView(form.getContext());
+            vaultRow.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
+            vaultRow.setTextSize(15);
+            vaultRow.setTypeface(Typeface.DEFAULT_BOLD);
+            vaultRow.setPadding(0, dp(4), 0, dp(10));
+            Runnable showVault = () -> {
+                String name = vaults.get(0)[1];
+                for (String[] vault : vaults) if (vault[0].equals(scope[0])) name = vault[1];
+                vaultRow.setText(mActivity.getString(R.string.terminow_host_vault_name, name));
+            };
+            showVault.run();
+            vaultRow.setOnClickListener(v -> {
+                String[] names = new String[vaults.size()];
+                for (int i = 0; i < vaults.size(); i++) names[i] = vaults.get(i)[1];
+                new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                    .setTitle(R.string.terminow_host_vault_title)
+                    .setItems(names, (d, which) -> {
+                        scope[0] = vaults.get(which)[0];
+                        showVault.run();
+                    })
+                    .show();
+            });
+            form.addView(vaultRow);
+        }
+
         EditText nameView = addField(form, R.string.terminow_snippet_name, InputType.TYPE_CLASS_TEXT);
         EditText commandView = addField(form, R.string.terminow_snippet_command,
             InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
@@ -5017,9 +5215,22 @@ public class TerminowHome {
             TerminowStore.Snippet snippet = existingSnippet != null ? existingSnippet : new TerminowStore.Snippet();
             snippet.name = nameView.getText().toString().trim();
             snippet.command = command;
-            if (existingSnippet == null)
-                mSnippets.add(snippet);
-            mStore.setSnippets(mSnippets);
+            if (scope[0].equals(currentScope)) {
+                if (existingSnippet == null) mSnippets.add(snippet);
+                mStore.setSnippets(mSnippets);
+            } else {
+                // Moved to another vault: take it out of the shown one and add it to the chosen one
+                if (existingSnippet != null) {
+                    mSnippets.remove(existingSnippet);
+                    mStore.setSnippets(mSnippets);
+                }
+                List<TerminowStore.Snippet> target = mStore.getSnippetsIn(scope[0]);
+                target.add(snippet);
+                mStore.setSnippetsIn(scope[0], target);
+                String name = vaults.get(0)[1];
+                for (String[] vault : vaults) if (vault[0].equals(scope[0])) name = vault[1];
+                mActivity.showToast(mActivity.getString(R.string.terminow_host_saved_in_vault, name), false);
+            }
             updateItems();
             return true;
         });
@@ -5675,8 +5886,15 @@ public class TerminowHome {
                 subtitleView.setText(snippet.command);
             }
 
+            Integer hostColor = null;
+            if (item instanceof TerminowStore.Host) {
+                TerminowStore.Host h = (TerminowStore.Host) item;
+                if (!h.icon.isEmpty()) iconRes = hostIconDrawable(h.icon, iconRes);
+                hostColor = parseHostColor(h.iconColor);
+            }
             iconView.setImageResource(iconRes);
-            iconView.getBackground().mutate().setColorFilter(ContextCompat.getColor(mActivity, iconColorRes), PorterDuff.Mode.SRC_IN);
+            int iconColorValue = hostColor != null ? hostColor : ContextCompat.getColor(mActivity, iconColorRes);
+            iconView.getBackground().mutate().setColorFilter(iconColorValue, PorterDuff.Mode.SRC_IN);
             countView.setText(sessionCount > 0 ? String.valueOf(sessionCount) : "");
             return view;
         }
