@@ -42,5 +42,15 @@ export function loadConfig(env = process.env) {
       redirectUri: env.RELAY_GOOGLE_REDIRECT_URI || (publicUrl + '/oauth/google/callback'),
       users: parseMap(env.RELAY_GOOGLE_USERS), // Google email -> user id
     },
+    // The central Premium authority (cp.accmove.com relay_check.php): it verifies a Firebase ID
+    // token server-side and answers { uid, premium } for WHMCS and Google Play. The relay trusts
+    // only this, never a uid or premium flag from the app. The secret lives only here and there.
+    backend: {
+      url: env.RELAY_BACKEND_URL || '', // e.g. https://cp.accmove.com/terminow/relay_check.php
+      secret: env.RELAY_BACKEND_SECRET || '',
+    },
+    // How long an enrolled device credential (and a Google-login session) is trusted before Premium
+    // must be re-confirmed by enrolling again with a fresh Firebase ID token.
+    enrollTtlMs: parseInt(env.RELAY_ENROLL_TTL_MS || String(65 * 60 * 1000), 10),
   };
 }

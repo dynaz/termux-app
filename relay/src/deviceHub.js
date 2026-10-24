@@ -16,10 +16,33 @@ export class DeviceHub {
     this.config = config;
     this.byUser = new Map();   // userId -> Map(connId -> connection)
     this.ridCounter = 0;
+    // Per-device credentials issued at enrollment, each bound to a user and with its own expiry so
+    // it can be revoked and so access stops when Premium is not re-confirmed. In addition to the
+    // static config.deviceTokens map (the single-tenant/self-host fallback).
+    this.deviceCreds = new Map(); // credential -> { userId, expiresAt }
   }
 
   userForDeviceToken(token) {
-    return (token && this.config.deviceTokens[token]) || null;
+    if (!token) return null;
+    const dynamic = this.deviceCreds.get(token);
+    if (dynamic) {
+      if (dynamic.expiresAt > Date.now()) return dynamic.userId;
+      this.deviceCreds.delete(token); // expired: the device must enrol again
+      return null;
+    }
+    return this.config.deviceTokens[token] || null;
+  }
+
+  // Issue (or refresh) a per-device credential for a user. Called after Premium is confirmed.
+  enrollDevice(userId, ttlMs) {
+    const credential = crypto.randomBytes(32).toString('base64url');
+    this.deviceCreds.set(credential, { userId, expiresAt: Date.now() + ttlMs });
+    return { credential, expiresAt: Date.now() + ttlMs };
+  }
+
+  // Revoke one device credential (e.g. the user unpaired a device or Premium ended).
+  revokeDevice(credential) {
+    return this.deviceCreds.delete(credential);
   }
 
   // Register an SSE stream for a device. Returns a disposer to call when the request closes.

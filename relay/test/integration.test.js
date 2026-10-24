@@ -349,3 +349,140 @@ test('a wrong device token cannot register Google emails', async () => {
     assert.equal(res.status, 401);
   } finally { server.close(); }
 });
+
+// Phase A: per-user device enrollment and multi-tenant sign-in through the central Premium
+// authority (cp.accmove.com). The authority is stubbed (globalThis.fetch): it maps a Firebase ID
+// token to { uid, premium }, exactly as relay_check.php would after verifying the token.
+import { DeviceHub } from '../src/deviceHub.js';
+
+function startBackendRelay() {
+  return new Promise((resolve) => {
+    const config = {
+      host: '127.0.0.1', port: 0, publicUrl: 'http://127.0.0.1',
+      deviceTokens: {}, pairingCodes: {},
+      accessTokenTtlMs: 3600 * 1000, requestTimeoutMs: 5000, allowDynamicRegistration: true,
+      backend: { url: 'https://backend.test/relay_check.php', secret: 'shhhhhhhhhhhhhhhh' },
+      enrollTtlMs: 65 * 60 * 1000,
+    };
+    const server = createServer(config);
+    server.listen(0, '127.0.0.1', () => {
+      server.config.publicUrl = `http://127.0.0.1:${server.address().port}`;
+      resolve({ server, base: `http://127.0.0.1:${server.address().port}` });
+    });
+  });
+}
+
+// Stub the authority: tokenMap = { '<firebase token>': { uid, premium } }. Unknown tokens → 401.
+function withAuthority(tokenMap, fn) {
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    const auth = (opts.headers && opts.headers.Authorization) || '';
+    const tok = auth.replace(/^Bearer\s+/, '');
+    const hit = tokenMap[tok];
+    if (!hit) return { status: 401, ok: false, json: async () => ({ error: 'bad' }) };
+    return { status: 200, ok: true, json: async () => ({ uid: hit.uid, email: hit.email || (hit.uid + '@x'), premium: !!hit.premium, exp: 2000000000 }) };
+  };
+  return Promise.resolve(fn()).finally(() => { globalThis.fetch = real; });
+}
+
+async function enroll(base, firebaseToken) {
+  return request(base, 'POST', '/device/enroll',
+    { headers: { Authorization: `Bearer ${firebaseToken}`, 'Content-Type': 'application/json', 'Content-Length': 2 }, body: '{}' });
+}
+
+test('a Premium user enrols and gets a working per-device credential', async () => {
+  const { server, base } = await startBackendRelay();
+  try {
+    await withAuthority({ 'fb-alice': { uid: 'u-alice', premium: true } }, async () => {
+      const res = await enroll(base, 'fb-alice');
+      assert.equal(res.status, 200);
+      const cred = JSON.parse(res.body).device_token;
+      assert.ok(cred, 'a device credential is issued');
+      // The credential opens the device channel (resolves to the user).
+      let answered = 0;
+      const dev = connectFakeDevice(base, cred, (m) => { answered++; return { jsonrpc: '2.0', id: m.id, result: { ok: true } }; });
+      try {
+        await new Promise((r) => setTimeout(r, 150));
+        assert.ok(server.hub.hasDevice('u-alice'), 'the enrolled device is connected for its uid');
+      } finally { dev.destroy(); }
+    });
+  } finally { server.close(); }
+});
+
+test('a non-Premium user is refused enrollment', async () => {
+  const { server, base } = await startBackendRelay();
+  try {
+    await withAuthority({ 'fb-free': { uid: 'u-free', premium: false } }, async () => {
+      const res = await enroll(base, 'fb-free');
+      assert.equal(res.status, 403);
+      assert.equal(JSON.parse(res.body).error, 'not_premium');
+    });
+  } finally { server.close(); }
+});
+
+test('an unverified Firebase token is refused enrollment', async () => {
+  const { server, base } = await startBackendRelay();
+  try {
+    await withAuthority({}, async () => {
+      const res = await enroll(base, 'forged');
+      assert.equal(res.status, 401);
+    });
+  } finally { server.close(); }
+});
+
+test('two users are isolated: a sign-in reaches only its own device', async () => {
+  const { server, base } = await startBackendRelay();
+  try {
+    await withAuthority({ 'fb-alice': { uid: 'u-alice', premium: true }, 'fb-bob': { uid: 'u-bob', premium: true } }, async () => {
+      const credA = JSON.parse((await enroll(base, 'fb-alice')).body).device_token;
+      const credB = JSON.parse((await enroll(base, 'fb-bob')).body).device_token;
+      let hitA = 0, hitB = 0;
+      const devA = connectFakeDevice(base, credA, (m) => { hitA++; return { jsonrpc: '2.0', id: m.id, result: { who: 'alice' } }; });
+      const devB = connectFakeDevice(base, credB, (m) => { hitB++; return { jsonrpc: '2.0', id: m.id, result: { who: 'bob' } }; });
+      try {
+        await new Promise((r) => setTimeout(r, 150));
+        // Alice authorizes an AI client via her Firebase sign-in at the consent screen.
+        const verifier = b64url(crypto.randomBytes(32));
+        const challenge = b64url(crypto.createHash('sha256').update(verifier).digest());
+        const form = new URLSearchParams({ client_id: 'c', redirect_uri: 'https://client.example/cb', state: 's',
+          code_challenge: challenge, code_challenge_method: 'S256', response_type: 'code', firebase_id_token: 'fb-alice' }).toString();
+        const authz = await request(base, 'POST', '/authorize',
+          { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(form) }, body: form });
+        assert.equal(authz.status, 302, 'Alice signs in and gets an auth code');
+        const authCode = new URL(authz.headers.location).searchParams.get('code');
+        const tokenForm = new URLSearchParams({ grant_type: 'authorization_code', code: authCode, code_verifier: verifier, redirect_uri: 'https://client.example/cb' }).toString();
+        const at = JSON.parse((await request(base, 'POST', '/token',
+          { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(tokenForm) }, body: tokenForm })).body).access_token;
+        const call = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+        const res = await request(base, 'POST', '/mcp',
+          { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${at}`, 'Content-Length': Buffer.byteLength(call) }, body: call });
+        assert.equal(JSON.parse(res.body).result.who, 'alice', "Alice's client reaches only Alice's device");
+        assert.equal(hitB, 0, "Bob's device is never reached by Alice's client");
+      } finally { devA.destroy(); devB.destroy(); }
+    });
+  } finally { server.close(); }
+});
+
+test('a non-Premium Firebase sign-in is refused at the consent screen', async () => {
+  const { server, base } = await startBackendRelay();
+  try {
+    await withAuthority({ 'fb-free': { uid: 'u-free', premium: false } }, async () => {
+      const form = new URLSearchParams({ client_id: 'c', redirect_uri: 'https://client.example/cb',
+        code_challenge: 'x', code_challenge_method: 'S256', response_type: 'code', firebase_id_token: 'fb-free' }).toString();
+      const res = await request(base, 'POST', '/authorize',
+        { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(form) }, body: form });
+      assert.equal(res.status, 403);
+      assert.match(res.body, /does not have TermiNow Premium/);
+    });
+  } finally { server.close(); }
+});
+
+test('an expired device credential is rejected (Premium must be re-confirmed)', () => {
+  const hub = new DeviceHub({ deviceTokens: {} });
+  const { credential } = hub.enrollDevice('u-x', -1); // already expired
+  assert.equal(hub.userForDeviceToken(credential), null, 'an expired credential does not authenticate');
+  const live = hub.enrollDevice('u-y', 60000);
+  assert.equal(hub.userForDeviceToken(live.credential), 'u-y');
+  hub.revokeDevice(live.credential);
+  assert.equal(hub.userForDeviceToken(live.credential), null, 'a revoked credential stops working');
+});

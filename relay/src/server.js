@@ -10,6 +10,7 @@ import { loadConfig } from './config.js';
 import { OAuth } from './oauth.js';
 import { DeviceHub } from './deviceHub.js';
 import { googleConfigured, googleAuthUrl, fetchGoogleEmail } from './google.js';
+import { checkPremium } from './backend.js';
 
 const MAX_BODY = 1024 * 1024;
 
@@ -61,6 +62,7 @@ async function handle(req, res, ctx) {
   if (req.method === 'POST' && path === '/device/rpc') return handleDeviceRpc(req, res, ctx);
   if (req.method === 'POST' && path === '/device/pairing-codes') return handleDevicePairingCodes(req, res, ctx);
   if (req.method === 'POST' && path === '/device/google-emails') return handleDeviceGoogleEmails(req, res, ctx);
+  if (req.method === 'POST' && path === '/device/enroll') return handleDeviceEnroll(req, res, ctx);
 
   sendJson(res, 404, { error: 'not_found' });
 }
@@ -81,6 +83,22 @@ async function handleAuthorize(req, res, ctx, url) {
     const redirectUri = form.redirect_uri;
     if (!redirectUri || !ctx.oauth.knownRedirect(form.client_id, redirectUri))
       return sendHtml(res, 400, '<p>Unknown redirect_uri.</p>');
+    // Multi-tenant sign-in: a Firebase ID token the browser obtained, verified for Premium by the
+    // central authority. The identity is the verified uid, never anything the page claimed.
+    if (form.firebase_id_token) {
+      const info = await checkPremium(ctx.config, form.firebase_id_token);
+      if (info.error || !info.premium) return sendHtml(res, 403, consentPage(form, {
+        error: info.premium === false ? 'This account does not have TermiNow Premium.' : 'Sign-in could not be verified. Try again.',
+        googleEnabled: googleConfigured(ctx.config),
+      }));
+      const authCode = ctx.oauth.issueCodeForUser(info.uid, { clientId: form.client_id, redirectUri, challenge: form.code_challenge });
+      if (!authCode) return sendHtml(res, 400, '<p>PKCE is required.</p>');
+      const loc = new URL(redirectUri);
+      loc.searchParams.set('code', authCode);
+      if (form.state) loc.searchParams.set('state', form.state);
+      res.writeHead(302, { Location: loc.toString() });
+      return res.end();
+    }
     const code = ctx.oauth.issueCode({
       pairingCode: (form.pairing_code || '').trim(),
       clientId: form.client_id,
@@ -228,6 +246,24 @@ async function handleDevicePairingCodes(req, res, ctx) {
     .slice(0, MAX_PAIRING_CODES);
   ctx.oauth.setPairingCodes(userId, codes);
   return sendJson(res, 200, { ok: true, count: codes.length });
+}
+
+// A device enrols by presenting its owner's Firebase ID token; the central authority verifies the
+// token and Premium, and the relay issues a short-lived per-device credential bound to that uid.
+// The device re-enrols before it expires, so access stops when Premium lapses or is revoked.
+async function handleDeviceEnroll(req, res, ctx) {
+  const token = bearerOrQueryToken(req, new URL(req.url, ctx.config.publicUrl));
+  const info = await checkPremium(ctx.config, token);
+  if (info.error === 'backend_not_configured') return sendJson(res, 501, { error: 'enrollment_not_configured' });
+  if (info.error === 'unauthorized' || info.error === 'no_token') return sendJson(res, 401, { error: 'invalid_token' });
+  if (info.error) return sendJson(res, 503, { error: 'try_again' });
+  if (!info.premium) return sendJson(res, 403, { error: 'not_premium' });
+  const { credential, expiresAt } = ctx.hub.enrollDevice(info.uid, ctx.config.enrollTtlMs);
+  return sendJson(res, 200, {
+    device_token: credential,
+    expires_in: Math.max(0, Math.floor((expiresAt - Date.now()) / 1000)),
+    uid: info.uid,
+  });
 }
 
 // The device registers the owner's Google email(s) so "Sign in with Google" maps to this account
