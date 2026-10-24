@@ -52,5 +52,12 @@ export function loadConfig(env = process.env) {
     // How long an enrolled device credential (and a Google-login session) is trusted before Premium
     // must be re-confirmed by enrolling again with a fresh Firebase ID token.
     enrollTtlMs: parseInt(env.RELAY_ENROLL_TTL_MS || String(65 * 60 * 1000), 10),
+    // Public Firebase web config for "Sign in with Google" on the consent page (not secrets). The
+    // browser signs in and submits a Firebase ID token, which the backend authority then verifies.
+    firebaseWeb: {
+      apiKey: env.RELAY_FIREBASE_API_KEY || 'AIzaSyD-6m-iehXMSyiltMTAAd0soxsj4iWLgmo',
+      authDomain: env.RELAY_FIREBASE_AUTH_DOMAIN || 'linex-bf945.firebaseapp.com',
+      projectId: env.RELAY_FIREBASE_PROJECT_ID || 'linex-bf945',
+    },
   };
 }

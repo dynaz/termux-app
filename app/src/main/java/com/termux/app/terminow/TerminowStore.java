@@ -2286,6 +2286,29 @@ public class TerminowStore {
         mPreferences.edit().putString(KEY_MCP_RELAY, relay.toString()).apply();
     }
 
+    /** Store the enrolled relay device credential, encrypted (Keystore-backed), with its expiry. */
+    public void setMcpRelayCredential(@NonNull String credential, long expiresAtMs) {
+        try {
+            JSONObject relay = getMcpRelay();
+            relay.put("cred", credential.isEmpty() ? "" : encryptPassword(credential));
+            relay.put("credExpiry", credential.isEmpty() ? 0L : expiresAtMs);
+            setMcpRelay(relay);
+        } catch (JSONException ignored) {
+            // The credential is re-enrolled on the next connect
+        }
+    }
+
+    /** The enrolled relay device credential, decrypted, or empty. Never logged. */
+    @NonNull
+    public String getMcpRelayCredential() {
+        String enc = getMcpRelay().optString("cred");
+        return enc.isEmpty() ? "" : decryptPassword(enc);
+    }
+
+    public long getMcpRelayCredentialExpiry() {
+        return getMcpRelay().optLong("credExpiry");
+    }
+
     /**
      * The passphrase of a key file of `~/.ssh`, typed in when ssh asks for it, encrypted like
      * the passwords of hosts; empty if none was set. It stays on this phone.

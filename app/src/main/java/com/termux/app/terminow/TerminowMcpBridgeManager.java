@@ -11,8 +11,18 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
@@ -75,6 +85,16 @@ public final class TerminowMcpBridgeManager {
     private final TerminowMcpBridgeExecutor mExecutor;
     private final TerminowAiBridgeServer mServer;
     private final TerminowMcpBridgeRelay mRelay;
+    /** For enrolling this device with the relay using the account's Firebase ID token. */
+    private final TerminowAccount mAccount;
+    private final ScheduledExecutorService mEnroll = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "TerminowMcpBridge enroll");
+        t.setDaemon(true);
+        return t;
+    });
+    @Nullable private ScheduledFuture<?> mReenroll;
+    private static final long ENROLL_RENEW_BEFORE_MS = 5 * 60 * 1000;
+    private static final long ENROLL_RETRY_MS = 2 * 60 * 1000;
 
     @Nullable private String mLastError;
 
@@ -112,6 +132,9 @@ public final class TerminowMcpBridgeManager {
         mRelay = new TerminowMcpBridgeRelay(
             () -> new TerminowMcpBridgeMcpServer(mBridge, relayClientKey(), this::secrets, BuildConfig.VERSION_NAME),
             this::relayPairingCodes);
+
+        mAccount = new TerminowAccount(BuildConfig.TERMINOW_FIREBASE_API_KEY, mContext.getPackageName());
+        mAccount.setFirebaseBackend(BuildConfig.TERMINOW_FIREBASE_PROJECT_ID, BuildConfig.TERMINOW_FUNCTIONS_REGION);
     }
 
     /**
@@ -199,6 +222,7 @@ public final class TerminowMcpBridgeManager {
         mStore.setMcpBridgeEnabled(false);
         mServer.stop();
         mRelay.stop();
+        cancelReenroll();
         return result(true, "The MCP Bridge is off");
     }
 
@@ -333,6 +357,8 @@ public final class TerminowMcpBridgeManager {
     public synchronized void clearRelay() {
         String clientId = relayClientKey();
         mRelay.stop();
+        cancelReenroll();
+        mStore.setMcpRelayCredential("", 0);
         if (!clientId.isEmpty()) {
             mClients.revoke(clientId);
             mServer.closeConnectionsOf(clientId);
@@ -343,9 +369,102 @@ public final class TerminowMcpBridgeManager {
     private void startRelayIfConfigured() {
         JSONObject relay = mStore.getMcpRelay();
         String url = relay.optString("url");
-        String clientId = relay.optString("clientId");
-        String token = clientId.isEmpty() ? "" : mStore.getMcpClientTokens().getOrDefault(clientId, "");
-        if (!url.isEmpty() && !token.isEmpty()) mRelay.start(url, token);
+        if (url.isEmpty()) return;
+        // When the account is signed in, enrol this device per-user with its Firebase ID token so
+        // the relay authorizes it against central Premium. Otherwise fall back to the static token.
+        if (mStore.getAccount() != null) {
+            mEnroll.execute(() -> enrollAndStart(url));
+        } else {
+            String clientId = relay.optString("clientId");
+            String token = clientId.isEmpty() ? "" : mStore.getMcpClientTokens().getOrDefault(clientId, "");
+            if (!token.isEmpty()) mRelay.start(url, token);
+        }
+    }
+
+    /** Enrol (or reuse a live credential), connect the relay with it, and schedule the next renewal. */
+    private void enrollAndStart(@NonNull String url) {
+        String credential = mStore.getMcpRelayCredential();
+        long expiry = mStore.getMcpRelayCredentialExpiry();
+        long now = System.currentTimeMillis();
+        if (credential.isEmpty() || expiry - now < ENROLL_RENEW_BEFORE_MS) {
+            long[] expiryOut = new long[1];
+            credential = enrollRelayDevice(url, expiryOut);
+            if (credential == null) {
+                // Not signed in, not Premium, or revoked: stop the relay and keep nothing.
+                mRelay.stop();
+                mStore.setMcpRelayCredential("", 0);
+                scheduleReenroll(url, ENROLL_RETRY_MS);
+                return;
+            }
+            expiry = expiryOut[0];
+            mStore.setMcpRelayCredential(credential, expiry);
+        }
+        mRelay.start(url, credential);
+        long renewIn = Math.max(ENROLL_RETRY_MS, expiry - System.currentTimeMillis() - ENROLL_RENEW_BEFORE_MS);
+        scheduleReenroll(url, renewIn);
+    }
+
+    private synchronized void scheduleReenroll(@NonNull String url, long delayMs) {
+        if (mReenroll != null) mReenroll.cancel(false);
+        if (!mStore.isMcpBridgeEnabled()) return;
+        mReenroll = mEnroll.schedule(() -> enrollAndStart(url), delayMs, TimeUnit.MILLISECONDS);
+    }
+
+    private void cancelReenroll() {
+        if (mReenroll != null) {
+            mReenroll.cancel(false);
+            mReenroll = null;
+        }
+    }
+
+    /**
+     * Enrol this device with the relay: send a fresh Firebase ID token to /device/enroll and keep
+     * the short-lived device credential it returns. Returns the credential (and its expiry in
+     * {@code expiryOut}), or {@code null} when not signed in, not Premium, or the relay refused.
+     * The ID token and the credential are never logged.
+     */
+    @Nullable
+    private String enrollRelayDevice(@NonNull String url, @NonNull long[] expiryOut) {
+        TerminowAccount.Session session = mStore.getAccount();
+        if (session == null) return null;
+        String idToken;
+        try {
+            idToken = mAccount.getIdToken(session);
+            mStore.setAccount(session); // persist a refreshed refresh token, if it changed
+        } catch (TerminowAccount.AccountException e) {
+            return null; // signed out or cannot refresh
+        }
+        if (idToken.isEmpty()) return null;
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(url + "/device/enroll").openConnection();
+            connection.setRequestMethod("POST");
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Authorization", "Bearer " + idToken);
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setConnectTimeout(20000);
+            connection.setReadTimeout(20000);
+            try (OutputStream out = connection.getOutputStream()) {
+                out.write("{}".getBytes(StandardCharsets.UTF_8));
+            }
+            int code = connection.getResponseCode();
+            if (code != 200) return null; // 401 bad token, 403 not Premium, 5xx try later
+            StringBuilder body = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) body.append(line);
+            }
+            JSONObject result = new JSONObject(body.toString());
+            String credential = result.optString("device_token");
+            long expiresIn = result.optLong("expires_in");
+            if (credential.isEmpty() || expiresIn <= 0) return null;
+            expiryOut[0] = System.currentTimeMillis() + expiresIn * 1000;
+            return credential;
+        } catch (java.io.IOException | JSONException e) {
+            return null;
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
     }
 
     @NonNull
@@ -423,6 +542,8 @@ public final class TerminowMcpBridgeManager {
         mStore.setMcpBridgeEnabled(false);
         mServer.stop();
         mRelay.stop();
+        cancelReenroll();
+        mStore.setMcpRelayCredential("", 0);
         revokeAllClients();
     }
 

@@ -10,7 +10,7 @@ import { loadConfig } from './config.js';
 import { OAuth } from './oauth.js';
 import { DeviceHub } from './deviceHub.js';
 import { googleConfigured, googleAuthUrl, fetchGoogleEmail } from './google.js';
-import { checkPremium } from './backend.js';
+import { checkPremium, backendConfigured } from './backend.js';
 
 const MAX_BODY = 1024 * 1024;
 
@@ -76,7 +76,7 @@ async function handleAuthorize(req, res, ctx, url) {
     const q = Object.fromEntries(url.searchParams);
     if ((q.code_challenge_method || 'S256') !== 'S256')
       return sendHtml(res, 400, '<p>Only PKCE S256 is supported.</p>');
-    return sendHtml(res, 200, consentPage(q, { googleEnabled: googleConfigured(ctx.config) }));
+    return sendHtml(res, 200, consentPage(q, consentOpts(ctx)));
   }
   if (req.method === 'POST') {
     const form = await readForm(req);
@@ -87,10 +87,8 @@ async function handleAuthorize(req, res, ctx, url) {
     // central authority. The identity is the verified uid, never anything the page claimed.
     if (form.firebase_id_token) {
       const info = await checkPremium(ctx.config, form.firebase_id_token);
-      if (info.error || !info.premium) return sendHtml(res, 403, consentPage(form, {
-        error: info.premium === false ? 'This account does not have TermiNow Premium.' : 'Sign-in could not be verified. Try again.',
-        googleEnabled: googleConfigured(ctx.config),
-      }));
+      if (info.error || !info.premium) return sendHtml(res, 403, consentPage(form, consentOpts(ctx,
+        info.premium === false ? 'This account does not have TermiNow Premium.' : 'Sign-in could not be verified. Try again.')));
       const authCode = ctx.oauth.issueCodeForUser(info.uid, { clientId: form.client_id, redirectUri, challenge: form.code_challenge });
       if (!authCode) return sendHtml(res, 400, '<p>PKCE is required.</p>');
       const loc = new URL(redirectUri);
@@ -106,7 +104,7 @@ async function handleAuthorize(req, res, ctx, url) {
       challenge: form.code_challenge,
     });
     if (!code) return sendHtml(res, 403, consentPage(form,
-      { error: 'That pairing code was not recognised. Check it in TermiNow.', googleEnabled: googleConfigured(ctx.config) }));
+      consentOpts(ctx, 'That pairing code was not recognised. Check it in TermiNow.')));
     const location = new URL(redirectUri);
     location.searchParams.set('code', code);
     if (form.state) location.searchParams.set('state', form.state);
@@ -171,7 +169,7 @@ function backToConsent(res, ctx, saved, errorText) {
     client_id: saved.clientId, redirect_uri: saved.redirectUri, state: saved.state || '',
     code_challenge: saved.challenge, code_challenge_method: 'S256', response_type: 'code', scope: 'mcp',
   };
-  return sendHtml(res, 200, consentPage(q, { error: errorText, googleEnabled: googleConfigured(ctx.config) }));
+  return sendHtml(res, 200, consentPage(q, consentOpts(ctx, errorText)));
 }
 
 // ---------------------------------------------------------------------------------------
@@ -355,15 +353,55 @@ function escapeHtml(s) {
   return String(s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// The sign-in options a consent page offers, from what the relay is configured with.
+function consentOpts(ctx, error) {
+  return {
+    error,
+    googleEnabled: googleConfigured(ctx.config),
+    firebase: backendConfigured(ctx.config) ? ctx.config.firebaseWeb : null,
+  };
+}
+
 function consentPage(q, opts = {}) {
   const keys = ['client_id', 'redirect_uri', 'state', 'code_challenge', 'code_challenge_method', 'response_type', 'scope'];
   const hidden = keys.map((k) => `<input type="hidden" name="${k}" value="${escapeHtml(q[k])}">`).join('\n');
   const error = opts.error ? `<p style="color:#b00">${escapeHtml(opts.error)}</p>` : '';
-  let google = '';
-  if (opts.googleEnabled) {
+
+  // Primary sign-in: Firebase Google sign-in in the browser. It yields a Firebase ID token the
+  // backend authority verifies for Premium. The original OAuth request is preserved in the hidden
+  // fields and validated server-side (redirect_uri, PKCE); only the verified uid is trusted.
+  let firebaseBlock = '';
+  if (opts.firebase && opts.firebase.apiKey) {
+    const cfg = JSON.stringify({ apiKey: opts.firebase.apiKey, authDomain: opts.firebase.authDomain, projectId: opts.firebase.projectId });
+    firebaseBlock = `
+    <form id="fbform" method="post" action="/authorize">
+      ${hidden}
+      <input type="hidden" name="firebase_id_token" id="fbtok">
+    </form>
+    <button id="gbtn" type="button" style="padding:.6rem 1rem;font-size:1rem;border:1px solid #888;border-radius:.4rem;background:#fff;cursor:pointer">Sign in with Google</button>
+    <p id="gerr" style="color:#b00"></p>
+    <p style="color:#888;margin:1rem 0 .5rem">or enter a pairing code</p>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script>
+      firebase.initializeApp(${cfg});
+      document.getElementById('gbtn').addEventListener('click', async function () {
+        var btn = this; btn.disabled = true;
+        try {
+          var r = await firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider());
+          var t = await r.user.getIdToken();
+          document.getElementById('fbtok').value = t;
+          document.getElementById('fbform').submit();
+        } catch (e) {
+          document.getElementById('gerr').textContent = 'Sign-in failed: ' + ((e && e.message) || e);
+          btn.disabled = false;
+        }
+      });
+    </script>`;
+  } else if (opts.googleEnabled) {
     const params = new URLSearchParams();
     for (const k of keys) if (q[k]) params.set(k, q[k]);
-    google = `
+    firebaseBlock = `
     <a href="/oauth/google/start?${escapeHtml(params.toString())}"
        style="display:inline-block;padding:.6rem 1rem;font-size:1rem;border:1px solid #888;border-radius:.4rem;text-decoration:none;color:#111">
       Sign in with Google</a>
@@ -374,7 +412,7 @@ function consentPage(q, opts = {}) {
     <h1>Connect to TermiNow</h1>
     <p>Let this AI client use your shared sessions.</p>
     ${error}
-    ${google}
+    ${firebaseBlock}
     <form method="post" action="/authorize">
       ${hidden}
       <input name="pairing_code" placeholder="Pairing code"
