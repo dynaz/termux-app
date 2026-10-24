@@ -1,0 +1,34 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Architectures: aarch64 all
+No-Support-for-Architecture-all: Packages
+Codename: stable
+Components: main
+Date: Sat, 24 Oct 2026 12:04:29 +0000
+Label: TermiNow
+Origin: TermiNow
+Suite: stable
+MD5Sum:
+ d2d4a56b9adca033ba26cfc0c4f3dac0           153705 main/binary-aarch64/Packages
+ cb27ee0275a8c98f55bb60bce07c0a40            59490 main/binary-aarch64/Packages.gz
+ 7e89dc8fb4e43a5761944c40b494d15b            50724 main/binary-aarch64/Packages.xz
+SHA1:
+ 4c53324f18ceff75ba03ea094803785662346194           153705 main/binary-aarch64/Packages
+ 5a778e90c64bac955b1224f97c6872ddf58f53b4            59490 main/binary-aarch64/Packages.gz
+ 0eee4255c1b458bc52410abe0d00bbb56701d0df            50724 main/binary-aarch64/Packages.xz
+SHA256:
+ bc505e389917828ee842a40388fd065e7ffff906b74fa8a25400108d7565e41a           153705 main/binary-aarch64/Packages
+ 33e57d0233a565ec901fdee329670d00149e7a7082654fc6545153895e8eff82            59490 main/binary-aarch64/Packages.gz
+ c95ccf467b2ee53dd1992bac555b851da0ad6c6825fea20bbbf44bf26f4ad413            50724 main/binary-aarch64/Packages.xz
+SHA512:
+ 4ef061e69e1417c03fd6d8846a0aa80feb63b2f1d24cc27bffa29b12298e1e254d440baf84763671cf896a5d76906a5b7a09b6eb7f31827dd0e1b312545fdf75           153705 main/binary-aarch64/Packages
+ 56d3de258bd2f000e71250da303850b092faf2aeddc968468da63b8188cfed89b9a197627b1584003334d813b5f895513925d416aa7b2a8e774d28c849627b97            59490 main/binary-aarch64/Packages.gz
+ 166315d0e4ce9663d974f57c741b16a57f9147affae9f104058995d76b5ca90f32cdb0251bb59e4fac11f076f7fb013dfa1a5d1df267bbbc7a60986743888acf            50724 main/binary-aarch64/Packages.xz
+-----BEGIN PGP SIGNATURE-----
+
+iHUEARYKAB0WIQSieKMBrb0btP/iNl5vtIaQj48P6AUCatyezQAKCRBvtIaQj48P
+6O0vAP9qXcG9zyNw5vn1VO2OD8nojzNcl/GcVAoO7nIPtqr/QgEAqWNjtQZlyQl2
+dpeE17t/7fR5LP41mCUT7L7JNHtxFwY=
+=oUyJ
+-----END PGP SIGNATURE-----
