@@ -2183,6 +2183,29 @@ public class TerminowLauncher {
     }
 
     /**
+     * Always open a new shell tab of the user in {@code folder}, never reusing a running tab.
+     * "Open in terminal" of a shared session wants that exact folder, not the last session.
+     */
+    public void openLinuxTerminalNewTab(@NonNull String alias, @NonNull String user, @NonNull String folder) {
+        Environment environment = environmentFor(alias);
+        if (environment == null || environment.container == null) {
+            showFailure(alias, mActivity.getString(R.string.terminow_profiles_env_missing, alias));
+            return;
+        }
+        if (!TerminowMcpTargets.getUsers(environment.container).contains(user)) {
+            showFailure(environment.shortName(), mActivity.getString(R.string.terminow_profiles_user_missing, user, environment.label));
+            return;
+        }
+        String path = folder.isEmpty() ? homeOf(environment, user) : folder;
+        if (resolve(environment, path) == null) {
+            showFailure(environment.shortName(), mActivity.getString(R.string.terminow_profiles_folder_missing, path));
+            return;
+        }
+        launchPlan("linux|" + alias + "|" + user + "|" + System.nanoTime(), environment, user, path, TerminowLaunchPlan.TOOL_SHELL, "",
+            TerminowLaunchPlan.TMUX_OFF, "", mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), shellNameOf(environment)), true, "bash");
+    }
+
+    /**
      * The folder that a restored tab of an environment opens in: its own if it is still there,
      * else the home of the user. {@code null} when the environment or the user is gone.
      */

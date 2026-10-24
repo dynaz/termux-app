@@ -1803,7 +1803,7 @@ public class TerminowHome {
         if (environmentKey.isEmpty() || TerminowMcpTargets.TARGET_TERMINOW.equals(environmentKey)) {
             openTerminalAt(new File(folder.isEmpty() ? TermuxConstants.TERMUX_HOME_DIR_PATH : folder));
         } else {
-            mLauncher.openLinuxTerminal(environmentKey, user.isEmpty() ? "root" : user, folder);
+            mLauncher.openLinuxTerminalNewTab(environmentKey, user.isEmpty() ? "root" : user, folder);
         }
     }
 
