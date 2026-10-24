@@ -39,6 +39,8 @@ public final class TerminowMcpBridgeExecutor implements TerminowMcpBridge.Execut
 
     public static final int DEFAULT_TIMEOUT_S = 600;
     public static final int MAX_TIMEOUT_S = 3600;
+    /** How much of a task's stream is kept in the mirror log; the rest is dropped (bounded). */
+    static final int MIRROR_MAX = 512 * 1024;
 
     /**
      * Runs {@code claude -p} in the task's folder; the request is {@code $1}, the folder {@code $2}.
@@ -61,6 +63,16 @@ public final class TerminowMcpBridgeExecutor implements TerminowMcpBridge.Execut
         mSetup = setup;
         mTargets = targets;
         mLogDir = logDir;
+        cleanStaleLogs();
+    }
+
+    /** Delete task logs left by a previous run, so old plaintext output is not kept around. */
+    private void cleanStaleLogs() {
+        if (mLogDir == null) return;
+        File[] files = mLogDir.listFiles();
+        if (files == null) return;
+        for (File f : files) if (f.getName().endsWith(".log")) //noinspection ResultOfMethodCallIgnored
+            f.delete();
     }
 
     /** The file a task's stream is mirrored to, for opening it in a terminal tab; {@code null} if off. */
@@ -169,7 +181,7 @@ public final class TerminowMcpBridgeExecutor implements TerminowMcpBridge.Execut
         if (!finished) process.destroy();
         join(stdout);
         join(stderr);
-        writeMirror(mirror, "\n── task " + (run.cancelRequested ? "cancelled" : finished ? "finished" : "stopped") + " ──\n");
+        writeMirror(mirror, "\n── task " + (run.isCancelRequested() ? "cancelled" : finished ? "finished" : "stopped") + " ──\n");
         closeMirror(mirror);
 
         try {
@@ -227,8 +239,15 @@ public final class TerminowMcpBridgeExecutor implements TerminowMcpBridge.Execut
         try {
             File parent = file.getParentFile();
             if (parent != null && !parent.isDirectory() && !parent.mkdirs()) return null;
-            OutputStream out = new FileOutputStream(file);
-            writeMirror(out, "── TermiNow task ──\n" + task.request + "\n\n");
+            FileOutputStream raw = new FileOutputStream(file);
+            // Only the app's user may read the mirror; it holds task output in app-private storage.
+            file.setReadable(false, false);
+            file.setReadable(true, true);
+            file.setWritable(false, false);
+            file.setWritable(true, true);
+            OutputStream out = new BoundedMirror(raw);
+            String head = task.request.length() > 200 ? task.request.substring(0, 200) + "…" : task.request;
+            writeMirror(out, "── TermiNow task ──\n" + head + "\n\n");
             return out;
         } catch (IOException e) {
             return null;
@@ -245,6 +264,42 @@ public final class TerminowMcpBridgeExecutor implements TerminowMcpBridge.Execut
         } catch (IOException ignored) {
             // The terminal that tails the file still works; a dropped write is not fatal
         }
+    }
+
+    /** A mirror that stops after a cap, so one task's log can not grow without bound. */
+    private static final class BoundedMirror extends OutputStream {
+        private final OutputStream mOut;
+        private int mWritten;
+        private boolean mNoted;
+
+        BoundedMirror(@NonNull OutputStream out) {
+            mOut = out;
+        }
+
+        @Override public void write(int b) throws IOException {
+            write(new byte[]{(byte) b}, 0, 1);
+        }
+
+        @Override public void write(@NonNull byte[] b, int off, int len) throws IOException {
+            int room = MIRROR_MAX - mWritten;
+            if (room <= 0) {
+                note();
+                return;
+            }
+            int n = Math.min(len, room);
+            mOut.write(b, off, n);
+            mWritten += n;
+            if (n < len) note();
+        }
+
+        private void note() throws IOException {
+            if (mNoted) return;
+            mNoted = true;
+            mOut.write("\n── output truncated ──\n".getBytes(StandardCharsets.UTF_8));
+        }
+
+        @Override public void flush() throws IOException { mOut.flush(); }
+        @Override public void close() throws IOException { mOut.close(); }
     }
 
     private static void closeMirror(@Nullable OutputStream mirror) {
