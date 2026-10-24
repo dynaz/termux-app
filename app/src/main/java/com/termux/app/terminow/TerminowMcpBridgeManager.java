@@ -11,6 +11,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -71,6 +72,7 @@ public final class TerminowMcpBridgeManager {
 
     private final TerminowAiSession mClients;
     private final TerminowMcpBridge mBridge;
+    private final TerminowMcpBridgeExecutor mExecutor;
     private final TerminowAiBridgeServer mServer;
     private final TerminowMcpBridgeRelay mRelay;
 
@@ -90,14 +92,14 @@ public final class TerminowMcpBridgeManager {
             @NonNull @Override public Map<String, String> all() { return mStore.getMcpClientTokens(); }
         });
 
-        TerminowMcpBridgeExecutor executor = new TerminowMcpBridgeExecutor(
-            new TerminowClaudeSetup(mContext, mTargets), mTargets);
+        mExecutor = new TerminowMcpBridgeExecutor(new TerminowClaudeSetup(mContext, mTargets), mTargets,
+            new File(com.termux.shared.termux.TermuxConstants.TERMUX_HOME_DIR_PATH, ".terminow/mcp-tasks"));
 
         mBridge = new TerminowMcpBridge(new TerminowMcpBridge.Deps() {
             @NonNull @Override public List<TerminowMcpBridge.Share> shares() { return loadShares(); }
             @Override public boolean clientPaired(@NonNull String clientKey) { return mClients.hasToken(clientKey); }
             @Override public int maxQueue() { return mStore.getMcpBridgeMaxQueue(); }
-        }, executor, new TerminowMcpBridge.Persistence() {
+        }, mExecutor, new TerminowMcpBridge.Persistence() {
             @Override public void save(@NonNull List<TerminowMcpBridgeTask> tasks) { saveTasks(tasks); }
             @NonNull @Override public List<TerminowMcpBridgeTask> load() { return loadTasks(); }
         });
@@ -371,6 +373,12 @@ public final class TerminowMcpBridgeManager {
     @NonNull
     public List<TerminowMcpBridgeTask> tasks() {
         return mBridge.allTasks();
+    }
+
+    /** The file a task's stream is mirrored to, for opening it live in a terminal tab. */
+    @Nullable
+    public File taskLogFile(@NonNull String taskId) {
+        return mExecutor.logFile(taskId);
     }
 
     /** From the UI: cancel a task regardless of the client. Never gated. */

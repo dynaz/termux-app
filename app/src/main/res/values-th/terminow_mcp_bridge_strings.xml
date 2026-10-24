@@ -60,6 +60,7 @@
     <string name="terminow_mcp_bridge_task_failure">ข้อผิดพลาด</string>
     <string name="terminow_mcp_bridge_task_output">เอาต์พุต</string>
     <string name="terminow_mcp_bridge_cancel_task">ยกเลิกงาน</string>
+    <string name="terminow_mcp_bridge_open_terminal">เปิดในเทอร์มินัล</string>
 
     <string name="terminow_mcp_bridge_emergency_stop">หยุดฉุกเฉิน</string>
     <string name="terminow_mcp_bridge_emergency_desc">ปิดบริดจ์ ตัดการเชื่อมต่อรีเลย์ และเพิกถอนไคลเอนต์ทั้งหมดทันที</string>

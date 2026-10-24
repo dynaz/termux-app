@@ -1,6 +1,7 @@
 package com.termux.app.terminow;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.termux.shared.logger.Logger;
 
@@ -8,9 +9,12 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -45,11 +49,20 @@ public final class TerminowMcpBridgeExecutor implements TerminowMcpBridge.Execut
 
     private final TerminowClaudeSetup mSetup;
     private final TerminowMcpTargets mTargets;
+    @Nullable private final File mLogDir;
     private final Map<String, Run> mRuns = new ConcurrentHashMap<>();
 
-    public TerminowMcpBridgeExecutor(@NonNull TerminowClaudeSetup setup, @NonNull TerminowMcpTargets targets) {
+    public TerminowMcpBridgeExecutor(@NonNull TerminowClaudeSetup setup, @NonNull TerminowMcpTargets targets,
+                                     @Nullable File logDir) {
         mSetup = setup;
         mTargets = targets;
+        mLogDir = logDir;
+    }
+
+    /** The file a task's stream is mirrored to, for opening it in a terminal tab; {@code null} if off. */
+    @Nullable
+    public File logFile(@NonNull String taskId) {
+        return mLogDir == null ? null : new File(mLogDir, taskId + ".log");
     }
 
     private static final class Run {
@@ -106,9 +119,12 @@ public final class TerminowMcpBridgeExecutor implements TerminowMcpBridge.Execut
             // Nothing is sent to its input
         }
 
+        // Mirror the stream to a log file so it can be opened live in a terminal tab.
+        OutputStream mirror = openMirror(task);
+
         ResultCapture result = new ResultCapture();
-        Thread stdout = streamTo(process.getInputStream(), callback, task.id, result, false);
-        Thread stderr = streamTo(process.getErrorStream(), callback, task.id, result, true);
+        Thread stdout = streamTo(process.getInputStream(), callback, task.id, result, false, mirror);
+        Thread stderr = streamTo(process.getErrorStream(), callback, task.id, result, true, mirror);
 
         boolean finished;
         try {
@@ -120,6 +136,8 @@ public final class TerminowMcpBridgeExecutor implements TerminowMcpBridge.Execut
         }
         join(stdout);
         join(stderr);
+        writeMirror(mirror, "\n── task " + (run.cancelRequested ? "cancelled" : finished ? "finished" : "stopped") + " ──\n");
+        closeMirror(mirror);
 
         try {
             if (run.cancelRequested) {
@@ -150,12 +168,15 @@ public final class TerminowMcpBridgeExecutor implements TerminowMcpBridge.Execut
 
     @NonNull
     private Thread streamTo(@NonNull InputStream in, @NonNull TerminowMcpBridge.Callback callback,
-                            @NonNull String taskId, @NonNull ResultCapture result, boolean isStderr) {
+                            @NonNull String taskId, @NonNull ResultCapture result, boolean isStderr,
+                            @Nullable OutputStream mirror) {
         Thread thread = new Thread(() -> {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    callback.output(taskId, (isStderr ? "[stderr] " : "") + line + "\n");
+                    String chunk = (isStderr ? "[stderr] " : "") + line + "\n";
+                    callback.output(taskId, chunk);
+                    writeMirror(mirror, chunk);
                     if (!isStderr) parseEvent(line, result);
                 }
             } catch (IOException ignored) {
@@ -165,6 +186,42 @@ public final class TerminowMcpBridgeExecutor implements TerminowMcpBridge.Execut
         thread.setDaemon(true);
         thread.start();
         return thread;
+    }
+
+    @Nullable
+    private OutputStream openMirror(@NonNull TerminowMcpBridgeTask task) {
+        File file = logFile(task.id);
+        if (file == null) return null;
+        try {
+            File parent = file.getParentFile();
+            if (parent != null && !parent.isDirectory() && !parent.mkdirs()) return null;
+            OutputStream out = new FileOutputStream(file);
+            writeMirror(out, "── TermiNow task ──\n" + task.request + "\n\n");
+            return out;
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    private static void writeMirror(@Nullable OutputStream mirror, @NonNull String text) {
+        if (mirror == null) return;
+        try {
+            synchronized (mirror) {
+                mirror.write(text.getBytes(StandardCharsets.UTF_8));
+                mirror.flush();
+            }
+        } catch (IOException ignored) {
+            // The terminal that tails the file still works; a dropped write is not fatal
+        }
+    }
+
+    private static void closeMirror(@Nullable OutputStream mirror) {
+        if (mirror == null) return;
+        try {
+            mirror.close();
+        } catch (IOException ignored) {
+            // Nothing more to do
+        }
     }
 
     /** Pull the result text out of a stream-json {@code result} event; ignore anything else. */

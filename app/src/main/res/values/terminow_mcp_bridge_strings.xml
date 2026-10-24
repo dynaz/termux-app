@@ -60,6 +60,7 @@
     <string name="terminow_mcp_bridge_task_failure">Failure</string>
     <string name="terminow_mcp_bridge_task_output">Output</string>
     <string name="terminow_mcp_bridge_cancel_task">Cancel task</string>
+    <string name="terminow_mcp_bridge_open_terminal">Open in terminal</string>
 
     <string name="terminow_mcp_bridge_emergency_stop">Emergency stop</string>
     <string name="terminow_mcp_bridge_emergency_desc">Turn the bridge off, disconnect the relay, and revoke every client at once.</string>

@@ -39,18 +39,26 @@ import java.util.UUID;
  */
 final class TerminowMcpBridgeUi {
 
+    /** Opens a task's mirrored stream in a terminal tab; the host provides it (it owns sessions). */
+    interface OpenInTerminal {
+        void open(@NonNull java.io.File logFile, @NonNull String title);
+    }
+
     private final TermuxActivity mActivity;
     private final TerminowMcpBridgeManager mManager;
     private final TerminowStore mStore;
     private final LinearLayout mContent;
     private final TerminowAccountUi mAccountUi;
+    @NonNull private final OpenInTerminal mOpenInTerminal;
 
     TerminowMcpBridgeUi(@NonNull TermuxActivity activity, @NonNull TerminowMcpBridgeManager manager,
-                        @NonNull TerminowStore store, @NonNull LinearLayout container) {
+                        @NonNull TerminowStore store, @NonNull LinearLayout container,
+                        @NonNull OpenInTerminal openInTerminal) {
         mActivity = activity;
         mManager = manager;
         mStore = store;
         mContent = container;
+        mOpenInTerminal = openInTerminal;
         mAccountUi = new TerminowAccountUi(activity, store, this::render);
     }
 
@@ -385,6 +393,10 @@ final class TerminowMcpBridgeUi {
                 mManager.cancelTask(task.id);
                 render();
             });
+        java.io.File log = mManager.taskLogFile(task.id);
+        if (log != null && log.isFile())
+            builder.setNeutralButton(R.string.terminow_mcp_bridge_open_terminal, (d, w) ->
+                mOpenInTerminal.open(log, oneLine(task.request)));
         builder.show();
     }
 
