@@ -1113,7 +1113,12 @@ public class TerminowHome {
             return true;
         }
 
-        CharSequence[] actions = {mActivity.getString(R.string.terminow_edit), mActivity.getString(R.string.terminow_delete)};
+        // A host can also be duplicated; the other item types keep the plain Edit/Delete menu.
+        boolean isHost = item instanceof TerminowStore.Host;
+        CharSequence[] actions = isHost
+            ? new CharSequence[]{mActivity.getString(R.string.terminow_edit), mActivity.getString(R.string.terminow_duplicate),
+                mActivity.getString(R.string.terminow_delete)}
+            : new CharSequence[]{mActivity.getString(R.string.terminow_edit), mActivity.getString(R.string.terminow_delete)};
         new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog).setItems(actions, (dialog, which) -> {
             if (item instanceof Group) {
                 String group = ((Group) item).name;
@@ -1141,6 +1146,8 @@ public class TerminowHome {
                 TerminowStore.Host host = (TerminowStore.Host) item;
                 if (which == 0) {
                     showHostDialog(host);
+                } else if (which == 1) {
+                    duplicateHost(host);
                 } else {
                     mHosts.remove(host);
                     mStore.setHosts(mHosts);
@@ -1160,7 +1167,43 @@ public class TerminowHome {
         return true;
     }
 
+    /**
+     * Make an independent copy of a host and open it for editing. The copy gets a fresh uuid so it
+     * is a distinct host (its authorization, such as local AI access, does not carry the original's
+     * grants), and the password is copied over because {@link TerminowStore#hostToJson} leaves it out.
+     */
+    private void duplicateHost(@NonNull TerminowStore.Host host) {
+        TerminowStore.Host copy;
+        try {
+            copy = TerminowStore.hostFromJson(TerminowStore.hostToJson(host));
+        } catch (org.json.JSONException e) {
+            mActivity.showToast(String.valueOf(e.getMessage()), true);
+            return;
+        }
+        copy.uuid = TerminowStore.newHostId();
+        copy.password = host.password;
+        copy.label = duplicateLabel(host.getTitle());
+        int index = mHosts.indexOf(host);
+        if (index < 0) mHosts.add(copy); else mHosts.add(index + 1, copy);
+        mStore.setHosts(mHosts);
+        updateItems();
+        showHostDialog(copy);
+    }
 
+    /** A label for a copied host, like "web copy", then "web copy 2" if that one is taken. */
+    @NonNull
+    private String duplicateLabel(@NonNull String title) {
+        String base = mActivity.getString(R.string.terminow_duplicate_suffix, title);
+        String candidate = base;
+        int n = 2;
+        while (labelTaken(candidate)) candidate = base + " " + n++;
+        return candidate;
+    }
+
+    private boolean labelTaken(@NonNull String label) {
+        for (TerminowStore.Host host : mHosts) if (label.equals(host.label)) return true;
+        return false;
+    }
 
     /** Show the menu to start a session under the add button of the tab bar. */
     private void showNewSessionMenu(@NonNull View anchor) {

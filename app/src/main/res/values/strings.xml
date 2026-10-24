@@ -279,6 +279,8 @@
     <string name="terminow_no_snippets">No snippets yet. Tap + to add one.</string>
     <string name="terminow_no_results">Nothing matches your search.</string>
     <string name="terminow_edit">Edit</string>
+    <string name="terminow_duplicate">Duplicate</string>
+    <string name="terminow_duplicate_suffix">%1$s copy</string>
     <string name="terminow_delete">Delete</string>
     <string name="terminow_save">Save</string>
     <string name="terminow_autofill_unavailable">No autofill service is enabled to fill in a password</string>
