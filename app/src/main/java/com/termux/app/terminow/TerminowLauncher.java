@@ -1093,6 +1093,32 @@ public class TerminowLauncher {
         new TerminowUbuntuSetupUi(mActivity, mLinux, this::openEnvironment).show();
     }
 
+    private long mLastUbuntuTap;
+
+    /**
+     * Open local Ubuntu on this device in a new tab. Always the proot environment inside TermiNow,
+     * never SSH and never the current tab's host, command or folder: it builds a fresh login with
+     * the environment's own user, home and shell. When Ubuntu is not installed it shows the normal
+     * install flow (progress, error, retry) and opens Ubuntu once it is ready; an existing rootfs is
+     * never reinstalled. Repeated taps while it is opening are ignored.
+     */
+    public void launchLocalUbuntu() {
+        long now = android.os.SystemClock.uptimeMillis();
+        if (TerminowLaunchChoice.isRepeatTap(mLastUbuntuTap, now)) return;
+        mLastUbuntuTap = now;
+        Environment ubuntu = installedUbuntu();
+        if (ubuntu != null) launchUbuntu(ubuntu);
+        else confirmUbuntuSetup();
+    }
+
+    /** The installed local Ubuntu environment, or {@code null} when Ubuntu is not installed yet. */
+    @Nullable
+    private Environment installedUbuntu() {
+        for (Environment environment : environments())
+            if (environment.container != null && environment.container.isUbuntu) return environment;
+        return null;
+    }
+
     /** Open an installed environment, like its Open button, with its user, folder and the terminal theme. */
     private void openEnvironment(@NonNull String alias) {
         Environment environment = environmentFor(alias);

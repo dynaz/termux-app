@@ -89,6 +89,8 @@
     <string name="terminow_quick_end_tmux_title">End %1$s?</string>
     <string name="terminow_quick_end_tmux_message">The tmux session and what runs in it end.</string>
     <string name="terminow_quick_new_terminal">New terminal</string>
+    <string name="terminow_quick_ubuntu_local">Ubuntu (Local)</string>
+    <string name="terminow_quick_ubuntu_local_summary">Open Ubuntu on this device</string>
     <string name="terminow_quick_add_ssh_host">Add SSH host</string>
     <string name="terminow_quick_import">Import</string>
     <string name="terminow_quick_import_hosts">Import hosts (SSH config, CSV, Termius)</string>

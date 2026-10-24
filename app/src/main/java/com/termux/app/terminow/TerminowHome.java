@@ -1220,7 +1220,9 @@ public class TerminowHome {
         popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
 
         // Compact: environments and profiles are one tap away in Quick Launch, exporting files is in the File Manager
-        addMenuItem(menu, popup, R.drawable.ic_terminow_terminal, R.string.terminow_quick_new_terminal, this::openLocalTerminal);
+        addMenuItem(menu, popup, R.drawable.ic_terminow_os_ubuntu,
+            mActivity.getString(R.string.terminow_quick_ubuntu_local), mActivity.getString(R.string.terminow_quick_ubuntu_local_summary),
+            mLauncher::launchLocalUbuntu);
         addMenuItem(menu, popup, R.drawable.ic_terminow_launch, R.string.terminow_quick_title, this::showQuickLaunch);
         addMenuItem(menu, popup, R.drawable.ic_terminow_add, R.string.terminow_quick_add_environment, () -> mQuickLaunch.showAddEnvironment());
         addMenuItem(menu, popup, R.drawable.ic_terminow_hosts, R.string.terminow_quick_add_ssh_host, () -> {
@@ -4803,6 +4805,11 @@ public class TerminowHome {
     }
 
     private void addMenuItem(@NonNull LinearLayout menu, @NonNull PopupWindow popup, int iconRes, @NonNull CharSequence title, @NonNull Runnable onClick) {
+        addMenuItem(menu, popup, iconRes, title, null, onClick);
+    }
+
+    private void addMenuItem(@NonNull LinearLayout menu, @NonNull PopupWindow popup, int iconRes, @NonNull CharSequence title,
+                             @Nullable CharSequence subtitle, @NonNull Runnable onClick) {
         LinearLayout item = new LinearLayout(mActivity);
         item.setOrientation(LinearLayout.HORIZONTAL);
         item.setGravity(Gravity.CENTER_VERTICAL);
@@ -4816,21 +4823,33 @@ public class TerminowHome {
         iconView.setColorFilter(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary), PorterDuff.Mode.SRC_IN);
         item.addView(iconView, new LinearLayout.LayoutParams(dp(22), dp(22)));
 
+        LinearLayout texts = new LinearLayout(mActivity);
+        texts.setOrientation(LinearLayout.VERTICAL);
         TextView titleView = new TextView(mActivity);
         titleView.setText(title);
         titleView.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
         titleView.setTextSize(16);
         titleView.setMaxLines(1);
         titleView.setEllipsize(TextUtils.TruncateAt.END);
-        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
-        titleParams.setMarginStart(dp(18));
-        item.addView(titleView, titleParams);
+        texts.addView(titleView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        if (subtitle != null && subtitle.length() > 0) {
+            TextView subtitleView = new TextView(mActivity);
+            subtitleView.setText(subtitle);
+            subtitleView.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+            subtitleView.setTextSize(12);
+            subtitleView.setMaxLines(1);
+            subtitleView.setEllipsize(TextUtils.TruncateAt.END);
+            texts.addView(subtitleView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
+        LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+        textParams.setMarginStart(dp(18));
+        item.addView(texts, textParams);
 
         item.setOnClickListener(v -> {
             popup.dismiss();
             onClick.run();
         });
-        menu.addView(item, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(56)));
+        menu.addView(item, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(subtitle != null && subtitle.length() > 0 ? 64 : 56)));
     }
 
     private boolean isValidNewKeyName(@NonNull String name) {
