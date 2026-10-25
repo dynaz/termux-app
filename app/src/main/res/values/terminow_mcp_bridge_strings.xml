@@ -39,6 +39,15 @@
     <string name="terminow_mcp_bridge_share_folder">Folder</string>
     <string name="terminow_mcp_bridge_share_env">Environment</string>
     <string name="terminow_mcp_bridge_managed">Managed Claude Code (reliable)</string>
+    <string name="terminow_mcp_bridge_share_type_title">What to share</string>
+    <string name="terminow_mcp_bridge_share_local">Local Ubuntu / environment</string>
+    <string name="terminow_mcp_bridge_share_ssh">SSH host</string>
+    <string name="terminow_mcp_bridge_share_ssh_title">Share an SSH host</string>
+    <string name="terminow_mcp_bridge_share_host">Host</string>
+    <string name="terminow_mcp_bridge_share_no_hosts">Add a host to the vault first.</string>
+    <string name="terminow_mcp_bridge_share_runs_in">Claude runs in</string>
+    <string name="terminow_mcp_bridge_mode_local">Execution: Local Claude via SSH tools</string>
+    <string name="terminow_mcp_bridge_ssh_hint">Claude runs locally and reaches only this host through TermiNow\'s SSH tools — no install on the host.</string>
     <string name="terminow_mcp_bridge_caps_title">Client permissions</string>
     <string name="terminow_mcp_bridge_cap_submit">Submit tasks</string>
     <string name="terminow_mcp_bridge_cap_read">Read output</string>

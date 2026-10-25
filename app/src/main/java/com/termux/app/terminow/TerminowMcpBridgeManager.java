@@ -113,7 +113,8 @@ public final class TerminowMcpBridgeManager {
         });
 
         mExecutor = new TerminowMcpBridgeExecutor(new TerminowClaudeSetup(mContext, mTargets), mTargets,
-            new File(com.termux.shared.termux.TermuxConstants.TERMUX_HOME_DIR_PATH, ".terminow/mcp-tasks"));
+            new File(com.termux.shared.termux.TermuxConstants.TERMUX_HOME_DIR_PATH, ".terminow/mcp-tasks"),
+            this::grantHostForTask);
 
         mBridge = new TerminowMcpBridge(new TerminowMcpBridge.Deps() {
             @NonNull @Override public List<TerminowMcpBridge.Share> shares() { return loadShares(); }
@@ -564,6 +565,19 @@ public final class TerminowMcpBridgeManager {
         return mBridge.retryFromDevice(taskId);
     }
 
+    /**
+     * Mode A: grant the share's SSH host to its local Claude environment for a running task, scoped
+     * with a bounded TTL so it auto-expires — never ambient all-host access. Invoked by the executor
+     * just before a Mode-A task runs. Throws if the host is gone, which fails the task.
+     */
+    private void grantHostForTask(@NonNull TerminowMcpBridge.Share share, int timeoutSeconds) {
+        TerminowStore.Host host = TerminowStore.findHostByUuid(mStore.getHosts(), share.hostUuid);
+        if (host == null)
+            throw new IllegalStateException("The SSH host for this session is no longer in the vault");
+        long ttl = Math.max(60_000L, ((long) timeoutSeconds + 60) * 1000L);
+        TerminowAiBridgeManager.getInstance(mContext, mStore, mTargets).grant(share.environmentKey, host, ttl);
+    }
+
     /** Emergency stop: turn the bridge off, drop the relay, and revoke every client at once. */
     public synchronized void emergencyStop() {
         mStore.setMcpBridgeEnabled(false);
@@ -589,9 +603,13 @@ public final class TerminowMcpBridgeManager {
                 List<String> caps = new ArrayList<>();
                 JSONArray capArray = json.optJSONArray("capabilities");
                 for (int j = 0; capArray != null && j < capArray.length(); j++) caps.add(capArray.optString(j));
+                // An old share has no target_type and loads as a local share (migration-safe).
                 shares.add(new TerminowMcpBridge.Share(
                     json.optString("id"), json.optString("label"), json.optBoolean("managed", true),
-                    json.optString("environment"), json.optString("user"), json.optString("folder"), caps));
+                    json.optString("environment"), json.optString("user"), json.optString("folder"), caps,
+                    json.optString("target_type", TerminowMcpBridge.SHARE_LOCAL),
+                    json.optString("executor_mode", TerminowMcpBridge.MODE_LOCAL_TOOLS),
+                    json.optString("host_uuid"), json.optString("host_identity")));
             }
         } catch (JSONException e) {
             // A corrupt list is treated as empty rather than crashing the bridge
@@ -610,7 +628,11 @@ public final class TerminowMcpBridgeManager {
                     .put("environment", share.environmentKey)
                     .put("user", share.user)
                     .put("folder", share.folder)
-                    .put("capabilities", new JSONArray(share.capabilities)));
+                    .put("capabilities", new JSONArray(share.capabilities))
+                    .put("target_type", share.shareType)
+                    .put("executor_mode", share.executorMode)
+                    .put("host_uuid", share.hostUuid)
+                    .put("host_identity", share.hostIdentity));
             }
         } catch (JSONException ignored) {
             return;
@@ -664,5 +686,15 @@ public final class TerminowMcpBridgeManager {
                                                        @NonNull String folder) {
         return new TerminowMcpBridge.Share(id, label, true, environmentKey, user, folder,
             new ArrayList<>(Arrays.asList(TerminowMcpBridge.CAP_SUBMIT, TerminowMcpBridge.CAP_READ, TerminowMcpBridge.CAP_CANCEL)));
+    }
+
+    /** A managed share targeting a Vault SSH host, run by local Claude via the AI Bridge's SSH tools. */
+    @NonNull
+    public static TerminowMcpBridge.Share sshHostShare(@NonNull String id, @NonNull String label,
+            @NonNull String environmentKey, @NonNull String user, @NonNull String folder,
+            @NonNull String hostUuid, @NonNull String hostIdentity, @NonNull String executorMode) {
+        return new TerminowMcpBridge.Share(id, label, true, environmentKey, user, folder,
+            new ArrayList<>(Arrays.asList(TerminowMcpBridge.CAP_SUBMIT, TerminowMcpBridge.CAP_READ, TerminowMcpBridge.CAP_CANCEL)),
+            TerminowMcpBridge.SHARE_SSH_HOST, executorMode, hostUuid, hostIdentity);
     }
 }

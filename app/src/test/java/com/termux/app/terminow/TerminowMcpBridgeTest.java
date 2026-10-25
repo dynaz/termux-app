@@ -372,6 +372,49 @@ public class TerminowMcpBridgeTest {
         throw new AssertionError("no task " + id);
     }
 
+    // An SSH-host share in Mode A (local tools) accepts tasks and runs its local Claude environment.
+    @Test
+    public void sshHostLocalToolsShareAcceptsTasks() throws Exception {
+        shares.add(sshHost("s1", TerminowMcpBridge.MODE_LOCAL_TOOLS));
+        String a = submit("s1");
+        assertEquals("running", state(CLIENT, a));
+        assertEquals("ubuntu", findTask(bridge, a).environmentKey);
+    }
+
+    // Mode B (remote Claude on the host) is refused for now, not silently run elsewhere.
+    @Test
+    public void remoteHostModeIsRefusedForNow() {
+        shares.add(sshHost("s1", TerminowMcpBridge.MODE_REMOTE_HOST));
+        try {
+            bridge.taskSubmit(CLIENT, "s1", "x", "", 0);
+            fail("expected Mode B to be refused in Phase 1");
+        } catch (TerminowAiError.Exception e) {
+            assertEquals(TerminowAiError.SESSION_UNSUPPORTED, e.error);
+        }
+    }
+
+    // A local share's fingerprint ignores the SSH fields (migration-safe); an SSH-host share binds to its host.
+    @Test
+    public void localFingerprintStaysStableSshHostBindsToHost() {
+        List<String> caps = Arrays.asList(TerminowMcpBridge.CAP_SUBMIT);
+        TerminowMcpBridge.Share local7 = new TerminowMcpBridge.Share("s1", "L", true, "ubuntu", "root", "/f", caps);
+        TerminowMcpBridge.Share local11 = new TerminowMcpBridge.Share("s1", "L", true, "ubuntu", "root", "/f", caps,
+            TerminowMcpBridge.SHARE_LOCAL, TerminowMcpBridge.MODE_LOCAL_TOOLS, "ignored", "ignored");
+        assertEquals("a local fingerprint ignores ssh fields", local7.fingerprint(), local11.fingerprint());
+        TerminowMcpBridge.Share ssh = new TerminowMcpBridge.Share("s1", "L", true, "ubuntu", "root", "/f", caps,
+            TerminowMcpBridge.SHARE_SSH_HOST, TerminowMcpBridge.MODE_LOCAL_TOOLS, "host-1", "root@1.1.1.1:22");
+        assertNotEquals("an ssh-host share binds to its host", local7.fingerprint(), ssh.fingerprint());
+        TerminowMcpBridge.Share moved = new TerminowMcpBridge.Share("s1", "L", true, "ubuntu", "root", "/f", caps,
+            TerminowMcpBridge.SHARE_SSH_HOST, TerminowMcpBridge.MODE_LOCAL_TOOLS, "host-1", "root@2.2.2.2:22");
+        assertNotEquals("a changed host identity is a changed target", ssh.fingerprint(), moved.fingerprint());
+    }
+
+    private TerminowMcpBridge.Share sshHost(String id, String mode) {
+        return new TerminowMcpBridge.Share(id, "Session " + id, true, "ubuntu", "root", "/home/root/" + id,
+            Arrays.asList(TerminowMcpBridge.CAP_SUBMIT, TerminowMcpBridge.CAP_READ, TerminowMcpBridge.CAP_CANCEL),
+            TerminowMcpBridge.SHARE_SSH_HOST, mode, "host-" + id, "root@" + id + ".example:22");
+    }
+
     // ---------------------------------------------------------------------------------------
 
     private TerminowAiError lastError;

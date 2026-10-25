@@ -53,16 +53,33 @@ public final class TerminowMcpBridgeExecutor implements TerminowMcpBridge.Execut
         "command -v claude >/dev/null 2>&1 || { echo \"TermiNow: Claude Code is not installed in this environment\" >&2; exit 98; }\n" +
         "exec claude -p --output-format stream-json --verbose -- \"$1\"\n";
 
+    /** Prepares scoped access to an SSH host before a Mode-A (local-tools) task runs. */
+    public interface HostAccess {
+        /**
+         * Grant the share's SSH host to its local Claude environment for this task, scoped with a
+         * bounded TTL so it auto-expires — never ambient all-host access. A no-op for a local share.
+         * Throws if the host is gone or access cannot be granted, which fails the task.
+         */
+        void prepare(@NonNull TerminowMcpBridge.Share share, int timeoutSeconds);
+    }
+
     private final TerminowClaudeSetup mSetup;
     private final TerminowMcpTargets mTargets;
     @Nullable private final File mLogDir;
+    @Nullable private final HostAccess mHostAccess;
     private final Map<String, Run> mRuns = new ConcurrentHashMap<>();
 
     public TerminowMcpBridgeExecutor(@NonNull TerminowClaudeSetup setup, @NonNull TerminowMcpTargets targets,
                                      @Nullable File logDir) {
+        this(setup, targets, logDir, null);
+    }
+
+    public TerminowMcpBridgeExecutor(@NonNull TerminowClaudeSetup setup, @NonNull TerminowMcpTargets targets,
+                                     @Nullable File logDir, @Nullable HostAccess hostAccess) {
         mSetup = setup;
         mTargets = targets;
         mLogDir = logDir;
+        mHostAccess = hostAccess;
         cleanStaleLogs();
     }
 
@@ -142,6 +159,18 @@ public final class TerminowMcpBridgeExecutor implements TerminowMcpBridge.Execut
             mRuns.remove(task.id);
             callback.cancelled(task.id);
             return;
+        }
+        // Mode A (SSH host · local tools): grant only this host to the Claude environment for this
+        // task, scoped and time-bound, before the local Claude runs. A no-op for a local share.
+        if (mHostAccess != null && share.isSshHost()
+                && TerminowMcpBridge.MODE_LOCAL_TOOLS.equals(share.executorMode)) {
+            try {
+                mHostAccess.prepare(share, timeout);
+            } catch (RuntimeException e) {
+                callback.failed(task.id, "Could not grant the SSH host for this task: " + e.getMessage());
+                mRuns.remove(task.id);
+                return;
+            }
         }
         Process process;
         try {

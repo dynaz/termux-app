@@ -242,7 +242,7 @@ final class TerminowMcpBridgeUi {
         if (mManager.environments().isEmpty()) {
             mContent.addView(note(mActivity.getString(R.string.terminow_mcp_bridge_no_env)));
         } else {
-            mContent.addView(button(mActivity.getString(R.string.terminow_mcp_bridge_share), true, this::shareDialog));
+            mContent.addView(button(mActivity.getString(R.string.terminow_mcp_bridge_share), true, this::shareChooser));
         }
         List<TerminowMcpBridge.Share> shares = mManager.listShares();
         if (shares.isEmpty()) {
@@ -258,8 +258,10 @@ final class TerminowMcpBridgeUi {
             texts.addView(name);
             texts.addView(text(mActivity.getString(R.string.terminow_mcp_bridge_session_shared,
                 capabilitiesText(share)), 12, R.color.terminow_quick_ready));
-            texts.addView(text(share.environmentKey + (share.folder.isEmpty() ? "" : " · " + share.folder),
-                12, R.color.terminow_text_secondary));
+            String subtitle = share.isSshHost()
+                ? "SSH · " + share.hostIdentity + (share.folder.isEmpty() ? "" : " · " + share.folder)
+                : share.environmentKey + (share.folder.isEmpty() ? "" : " · " + share.folder);
+            texts.addView(text(subtitle, 12, R.color.terminow_text_secondary));
             line.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
             line.addView(button(mActivity.getString(R.string.terminow_mcp_bridge_unshare), false, () -> {
                 mManager.removeShare(share.id);
@@ -326,6 +328,106 @@ final class TerminowMcpBridgeUi {
             })
             .setNegativeButton(android.R.string.cancel, null)
             .show();
+    }
+
+    /** Choose what to share: a local environment, or a Vault SSH host. */
+    private void shareChooser() {
+        String[] options = {
+            mActivity.getString(R.string.terminow_mcp_bridge_share_local),
+            mActivity.getString(R.string.terminow_mcp_bridge_share_ssh),
+        };
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_mcp_bridge_share_type_title)
+            .setItems(options, (d, which) -> { if (which == 0) shareDialog(); else shareSshHostDialog(); })
+            .show();
+    }
+
+    /** Share a managed session that targets a Vault SSH host (Mode A: local Claude via SSH tools). */
+    private void shareSshHostDialog() {
+        List<TerminowStore.Host> hosts = mStore.getHosts();
+        if (hosts.isEmpty()) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_mcp_bridge_share_no_hosts), true);
+            return;
+        }
+        List<TerminowMcpTargets.Container> environments = mManager.environments();
+        if (environments.isEmpty()) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_mcp_bridge_no_env), true);
+            return;
+        }
+        final String[] hostLabels = new String[hosts.size()];
+        for (int i = 0; i < hosts.size(); i++) hostLabels[i] = hostDisplay(hosts.get(i));
+        final List<String> envKeys = new ArrayList<>();
+        final List<String> envLabels = new ArrayList<>();
+        for (TerminowMcpTargets.Container c : environments) { envKeys.add(c.name); envLabels.add(c.label); }
+        final int[] hostSel = {0};
+        final int[] envSel = {0};
+
+        EditText label = new EditText(mActivity);
+        label.setSingleLine(true);
+        label.setText(hosts.get(0).label + " — Claude");
+        EditText folder = new EditText(mActivity);
+        folder.setSingleLine(true);
+        folder.setText(TerminowMcpTargets.getGuestHome(environments.get(0), "root"));
+
+        TextView hostValue = text(hostLabels[0], 14, R.color.terminow_text);
+        hostValue.setPadding(0, dp(4), 0, dp(8));
+        hostValue.setOnClickListener(v -> new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_mcp_bridge_share_host)
+            .setItems(hostLabels, (d, which) -> { hostSel[0] = which; hostValue.setText(hostLabels[which]); }).show());
+
+        TextView envValue = text(envLabels.get(0), 14, R.color.terminow_text);
+        envValue.setPadding(0, dp(4), 0, dp(8));
+        envValue.setOnClickListener(v -> new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_mcp_bridge_share_runs_in)
+            .setItems(envLabels.toArray(new String[0]), (d, which) -> {
+                envSel[0] = which;
+                envValue.setText(envLabels.get(which));
+                folder.setText(TerminowMcpTargets.getGuestHome(environments.get(which), "root"));
+            }).show());
+
+        LinearLayout box = dialogBox();
+        box.addView(text(mActivity.getString(R.string.terminow_mcp_bridge_share_label), 13, R.color.terminow_text_secondary));
+        box.addView(label);
+        box.addView(text(mActivity.getString(R.string.terminow_mcp_bridge_share_host), 13, R.color.terminow_text_secondary));
+        box.addView(hostValue);
+        box.addView(text(mActivity.getString(R.string.terminow_mcp_bridge_share_runs_in), 13, R.color.terminow_text_secondary));
+        box.addView(envValue);
+        box.addView(text(mActivity.getString(R.string.terminow_mcp_bridge_share_folder), 13, R.color.terminow_text_secondary));
+        box.addView(folder);
+        box.addView(text(mActivity.getString(R.string.terminow_mcp_bridge_mode_local), 12, R.color.terminow_quick_ready));
+        box.addView(text(mActivity.getString(R.string.terminow_mcp_bridge_ssh_hint), 12, R.color.terminow_text_secondary));
+
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_mcp_bridge_share_ssh_title)
+            .setView(box)
+            .setPositiveButton(R.string.terminow_mcp_bridge_share, (d, w) -> {
+                TerminowStore.Host host = hosts.get(hostSel[0]);
+                int e = envSel[0];
+                String id = "session-" + UUID.randomUUID();
+                String lbl = label.getText().toString().trim().isEmpty() ? host.label : label.getText().toString().trim();
+                TerminowMcpBridge.Share share = TerminowMcpBridgeManager.sshHostShare(id, lbl,
+                    envKeys.get(e), "root", folder.getText().toString().trim(),
+                    host.uuid, hostIdentity(host), TerminowMcpBridge.MODE_LOCAL_TOOLS);
+                try {
+                    mManager.putShare(share);
+                } catch (IllegalStateException ex) {
+                    mActivity.showToast(ex.getMessage(), true);
+                }
+                render();
+            })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    @NonNull
+    private String hostDisplay(@NonNull TerminowStore.Host h) {
+        return h.label.isEmpty() ? hostIdentity(h) : h.label + " · " + hostIdentity(h);
+    }
+
+    @NonNull
+    private String hostIdentity(@NonNull TerminowStore.Host h) {
+        String u = h.username.isEmpty() ? "" : h.username + "@";
+        return u + h.address + (h.port == 22 ? "" : ":" + h.port);
     }
 
     /** Edit a share's client permissions. */
