@@ -1,6 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="terminow_install_title">ติดตั้งเครื่องมือ</string>
+    <string name="terminow_install_title">คลังเครื่องมือ</string>
+    <string name="terminow_install_subtitle">สร้างพื้นที่ทำงานเทอร์มินัลของคุณ</string>
+    <string name="terminow_install_search_hint">ค้นหาเครื่องมือ…</string>
+    <string name="terminow_install_cat_all">ทั้งหมด</string>
+    <string name="terminow_install_cat_ai">AI Agents</string>
+    <string name="terminow_install_cat_terminal">เทอร์มินัล</string>
+    <string name="terminow_install_cat_developer">นักพัฒนา</string>
+    <string name="terminow_install_cat_plugins">ปลั๊กอิน</string>
+    <string name="terminow_install_installed_only">เฉพาะที่ติดตั้งแล้ว</string>
+    <string name="terminow_install_empty">ไม่มีเครื่องมือที่ตรงกับตัวกรอง</string>
+    <string name="terminow_install_clear_filters">ล้างตัวกรอง</string>
     <string name="terminow_install_env_details">ในฐานะ %1$s · %2$s · %3$s</string>
     <string name="terminow_install_change">เปลี่ยน</string>
     <string name="terminow_install_no_linux_title">ไม่มีสภาพแวดล้อม Linux</string>

@@ -1,6 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="terminow_install_title">Install tools</string>
+    <string name="terminow_install_title">Tools Library</string>
+    <string name="terminow_install_subtitle">Build your terminal workspace</string>
+    <string name="terminow_install_search_hint">Search tools…</string>
+    <string name="terminow_install_cat_all">All</string>
+    <string name="terminow_install_cat_ai">AI Agents</string>
+    <string name="terminow_install_cat_terminal">Terminal</string>
+    <string name="terminow_install_cat_developer">Developer</string>
+    <string name="terminow_install_cat_plugins">Plugins</string>
+    <string name="terminow_install_installed_only">Installed only</string>
+    <string name="terminow_install_empty">No tools match your filters.</string>
+    <string name="terminow_install_clear_filters">Clear filters</string>
     <string name="terminow_install_env_details">as %1$s · %2$s · %3$s</string>
     <string name="terminow_install_change">Change</string>
     <string name="terminow_install_no_linux_title">No Linux environment</string>

@@ -12,6 +12,11 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.widget.CheckBox;
+import android.widget.EditText;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
@@ -120,6 +125,40 @@ final class TerminowToolSheet {
     /** The tools whose log is shown in full. */
     private final java.util.Set<TerminowToolInstaller.Tool> mLogOpen = java.util.EnumSet.noneOf(TerminowToolInstaller.Tool.class);
 
+    // Tools Library filters: the search text, the chosen category (0=All) and the installed-only toggle.
+    private String mSearch = "";
+    private int mCategory = 0;
+    private boolean mInstalledOnly;
+    /** The category chips, in order. CAT_ALL is index 0. */
+    private static final int CAT_ALL = 0, CAT_AI = 1, CAT_TERMINAL = 2, CAT_DEVELOPER = 3, CAT_PLUGINS = 4;
+
+    /** Which category a tool belongs to, for the filter chips. */
+    private static int categoryOf(@NonNull TerminowToolInstaller.Tool tool) {
+        switch (tool) {
+            case CLAUDE: case CURSOR: case CODEX: case GEMINI: case GROK: case OPENCODE: case AIDER: return CAT_AI;
+            case TMUX: case FISH: return CAT_TERMINAL;
+            case GIT: case CURL: return CAT_DEVELOPER;
+            case GSTACK: case PLUGINS: return CAT_PLUGINS;
+            default: return CAT_ALL;
+        }
+    }
+
+    /** The scrolling list of tool rows; re-populated on a filter change so the search keeps focus. */
+    @Nullable private LinearLayout mList;
+
+    private boolean matchesSearch(@NonNull String name, @NonNull String description) {
+        if (mSearch.isEmpty()) return true;
+        String q = mSearch.toLowerCase(java.util.Locale.ROOT);
+        return name.toLowerCase(java.util.Locale.ROOT).contains(q)
+            || description.toLowerCase(java.util.Locale.ROOT).contains(q);
+    }
+
+    private boolean matchesFilters(@NonNull TerminowToolInstaller.Tool tool) {
+        if (mCategory != CAT_ALL && categoryOf(tool) != mCategory) return false;
+        if (mInstalledOnly && (mDetection == null || mDetection.versions.get(tool) == null)) return false;
+        return matchesSearch(nameOf(tool), descriptionOf(tool));
+    }
+
     private final Runnable mOnJobs = () -> mHandler.post(this::onJobsChanged);
 
     TerminowToolSheet(@NonNull TermuxActivity activity, @NonNull TerminowLauncher launcher, @NonNull File prefixDir) {
@@ -187,6 +226,9 @@ final class TerminowToolSheet {
         TextView title = text(mActivity.getString(R.string.terminow_install_title), 20, R.color.terminow_text);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         sheet.addView(title, matchWrap());
+        TextView subtitle = text(mActivity.getString(R.string.terminow_install_subtitle), 13, R.color.terminow_text_secondary);
+        subtitle.setPadding(0, dp(2), 0, 0);
+        sheet.addView(subtitle, matchWrap());
 
         ScrollView scroll = new ScrollView(mActivity);
         scroll.setVerticalScrollBarEnabled(false);
@@ -202,7 +244,7 @@ final class TerminowToolSheet {
         root.addView(sheet, sheetParams);
         root.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
             int width = Math.min(right - left, dp(640));
-            int maxHeight = Math.round((bottom - top) * 0.85f);
+            int maxHeight = Math.round((bottom - top) * 0.90f);
             ViewGroup.LayoutParams params = sheet.getLayoutParams();
             ViewGroup.LayoutParams scrollParams = scroll.getLayoutParams();
             int scrollMax = maxHeight - dp(70);
@@ -320,7 +362,7 @@ final class TerminowToolSheet {
         envRow.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout envTexts = new LinearLayout(mActivity);
         envTexts.setOrientation(LinearLayout.VERTICAL);
-        TextView envName = text(targetName(target, noLinux), 22, R.color.terminow_text);
+        TextView envName = text(targetName(target, noLinux), 15, R.color.terminow_text);
         envName.setTypeface(Typeface.DEFAULT_BOLD);
         envTexts.addView(envName);
         if (!noLinux) {
@@ -371,14 +413,119 @@ final class TerminowToolSheet {
             if (target.ssh) return;
         }
 
-        TerminowToolInstaller.Job running = TerminowToolInstaller.runningIn(target.key);
-        for (TerminowToolInstaller.Tool tool : TOOLS) toolRow(content, target, tool, running);
-        pluginsRow(content, target, running);
+        addFiltersBar(content, target);
+        mList = new LinearLayout(mActivity);
+        mList.setOrientation(LinearLayout.VERTICAL);
+        content.addView(mList, matchWrap());
+        populateList(target);
 
         TextView footer = note(mActivity.getString(mDetection != null && mDetection.isRoot() ? R.string.terminow_install_note_root :
             R.string.terminow_install_note_user, targetName(target, false), target.user));
         footer.setPadding(dp(4), dp(12), dp(4), 0);
         content.addView(footer, matchWrap());
+    }
+
+    /** Sticky search, category chips and the installed-only toggle; chips/toggle re-render, search re-lists. */
+    private void addFiltersBar(@NonNull LinearLayout content, @NonNull Target target) {
+        EditText search = new EditText(mActivity);
+        search.setSingleLine(true);
+        search.setHint(R.string.terminow_install_search_hint);
+        search.setText(mSearch);
+        search.setSelection(mSearch.length());
+        search.setTextSize(14);
+        search.setTextColor(color(R.color.terminow_text));
+        search.setHintTextColor(color(R.color.terminow_text_secondary));
+        search.setBackgroundResource(R.drawable.terminow_field);
+        search.setPadding(dp(12), dp(10), dp(12), dp(10));
+        search.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void afterTextChanged(Editable s) { mSearch = s.toString(); populateList(target); }
+        });
+        LinearLayout.LayoutParams searchParams = matchWrap();
+        searchParams.topMargin = dp(12);
+        content.addView(search, searchParams);
+
+        HorizontalScrollView chipScroll = new HorizontalScrollView(mActivity);
+        chipScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout chips = new LinearLayout(mActivity);
+        chips.setOrientation(LinearLayout.HORIZONTAL);
+        int[] cats = {CAT_ALL, CAT_AI, CAT_TERMINAL, CAT_DEVELOPER, CAT_PLUGINS};
+        int[] labels = {R.string.terminow_install_cat_all, R.string.terminow_install_cat_ai,
+            R.string.terminow_install_cat_terminal, R.string.terminow_install_cat_developer, R.string.terminow_install_cat_plugins};
+        for (int i = 0; i < cats.length; i++) {
+            int cat = cats[i];
+            chips.addView(chip(mActivity.getString(labels[i]), mCategory == cat, () -> { mCategory = cat; render(); }));
+        }
+        chipScroll.addView(chips);
+        LinearLayout.LayoutParams chipParams = matchWrap();
+        chipParams.topMargin = dp(10);
+        content.addView(chipScroll, chipParams);
+
+        CheckBox installedOnly = new CheckBox(mActivity);
+        installedOnly.setText(R.string.terminow_install_installed_only);
+        installedOnly.setTextSize(13);
+        installedOnly.setTextColor(color(R.color.terminow_text_secondary));
+        installedOnly.setChecked(mInstalledOnly);
+        installedOnly.setOnCheckedChangeListener((b, checked) -> { mInstalledOnly = checked; render(); });
+        LinearLayout.LayoutParams toggleParams = matchWrap();
+        toggleParams.topMargin = dp(4);
+        content.addView(installedOnly, toggleParams);
+    }
+
+    /** Fill the list with the tools that pass the filters; a useful empty state when none do. */
+    private void populateList(@NonNull Target target) {
+        LinearLayout list = mList;
+        if (list == null) return;
+        list.removeAllViews();
+        TerminowToolInstaller.Job running = TerminowToolInstaller.runningIn(target.key);
+        int shown = 0;
+        for (TerminowToolInstaller.Tool tool : TOOLS) {
+            if (!matchesFilters(tool)) continue;
+            toolRow(list, target, tool, running);
+            shown++;
+        }
+        if ((mCategory == CAT_ALL || mCategory == CAT_PLUGINS) && !mInstalledOnly
+                && matchesSearch(mActivity.getString(R.string.terminow_install_plugins),
+                    mActivity.getString(R.string.terminow_install_plugins_description))) {
+            pluginsRow(list, target, running);
+            shown++;
+        }
+        if (shown == 0) addEmptyState(list);
+    }
+
+    @NonNull
+    private TextView chip(@NonNull String label, boolean selected, @NonNull Runnable onClick) {
+        TextView chip = text(label, 13, selected ? R.color.terminow_text : R.color.terminow_text_secondary);
+        chip.setPadding(dp(14), dp(7), dp(14), dp(7));
+        chip.setMinHeight(dp(40));
+        chip.setGravity(Gravity.CENTER);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(dp(18));
+        bg.setColor(color(selected ? R.color.terminow_panel_accent : R.color.terminow_field));
+        chip.setBackground(bg);
+        chip.setOnClickListener(v -> onClick.run());
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        p.rightMargin = dp(8);
+        chip.setLayoutParams(p);
+        return chip;
+    }
+
+    private void addEmptyState(@NonNull LinearLayout list) {
+        TextView empty = text(mActivity.getString(R.string.terminow_install_empty), 14, R.color.terminow_text_secondary);
+        empty.setGravity(Gravity.CENTER);
+        empty.setPadding(0, dp(28), 0, dp(10));
+        list.addView(empty, matchWrap());
+        LinearLayout wrap = new LinearLayout(mActivity);
+        wrap.setGravity(Gravity.CENTER);
+        wrap.addView(button(mActivity.getString(R.string.terminow_install_clear_filters), false, true, () -> {
+            mSearch = "";
+            mCategory = CAT_ALL;
+            mInstalledOnly = false;
+            render();
+        }));
+        list.addView(wrap, matchWrap());
     }
 
     @NonNull
