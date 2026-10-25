@@ -808,10 +808,18 @@ public class TerminowHome {
         final String path;
         switch (mPage) {
             case PAGE_HOSTS:
-            case PAGE_FILES:
+                path = "support/hosts";
+                break;
             case PAGE_KEYCHAIN:
+                path = "support/keychain";
+                break;
             case PAGE_FORWARDING:
+                path = "support/forwarding";
+                break;
             case PAGE_SNIPPETS:
+                path = "support/snippets";
+                break;
+            case PAGE_FILES:
             case PAGE_KNOWN_HOSTS:
             case PAGE_LOGS:
                 path = "support";
@@ -5296,36 +5304,51 @@ public class TerminowHome {
     private void showSnippetDialog(@Nullable TerminowStore.Snippet existingSnippet) {
         LinearLayout form = createForm();
 
-        // The vault the snippet is saved in — Personal or a team the phone has the key of. Shown only
-        // when there is more than one, so a snippet can be moved into a shared (team) vault like a host.
+        // The vault the snippet is saved in — Personal or a team the phone has the key of. Shown as a
+        // pill at the top (like Termius), always visible so a snippet can be moved into a shared (team)
+        // vault. Tapping it with only the personal vault explains how to add a team.
         List<String[]> vaults = mVaultsUi.getHostVaults();
         String currentScope = mStore.getActiveVault();
         final String[] scope = {currentScope};
-        if (vaults.size() > 1) {
-            TextView vaultRow = new TextView(form.getContext());
-            vaultRow.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
-            vaultRow.setTextSize(15);
-            vaultRow.setTypeface(Typeface.DEFAULT_BOLD);
-            vaultRow.setPadding(0, dp(4), 0, dp(10));
-            Runnable showVault = () -> {
-                String name = vaults.get(0)[1];
-                for (String[] vault : vaults) if (vault[0].equals(scope[0])) name = vault[1];
-                vaultRow.setText(mActivity.getString(R.string.terminow_host_vault_name, name));
-            };
-            showVault.run();
-            vaultRow.setOnClickListener(v -> {
-                String[] names = new String[vaults.size()];
-                for (int i = 0; i < vaults.size(); i++) names[i] = vaults.get(i)[1];
+        TextView vaultRow = new TextView(form.getContext());
+        vaultRow.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
+        vaultRow.setTextSize(14);
+        vaultRow.setTypeface(Typeface.DEFAULT_BOLD);
+        vaultRow.setGravity(Gravity.CENTER);
+        vaultRow.setPadding(dp(16), dp(11), dp(16), dp(11));
+        android.graphics.drawable.GradientDrawable vaultBg = new android.graphics.drawable.GradientDrawable();
+        vaultBg.setColor(0xFF222631);
+        vaultBg.setCornerRadius(dp(12));
+        vaultRow.setBackground(vaultBg);
+        Runnable showVault = () -> {
+            String name = vaults.get(0)[1];
+            for (String[] vault : vaults) if (vault[0].equals(scope[0])) name = vault[1];
+            vaultRow.setText(mActivity.getString(R.string.terminow_host_vault_name, name) + "   ▾");
+        };
+        showVault.run();
+        vaultRow.setOnClickListener(v -> {
+            if (vaults.size() <= 1) {
                 new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
                     .setTitle(R.string.terminow_host_vault_title)
-                    .setItems(names, (d, which) -> {
-                        scope[0] = vaults.get(which)[0];
-                        showVault.run();
-                    })
+                    .setMessage(R.string.terminow_vault_share_hint)
+                    .setPositiveButton(android.R.string.ok, null)
                     .show();
-            });
-            form.addView(vaultRow);
-        }
+                return;
+            }
+            String[] names = new String[vaults.size()];
+            for (int i = 0; i < vaults.size(); i++) names[i] = vaults.get(i)[1];
+            new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setTitle(R.string.terminow_host_vault_title)
+                .setItems(names, (d, which) -> {
+                    scope[0] = vaults.get(which)[0];
+                    showVault.run();
+                })
+                .show();
+        });
+        LinearLayout.LayoutParams vaultLp = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        vaultLp.bottomMargin = dp(14);
+        form.addView(vaultRow, vaultLp);
 
         EditText nameView = addField(form, R.string.terminow_snippet_name, InputType.TYPE_CLASS_TEXT);
         EditText commandView = addField(form, R.string.terminow_snippet_command,

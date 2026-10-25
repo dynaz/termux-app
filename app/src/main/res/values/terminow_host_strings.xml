@@ -3,6 +3,7 @@
     <!-- The host panel, laid out like the New host panel of Termius -->
     <string name="terminow_host_vault_name">%1$s Vault</string>
     <string name="terminow_host_vault_title">Save in vault</string>
+    <string name="terminow_vault_share_hint">This is saved in your Personal vault. Create a Team vault in Account &amp; Premium to share hosts, keys and snippets with your team.</string>
     <string name="terminow_host_saved_in_vault">Saved in %1$s</string>
     <string name="terminow_host_alias">Alias</string>
     <string name="terminow_host_address_hint">Hostname or IP Address</string>
