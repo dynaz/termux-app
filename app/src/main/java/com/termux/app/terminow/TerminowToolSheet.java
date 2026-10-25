@@ -243,7 +243,8 @@ final class TerminowToolSheet {
         LinearLayout.LayoutParams sheetParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         root.addView(sheet, sheetParams);
         root.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
-            int width = Math.min(right - left, dp(640));
+            int cap = mActivity.getResources().getConfiguration().screenWidthDp >= 720 ? dp(900) : dp(640);
+            int width = Math.min(right - left, cap);
             int maxHeight = Math.round((bottom - top) * 0.90f);
             ViewGroup.LayoutParams params = sheet.getLayoutParams();
             ViewGroup.LayoutParams scrollParams = scroll.getLayoutParams();
@@ -478,20 +479,45 @@ final class TerminowToolSheet {
         LinearLayout list = mList;
         if (list == null) return;
         list.removeAllViews();
+        // Two columns when the window is wide (a tablet or an unfolded foldable), one on a phone.
+        boolean two = mActivity.getResources().getConfiguration().screenWidthDp >= 720;
+        mPairRow = null;
+        mPairCol = 0;
         TerminowToolInstaller.Job running = TerminowToolInstaller.runningIn(target.key);
         int shown = 0;
         for (TerminowToolInstaller.Tool tool : TOOLS) {
             if (!matchesFilters(tool)) continue;
-            toolRow(list, target, tool, running);
+            toolRow(nextColumn(list, two), target, tool, running);
             shown++;
         }
         if ((mCategory == CAT_ALL || mCategory == CAT_PLUGINS) && !mInstalledOnly
                 && matchesSearch(mActivity.getString(R.string.terminow_install_plugins),
                     mActivity.getString(R.string.terminow_install_plugins_description))) {
-            pluginsRow(list, target, running);
+            pluginsRow(nextColumn(list, two), target, running);
             shown++;
         }
         if (shown == 0) addEmptyState(list);
+    }
+
+    @Nullable private LinearLayout mPairRow;
+    private int mPairCol;
+
+    /** The parent to add the next card to: the list itself in one column, or a cell of a pair in two. */
+    @NonNull
+    private LinearLayout nextColumn(@NonNull LinearLayout list, boolean two) {
+        if (!two) return list;
+        if (mPairCol == 0) {
+            mPairRow = new LinearLayout(mActivity);
+            mPairRow.setOrientation(LinearLayout.HORIZONTAL);
+            list.addView(mPairRow, matchWrap());
+        }
+        LinearLayout cell = new LinearLayout(mActivity);
+        cell.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        if (mPairCol == 0) lp.rightMargin = dp(5); else lp.leftMargin = dp(5);
+        mPairRow.addView(cell, lp);
+        mPairCol = (mPairCol + 1) % 2;
+        return cell;
     }
 
     @NonNull
@@ -564,6 +590,7 @@ final class TerminowToolSheet {
         row.setGravity(Gravity.CENTER_VERTICAL);
         ImageView icon = new ImageView(mActivity);
         icon.setImageResource(iconOf(tool));
+        icon.setContentDescription(nameOf(tool));
         icon.setPadding(dp(9), dp(9), dp(9), dp(9));
         GradientDrawable tile = new GradientDrawable();
         tile.setColor(color(R.color.terminow_field));
@@ -688,6 +715,7 @@ final class TerminowToolSheet {
         row.setGravity(Gravity.CENTER_VERTICAL);
         ImageView icon = new ImageView(mActivity);
         icon.setImageResource(iconOf(tool));
+        icon.setContentDescription(nameOf(tool));
         icon.setPadding(dp(9), dp(9), dp(9), dp(9));
         GradientDrawable tile = new GradientDrawable();
         tile.setColor(color(R.color.terminow_field));
