@@ -27,6 +27,7 @@ import com.termux.R;
 import com.termux.app.TermuxActivity;
 import com.termux.app.terminal.io.TermuxTerminalExtraKeys;
 import com.termux.shared.termux.extrakeys.ExtraKeysView;
+import com.termux.shared.shell.ShellUtils;
 import com.termux.terminal.TerminalSession;
 import com.termux.shared.view.KeyboardUtils;
 import com.termux.view.TerminalView;
@@ -501,9 +502,13 @@ public class TerminowKeyBar {
         if (session == null || mScanning || choiceOf(session) != TerminowKeyBarModel.Choice.AUTO ||
             (home != null && home.isClaudeTab(session)) || mActivity.isHomeVisible()) return;
         int pid = session.getPid();
+        // Read the transcript here on the main thread; Claude Code running on a remote host over SSH
+        // is not in this device's /proc, so it is found from its interface in the output instead.
+        String transcript = pid > 0 ? ShellUtils.getTerminalSessionTranscriptText(session, false, true) : null;
         mScanning = true;
         mExecutor.execute(() -> {
-            boolean found = TerminowKeyBarModel.isClaudeRunningUnder(new File("/proc"), pid);
+            boolean found = TerminowKeyBarModel.isClaudeRunningUnder(new File("/proc"), pid)
+                || TerminowKeyBarModel.isClaudeInOutput(transcript);
             mHandler.post(() -> {
                 mScanning = false;
                 Boolean before = mFound.put(session, found);

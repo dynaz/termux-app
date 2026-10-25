@@ -117,6 +117,21 @@ public final class TerminowKeyBarModel {
         }
     }
 
+    /**
+     * Whether Claude Code looks to be running from the terminal output, used when it can not be found
+     * in the local process tree — for example when it runs on a remote host over SSH, so its process
+     * is not in this device's {@code /proc}. It matches the persistent markers of the Claude Code
+     * interface in the last screen of output, so that an exited Claude or a plain shell does not match.
+     */
+    public static boolean isClaudeInOutput(String transcript) {
+        if (transcript == null || transcript.isEmpty()) return false;
+        // Only the last screen or so: the interface is redrawn at the bottom while Claude runs, so when
+        // it is not running the markers are not there, avoiding a stale match from far up the scrollback.
+        int window = 2000;
+        String tail = transcript.length() > window ? transcript.substring(transcript.length() - window) : transcript;
+        return tail.contains("? for shortcuts") || tail.contains("Welcome to Claude Code");
+    }
+
     /** Where a command is listed in the panel, in the order of a session. */
     public enum Category { CONVERSATION, MODEL, PROJECT, TOOLS, ACCOUNT }
 
