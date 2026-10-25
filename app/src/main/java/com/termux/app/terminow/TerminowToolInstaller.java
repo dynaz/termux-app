@@ -33,7 +33,10 @@ import java.util.concurrent.TimeUnit;
 public final class TerminowToolInstaller {
 
     public enum Tool {
-        CLAUDE("claude"), CURSOR("cursor"), GSTACK("gstack"), GIT("git"), CURL("curl"), TMUX("tmux"),
+        CLAUDE("claude"), CURSOR("cursor"),
+        // Other AI coding agents, from their official installers. Experimental: not verified on proot.
+        CODEX("codex"), GEMINI("gemini"), GROK("grok"), OPENCODE("opencode"), AIDER("aider"),
+        GSTACK("gstack"), GIT("git"), CURL("curl"), TMUX("tmux"),
         /** Fish, the interactive shell with suggestions from its history, from apt. */
         FISH("fish"),
         /** Plugins of the official marketplace, the names given to {@link #install}. */
@@ -238,7 +241,7 @@ public final class TerminowToolInstaller {
         "( . /etc/os-release 2>/dev/null; [ -n \"$PRETTY_NAME\" ] && echo \"TERMINOW_OS=$PRETTY_NAME\" ) 2>/dev/null\n" +
         "command -v apt-get >/dev/null 2>&1 && echo TERMINOW_APT=yes\n" +
         "command -v sudo >/dev/null 2>&1 && echo TERMINOW_SUDO=yes\n" +
-        "for t in claude cursor gstack git curl tmux fish; do\n" +
+        "for t in claude cursor codex gemini grok opencode aider gstack git curl tmux fish; do\n" +
         "  v=\n" +
         "  case $t in\n" +
         "    claude) v=$(claude --version 2>/dev/null);;\n" +
@@ -301,6 +304,14 @@ public final class TerminowToolInstaller {
         "  s=$?\n" +
         "  if [ \"$s\" -ne 0 ]; then case \"$s\" in " + NETWORK_EXIT_CODES + ") fail network \"$s\";; *) fail installer \"$s\";; esac; fi\n" +
         "}\n" +
+        // Install a global npm package into ~/.local (no sudo), Node from apt if it is missing
+        "npm_install() {\n" +
+        "  command -v npm >/dev/null 2>&1 || apt_install nodejs npm\n" +
+        "  command -v npm >/dev/null 2>&1 || fail installer 17\n" +
+        "  mkdir -p \"$HOME/.local/bin\" \"$HOME/.local/lib\" 2>/dev/null || true\n" +
+        "  npm config set prefix \"$HOME/.local\" >/dev/null 2>&1 || true\n" +
+        "  npm install -g \"$1\" || fail installer 36\n" +
+        "}\n" +
         "native_arch() { case \"$(uname -m)\" in aarch64|arm64|x86_64|amd64) ;; *) fail unsupported-arch 15;; esac; }\n" +
         "case \"$tool\" in\n" +
         "  claude)\n" +
@@ -332,6 +343,60 @@ public final class TerminowToolInstaller {
         "    persist_path\n" +
         "    stage verifying\n" +
         "    v=$(cursor-agent --version 2>&1) || { echo \"$v\"; fail verify 30; }\n" +
+        "    [ -n \"$v\" ] || fail verify 30\n" +
+        "    echo \"TERMINOW_VERSION=$(first \"$v\")\"\n" +
+        "    ;;\n" +
+        // Experimental AI agents from npm (@openai/codex, @google/gemini-cli, @vibe-kit/grok-cli)
+        "  codex|gemini|grok)\n" +
+        "    case \"$tool\" in\n" +
+        "      codex) bin=codex; pkg='@openai/codex';;\n" +
+        "      gemini) bin=gemini; pkg='@google/gemini-cli';;\n" +
+        "      grok) bin=grok; pkg='@vibe-kit/grok-cli';;\n" +
+        "    esac\n" +
+        "    if v=$(\"$bin\" --version 2>/dev/null) && [ -n \"$v\" ]; then\n" +
+        "      echo TERMINOW_ALREADY=1; persist_path; stage verifying; echo \"TERMINOW_VERSION=$(first \"$v\")\"; exit 0\n" +
+        "    fi\n" +
+        "    native_arch\n" +
+        "    stage dependencies\n" +
+        "    stage installing\n" +
+        "    npm_install \"$pkg\"\n" +
+        "    persist_path\n" +
+        "    stage verifying\n" +
+        "    v=$(\"$bin\" --version 2>&1) || { echo \"$v\"; fail verify 30; }\n" +
+        "    [ -n \"$v\" ] || fail verify 30\n" +
+        "    echo \"TERMINOW_VERSION=$(first \"$v\")\"\n" +
+        "    ;;\n" +
+        // OpenCode, from its official install script, into ~/.local/bin
+        "  opencode)\n" +
+        "    if v=$(opencode --version 2>/dev/null) && [ -n \"$v\" ]; then\n" +
+        "      echo TERMINOW_ALREADY=1; persist_path; stage verifying; echo \"TERMINOW_VERSION=$(first \"$v\")\"; exit 0\n" +
+        "    fi\n" +
+        "    native_arch\n" +
+        "    stage dependencies\n" +
+        "    apt_install curl ca-certificates\n" +
+        "    stage installing\n" +
+        "    export OPENCODE_INSTALL_DIR=\"$HOME/.local/bin\"\n" +
+        "    run_installer https://opencode.ai/install\n" +
+        "    persist_path\n" +
+        "    stage verifying\n" +
+        "    v=$(opencode --version 2>&1) || { echo \"$v\"; fail verify 30; }\n" +
+        "    [ -n \"$v\" ] || fail verify 30\n" +
+        "    echo \"TERMINOW_VERSION=$(first \"$v\")\"\n" +
+        "    ;;\n" +
+        // Aider, via its official aider-install (uv + its own Python), as the user into ~/.local
+        "  aider)\n" +
+        "    if v=$(aider --version 2>/dev/null) && [ -n \"$v\" ]; then\n" +
+        "      echo TERMINOW_ALREADY=1; persist_path; stage verifying; echo \"TERMINOW_VERSION=$(first \"$v\")\"; exit 0\n" +
+        "    fi\n" +
+        "    native_arch\n" +
+        "    stage dependencies\n" +
+        "    apt_install python3 python3-pip ca-certificates\n" +
+        "    stage installing\n" +
+        "    python3 -m pip install --user aider-install >/dev/null 2>&1 || python3 -m pip install --user --break-system-packages aider-install || fail installer 37\n" +
+        "    \"$HOME/.local/bin/aider-install\" </dev/null || fail installer 38\n" +
+        "    persist_path\n" +
+        "    stage verifying\n" +
+        "    v=$(aider --version 2>&1) || { echo \"$v\"; fail verify 30; }\n" +
         "    [ -n \"$v\" ] || fail verify 30\n" +
         "    echo \"TERMINOW_VERSION=$(first \"$v\")\"\n" +
         "    ;;\n" +
@@ -692,6 +757,14 @@ public final class TerminowToolInstaller {
     /** Whether Claude Code has a native build for the CPU, like `uname -m` names it. */
     public static boolean claudeSupports(@NonNull String arch) {
         return Arrays.asList("aarch64", "arm64", "x86_64", "amd64").contains(arch);
+    }
+
+    /** Experimental tools: added with official installers but not yet verified on an Ubuntu proot. */
+    public static boolean experimental(@NonNull Tool tool) {
+        switch (tool) {
+            case CODEX: case GEMINI: case GROK: case OPENCODE: case AIDER: return true;
+            default: return false;
+        }
     }
 
     /** Only for tests: no jobs and no listeners. */

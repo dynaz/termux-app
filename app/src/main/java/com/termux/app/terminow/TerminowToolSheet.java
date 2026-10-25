@@ -44,12 +44,16 @@ import java.util.concurrent.Executors;
 final class TerminowToolSheet {
 
     private static final TerminowToolInstaller.Tool[] TOOLS = {
-        TerminowToolInstaller.Tool.CLAUDE, TerminowToolInstaller.Tool.CURSOR, TerminowToolInstaller.Tool.GSTACK,
+        TerminowToolInstaller.Tool.CLAUDE, TerminowToolInstaller.Tool.CURSOR,
+        TerminowToolInstaller.Tool.CODEX, TerminowToolInstaller.Tool.GEMINI, TerminowToolInstaller.Tool.GROK,
+        TerminowToolInstaller.Tool.OPENCODE, TerminowToolInstaller.Tool.AIDER, TerminowToolInstaller.Tool.GSTACK,
         TerminowToolInstaller.Tool.GIT, TerminowToolInstaller.Tool.CURL, TerminowToolInstaller.Tool.TMUX, TerminowToolInstaller.Tool.FISH};
 
     /** The tools and the plugins: the jobs that the sheet shows. */
     private static final TerminowToolInstaller.Tool[] JOBS = {
-        TerminowToolInstaller.Tool.CLAUDE, TerminowToolInstaller.Tool.CURSOR, TerminowToolInstaller.Tool.GSTACK,
+        TerminowToolInstaller.Tool.CLAUDE, TerminowToolInstaller.Tool.CURSOR,
+        TerminowToolInstaller.Tool.CODEX, TerminowToolInstaller.Tool.GEMINI, TerminowToolInstaller.Tool.GROK,
+        TerminowToolInstaller.Tool.OPENCODE, TerminowToolInstaller.Tool.AIDER, TerminowToolInstaller.Tool.GSTACK,
         TerminowToolInstaller.Tool.GIT, TerminowToolInstaller.Tool.CURL, TerminowToolInstaller.Tool.TMUX,
         TerminowToolInstaller.Tool.FISH, TerminowToolInstaller.Tool.PLUGINS};
 
@@ -471,6 +475,12 @@ final class TerminowToolSheet {
                 fishInstalled(row, status, target, version);
                 return;
             }
+            if (tool == TerminowToolInstaller.Tool.GIT || tool == TerminowToolInstaller.Tool.CURL) {
+                // Git and curl are libraries, not apps to open: show their details instead of Open.
+                row.addView(button(mActivity.getString(R.string.terminow_install_details), false, true,
+                    () -> detailsDialog(tool, version)));
+                return;
+            }
             boolean claude = tool == TerminowToolInstaller.Tool.CLAUDE || tool == TerminowToolInstaller.Tool.GSTACK;
             String open = claude ? mActivity.getString(R.string.terminow_install_open_claude) : mActivity.getString(R.string.terminow_install_open);
             row.addView(button(open, tool == TerminowToolInstaller.Tool.CLAUDE, true, () -> openTool(target, claude)));
@@ -501,6 +511,9 @@ final class TerminowToolSheet {
                 });
                 card.addView(toggle);
             }
+        } else if (TerminowToolInstaller.experimental(tool)) {
+            status.setText(R.string.terminow_install_experimental);
+            status.setTextColor(color(R.color.terminow_panel_accent));
         } else {
             status.setText(R.string.terminow_install_not_installed);
         }
@@ -646,6 +659,22 @@ final class TerminowToolSheet {
         if (command != null) session.write(command + "\r");
     }
 
+    /** Read-only details for a library tool (Git, curl): what it is, its version and where it is. */
+    private void detailsDialog(@NonNull TerminowToolInstaller.Tool tool, @NonNull String version) {
+        String arch = mDetection != null ? mDetection.arch : "";
+        String os = mDetection != null ? mDetection.os : "";
+        String user = mTarget != null ? mTarget.user : "";
+        String where = mActivity.getString(R.string.terminow_install_env_details,
+            user, arch.isEmpty() ? "?" : arch, os.isEmpty() ? "?" : os);
+        String body = descriptionOf(tool) + "\n\n"
+            + mActivity.getString(R.string.terminow_install_installed, version) + "\n" + where;
+        new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(nameOf(tool))
+            .setMessage(body)
+            .setPositiveButton(android.R.string.ok, null)
+            .show();
+    }
+
     void dismiss() {
         if (mDialog != null) mDialog.dismiss();
     }
@@ -720,6 +749,11 @@ final class TerminowToolSheet {
         switch (tool) {
             case CLAUDE: return mActivity.getString(R.string.terminow_install_claude);
             case CURSOR: return mActivity.getString(R.string.terminow_install_cursor);
+            case CODEX: return "Codex CLI";
+            case GEMINI: return "Gemini CLI";
+            case GROK: return "Grok CLI";
+            case OPENCODE: return "OpenCode";
+            case AIDER: return "Aider";
             case GSTACK: return mActivity.getString(R.string.terminow_install_gstack);
             case PLUGINS: return mActivity.getString(R.string.terminow_install_plugins);
             case GIT: return "Git";
@@ -734,6 +768,11 @@ final class TerminowToolSheet {
         switch (tool) {
             case CLAUDE: return mActivity.getString(R.string.terminow_install_claude_description);
             case CURSOR: return mActivity.getString(R.string.terminow_install_cursor_description);
+            case CODEX: return mActivity.getString(R.string.terminow_install_codex_description);
+            case GEMINI: return mActivity.getString(R.string.terminow_install_gemini_description);
+            case GROK: return mActivity.getString(R.string.terminow_install_grok_description);
+            case OPENCODE: return mActivity.getString(R.string.terminow_install_opencode_description);
+            case AIDER: return mActivity.getString(R.string.terminow_install_aider_description);
             case GSTACK: return mActivity.getString(R.string.terminow_install_gstack_description);
             case PLUGINS: return mActivity.getString(R.string.terminow_install_plugins_description);
             case GIT: return mActivity.getString(R.string.terminow_install_git_description);
@@ -747,6 +786,11 @@ final class TerminowToolSheet {
         switch (tool) {
             case CLAUDE: return R.drawable.ic_terminow_tool_claude;
             case CURSOR: return R.drawable.ic_terminow_tool_cursor;
+            case CODEX: return R.drawable.ic_terminow_tool_codex;
+            case GEMINI: return R.drawable.ic_terminow_tool_gemini;
+            case GROK: return R.drawable.ic_terminow_tool_grok;
+            case OPENCODE: return R.drawable.ic_terminow_tool_opencode;
+            case AIDER: return R.drawable.ic_terminow_tool_aider;
             case GSTACK: return R.drawable.ic_terminow_tool_gstack;
             case PLUGINS: return R.drawable.ic_terminow_tool_plugins;
             case GIT: return R.drawable.ic_terminow_tool_git;

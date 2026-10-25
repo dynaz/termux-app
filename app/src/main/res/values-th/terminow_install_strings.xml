@@ -11,6 +11,7 @@
     <string name="terminow_install_check_again">ตรวจสอบอีกครั้ง</string>
     <string name="terminow_install_checking">กำลังตรวจสอบ…</string>
     <string name="terminow_install_not_installed">ยังไม่ได้ติดตั้ง</string>
+    <string name="terminow_install_experimental">ทดลอง — ยังไม่ยืนยันบน proot</string>
     <string name="terminow_install_installed">ติดตั้งแล้ว · %1$s</string>
     <string name="terminow_install_running">ขั้นที่ %1$d จาก %2$d · %3$s</string>
     <string name="terminow_install_waiting">รอ: กำลังติดตั้ง %1$s ในสภาพแวดล้อมนี้</string>
@@ -20,6 +21,7 @@
     <string name="terminow_install_retry">ลองใหม่</string>
     <string name="terminow_install_cancel">ยกเลิก</string>
     <string name="terminow_install_open">เปิด</string>
+    <string name="terminow_install_details">รายละเอียด</string>
     <string name="terminow_install_open_claude">เปิด Claude</string>
     <string name="terminow_install_log_all">แสดงบันทึกทั้งหมด</string>
     <string name="terminow_install_log_less">แสดงน้อยลง</string>
@@ -48,6 +50,11 @@
     <string name="terminow_install_fail_start">สภาพแวดล้อมไม่เริ่มทำงาน</string>
     <string name="terminow_install_fail_exit">จบด้วยรหัสออก %1$d ดูบันทึก</string>
     <string name="terminow_install_cursor_description">AI agent ของ Cursor ในเทอร์มินัล (cursor-agent) ด้วยตัวติดตั้งทางการ</string>
+    <string name="terminow_install_codex_description">Codex coding agent ของ OpenAI ในเทอร์มินัล (@openai/codex)</string>
+    <string name="terminow_install_gemini_description">Gemini CLI coding agent ของ Google (@google/gemini-cli)</string>
+    <string name="terminow_install_grok_description">Grok coding agent สำหรับเทอร์มินัล (ชุมชน @vibe-kit/grok-cli)</string>
+    <string name="terminow_install_opencode_description">AI coding agent แบบโอเพนซอร์สสำหรับเทอร์มินัล</string>
+    <string name="terminow_install_aider_description">AI pair programming ในเทอร์มินัลของคุณ (Aider)</string>
     <string name="terminow_install_gstack_description">สกิลสำหรับ Claude Code โดย Garry Tan: รีวิว ทดสอบ ส่งงาน และอื่น ๆ พร้อม Bun ต้องมี Claude Code</string>
     <string name="terminow_install_fail_needs_claude">ยังไม่ได้ติดตั้ง Claude Code ติดตั้งก่อน</string>
     <string name="terminow_install_plugins">ปลั๊กอิน Claude Code</string>

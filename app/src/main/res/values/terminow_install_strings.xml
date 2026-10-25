@@ -11,6 +11,7 @@
     <string name="terminow_install_check_again">Check again</string>
     <string name="terminow_install_checking">Checking…</string>
     <string name="terminow_install_not_installed">Not installed</string>
+    <string name="terminow_install_experimental">Experimental — not verified on proot</string>
     <string name="terminow_install_installed">Installed · %1$s</string>
     <string name="terminow_install_running">Step %1$d of %2$d · %3$s</string>
     <string name="terminow_install_waiting">Waiting: %1$s is being installed in this environment</string>
@@ -20,6 +21,7 @@
     <string name="terminow_install_retry">Retry</string>
     <string name="terminow_install_cancel">Cancel</string>
     <string name="terminow_install_open">Open</string>
+    <string name="terminow_install_details">Details</string>
     <string name="terminow_install_open_claude">Open Claude</string>
     <string name="terminow_install_log_all">Show the whole log</string>
     <string name="terminow_install_log_less">Show less</string>
@@ -49,6 +51,11 @@
     <string name="terminow_install_fail_exit">it ended with exit code %1$d. See the log.</string>
     <string name="terminow_install_cursor">Cursor CLI</string>
     <string name="terminow_install_cursor_description">Cursor\'s AI agent in the terminal (cursor-agent), with the official installer</string>
+    <string name="terminow_install_codex_description">OpenAI\'s Codex coding agent in the terminal (@openai/codex)</string>
+    <string name="terminow_install_gemini_description">Google\'s Gemini CLI coding agent (@google/gemini-cli)</string>
+    <string name="terminow_install_grok_description">Grok coding agent for the terminal (community @vibe-kit/grok-cli)</string>
+    <string name="terminow_install_opencode_description">Open-source AI coding agent for the terminal</string>
+    <string name="terminow_install_aider_description">AI pair programming in your terminal (Aider)</string>
     <string name="terminow_install_gstack">gstack</string>
     <string name="terminow_install_gstack_description">Skills for Claude Code by Garry Tan: review, QA, ship and more. Adds Bun. Needs Claude Code.</string>
     <string name="terminow_install_fail_needs_claude">Claude Code is not installed. Install it first.</string>
