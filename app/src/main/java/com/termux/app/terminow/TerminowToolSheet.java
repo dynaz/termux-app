@@ -583,6 +583,8 @@ final class TerminowToolSheet {
         texts.addView(status);
         row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         card.addView(row, matchWrap());
+        // Tapping the row opens the tool's details; the trailing button keeps its own action.
+        card.setOnClickListener(v -> toolDetailsDialog(target, tool));
 
         TerminowToolInstaller.Job job = TerminowToolInstaller.jobOf(target.key, target.user, tool);
         String version = mDetection != null ? mDetection.versions.get(tool) : null;
@@ -625,7 +627,7 @@ final class TerminowToolSheet {
             if (tool == TerminowToolInstaller.Tool.GIT || tool == TerminowToolInstaller.Tool.CURL) {
                 // Git and curl are libraries, not apps to open: show their details instead of Open.
                 row.addView(button(mActivity.getString(R.string.terminow_install_details), false, true,
-                    () -> detailsDialog(tool, version)));
+                    () -> toolDetailsDialog(target, tool)));
                 return;
             }
             boolean claude = tool == TerminowToolInstaller.Tool.CLAUDE || tool == TerminowToolInstaller.Tool.GSTACK;
@@ -806,20 +808,129 @@ final class TerminowToolSheet {
         if (command != null) session.write(command + "\r");
     }
 
-    /** Read-only details for a library tool (Git, curl): what it is, its version and where it is. */
-    private void detailsDialog(@NonNull TerminowToolInstaller.Tool tool, @NonNull String version) {
+    /**
+     * The full details of a tool: its logo and description, its installation and authentication state
+     * (shown apart), compatibility, dependencies, documentation, the target, and its primary action
+     * with the installation log. Opened by tapping a row.
+     */
+    private void toolDetailsDialog(@NonNull Target target, @NonNull TerminowToolInstaller.Tool tool) {
+        String version = mDetection != null ? mDetection.versions.get(tool) : null;
         String arch = mDetection != null ? mDetection.arch : "";
         String os = mDetection != null ? mDetection.os : "";
-        String user = mTarget != null ? mTarget.user : "";
-        String where = mActivity.getString(R.string.terminow_install_env_details,
-            user, arch.isEmpty() ? "?" : arch, os.isEmpty() ? "?" : os);
-        String body = descriptionOf(tool) + "\n\n"
-            + mActivity.getString(R.string.terminow_install_installed, version) + "\n" + where;
-        new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
-            .setTitle(nameOf(tool))
-            .setMessage(body)
-            .setPositiveButton(android.R.string.ok, null)
-            .show();
+
+        LinearLayout box = new LinearLayout(mActivity);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(16), dp(20), dp(8));
+
+        LinearLayout head = new LinearLayout(mActivity);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        ImageView icon = new ImageView(mActivity);
+        icon.setImageResource(iconOf(tool));
+        icon.setPadding(dp(8), dp(8), dp(8), dp(8));
+        GradientDrawable tile = new GradientDrawable();
+        tile.setColor(color(R.color.terminow_field));
+        tile.setCornerRadius(dp(12));
+        icon.setBackground(tile);
+        head.addView(icon, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        TextView name = text(nameOf(tool), 18, R.color.terminow_text);
+        name.setTypeface(Typeface.DEFAULT_BOLD);
+        name.setPadding(dp(12), 0, 0, 0);
+        head.addView(name);
+        box.addView(head, matchWrap());
+        TextView desc = text(descriptionOf(tool), 13, R.color.terminow_text_secondary);
+        desc.setPadding(0, dp(8), 0, 0);
+        box.addView(desc);
+
+        detailSection(box, R.string.terminow_install_detail_installation,
+            version != null ? mActivity.getString(R.string.terminow_install_installed, version)
+                : TerminowToolInstaller.experimental(tool) ? mActivity.getString(R.string.terminow_install_experimental)
+                : mActivity.getString(R.string.terminow_install_not_installed));
+        if (categoryOf(tool) == CAT_AI)
+            detailSection(box, R.string.terminow_install_detail_auth, mActivity.getString(R.string.terminow_install_detail_auth_note));
+        if (!arch.isEmpty())
+            detailSection(box, R.string.terminow_install_detail_compat, arch + " · " + mActivity.getString(
+                TerminowToolInstaller.claudeSupports(arch) ? R.string.terminow_install_detail_supported
+                    : R.string.terminow_install_detail_unsupported));
+        String deps = depsOf(tool);
+        if (!deps.isEmpty()) detailSection(box, R.string.terminow_install_detail_deps, deps);
+        detailSection(box, R.string.terminow_install_detail_target, mActivity.getString(
+            R.string.terminow_install_env_details, target.user, arch.isEmpty() ? "?" : arch, os.isEmpty() ? "?" : os));
+
+        String docs = docsOf(tool);
+        if (!docs.isEmpty()) {
+            TextView link = text(mActivity.getString(R.string.terminow_install_detail_docs), 14, R.color.terminow_panel_accent);
+            link.setPadding(0, dp(14), 0, 0);
+            link.setOnClickListener(v -> openUrl(docs));
+            box.addView(link);
+        }
+        TerminowToolInstaller.Job job = TerminowToolInstaller.jobOf(target.key, target.user, tool);
+        if (job != null && !job.getLog().trim().isEmpty()) {
+            TextView log = text(mActivity.getString(R.string.terminow_install_detail_log), 14, R.color.terminow_panel_accent);
+            log.setPadding(0, dp(10), 0, 0);
+            log.setOnClickListener(v -> new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setTitle(nameOf(tool)).setMessage(job.getLog().trim()).setPositiveButton(android.R.string.ok, null).show());
+            box.addView(log);
+        }
+
+        ScrollView scroll = new ScrollView(mActivity);
+        scroll.addView(box);
+        android.app.AlertDialog.Builder b = new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setView(scroll)
+            .setNegativeButton(android.R.string.ok, null);
+        boolean canInstall = tool != TerminowToolInstaller.Tool.PLUGINS
+            && (arch.isEmpty() || TerminowToolInstaller.claudeSupports(arch) || categoryOf(tool) == CAT_TERMINAL || categoryOf(tool) == CAT_DEVELOPER);
+        if (version != null && categoryOf(tool) == CAT_AI) {
+            boolean claude = tool == TerminowToolInstaller.Tool.CLAUDE || tool == TerminowToolInstaller.Tool.GSTACK;
+            b.setPositiveButton(R.string.terminow_install_open, (d, w) -> openTool(target, claude));
+        } else if (version == null && canInstall) {
+            b.setPositiveButton(R.string.terminow_install_install, (d, w) -> install(target, tool));
+        }
+        b.show();
+    }
+
+    private void detailSection(@NonNull LinearLayout box, int labelRes, @NonNull String value) {
+        TextView label = text(mActivity.getString(labelRes), 12, R.color.terminow_text_secondary);
+        label.setPadding(0, dp(12), 0, dp(2));
+        box.addView(label);
+        box.addView(text(value, 14, R.color.terminow_text));
+    }
+
+    private void openUrl(@NonNull String url) {
+        try {
+            mActivity.startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)));
+        } catch (RuntimeException ignored) {
+            mActivity.showToast(url, false);
+        }
+    }
+
+    @NonNull
+    private static String docsOf(@NonNull TerminowToolInstaller.Tool tool) {
+        switch (tool) {
+            case CLAUDE: return "https://docs.claude.com/en/docs/claude-code/overview";
+            case CURSOR: return "https://docs.cursor.com/en/cli/overview";
+            case CODEX: return "https://github.com/openai/codex";
+            case GEMINI: return "https://github.com/google-gemini/gemini-cli";
+            case GROK: return "https://github.com/superagent-ai/grok-cli";
+            case OPENCODE: return "https://opencode.ai/docs";
+            case AIDER: return "https://aider.chat/docs/install.html";
+            case GSTACK: return "https://github.com/garrytan/gstack";
+            case GIT: return "https://git-scm.com/doc";
+            case CURL: return "https://curl.se/docs/";
+            case TMUX: return "https://github.com/tmux/tmux/wiki";
+            case FISH: return "https://fishshell.com/docs/current/";
+            default: return "";
+        }
+    }
+
+    @NonNull
+    private String depsOf(@NonNull TerminowToolInstaller.Tool tool) {
+        switch (tool) {
+            case CODEX: case GEMINI: case GROK: return "Node.js, npm";
+            case OPENCODE: return "curl";
+            case AIDER: return "Python 3, pip";
+            case GSTACK: return "Claude Code, Bun, git";
+            default: return "";
+        }
     }
 
     void dismiss() {

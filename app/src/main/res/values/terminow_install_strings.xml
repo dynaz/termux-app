@@ -11,6 +11,16 @@
     <string name="terminow_install_installed_only">Installed only</string>
     <string name="terminow_install_empty">No tools match your filters.</string>
     <string name="terminow_install_clear_filters">Clear filters</string>
+    <string name="terminow_install_detail_installation">Installation</string>
+    <string name="terminow_install_detail_auth">Authentication</string>
+    <string name="terminow_install_detail_auth_note">Sign in on first open through the tool\'s own login</string>
+    <string name="terminow_install_detail_compat">Compatibility</string>
+    <string name="terminow_install_detail_supported">supported</string>
+    <string name="terminow_install_detail_unsupported">not supported on this CPU</string>
+    <string name="terminow_install_detail_deps">Dependencies</string>
+    <string name="terminow_install_detail_target">Target</string>
+    <string name="terminow_install_detail_docs">Documentation ↗</string>
+    <string name="terminow_install_detail_log">View installation log</string>
     <string name="terminow_install_env_details">as %1$s · %2$s · %3$s</string>
     <string name="terminow_install_change">Change</string>
     <string name="terminow_install_no_linux_title">No Linux environment</string>

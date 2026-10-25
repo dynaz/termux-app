@@ -11,6 +11,16 @@
     <string name="terminow_install_installed_only">เฉพาะที่ติดตั้งแล้ว</string>
     <string name="terminow_install_empty">ไม่มีเครื่องมือที่ตรงกับตัวกรอง</string>
     <string name="terminow_install_clear_filters">ล้างตัวกรอง</string>
+    <string name="terminow_install_detail_installation">การติดตั้ง</string>
+    <string name="terminow_install_detail_auth">การเข้าสู่ระบบ</string>
+    <string name="terminow_install_detail_auth_note">เข้าสู่ระบบครั้งแรกเมื่อเปิด ผ่านการล็อกอินของเครื่องมือเอง</string>
+    <string name="terminow_install_detail_compat">ความเข้ากันได้</string>
+    <string name="terminow_install_detail_supported">รองรับ</string>
+    <string name="terminow_install_detail_unsupported">ไม่รองรับบน CPU นี้</string>
+    <string name="terminow_install_detail_deps">สิ่งที่ต้องมี</string>
+    <string name="terminow_install_detail_target">เป้าหมาย</string>
+    <string name="terminow_install_detail_docs">เอกสาร ↗</string>
+    <string name="terminow_install_detail_log">ดูบันทึกการติดตั้ง</string>
     <string name="terminow_install_env_details">ในฐานะ %1$s · %2$s · %3$s</string>
     <string name="terminow_install_change">เปลี่ยน</string>
     <string name="terminow_install_no_linux_title">ไม่มีสภาพแวดล้อม Linux</string>
