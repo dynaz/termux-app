@@ -131,7 +131,8 @@ public final class TerminowMcpBridgeManager {
         // paired client, so the same per-session authorization applies to remote AI clients.
         mRelay = new TerminowMcpBridgeRelay(
             () -> new TerminowMcpBridgeMcpServer(mBridge, relayClientKey(), this::secrets, BuildConfig.VERSION_NAME),
-            this::relayPairingCodes);
+            this::relayPairingCodes,
+            this::reenrollRelayDevice);
 
         mAccount = new TerminowAccount(BuildConfig.TERMINOW_FIREBASE_API_KEY, mContext.getPackageName());
         mAccount.setFirebaseBackend(BuildConfig.TERMINOW_FIREBASE_PROJECT_ID, BuildConfig.TERMINOW_FUNCTIONS_REGION);
@@ -377,7 +378,7 @@ public final class TerminowMcpBridgeManager {
         } else {
             String clientId = relay.optString("clientId");
             String token = clientId.isEmpty() ? "" : mStore.getMcpClientTokens().getOrDefault(clientId, "");
-            if (!token.isEmpty()) mRelay.start(url, token);
+            if (!token.isEmpty() && !mRelay.isActiveWith(url, token)) mRelay.start(url, token);
         }
     }
 
@@ -399,7 +400,9 @@ public final class TerminowMcpBridgeManager {
             expiry = expiryOut[0];
             mStore.setMcpRelayCredential(credential, expiry);
         }
-        mRelay.start(url, credential);
+        // Only (re)start when not already connected with this credential: a repeat call (activity
+        // recreated, renew timer with a still-valid credential) must not churn a healthy connection.
+        if (!mRelay.isActiveWith(url, credential)) mRelay.start(url, credential);
         long renewIn = Math.max(ENROLL_RETRY_MS, expiry - System.currentTimeMillis() - ENROLL_RENEW_BEFORE_MS);
         scheduleReenroll(url, renewIn);
     }
@@ -415,6 +418,24 @@ public final class TerminowMcpBridgeManager {
             mReenroll.cancel(false);
             mReenroll = null;
         }
+    }
+
+    /**
+     * Re-enrol this device for a fresh relay credential, invoked by the connector when the relay
+     * rejects the current one (HTTP 401) — e.g. the credential expired or the relay restarted and
+     * had not yet persisted it. Stores and returns the new credential, or {@code null} when the
+     * device cannot enrol (not signed in, not Premium, or revoked). This is the device channel only
+     * and never touches the user's OAuth sessions. Runs on the connector's background thread; the
+     * connector bounds how often it calls this and backs off, so there is no reconnect loop.
+     */
+    @Nullable
+    private String reenrollRelayDevice() {
+        String url = relayUrl();
+        if (url.isEmpty()) return null;
+        long[] expiryOut = new long[1];
+        String credential = enrollRelayDevice(url, expiryOut);
+        if (credential != null) mStore.setMcpRelayCredential(credential, expiryOut[0]);
+        return credential;
     }
 
     /**
