@@ -8,7 +8,7 @@ prefix="${PREFIX:-/data/data/com.terminow/files/usr}"
     exit 1
 }
 old=https://dynaz.github.io/termux-app/apt
-new=https://dynaz.github.io/terminow/apt
+new=https://dynaz.github.io/terminow-package/apt
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/lists/partial"

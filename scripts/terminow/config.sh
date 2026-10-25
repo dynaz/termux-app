@@ -13,7 +13,7 @@
 # Where the package repository built by make-apt-repo.sh is served from. `pkg` and `apt` on the
 # device only ever use this url, the packages of the official Termux repositories are compiled
 # for com.termux and do not work under another package name.
-: "${TERMINOW_REPO_BASE_URL:=https://dynaz.github.io/terminow/apt}"
+: "${TERMINOW_REPO_BASE_URL:=https://dynaz.github.io/terminow-package/apt}"
 : "${TERMINOW_REPO_URL:=$TERMINOW_REPO_BASE_URL/terminow-main}"
 
 # Packages built and put in the bootstrap in addition to the default bootstrap packages. All of
