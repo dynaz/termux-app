@@ -100,6 +100,12 @@ public class TerminowStore {
         public String identity = "";
         /** {@link #PROTOCOL_SSH} (also Mosh and Telnet), {@link #PROTOCOL_RDP} or {@link #PROTOCOL_WINRM}. */
         public String protocol = PROTOCOL_SSH;
+        /** The kind of device this SSH host is, see {@link TerminowDeviceProfile}. Empty is a generic
+         * Linux server, so hosts saved before this are unchanged. It never changes the SSH engine,
+         * only which actions are offered (a MikroTik or Cisco is never sent a Linux bootstrap). */
+        public String deviceType = "";
+        /** An optional web admin console URL (http/https only), shown as a Web Admin action when set. */
+        public String webAdminUrl = "";
         /** RDP and WinRM: the Windows domain of the user, empty for a local account. */
         public String domain = "";
         /** RDP: Network Level Authentication, on unless the server can not do it. */
@@ -852,6 +858,8 @@ public class TerminowStore {
         object.put("rdpHeight", host.rdpHeight);
         object.put("winrmHttps", host.winrmHttps);
         object.put("winrmVerify", host.winrmVerify);
+        if (!host.deviceType.isEmpty()) object.put("deviceType", host.deviceType);
+        if (!host.webAdminUrl.isEmpty()) object.put("webAdminUrl", host.webAdminUrl);
         return object;
     }
 
@@ -896,6 +904,8 @@ public class TerminowStore {
         host.rdpHeight = object.optInt("rdpHeight");
         host.winrmHttps = object.optBoolean("winrmHttps", true);
         host.winrmVerify = object.optBoolean("winrmVerify", true);
+        host.deviceType = object.optString("deviceType");
+        host.webAdminUrl = object.optString("webAdminUrl");
         return host;
     }
 
