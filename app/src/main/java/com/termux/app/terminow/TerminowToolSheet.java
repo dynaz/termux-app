@@ -51,14 +51,16 @@ final class TerminowToolSheet {
     private static final TerminowToolInstaller.Tool[] TOOLS = {
         TerminowToolInstaller.Tool.CLAUDE, TerminowToolInstaller.Tool.CURSOR,
         TerminowToolInstaller.Tool.CODEX, TerminowToolInstaller.Tool.GEMINI, TerminowToolInstaller.Tool.GROK,
-        TerminowToolInstaller.Tool.OPENCODE, TerminowToolInstaller.Tool.AIDER, TerminowToolInstaller.Tool.GSTACK,
+        TerminowToolInstaller.Tool.OPENCODE, TerminowToolInstaller.Tool.AIDER, TerminowToolInstaller.Tool.HERMES,
+        TerminowToolInstaller.Tool.GSTACK,
         TerminowToolInstaller.Tool.GIT, TerminowToolInstaller.Tool.CURL, TerminowToolInstaller.Tool.TMUX, TerminowToolInstaller.Tool.FISH};
 
     /** The tools and the plugins: the jobs that the sheet shows. */
     private static final TerminowToolInstaller.Tool[] JOBS = {
         TerminowToolInstaller.Tool.CLAUDE, TerminowToolInstaller.Tool.CURSOR,
         TerminowToolInstaller.Tool.CODEX, TerminowToolInstaller.Tool.GEMINI, TerminowToolInstaller.Tool.GROK,
-        TerminowToolInstaller.Tool.OPENCODE, TerminowToolInstaller.Tool.AIDER, TerminowToolInstaller.Tool.GSTACK,
+        TerminowToolInstaller.Tool.OPENCODE, TerminowToolInstaller.Tool.AIDER, TerminowToolInstaller.Tool.HERMES,
+        TerminowToolInstaller.Tool.GSTACK,
         TerminowToolInstaller.Tool.GIT, TerminowToolInstaller.Tool.CURL, TerminowToolInstaller.Tool.TMUX,
         TerminowToolInstaller.Tool.FISH, TerminowToolInstaller.Tool.PLUGINS};
 
@@ -135,7 +137,7 @@ final class TerminowToolSheet {
     /** Which category a tool belongs to, for the filter chips. */
     private static int categoryOf(@NonNull TerminowToolInstaller.Tool tool) {
         switch (tool) {
-            case CLAUDE: case CURSOR: case CODEX: case GEMINI: case GROK: case OPENCODE: case AIDER: return CAT_AI;
+            case CLAUDE: case CURSOR: case CODEX: case GEMINI: case GROK: case OPENCODE: case AIDER: case HERMES: return CAT_AI;
             case TMUX: case FISH: return CAT_TERMINAL;
             case GIT: case CURL: return CAT_DEVELOPER;
             case GSTACK: case PLUGINS: return CAT_PLUGINS;
@@ -225,7 +227,7 @@ final class TerminowToolSheet {
         sheet.addView(handle, handleParams);
         TextView title = text(mActivity.getString(R.string.terminow_install_title), 20, R.color.terminow_text);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        sheet.addView(TerminowHelp.header(mActivity, title, "support"), matchWrap());
+        sheet.addView(TerminowHelp.header(mActivity, title, "support/tools"), matchWrap());
         TextView subtitle = text(mActivity.getString(R.string.terminow_install_subtitle), 13, R.color.terminow_text_secondary);
         subtitle.setPadding(0, dp(2), 0, 0);
         sheet.addView(subtitle, matchWrap());
@@ -941,6 +943,7 @@ final class TerminowToolSheet {
             case GROK: return "https://github.com/superagent-ai/grok-cli";
             case OPENCODE: return "https://opencode.ai/docs";
             case AIDER: return "https://aider.chat/docs/install.html";
+            case HERMES: return "https://hermes-agent.nousresearch.com/docs";
             case GSTACK: return "https://github.com/garrytan/gstack";
             case GIT: return "https://git-scm.com/doc";
             case CURL: return "https://curl.se/docs/";
@@ -1040,6 +1043,7 @@ final class TerminowToolSheet {
             case GROK: return "Grok CLI";
             case OPENCODE: return "OpenCode";
             case AIDER: return "Aider";
+            case HERMES: return "Hermes Agent";
             case GSTACK: return mActivity.getString(R.string.terminow_install_gstack);
             case PLUGINS: return mActivity.getString(R.string.terminow_install_plugins);
             case GIT: return "Git";
@@ -1059,6 +1063,7 @@ final class TerminowToolSheet {
             case GROK: return mActivity.getString(R.string.terminow_install_grok_description);
             case OPENCODE: return mActivity.getString(R.string.terminow_install_opencode_description);
             case AIDER: return mActivity.getString(R.string.terminow_install_aider_description);
+            case HERMES: return mActivity.getString(R.string.terminow_install_hermes_description);
             case GSTACK: return mActivity.getString(R.string.terminow_install_gstack_description);
             case PLUGINS: return mActivity.getString(R.string.terminow_install_plugins_description);
             case GIT: return mActivity.getString(R.string.terminow_install_git_description);
@@ -1077,6 +1082,7 @@ final class TerminowToolSheet {
             case GROK: return R.drawable.ic_terminow_tool_grok;
             case OPENCODE: return R.drawable.ic_terminow_tool_opencode;
             case AIDER: return R.drawable.ic_terminow_tool_aider;
+            case HERMES: return R.drawable.ic_terminow_tool_hermes;
             case GSTACK: return R.drawable.ic_terminow_tool_gstack;
             case PLUGINS: return R.drawable.ic_terminow_tool_plugins;
             case GIT: return R.drawable.ic_terminow_tool_git;
