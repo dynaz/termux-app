@@ -57,6 +57,9 @@ final class TerminowMcpBridgeUi {
     @NonNull private final OpenInTerminal mOpenInTerminal;
     @NonNull private final OpenSessionTerminal mOpenSessionTerminal;
 
+    /** Page size for a session's task history, so a long history pages instead of rendering all at once. */
+    private static final int SESSION_TASKS_PAGE = 25;
+
     TerminowMcpBridgeUi(@NonNull TermuxActivity activity, @NonNull TerminowMcpBridgeManager manager,
                         @NonNull TerminowStore store, @NonNull LinearLayout container,
                         @NonNull OpenInTerminal openInTerminal, @NonNull OpenSessionTerminal openSessionTerminal) {
@@ -263,6 +266,7 @@ final class TerminowMcpBridgeUi {
                 render();
             }));
             card.addView(line, matchWrap());
+            addSessionTasksButton(card, share);
             card.setOnClickListener(v -> editShareDialog(share));
         }
     }
@@ -370,16 +374,153 @@ final class TerminowMcpBridgeUi {
         int shown = 0;
         for (TerminowMcpBridgeTask task : tasks) {
             if (shown++ >= 40) break;
-            LinearLayout card = card(mContent);
-            TextView state = text(task.state().name().toLowerCase(java.util.Locale.ROOT), 12, stateColor(task.state()));
-            state.setTypeface(Typeface.DEFAULT_BOLD);
-            card.addView(state);
-            card.addView(text(oneLine(task.request), 14, R.color.terminow_text));
-            card.addView(text(mActivity.getString(R.string.terminow_mcp_bridge_task_session, sessionLabel(task.sessionId)),
+            addTaskCard(mContent, task, true);
+        }
+    }
+
+    /** One task's card, shared by the global Tasks list and a session's own task list. */
+    private void addTaskCard(@NonNull LinearLayout parent, @NonNull TerminowMcpBridgeTask task, boolean showSession) {
+        LinearLayout card = card(parent);
+        TextView state = text(task.state().name().toLowerCase(java.util.Locale.ROOT), 12, stateColor(task.state()));
+        state.setTypeface(Typeface.DEFAULT_BOLD);
+        card.addView(state);
+        card.addView(text(oneLine(task.request), 14, R.color.terminow_text));
+        if (showSession)
+            card.addView(text(mActivity.getString(R.string.terminow_mcp_bridge_task_session, taskTarget(task)),
                 12, R.color.terminow_text_secondary));
-            if (task.state() == TerminowMcpBridgeTask.State.WAITING_FOR_USER && !task.pendingAction().isEmpty())
-                card.addView(text(mActivity.getString(R.string.terminow_mcp_bridge_task_pending, task.pendingAction()), 12, R.color.terminow_mcp_warn));
-            card.setOnClickListener(v -> taskDialog(task));
+        String meta = taskMeta(task);
+        if (!meta.isEmpty()) card.addView(text(meta, 12, R.color.terminow_text_secondary));
+        if (!task.parentId().isEmpty())
+            card.addView(text(mActivity.getString(R.string.terminow_mcp_bridge_task_retry_of), 12, R.color.terminow_text_secondary));
+        if (task.state() == TerminowMcpBridgeTask.State.WAITING_FOR_USER && !task.pendingAction().isEmpty())
+            card.addView(text(mActivity.getString(R.string.terminow_mcp_bridge_task_pending, task.pendingAction()), 12, R.color.terminow_mcp_warn));
+        card.setOnClickListener(v -> taskDialog(task));
+    }
+
+    /** The tasks of one shared session, newest first (mManager.tasks() is already newest first). */
+    @NonNull
+    private List<TerminowMcpBridgeTask> sessionTasks(@NonNull String sessionId) {
+        List<TerminowMcpBridgeTask> out = new ArrayList<>();
+        for (TerminowMcpBridgeTask t : mManager.tasks()) if (t.sessionId.equals(sessionId)) out.add(t);
+        return out;
+    }
+
+    /** A "Tasks (N)" button plus a running/queued indicator, shown below a shared-session card. */
+    private void addSessionTasksButton(@NonNull LinearLayout card, @NonNull TerminowMcpBridge.Share share) {
+        List<TerminowMcpBridgeTask> tasks = sessionTasks(share.id);
+        LinearLayout line = row();
+        line.addView(button(mActivity.getString(R.string.terminow_mcp_bridge_session_tasks, tasks.size()),
+            false, () -> sessionTasksDialog(share)));
+        int running = 0, queued = 0;
+        for (TerminowMcpBridgeTask t : tasks) {
+            if (t.state() == TerminowMcpBridgeTask.State.QUEUED) queued++;
+            else if (t.state().isActive()) running++;
+        }
+        if (running > 0 || queued > 0) {
+            TextView ind = text(mActivity.getString(R.string.terminow_mcp_bridge_session_tasks_sub, running, queued),
+                12, R.color.terminow_panel_accent);
+            ind.setPadding(dp(8), 0, 0, 0);
+            line.addView(ind);
+        }
+        card.addView(line, matchWrap());
+    }
+
+    /** A readable target from the task's own bound metadata, so it survives the session being unshared. */
+    @NonNull
+    private String taskTarget(@NonNull TerminowMcpBridgeTask task) {
+        String label = sessionLabel(task.sessionId);
+        String env = task.environmentKey.isEmpty() ? ""
+            : task.environmentKey + (task.folder.isEmpty() ? "" : " · " + task.folder);
+        boolean shared = !label.equals(task.sessionId); // sessionLabel falls back to the id when unshared
+        if (shared) return env.isEmpty() ? label : label + " (" + env + ")";
+        return env.isEmpty() ? label : env; // unshared: show the bound environment/folder, not a bare id
+    }
+
+    /** A short meta line: when the task was submitted and, if it ran, how long it took. */
+    @NonNull
+    private String taskMeta(@NonNull TerminowMcpBridgeTask task) {
+        String when = task.createdAt > 0 ? DateUtils.getRelativeTimeSpanString(task.createdAt).toString() : "";
+        long dur = task.durationMillis(System.currentTimeMillis());
+        if (dur > 0) return (when.isEmpty() ? "" : when + " · ") + formatDuration(dur);
+        return when;
+    }
+
+    @NonNull
+    private String formatDuration(long ms) {
+        long s = ms / 1000;
+        if (s < 60) return s + "s";
+        long m = s / 60; s %= 60;
+        if (m < 60) return m + "m " + s + "s";
+        long h = m / 60; m %= 60;
+        return h + "h " + m + "m";
+    }
+
+    private boolean matchesFilter(@NonNull TerminowMcpBridgeTask task, int filter) {
+        TerminowMcpBridgeTask.State s = task.state();
+        switch (filter) {
+            case 1: return s.isActive();
+            case 2: return s == TerminowMcpBridgeTask.State.COMPLETED;
+            case 3: return s == TerminowMcpBridgeTask.State.FAILED
+                || s == TerminowMcpBridgeTask.State.INTERRUPTED || s == TerminowMcpBridgeTask.State.CANCELLED;
+            default: return true;
+        }
+    }
+
+    /** One session's task history: filter by status and page through it, newest first. */
+    private void sessionTasksDialog(@NonNull TerminowMcpBridge.Share share) {
+        final List<TerminowMcpBridgeTask> all = sessionTasks(share.id);
+        final int[] filter = {0};
+        final int[] limit = {SESSION_TASKS_PAGE};
+        final String[] names = {
+            mActivity.getString(R.string.terminow_mcp_bridge_filter_all),
+            mActivity.getString(R.string.terminow_mcp_bridge_filter_active),
+            mActivity.getString(R.string.terminow_mcp_bridge_filter_completed),
+            mActivity.getString(R.string.terminow_mcp_bridge_filter_failed),
+        };
+        LinearLayout box = dialogBox();
+        final TextView filterLabel = text("", 13, R.color.terminow_panel_accent);
+        filterLabel.setPadding(0, dp(4), 0, dp(8));
+        box.addView(filterLabel);
+        final LinearLayout list = column();
+        box.addView(list);
+        final Runnable[] repopulate = new Runnable[1];
+        repopulate[0] = () -> {
+            filterLabel.setText(mActivity.getString(R.string.terminow_mcp_bridge_tasks_filter, names[filter[0]]));
+            list.removeAllViews();
+            int shown = 0, matched = 0;
+            for (TerminowMcpBridgeTask t : all) {
+                if (!matchesFilter(t, filter[0])) continue;
+                matched++;
+                if (shown >= limit[0]) continue;
+                addTaskCard(list, t, false);
+                shown++;
+            }
+            if (matched == 0) list.addView(note(mActivity.getString(R.string.terminow_mcp_bridge_no_session_tasks)));
+            else if (matched > shown)
+                list.addView(button(mActivity.getString(R.string.terminow_mcp_bridge_show_more), false, () -> {
+                    limit[0] += SESSION_TASKS_PAGE;
+                    repopulate[0].run();
+                }));
+        };
+        filterLabel.setOnClickListener(v -> new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_mcp_bridge_tasks_filter_title)
+            .setItems(names, (d, which) -> { filter[0] = which; limit[0] = SESSION_TASKS_PAGE; repopulate[0].run(); })
+            .show());
+        repopulate[0].run();
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(mActivity.getString(R.string.terminow_mcp_bridge_session_tasks_title, share.label))
+            .setView(wrapScroll(box))
+            .setPositiveButton(android.R.string.ok, null)
+            .show();
+    }
+
+    private void retry(@NonNull TerminowMcpBridgeTask task) {
+        try {
+            mManager.retryTask(task.id);
+            mActivity.showToast(mActivity.getString(R.string.terminow_mcp_bridge_task_retried), false);
+            render();
+        } catch (TerminowAiError.Exception e) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_mcp_bridge_task_retry_failed, e.getMessage()), true);
         }
     }
 
@@ -395,7 +536,11 @@ final class TerminowMcpBridgeUi {
         LinearLayout box = dialogBox();
         addField(box, R.string.terminow_mcp_bridge_task_state, task.state().name().toLowerCase(java.util.Locale.ROOT));
         addField(box, R.string.terminow_mcp_bridge_task_request, task.request);
-        addField(box, R.string.terminow_mcp_bridge_task_target, sessionLabel(task.sessionId));
+        addField(box, R.string.terminow_mcp_bridge_task_target, taskTarget(task));
+        if (task.startedAt() > 0)
+            addField(box, R.string.terminow_mcp_bridge_task_duration, formatDuration(task.durationMillis(System.currentTimeMillis())));
+        if (!task.parentId().isEmpty())
+            addField(box, R.string.terminow_mcp_bridge_task_lineage, mActivity.getString(R.string.terminow_mcp_bridge_task_retry_of));
         if (!task.pendingAction().isEmpty()) addField(box, R.string.terminow_mcp_bridge_task_pending, task.pendingAction());
         if (!task.result().isEmpty()) addField(box, R.string.terminow_mcp_bridge_task_result, task.result());
         if (!task.failureReason().isEmpty()) addField(box, R.string.terminow_mcp_bridge_task_failure, task.failureReason());
@@ -416,6 +561,8 @@ final class TerminowMcpBridgeUi {
                 mManager.cancelTask(task.id);
                 render();
             });
+        else
+            builder.setPositiveButton(R.string.terminow_mcp_bridge_task_retry, (d, w) -> retry(task));
         java.io.File log = mManager.taskLogFile(task.id);
         if (log != null && log.isFile())
             builder.setNeutralButton(R.string.terminow_mcp_bridge_open_terminal, (d, w) ->

@@ -249,7 +249,7 @@ public final class TerminowMcpBridge {
             throw TerminowAiError.QUEUE_FULL.of("The session already has " + mDeps.maxQueue() + " tasks waiting");
 
         TerminowMcpBridgeTask task = new TerminowMcpBridgeTask(UUID.randomUUID().toString(), clientKey, sessionId,
-            share.fingerprint(), idempotencyKey, request, timeoutSeconds, mClock.now());
+            share.environmentKey, share.folder, share.fingerprint(), idempotencyKey, request, timeoutSeconds, mClock.now());
         mTasks.put(task.id, task);
         if (!idempotencyKey.isEmpty())
             mIdempotency.put(idempotencyScope(clientKey, sessionId, idempotencyKey), task.id);
@@ -465,6 +465,38 @@ public final class TerminowMcpBridge {
         if (task.state() != TerminowMcpBridgeTask.State.CANCELLATION_REQUESTED) task.markCancellationRequested();
         persist();
         mExecutor.cancel(task.id);
+    }
+
+    /**
+     * From the device UI: submit a fresh attempt of a finished task to the same session, linked to
+     * the original by parent id (attempt lineage). A retry is a new submission bound to the session's
+     * current target; it never retargets or replays the original. Fails if the task is not finished,
+     * or the session is gone or no longer accepts tasks.
+     */
+    @NonNull
+    public synchronized TerminowMcpBridgeTask retryFromDevice(@NonNull String taskId) throws TerminowAiError.Exception {
+        TerminowMcpBridgeTask original = mTasks.get(taskId);
+        if (original == null) throw TerminowAiError.TASK_NOT_FOUND.of("No such task");
+        if (!original.state().isTerminal())
+            throw TerminowAiError.BAD_REQUEST.of("Only a finished task can be retried");
+        Share share = requireShare(original.sessionId); // fails if the session was unshared: no retarget
+        if (!share.managed || !share.allows(CAP_SUBMIT))
+            throw TerminowAiError.CAPABILITY_DENIED.of("This session no longer accepts tasks");
+        if (mActiveBySession.containsKey(original.sessionId) && queueOf(original.sessionId).size() >= mDeps.maxQueue())
+            throw TerminowAiError.QUEUE_FULL.of("The session already has " + mDeps.maxQueue() + " tasks waiting");
+        TerminowMcpBridgeTask task = new TerminowMcpBridgeTask(UUID.randomUUID().toString(), original.clientKey,
+            original.sessionId, share.environmentKey, share.folder, share.fingerprint(), "", original.request,
+            original.timeoutSeconds, mClock.now());
+        task.setParentId(original.id);
+        mTasks.put(task.id, task);
+        if (mActiveBySession.containsKey(original.sessionId)) {
+            queueOf(original.sessionId).addLast(task.id);
+        } else {
+            startTask(task, share);
+        }
+        persist();
+        trim();
+        return task;
     }
 
     /** A share's target changed or it was unshared: interrupt its active and queued tasks, no replay. */

@@ -62,6 +62,24 @@
     <string name="terminow_mcp_bridge_task_output">เอาต์พุต</string>
     <string name="terminow_mcp_bridge_cancel_task">ยกเลิกงาน</string>
     <string name="terminow_mcp_bridge_open_terminal">เปิดในเทอร์มินัล</string>
+    <string name="terminow_mcp_bridge_task_duration">ระยะเวลา</string>
+    <string name="terminow_mcp_bridge_task_lineage">ความพยายาม</string>
+    <string name="terminow_mcp_bridge_task_retry_of">ลองใหม่จากความพยายามก่อนหน้า</string>
+    <string name="terminow_mcp_bridge_task_retry">ลองใหม่</string>
+    <string name="terminow_mcp_bridge_task_retried">ส่งคำขอลองใหม่แล้ว</string>
+    <string name="terminow_mcp_bridge_task_retry_failed">ลองใหม่ไม่สำเร็จ: %1$s</string>
+
+    <string name="terminow_mcp_bridge_session_tasks">งาน (%1$d)</string>
+    <string name="terminow_mcp_bridge_session_tasks_sub">กำลังทำงาน %1$d · รอคิว %2$d</string>
+    <string name="terminow_mcp_bridge_session_tasks_title">%1$s — งาน</string>
+    <string name="terminow_mcp_bridge_no_session_tasks">ยังไม่มีงานสำหรับเซสชันนี้</string>
+    <string name="terminow_mcp_bridge_tasks_filter">แสดง: %1$s</string>
+    <string name="terminow_mcp_bridge_tasks_filter_title">กรองตามสถานะ</string>
+    <string name="terminow_mcp_bridge_filter_all">ทั้งหมด</string>
+    <string name="terminow_mcp_bridge_filter_active">กำลังทำงาน</string>
+    <string name="terminow_mcp_bridge_filter_completed">เสร็จแล้ว</string>
+    <string name="terminow_mcp_bridge_filter_failed">ล้มเหลว</string>
+    <string name="terminow_mcp_bridge_show_more">แสดงเพิ่มเติม</string>
 
     <string name="terminow_mcp_bridge_emergency_stop">หยุดฉุกเฉิน</string>
     <string name="terminow_mcp_bridge_emergency_desc">ปิดบริดจ์ ตัดการเชื่อมต่อรีเลย์ และเพิกถอนไคลเอนต์ทั้งหมดทันที</string>

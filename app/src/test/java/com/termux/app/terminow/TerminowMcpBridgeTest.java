@@ -283,6 +283,95 @@ public class TerminowMcpBridgeTest {
         assertEquals("secret output", bridge.taskOutput(CLIENT, a, 0, 100).getString("output"));
     }
 
+    // A retry is a fresh attempt to the same session, owned by the same client, linked by lineage.
+    @Test
+    public void retryCreatesLinkedAttemptToSameSession() throws Exception {
+        shares.add(managed("s1"));
+        String a = submit("s1");
+        executor.complete(a, 0, "done");               // a is terminal
+        TerminowMcpBridgeTask retry = bridge.retryFromDevice(a);
+        assertEquals("same session", "s1", retry.sessionId);
+        assertEquals("same owner", CLIENT, retry.clientKey);
+        assertEquals("linked to the original", a, retry.parentId());
+        assertNotEquals("a new task id", a, retry.id);
+        assertEquals("the retry runs once the session is free", "running", state(CLIENT, retry.id));
+        assertTrue(executor.started.containsKey(retry.id));
+    }
+
+    // Only a finished task can be retried.
+    @Test
+    public void retryRefusedForUnfinishedTask() throws Exception {
+        shares.add(managed("s1"));
+        String a = submit("s1");                        // running
+        try {
+            bridge.retryFromDevice(a);
+            fail("expected refusal for an unfinished task");
+        } catch (TerminowAiError.Exception e) {
+            assertEquals(TerminowAiError.BAD_REQUEST, e.error);
+        }
+    }
+
+    // A retry never retargets: if the session is gone, it fails instead of running elsewhere.
+    @Test
+    public void retryRefusedWhenSessionUnshared() throws Exception {
+        shares.add(managed("s1"));
+        String a = submit("s1");
+        executor.complete(a, 0, "done");
+        shares.clear();                                 // the session was unshared
+        try {
+            bridge.retryFromDevice(a);
+            fail("expected refusal when the session is gone");
+        } catch (TerminowAiError.Exception e) {
+            assertEquals(TerminowAiError.SESSION_NOT_SHARED, e.error);
+        }
+    }
+
+    // The per-session task list shows only that session's tasks; the global list shows all.
+    @Test
+    public void perSessionListFiltersBySession() throws Exception {
+        shares.add(managed("s1"));
+        shares.add(managed("s2"));
+        String a = submit("s1");
+        String b = bridge.taskSubmit(CLIENT, "s2", "x", "", 0).getString("task_id");
+        JSONArray onlyS1 = bridge.taskList(CLIENT, "s1");
+        assertEquals(1, onlyS1.length());
+        assertEquals(a, onlyS1.getJSONObject(0).getString("task_id"));
+        assertEquals("the global list has both", 2, bridge.taskList(CLIENT, "").length());
+        assertNotEquals(a, b);
+    }
+
+    // A task keeps a human target snapshot (environment/folder) that survives an unshare and a reload.
+    @Test
+    public void taskKeepsTargetMetadataForDisplay() throws Exception {
+        shares.add(managed("s1"));                      // env "ubuntu", folder "/home/root/s1"
+        String a = submit("s1");
+        TerminowMcpBridgeTask task = findTask(bridge, a);
+        assertEquals("ubuntu", task.environmentKey);
+        assertEquals("/home/root/s1", task.folder);
+        shares.clear();                                 // even after unshare, the snapshot remains on the task
+        TerminowMcpBridge reloaded = newBridge(new FakeExecutor(), persistence);
+        TerminowMcpBridgeTask back = findTask(reloaded, a);
+        assertEquals("ubuntu", back.environmentKey);
+        assertEquals("/home/root/s1", back.folder);
+    }
+
+    // Attempt lineage survives a restart.
+    @Test
+    public void retryLineageSurvivesReload() throws Exception {
+        shares.add(managed("s1"));
+        String a = submit("s1");
+        executor.complete(a, 0, "done");
+        String retryId = bridge.retryFromDevice(a).id;
+        TerminowMcpBridge reloaded = newBridge(new FakeExecutor(), persistence);
+        assertEquals(a, findTask(reloaded, retryId).parentId());
+    }
+
+    @NonNull
+    private TerminowMcpBridgeTask findTask(@NonNull TerminowMcpBridge b, @NonNull String id) {
+        for (TerminowMcpBridgeTask t : b.allTasks()) if (t.id.equals(id)) return t;
+        throw new AssertionError("no task " + id);
+    }
+
     // ---------------------------------------------------------------------------------------
 
     private TerminowAiError lastError;

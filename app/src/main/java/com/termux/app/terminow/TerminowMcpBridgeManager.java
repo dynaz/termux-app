@@ -558,6 +558,12 @@ public final class TerminowMcpBridgeManager {
         mBridge.cancelFromDevice(taskId);
     }
 
+    /** From the UI: retry a finished task as a fresh attempt to the same session (linked by lineage). */
+    @NonNull
+    public TerminowMcpBridgeTask retryTask(@NonNull String taskId) throws TerminowAiError.Exception {
+        return mBridge.retryFromDevice(taskId);
+    }
+
     /** Emergency stop: turn the bridge off, drop the relay, and revoke every client at once. */
     public synchronized void emergencyStop() {
         mStore.setMcpBridgeEnabled(false);

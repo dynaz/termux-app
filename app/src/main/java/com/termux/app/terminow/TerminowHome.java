@@ -1839,8 +1839,11 @@ public class TerminowHome {
      */
     private void openMcpTaskInTerminal(@NonNull File logFile, @NonNull String title) {
         String bash = new File(TermuxConstants.TERMUX_PREFIX_DIR_PATH, "bin/bash").getAbsolutePath();
-        String command = "clear 2>/dev/null; tail -n +1 -F " + TerminowStore.shellQuote(logFile.getAbsolutePath());
-        startSession(bash, new String[]{"-lc", command}, TermuxConstants.TERMUX_HOME_DIR_PATH, "task: " + title);
+        // A read-only monitor: it only tails the task's mirrored output. It never controls the task
+        // (Ctrl-C stops watching, not the task), so label it clearly rather than imply interaction.
+        String banner = "printf '\\033[2m== Read-only task monitor (Ctrl-C to stop watching) ==\\033[0m\\n'";
+        String command = "clear 2>/dev/null; " + banner + "; tail -n +1 -F " + TerminowStore.shellQuote(logFile.getAbsolutePath());
+        startSession(bash, new String[]{"-lc", command}, TermuxConstants.TERMUX_HOME_DIR_PATH, "monitor: " + title);
     }
 
     /** Open an interactive terminal in a shared session's environment at its folder. */

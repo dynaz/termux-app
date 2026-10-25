@@ -62,6 +62,24 @@
     <string name="terminow_mcp_bridge_task_output">Output</string>
     <string name="terminow_mcp_bridge_cancel_task">Cancel task</string>
     <string name="terminow_mcp_bridge_open_terminal">Open in terminal</string>
+    <string name="terminow_mcp_bridge_task_duration">Duration</string>
+    <string name="terminow_mcp_bridge_task_lineage">Attempt</string>
+    <string name="terminow_mcp_bridge_task_retry_of">Retry of an earlier attempt</string>
+    <string name="terminow_mcp_bridge_task_retry">Retry</string>
+    <string name="terminow_mcp_bridge_task_retried">Retry submitted</string>
+    <string name="terminow_mcp_bridge_task_retry_failed">Could not retry: %1$s</string>
+
+    <string name="terminow_mcp_bridge_session_tasks">Tasks (%1$d)</string>
+    <string name="terminow_mcp_bridge_session_tasks_sub">%1$d running · %2$d queued</string>
+    <string name="terminow_mcp_bridge_session_tasks_title">%1$s — Tasks</string>
+    <string name="terminow_mcp_bridge_no_session_tasks">No tasks for this session yet.</string>
+    <string name="terminow_mcp_bridge_tasks_filter">Show: %1$s</string>
+    <string name="terminow_mcp_bridge_tasks_filter_title">Filter by status</string>
+    <string name="terminow_mcp_bridge_filter_all">All</string>
+    <string name="terminow_mcp_bridge_filter_active">Active</string>
+    <string name="terminow_mcp_bridge_filter_completed">Completed</string>
+    <string name="terminow_mcp_bridge_filter_failed">Failed</string>
+    <string name="terminow_mcp_bridge_show_more">Show more</string>
 
     <string name="terminow_mcp_bridge_emergency_stop">Emergency stop</string>
     <string name="terminow_mcp_bridge_emergency_desc">Turn the bridge off, disconnect the relay, and revoke every client at once.</string>
