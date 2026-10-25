@@ -47,4 +47,17 @@ public class TerminowMcpBridgeExecutorTest {
         assertTrue(run.isCancelRequested());
         assertTrue("the running process is stopped", process.destroyed);
     }
+
+    // Mode B: the remote command passes the request and folder as single-quoted arguments, so a
+    // request is data and never parsed as shell — the key injection defence for running on a host.
+    @Test
+    public void remoteCommandShellQuotesArgsAgainstInjection() {
+        String cmd = TerminowMcpBridgeExecutor.buildRemoteCommand("hello", "/work");
+        assertTrue("runs the script under bash -lc", cmd.startsWith("bash -lc '"));
+        assertTrue("request and folder are single-quoted args", cmd.endsWith(" terminow 'hello' '/work'"));
+
+        String evil = TerminowMcpBridgeExecutor.buildRemoteCommand("x'; rm -rf / #", "/f");
+        assertTrue("an embedded quote is escaped, not left to close the string",
+            evil.endsWith(" terminow 'x'\\''; rm -rf / #' '/f'"));
+    }
 }

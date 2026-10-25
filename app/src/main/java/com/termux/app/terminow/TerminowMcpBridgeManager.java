@@ -11,8 +11,12 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import com.termux.app.terminow.files.TerminowSftpFs;
+
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
@@ -114,7 +118,7 @@ public final class TerminowMcpBridgeManager {
 
         mExecutor = new TerminowMcpBridgeExecutor(new TerminowClaudeSetup(mContext, mTargets), mTargets,
             new File(com.termux.shared.termux.TermuxConstants.TERMUX_HOME_DIR_PATH, ".terminow/mcp-tasks"),
-            this::grantHostForTask);
+            this::grantHostForTask, this::startRemoteTask);
 
         mBridge = new TerminowMcpBridge(new TerminowMcpBridge.Deps() {
             @NonNull @Override public List<TerminowMcpBridge.Share> shares() { return loadShares(); }
@@ -576,6 +580,55 @@ public final class TerminowMcpBridgeManager {
             throw new IllegalStateException("The SSH host for this session is no longer in the vault");
         long ttl = Math.max(60_000L, ((long) timeoutSeconds + 60) * 1000L);
         TerminowAiBridgeManager.getInstance(mContext, mStore, mTargets).grant(share.environmentKey, host, ttl);
+    }
+
+    /**
+     * Mode B: start a task's managed Claude on the share's SSH host over an exec channel, reusing the
+     * host's Vault credentials and its verified known-hosts key. Fails closed — it never prompts and
+     * never logs in automatically, so an unknown host key or a credential it cannot supply throws and
+     * fails the task. The returned process closes its SSH session when it is destroyed.
+     */
+    @NonNull
+    private Process startRemoteTask(@NonNull TerminowMcpBridge.Share share, @NonNull String command) throws IOException {
+        TerminowStore.Host host = TerminowStore.findHostByUuid(mStore.getHosts(), share.hostUuid);
+        if (host == null) throw new IOException("The SSH host for this session is no longer in the vault");
+        if (host.telnet) throw new IOException("Remote Claude needs SSH; this host uses telnet");
+        if (host.address.isEmpty()) throw new IOException("The SSH host has no address");
+        File home = new File(com.termux.shared.termux.TermuxConstants.TERMUX_HOME_DIR_PATH);
+        TerminowSftpFs fs = new TerminowSftpFs(home, "mcp-remote:" + share.id, host.getTitle(),
+            host.address, host.port, host.username, host.password, host.keyPath, FAIL_CLOSED_PROMPTS);
+        try {
+            return new RemoteProcess(fs.exec(command), fs);
+        } catch (IOException | RuntimeException e) {
+            fs.close();
+            throw e;
+        }
+    }
+
+    /** Never prompts: an unknown host key or a missing credential fails the connection (fail-closed). */
+    private static final TerminowSftpFs.Prompts FAIL_CLOSED_PROMPTS = new TerminowSftpFs.Prompts() {
+        @Override public boolean confirmHostKey(@NonNull String host, @NonNull String keyType, @NonNull String fingerprint) {
+            return false; // an untrusted/unknown host key is never accepted automatically
+        }
+        @Nullable @Override public String askPassword(@NonNull String prompt) { return null; }
+        @Nullable @Override public String askPassphrase(@NonNull String keyName) { return null; }
+    };
+
+    /** A remote exec process that also closes its SSH session when it is destroyed. */
+    private static final class RemoteProcess extends Process {
+        private final Process mInner;
+        private final TerminowSftpFs mFs;
+
+        RemoteProcess(@NonNull Process inner, @NonNull TerminowSftpFs fs) { mInner = inner; mFs = fs; }
+
+        @NonNull @Override public OutputStream getOutputStream() { return mInner.getOutputStream(); }
+        @NonNull @Override public InputStream getInputStream() { return mInner.getInputStream(); }
+        @NonNull @Override public InputStream getErrorStream() { return mInner.getErrorStream(); }
+        @Override public int waitFor() throws InterruptedException { return mInner.waitFor(); }
+        @Override public int exitValue() { return mInner.exitValue(); }
+        @Override public void destroy() {
+            try { mInner.destroy(); } finally { mFs.close(); }
+        }
     }
 
     /** Emergency stop: turn the bridge off, drop the relay, and revoke every client at once. */

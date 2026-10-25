@@ -259,7 +259,9 @@ final class TerminowMcpBridgeUi {
             texts.addView(text(mActivity.getString(R.string.terminow_mcp_bridge_session_shared,
                 capabilitiesText(share)), 12, R.color.terminow_quick_ready));
             String subtitle = share.isSshHost()
-                ? "SSH · " + share.hostIdentity + (share.folder.isEmpty() ? "" : " · " + share.folder)
+                ? "SSH · " + share.hostIdentity
+                    + (TerminowMcpBridge.MODE_REMOTE_HOST.equals(share.executorMode) ? " · on host" : " · local tools")
+                    + (share.folder.isEmpty() ? "" : " · " + share.folder)
                 : share.environmentKey + (share.folder.isEmpty() ? "" : " · " + share.folder);
             texts.addView(text(subtitle, 12, R.color.terminow_text_secondary));
             line.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
@@ -394,8 +396,25 @@ final class TerminowMcpBridgeUi {
         box.addView(envValue);
         box.addView(text(mActivity.getString(R.string.terminow_mcp_bridge_share_folder), 13, R.color.terminow_text_secondary));
         box.addView(folder);
-        box.addView(text(mActivity.getString(R.string.terminow_mcp_bridge_mode_local), 12, R.color.terminow_quick_ready));
-        box.addView(text(mActivity.getString(R.string.terminow_mcp_bridge_ssh_hint), 12, R.color.terminow_text_secondary));
+        final int[] modeSel = {0};
+        final String[] modeLabels = {
+            mActivity.getString(R.string.terminow_mcp_bridge_mode_a),
+            mActivity.getString(R.string.terminow_mcp_bridge_mode_b),
+        };
+        TextView modeValue = text(modeLabels[0], 14, R.color.terminow_text);
+        modeValue.setPadding(0, dp(4), 0, dp(8));
+        TextView modeHint = text(mActivity.getString(R.string.terminow_mcp_bridge_ssh_hint), 12, R.color.terminow_text_secondary);
+        modeValue.setOnClickListener(v -> new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_mcp_bridge_share_mode)
+            .setItems(modeLabels, (d, which) -> {
+                modeSel[0] = which;
+                modeValue.setText(modeLabels[which]);
+                modeHint.setText(mActivity.getString(which == 0
+                    ? R.string.terminow_mcp_bridge_ssh_hint : R.string.terminow_mcp_bridge_ssh_hint_b));
+            }).show());
+        box.addView(text(mActivity.getString(R.string.terminow_mcp_bridge_share_mode), 13, R.color.terminow_text_secondary));
+        box.addView(modeValue);
+        box.addView(modeHint);
 
         new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
             .setTitle(R.string.terminow_mcp_bridge_share_ssh_title)
@@ -405,9 +424,10 @@ final class TerminowMcpBridgeUi {
                 int e = envSel[0];
                 String id = "session-" + UUID.randomUUID();
                 String lbl = label.getText().toString().trim().isEmpty() ? host.label : label.getText().toString().trim();
+                String mode = modeSel[0] == 0 ? TerminowMcpBridge.MODE_LOCAL_TOOLS : TerminowMcpBridge.MODE_REMOTE_HOST;
                 TerminowMcpBridge.Share share = TerminowMcpBridgeManager.sshHostShare(id, lbl,
                     envKeys.get(e), "root", folder.getText().toString().trim(),
-                    host.uuid, hostIdentity(host), TerminowMcpBridge.MODE_LOCAL_TOOLS);
+                    host.uuid, hostIdentity(host), mode);
                 try {
                     mManager.putShare(share);
                 } catch (IllegalStateException ex) {

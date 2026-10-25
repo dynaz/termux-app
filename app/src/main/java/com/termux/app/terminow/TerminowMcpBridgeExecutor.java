@@ -63,23 +63,38 @@ public final class TerminowMcpBridgeExecutor implements TerminowMcpBridge.Execut
         void prepare(@NonNull TerminowMcpBridge.Share share, int timeoutSeconds);
     }
 
+    /** Runs a Mode-B task's managed Claude on the SSH host itself (over an exec channel). */
+    public interface RemoteExec {
+        /**
+         * Start {@code command} on the share's SSH host, reusing the host's Vault credentials and its
+         * verified known-hosts key, and return a {@link Process} that streams like a local one. Throws
+         * if the host is gone, its key is not trusted, or authentication is not ready — it never
+         * prompts and never logs in automatically. The returned process closes its SSH session when
+         * it is destroyed.
+         */
+        @NonNull Process start(@NonNull TerminowMcpBridge.Share share, @NonNull String command) throws IOException;
+    }
+
     private final TerminowClaudeSetup mSetup;
     private final TerminowMcpTargets mTargets;
     @Nullable private final File mLogDir;
     @Nullable private final HostAccess mHostAccess;
+    @Nullable private final RemoteExec mRemoteExec;
     private final Map<String, Run> mRuns = new ConcurrentHashMap<>();
 
     public TerminowMcpBridgeExecutor(@NonNull TerminowClaudeSetup setup, @NonNull TerminowMcpTargets targets,
                                      @Nullable File logDir) {
-        this(setup, targets, logDir, null);
+        this(setup, targets, logDir, null, null);
     }
 
     public TerminowMcpBridgeExecutor(@NonNull TerminowClaudeSetup setup, @NonNull TerminowMcpTargets targets,
-                                     @Nullable File logDir, @Nullable HostAccess hostAccess) {
+                                     @Nullable File logDir, @Nullable HostAccess hostAccess,
+                                     @Nullable RemoteExec remoteExec) {
         mSetup = setup;
         mTargets = targets;
         mLogDir = logDir;
         mHostAccess = hostAccess;
+        mRemoteExec = remoteExec;
         cleanStaleLogs();
     }
 
@@ -143,15 +158,19 @@ public final class TerminowMcpBridgeExecutor implements TerminowMcpBridge.Execut
     private void execute(@NonNull TerminowMcpBridgeTask task, @NonNull TerminowMcpBridge.Share share,
                          @NonNull TerminowMcpBridge.Callback callback, @NonNull Run run) {
         int timeout = task.timeoutSeconds <= 0 ? DEFAULT_TIMEOUT_S : Math.min(task.timeoutSeconds, MAX_TIMEOUT_S);
-        List<String> command;
-        try {
-            String target = share.environmentKey.isEmpty() ? TerminowMcpTargets.TARGET_TERMINOW : share.environmentKey;
-            command = TerminowClaudeSetup.buildCommand(mTargets.getPrefixDir(), target, share.user, RUN_SCRIPT,
-                task.request, share.folder);
-        } catch (IllegalArgumentException e) {
-            callback.failed(task.id, "The session's target is not valid: " + e.getMessage());
-            mRuns.remove(task.id);
-            return;
+        // Mode B: the managed Claude runs on the SSH host itself; otherwise it runs locally.
+        boolean remote = share.isSshHost() && TerminowMcpBridge.MODE_REMOTE_HOST.equals(share.executorMode);
+        List<String> command = null;
+        if (!remote) {
+            try {
+                String target = share.environmentKey.isEmpty() ? TerminowMcpTargets.TARGET_TERMINOW : share.environmentKey;
+                command = TerminowClaudeSetup.buildCommand(mTargets.getPrefixDir(), target, share.user, RUN_SCRIPT,
+                    task.request, share.folder);
+            } catch (IllegalArgumentException e) {
+                callback.failed(task.id, "The session's target is not valid: " + e.getMessage());
+                mRuns.remove(task.id);
+                return;
+            }
         }
 
         // A cancel that arrived before the process existed must stop it, not let it run to the end
@@ -174,10 +193,18 @@ public final class TerminowMcpBridgeExecutor implements TerminowMcpBridge.Execut
         }
         Process process;
         try {
-            process = mSetup.start(command);
+            if (remote) {
+                if (mRemoteExec == null) throw new IOException("Remote execution is not available");
+                // Run the managed Claude on the host; the request and folder are shell-quoted so a
+                // request is never parsed as shell. Auth/host-key readiness is enforced by the runner.
+                process = mRemoteExec.start(share, buildRemoteCommand(task.request, share.folder));
+            } else {
+                process = mSetup.start(command);
+            }
         } catch (IOException | RuntimeException e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Could not start the managed task", e);
-            callback.failed(task.id, "Could not start Claude Code: " + e.getMessage());
+            callback.failed(task.id, (remote ? "Could not run Claude on the host: " : "Could not start Claude Code: ")
+                + e.getMessage());
             mRuns.remove(task.id);
             return;
         }
@@ -229,8 +256,22 @@ public final class TerminowMcpBridgeExecutor implements TerminowMcpBridge.Execut
                 }
             }
         } finally {
+            // A remote task's process owns an SSH session; destroying it closes the channel and the
+            // session, so a finished or stopped remote task never leaves a connection open.
+            if (remote) try { process.destroy(); } catch (RuntimeException ignored) { }
             mRuns.remove(task.id);
         }
+    }
+
+    /**
+     * The shell command that runs the managed Claude on an SSH host: {@link #RUN_SCRIPT} with the
+     * request as {@code $1} and the folder as {@code $2}. Every argument is shell-quoted, so a request
+     * that starts with {@code -} or contains shell metacharacters is data, never parsed as shell.
+     */
+    @NonNull
+    static String buildRemoteCommand(@NonNull String request, @NonNull String folder) {
+        return "bash -lc " + TerminowStore.shellQuote(RUN_SCRIPT)
+            + " terminow " + TerminowStore.shellQuote(request) + " " + TerminowStore.shellQuote(folder);
     }
 
     /** The final {@code result} event decides the outcome; everything else is streamed as output. */

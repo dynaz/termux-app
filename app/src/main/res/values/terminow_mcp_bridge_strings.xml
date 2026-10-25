@@ -48,6 +48,10 @@
     <string name="terminow_mcp_bridge_share_runs_in">Claude runs in</string>
     <string name="terminow_mcp_bridge_mode_local">Execution: Local Claude via SSH tools</string>
     <string name="terminow_mcp_bridge_ssh_hint">Claude runs locally and reaches only this host through TermiNow\'s SSH tools — no install on the host.</string>
+    <string name="terminow_mcp_bridge_share_mode">Execution</string>
+    <string name="terminow_mcp_bridge_mode_a">Local Claude via SSH tools</string>
+    <string name="terminow_mcp_bridge_mode_b">Remote Claude on the host</string>
+    <string name="terminow_mcp_bridge_ssh_hint_b">Claude runs on the host over SSH. Needs Claude Code installed there and the host key already trusted; it never logs in or installs automatically.</string>
     <string name="terminow_mcp_bridge_caps_title">Client permissions</string>
     <string name="terminow_mcp_bridge_cap_submit">Submit tasks</string>
     <string name="terminow_mcp_bridge_cap_read">Read output</string>

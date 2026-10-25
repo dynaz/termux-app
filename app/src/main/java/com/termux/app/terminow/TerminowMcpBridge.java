@@ -280,8 +280,6 @@ public final class TerminowMcpBridge {
             throw TerminowAiError.CAPABILITY_DENIED.of("This session does not allow submitting tasks");
         if (!share.managed)
             throw TerminowAiError.SESSION_UNSUPPORTED.of("This session is interactive; only managed sessions accept tasks");
-        if (share.isSshHost() && MODE_REMOTE_HOST.equals(share.executorMode))
-            throw TerminowAiError.SESSION_UNSUPPORTED.of("Remote Claude on the host is not available yet; use Local Claude via SSH tools");
 
         if (!idempotencyKey.isEmpty()) {
             String existingId = mIdempotency.get(idempotencyScope(clientKey, sessionId, idempotencyKey));

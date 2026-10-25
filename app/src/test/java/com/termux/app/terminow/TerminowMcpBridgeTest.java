@@ -381,16 +381,13 @@ public class TerminowMcpBridgeTest {
         assertEquals("ubuntu", findTask(bridge, a).environmentKey);
     }
 
-    // Mode B (remote Claude on the host) is refused for now, not silently run elsewhere.
+    // Mode B (remote Claude on the host) is accepted and routed to the executor (which runs it on the host).
     @Test
-    public void remoteHostModeIsRefusedForNow() {
+    public void remoteHostModeIsAcceptedAndRoutes() throws Exception {
         shares.add(sshHost("s1", TerminowMcpBridge.MODE_REMOTE_HOST));
-        try {
-            bridge.taskSubmit(CLIENT, "s1", "x", "", 0);
-            fail("expected Mode B to be refused in Phase 1");
-        } catch (TerminowAiError.Exception e) {
-            assertEquals(TerminowAiError.SESSION_UNSUPPORTED, e.error);
-        }
+        String a = submit("s1");
+        assertEquals("running", state(CLIENT, a));
+        assertTrue("the task was handed to the executor", executor.started.containsKey(a));
     }
 
     // A local share's fingerprint ignores the SSH fields (migration-safe); an SSH-host share binds to its host.
