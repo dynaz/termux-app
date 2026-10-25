@@ -2367,6 +2367,14 @@ public class TerminowLauncher {
             TerminowOsc7.Location loc = TerminowOsc7.parse(session.getEmulator().getWorkingDirectoryUri());
             if (loc != null) confirmedPath = loc.path;
         }
+        // For a local TermiNow session without OSC 7, the shell's own cwd from /proc is reliable and
+        // needs no shell setup. Never for a remote session: the local client's cwd is not the remote
+        // directory, so the phone's filesystem is never shown for a remote shell.
+        if (confirmedPath.isEmpty() && session != null && info != null
+                && TerminowMcpTargets.TARGET_TERMINOW.equals(info.environmentKey)) {
+            String proc = TerminowCwd.readProcCwd(new java.io.File("/proc"), session.getPid());
+            if (proc != null) confirmedPath = proc;
+        }
         String folder = !confirmedPath.isEmpty() ? confirmedPath
             : (info != null && !info.folder.isEmpty() ? info.folder : "");
         if (!folder.isEmpty() && info != null && info.environmentKey != null) {
