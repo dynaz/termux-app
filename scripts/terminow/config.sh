@@ -13,7 +13,7 @@
 # Where the package repository built by make-apt-repo.sh is served from. `pkg` and `apt` on the
 # device only ever use this url, the packages of the official Termux repositories are compiled
 # for com.termux and do not work under another package name.
-: "${TERMINOW_REPO_BASE_URL:=https://dynaz.github.io/termux-app/apt}"
+: "${TERMINOW_REPO_BASE_URL:=https://dynaz.github.io/terminow/apt}"
 : "${TERMINOW_REPO_URL:=$TERMINOW_REPO_BASE_URL/terminow-main}"
 
 # Packages built and put in the bootstrap in addition to the default bootstrap packages. All of
@@ -22,7 +22,7 @@
 
 # Packages built for the package repository only, to be installed with `pkg install`. proot-distro
 # runs Linux distributions like Ubuntu; it depends on python, which is too large for the bootstrap.
-: "${TERMINOW_REPO_PACKAGES:=proot,proot-distro}"
+: "${TERMINOW_REPO_PACKAGES:=proot,proot-distro,nodejs,npm}"
 
 : "${TERMINOW_ARCHITECTURES:=aarch64}"
 
