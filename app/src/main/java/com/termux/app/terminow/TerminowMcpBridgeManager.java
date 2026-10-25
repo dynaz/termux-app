@@ -14,6 +14,7 @@ import org.json.JSONObject;
 import com.termux.app.terminow.files.TerminowSftpFs;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -603,6 +604,61 @@ public final class TerminowMcpBridgeManager {
             fs.close();
             throw e;
         }
+    }
+
+    /**
+     * Mode B preflight: check whether the share's SSH host is ready to run a managed Claude — host key
+     * trusted, a shell and the Claude CLI present, the folder there — reusing the host's Vault
+     * credentials. Read-only: it never installs or logs in automatically. With {@code trustHostKey}
+     * the host's current key is accepted and remembered (the person confirmed it in the UI). Runs on
+     * the caller's background thread.
+     */
+    @NonNull
+    TerminowMcpPreflight.Result remotePreflight(@NonNull TerminowMcpBridge.Share share, boolean trustHostKey) {
+        TerminowStore.Host host = TerminowStore.findHostByUuid(mStore.getHosts(), share.hostUuid);
+        if (host == null) return TerminowMcpPreflight.error("The SSH host for this session is no longer in the vault");
+        if (host.telnet) return TerminowMcpPreflight.error("Remote Claude needs SSH; this host uses telnet");
+        if (host.address.isEmpty()) return TerminowMcpPreflight.error("The SSH host has no address");
+        File home = new File(com.termux.shared.termux.TermuxConstants.TERMUX_HOME_DIR_PATH);
+        PreflightPrompts prompts = new PreflightPrompts(trustHostKey);
+        TerminowSftpFs fs = new TerminowSftpFs(home, "mcp-preflight:" + share.id, host.getTitle(),
+            host.address, host.port, host.username, host.password, host.keyPath, prompts);
+        try {
+            Process p = fs.exec(TerminowMcpPreflight.buildCommand(share.folder));
+            String out = readBounded(p.getInputStream(), TerminowMcpPreflight.OUTPUT_CAP);
+            try { p.waitFor(); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+            return TerminowMcpPreflight.parse(out);
+        } catch (IOException | RuntimeException e) {
+            if (!trustHostKey && !prompts.hostKeyInfo.isEmpty())
+                return TerminowMcpPreflight.untrustedHostKey(prompts.host, prompts.hostKeyInfo);
+            return TerminowMcpPreflight.error(String.valueOf(e.getMessage()));
+        } finally {
+            fs.close();
+        }
+    }
+
+    private static String readBounded(@NonNull InputStream in, int cap) throws IOException {
+        ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        byte[] chunk = new byte[1024];
+        int n;
+        while (buf.size() < cap && (n = in.read(chunk)) != -1) buf.write(chunk, 0, Math.min(n, cap - buf.size()));
+        return new String(buf.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    /** Preflight prompts: capture an unknown host key (so the UI can offer to trust it) and never ask
+     *  for a password. {@code trust} accepts and remembers the host's current key. */
+    private static final class PreflightPrompts implements TerminowSftpFs.Prompts {
+        final boolean trust;
+        volatile String host = "";
+        volatile String hostKeyInfo = "";
+        PreflightPrompts(boolean trust) { this.trust = trust; }
+        @Override public boolean confirmHostKey(@NonNull String host, @NonNull String keyType, @NonNull String fingerprint) {
+            this.host = host;
+            this.hostKeyInfo = keyType + " " + fingerprint;
+            return trust;
+        }
+        @Nullable @Override public String askPassword(@NonNull String prompt) { return null; }
+        @Nullable @Override public String askPassphrase(@NonNull String keyName) { return null; }
     }
 
     /** Never prompts: an unknown host key or a missing credential fails the connection (fail-closed). */

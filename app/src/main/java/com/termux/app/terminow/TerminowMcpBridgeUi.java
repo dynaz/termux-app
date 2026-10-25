@@ -460,6 +460,8 @@ final class TerminowMcpBridgeUi {
         box.addView(submit);
         box.addView(read);
         box.addView(cancel);
+        if (share.isSshHost())
+            box.addView(button(mActivity.getString(R.string.terminow_mcp_bridge_preflight), false, () -> runPreflight(share, false)));
         new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
             .setTitle(share.label)
             .setView(box)
@@ -469,8 +471,10 @@ final class TerminowMcpBridgeUi {
                 if (read.isChecked()) caps.add(TerminowMcpBridge.CAP_READ);
                 if (cancel.isChecked()) caps.add(TerminowMcpBridge.CAP_CANCEL);
                 try {
+                    // Preserve the SSH-host fields (type, mode, host) when only the capabilities change.
                     mManager.putShare(new TerminowMcpBridge.Share(share.id, share.label, share.managed,
-                        share.environmentKey, share.user, share.folder, caps));
+                        share.environmentKey, share.user, share.folder, caps,
+                        share.shareType, share.executorMode, share.hostUuid, share.hostIdentity));
                 } catch (IllegalStateException e) {
                     mActivity.showToast(e.getMessage(), true);
                 }
@@ -480,6 +484,48 @@ final class TerminowMcpBridgeUi {
                 mOpenSessionTerminal.open(share.environmentKey, share.user, share.folder))
             .setNegativeButton(android.R.string.cancel, null)
             .show();
+    }
+
+    /** Run the Mode-B host readiness check off the main thread, then show the result. */
+    private void runPreflight(@NonNull TerminowMcpBridge.Share share, boolean trustHostKey) {
+        mActivity.showToast(mActivity.getString(R.string.terminow_mcp_bridge_preflight_running), false);
+        new Thread(() -> {
+            TerminowMcpPreflight.Result result = mManager.remotePreflight(share, trustHostKey);
+            mActivity.runOnUiThread(() -> showPreflightResult(share, result));
+        }, "mcp-preflight").start();
+    }
+
+    private void showPreflightResult(@NonNull TerminowMcpBridge.Share share, @NonNull TerminowMcpPreflight.Result r) {
+        LinearLayout box = dialogBox();
+        if (!r.error.isEmpty()) {
+            box.addView(text(mActivity.getString(R.string.terminow_mcp_bridge_preflight_error, r.error), 14, R.color.terminow_mcp_warn));
+        } else if (!r.hostKeyTrusted) {
+            box.addView(text(mActivity.getString(R.string.terminow_mcp_bridge_preflight_hostkey), 14, R.color.terminow_mcp_warn));
+            box.addView(text(r.hostKeyInfo, 12, R.color.terminow_text_secondary));
+        } else {
+            box.addView(preflightRow(R.string.terminow_mcp_bridge_preflight_connected, r.connected));
+            box.addView(preflightRow(R.string.terminow_mcp_bridge_preflight_shell, r.shellOk));
+            box.addView(preflightRow(R.string.terminow_mcp_bridge_preflight_claude, r.claudeInstalled));
+            box.addView(preflightRow(R.string.terminow_mcp_bridge_preflight_folder, r.folderExists));
+            if (!r.os.isEmpty()) box.addView(text("OS · " + r.os, 12, R.color.terminow_text_secondary));
+            if (!r.claudeInstalled)
+                box.addView(text(mActivity.getString(R.string.terminow_mcp_bridge_preflight_install), 12, R.color.terminow_text_secondary));
+            if (r.ready())
+                box.addView(text(mActivity.getString(R.string.terminow_mcp_bridge_preflight_ready), 13, R.color.terminow_quick_ready));
+        }
+        AlertDialog.Builder b = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_mcp_bridge_preflight_title)
+            .setView(wrapScroll(box))
+            .setPositiveButton(android.R.string.ok, null);
+        if (!r.hostKeyTrusted && r.error.isEmpty())
+            b.setNeutralButton(R.string.terminow_mcp_bridge_preflight_trust, (d, w) -> runPreflight(share, true));
+        b.show();
+    }
+
+    @NonNull
+    private TextView preflightRow(int labelRes, boolean ok) {
+        return text((ok ? "✓ " : "✗ ") + mActivity.getString(labelRes), 14,
+            ok ? R.color.terminow_quick_ready : R.color.terminow_mcp_warn);
     }
 
     // ---------------------------------------------------------------------------------------
