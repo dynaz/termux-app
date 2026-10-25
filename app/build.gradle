@@ -71,8 +71,8 @@ android {
         applicationId "com.terminow"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 239
-        versionName "2.120.0.239"
+        versionCode 240
+        versionName "2.120.0.240"
 
         if (appVersionName) versionName = appVersionName
         // Optional CI override so a release build can use a versionCode above the

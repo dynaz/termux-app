@@ -1688,6 +1688,8 @@ public class TerminowHome {
     /** A prompt that a connection waits at for the user, like for a password or to accept the key of a new host. */
     private static final Pattern CONNECTION_PROMPT_PATTERN = Pattern.compile(
         "(password|passphrase|\\(yes/no[^)]*\\)\\?|Verification code)[^\\n]*:?\\s*$", Pattern.CASE_INSENSITIVE);
+    /** A ready shell prompt the startup snippet can be typed at: the last line ends with $, #, %, &gt; or ❯. */
+    private static final Pattern SHELL_PROMPT_PATTERN = Pattern.compile("[$#%>\\u276f]\\s*$");
 
     private boolean startConnecting(@NonNull TerminowStore.Host host, boolean sftp) {
         // A repeated tap does not start another connection while one is being made
@@ -1738,8 +1740,10 @@ public class TerminowHome {
                 mStore.addRecentConnection(host, sftp);
                 // Never typed into a tmux session that is attached to again: it may run a program
                 TerminowStore.Snippet snippet = sftp || (again && host.remoteTmux) ? null : mStore.getSnippet(host.startupSnippet);
-                if (snippet != null && session.isRunning())
-                    session.write(snippet.command + "\r");
+                // Type the snippet only once the shell is idle at its prompt — not while a login banner
+                // or a login script is still printing — so it is not swallowed (why a snippet sometimes
+                // did not run). Completion itself does not wait, so a noisy prompt never hangs the tab.
+                if (snippet != null) sendSnippetWhenSettled(session, snippet, lastLine, 0);
                 finish.run();
                 if (!sftp && !host.telnet) watchConnectionLost(session, host, tab);
                 return;
@@ -1751,6 +1755,34 @@ public class TerminowHome {
             return;
         }
         mHandler.postDelayed(() -> watchConnection(session, host, sftp, title, check + 1, tab, again), CONNECTION_CHECK_DELAY_MS);
+    }
+
+    /** The snippet waits this many 500ms checks for an unrecognised prompt to settle, then a hard cap. */
+    private static final int SNIPPET_SETTLE_MIN_CHECKS = 2;
+    private static final int SNIPPET_SETTLE_MAX_CHECKS = 30;
+
+    /**
+     * Type the host's startup snippet once the shell is idle at its prompt. It waits until the last
+     * line of output is a recognised shell prompt, or has simply stopped changing (the login banner
+     * and any login scripts have finished), then types it — so the command is not swallowed by a shell
+     * that was still busy (why a snippet sometimes did not run). It never types over a password prompt,
+     * and after a bounded wait it types the snippet anyway rather than dropping it.
+     */
+    private void sendSnippetWhenSettled(@NonNull TerminalSession session, @NonNull TerminowStore.Snippet snippet,
+                                        @NonNull String prevLastLine, int check) {
+        if (!session.isRunning()) return;
+        String transcript = session.getPid() > 0 ? ShellUtils.getTerminalSessionTranscriptText(session, false, true) : null;
+        String lastLine = transcript != null ? transcript.substring(transcript.lastIndexOf('\n') + 1) : prevLastLine;
+        boolean waitingAtPrompt = transcript != null && CONNECTION_PROMPT_PATTERN.matcher(lastLine).find();
+        boolean settled = transcript != null && lastLine.equals(prevLastLine);
+        boolean promptReady = settled && !waitingAtPrompt && SHELL_PROMPT_PATTERN.matcher(lastLine).find();
+        boolean ready = promptReady || (settled && !waitingAtPrompt && check >= SNIPPET_SETTLE_MIN_CHECKS);
+        if (ready || check >= SNIPPET_SETTLE_MAX_CHECKS) {
+            // Do not type over a password or host-key prompt, even at the cap: the login is not done.
+            if (session.isRunning() && !waitingAtPrompt) session.write(snippet.command + "\r");
+            return;
+        }
+        mHandler.postDelayed(() -> sendSnippetWhenSettled(session, snippet, lastLine, check + 1), CONNECTION_CHECK_DELAY_MS);
     }
 
     private void showConnectionFailed(@NonNull TerminalSession session, @NonNull TerminowStore.Host host, boolean sftp,
