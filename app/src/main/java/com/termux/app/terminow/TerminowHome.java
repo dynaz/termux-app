@@ -209,6 +209,7 @@ public class TerminowHome {
     /** The terminal that files that are being picked are uploaded for. */
     @Nullable private WeakReference<TerminalSession> mUploadSession;
     private final TextView mSectionTitleView;
+    private final ImageView mSectionHelpView;
     private final View mActionsView;
     private final TextView mEmptyView;
     private final ItemsAdapter mAdapter = new ItemsAdapter();
@@ -427,6 +428,7 @@ public class TerminowHome {
         TerminowBiometricKeys.setActivity(activity);
         TerminowBiometricKeys.startAgent();
         mSectionTitleView = activity.findViewById(R.id.terminow_section_title);
+        mSectionHelpView = activity.findViewById(R.id.terminow_section_help);
         mEmptyView = activity.findViewById(R.id.terminow_empty);
 
         mHomeButton.setOnClickListener(v -> show());
@@ -795,11 +797,35 @@ public class TerminowHome {
         setPage(PAGE_LAUNCH);
     }
 
+    /** Shows the ⓘ help button on rail pages without their own help icon, pointing at the matching terminow.online page. */
+    private void updateSectionHelp() {
+        if (mSectionHelpView == null) return;
+        final String path;
+        switch (mPage) {
+            case PAGE_HOSTS:
+            case PAGE_FILES:
+            case PAGE_KEYCHAIN:
+            case PAGE_FORWARDING:
+            case PAGE_SNIPPETS:
+            case PAGE_KNOWN_HOSTS:
+            case PAGE_LOGS:
+                path = "support";
+                break;
+            default:
+                // AI, MCP Servers and MCP Bridge carry their own ⓘ; Launch and Settings get none.
+                mSectionHelpView.setVisibility(View.GONE);
+                return;
+        }
+        mSectionHelpView.setVisibility(View.VISIBLE);
+        mSectionHelpView.setOnClickListener(v -> TerminowHelp.open(mActivity, path));
+    }
+
     private void setPage(int page) {
         if (page == PAGE_FILES) TerminowWhatsNew.seen(mActivity, TerminowWhatsNew.Feature.FILES);
         if (mPage == PAGE_FILES && page != PAGE_FILES) mExplorer.onHidden();
         if (mPage == PAGE_LAUNCH && page != PAGE_LAUNCH && mQuickLaunch != null) mQuickLaunch.hide();
         mPage = page;
+        updateSectionHelp();
         setRailItemSelected(mRailLaunch, page == PAGE_LAUNCH);
         if (page == PAGE_LAUNCH) {
             // Quick Launch has its own title, sections and actions over the whole content area
