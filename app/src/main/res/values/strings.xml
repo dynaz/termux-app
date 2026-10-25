@@ -474,6 +474,7 @@
     <string name="terminow_connection_auth_failed">Authentication failed. Check the user name, password or key.</string>
     <string name="terminow_connection_timeout">The connection timed out. Check the address, port and network.</string>
     <string name="terminow_retry">Retry</string>
+    <string name="terminow_help">Help</string>
     <string name="terminow_close_dialog">Close</string>
     <string name="terminow_files_import">Import files</string>
     <string name="terminow_files_export">Export a file</string>

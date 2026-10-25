@@ -225,7 +225,7 @@ final class TerminowToolSheet {
         sheet.addView(handle, handleParams);
         TextView title = text(mActivity.getString(R.string.terminow_install_title), 20, R.color.terminow_text);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        sheet.addView(title, matchWrap());
+        sheet.addView(TerminowHelp.header(mActivity, title, "support"), matchWrap());
         TextView subtitle = text(mActivity.getString(R.string.terminow_install_subtitle), 13, R.color.terminow_text_secondary);
         subtitle.setPadding(0, dp(2), 0, 0);
         sheet.addView(subtitle, matchWrap());

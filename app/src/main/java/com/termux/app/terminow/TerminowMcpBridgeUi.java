@@ -79,7 +79,7 @@ final class TerminowMcpBridgeUi {
 
         TextView title = text(mActivity.getString(R.string.terminow_mcp_bridge_title), 22, R.color.terminow_text);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        mContent.addView(title);
+        mContent.addView(TerminowHelp.header(mActivity, title, "mcp"));
         mContent.addView(note(mActivity.getString(R.string.terminow_mcp_bridge_desc)));
 
         if (!gateEntitlement()) return;

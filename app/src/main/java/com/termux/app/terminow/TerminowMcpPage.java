@@ -267,6 +267,7 @@ public class TerminowMcpPage {
             column.setContentDescription(mActivity.getString(labels[i]));
             tabs.addView(column, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         }
+        tabs.addView(TerminowHelp.icon(mActivity, "mcp"));
         mContainer.addView(tabs, matchWrap());
     }
 
