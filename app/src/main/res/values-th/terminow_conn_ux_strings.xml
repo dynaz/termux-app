@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_conn_connecting">กำลังเชื่อมต่อ…</string>
+    <string name="terminow_conn_authenticating">กำลังยืนยันตัวตน…</string>
+    <string name="terminow_conn_connected">เชื่อมต่อแล้ว</string>
+    <string name="terminow_conn_failed">เชื่อมต่อไม่สำเร็จ</string>
+    <string name="terminow_conn_disconnected">ตัดการเชื่อมต่อแล้ว</string>
+    <string name="terminow_conn_cancel">ยกเลิก</string>
+    <string name="terminow_conn_retry">ลองใหม่</string>
+
+    <string name="terminow_security_unchecked">ยังไม่ได้ตรวจสอบความปลอดภัย</string>
+    <string name="terminow_security_advisory">มีคำแนะนำด้านความปลอดภัย</string>
+    <string name="terminow_security_ok">ไม่มีคำเตือนด้านความปลอดภัย</string>
+    <string name="terminow_security_banner_title">เชื่อมต่อแล้ว · มีคำแนะนำด้านความปลอดภัย</string>
+    <string name="terminow_security_banner_body">การเชื่อมต่อนี้ยังไม่ใช้การแลกเปลี่ยนกุญแจแบบ Post-Quantum แนะนำให้ตรวจสอบเวอร์ชันและการตั้งค่า SSH ของเซิร์ฟเวอร์</string>
+    <string name="terminow_security_details">ดูรายละเอียด</string>
+    <string name="terminow_security_ack">รับทราบ</string>
+    <string name="terminow_security_details_title">คำแนะนำด้านความปลอดภัย</string>
+    <string name="terminow_security_open_link">เปิด openssh.com/pq.html</string>
+</resources>

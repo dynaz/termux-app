@@ -2350,9 +2350,15 @@ public class TerminowLauncher {
         if (session != current) session = current;
         SessionInfo info = session != null ? mInfo.get(session) : null;
         String unknown = mActivity.getString(R.string.terminow_toolbar_unknown);
-        String environment = info != null ? info.environmentLabel : unknown;
+        // The environment the launcher tracked; for a tab it did not start, this session's own name
+        // (an SSH host title, a local shell name) rather than "Unknown". Never another session's data.
+        String environment;
+        if (info != null && !info.environmentLabel.isEmpty()) environment = info.environmentLabel;
+        else if (session != null && !TextUtils.isEmpty(session.mSessionName)) environment = session.mSessionName;
+        else environment = unknown;
         mToolbarEnvironment.setText(environment + "  ▾");
         mToolbarEnvironment.setContentDescription(mActivity.getString(R.string.terminow_toolbar_environment_description, environment));
+        // Only the real folder is shown; it is never guessed and never taken from another session.
         String folder = info != null && !info.folder.isEmpty() ? info.folder : "";
         if (!folder.isEmpty() && info.environmentKey != null) {
             Environment env = environmentFor(info.environmentKey);
@@ -2360,8 +2366,9 @@ public class TerminowLauncher {
             else if (folder.startsWith(TermuxConstants.TERMUX_HOME_DIR_PATH + "/"))
                 folder = "~" + folder.substring(TermuxConstants.TERMUX_HOME_DIR_PATH.length());
         }
-        mToolbarFolder.setText(folder.isEmpty() ? unknown : folder);
-        mToolbarFolder.setContentDescription(mActivity.getString(R.string.terminow_toolbar_folder_description, folder.isEmpty() ? unknown : folder));
+        String folderText = folder.isEmpty() ? mActivity.getString(R.string.terminow_toolbar_folder_unknown) : folder;
+        mToolbarFolder.setText(folderText);
+        mToolbarFolder.setContentDescription(mActivity.getString(R.string.terminow_toolbar_folder_description, folderText));
     }
 
     /**

@@ -210,6 +210,7 @@ public class TerminowHome {
     @Nullable private WeakReference<TerminalSession> mUploadSession;
     private final TextView mSectionTitleView;
     private final ImageView mSectionHelpView;
+    private final TerminowConnectionUi mConnectionUi;
     private final View mActionsView;
     private final TextView mEmptyView;
     private final ItemsAdapter mAdapter = new ItemsAdapter();
@@ -429,6 +430,7 @@ public class TerminowHome {
         TerminowBiometricKeys.startAgent();
         mSectionTitleView = activity.findViewById(R.id.terminow_section_title);
         mSectionHelpView = activity.findViewById(R.id.terminow_section_help);
+        mConnectionUi = new TerminowConnectionUi(activity, activity.findViewById(R.id.terminow_terminal_overlay));
         mEmptyView = activity.findViewById(R.id.terminow_empty);
 
         mHomeButton.setOnClickListener(v -> show());
@@ -700,6 +702,8 @@ public class TerminowHome {
 
         boolean homeVisible = isVisible();
         TerminalSession currentSession = mActivity.getCurrentSession();
+        // Show the connection panel, security banner and shield of the session that is now shown.
+        if (mConnectionUi != null) mConnectionUi.onShowSession(homeVisible ? null : currentSession);
         List<TermuxSession> termuxSessions = service.getTermuxSessions();
         View selectedTab = null;
 
@@ -776,6 +780,7 @@ public class TerminowHome {
     }
 
     private void closeSession(@NonNull TerminalSession session) {
+        mConnectionUi.onCloseSession(session);
         if (!session.isRunning()) {
             mActivity.getTermuxTerminalSessionClient().closeSession(session);
             return;
@@ -1716,10 +1721,23 @@ public class TerminowHome {
         "(password|passphrase|\\(yes/no[^)]*\\)\\?|Verification code)[^\\n]*:?\\s*$", Pattern.CASE_INSENSITIVE);
     /** A ready shell prompt the startup snippet can be typed at: the last line ends with $, #, %, &gt; or ❯. */
     private static final Pattern SHELL_PROMPT_PATTERN = Pattern.compile("[$#%>\\u276f]\\s*$");
+    /** An authentication prompt (password/passphrase/2FA), unlike the host-key (yes/no) confirmation. */
+    private static final Pattern AUTH_PROMPT_PATTERN = Pattern.compile(
+        "(password|passphrase|Verification code)[^\\n]*:?\\s*$", Pattern.CASE_INSENSITIVE);
 
     private boolean startConnecting(@NonNull TerminowStore.Host host, boolean sftp) {
         // A repeated tap does not start another connection while one is being made
         return mConnectingHosts.add(host.getKey() + (sftp ? ":sftp" : ":ssh"));
+    }
+
+    /** The connecting panel subtitle: user@address:port, never a password, key or other secret. */
+    @NonNull
+    private String connectionSubtitle(@NonNull TerminowStore.Host host) {
+        StringBuilder sb = new StringBuilder();
+        if (host.username != null && !host.username.isEmpty()) sb.append(host.username).append('@');
+        if (host.address != null) sb.append(host.address);
+        if (host.port != 0 && host.port != 22) sb.append(':').append(host.port);
+        return sb.toString();
     }
 
     /**
@@ -1734,6 +1752,23 @@ public class TerminowHome {
         if (check == 0) {
             session.mSessionName = mActivity.getString(R.string.terminow_connecting_session, title);
             refresh();
+            Runnable cancel = () -> mActivity.getTermuxTerminalSessionClient().closeSession(session);
+            Runnable retry = () -> {
+                // Close the old attempt cleanly before starting a new one, so no duplicate session is made.
+                if (!sftp && session.isRunning()) { reconnectInTab(session, host, tab); return; }
+                mActivity.getTermuxTerminalSessionClient().closeSession(session);
+                if (sftp) connectSftp(host); else connect(host);
+            };
+            Runnable edit = () -> {
+                // Correct what failed, then connect again with the saved host, replacing this attempt.
+                TerminowStore.Host saved = TerminowStore.findHost(mHosts, host.getKey());
+                if (saved == null) { mActivity.showToast(mActivity.getString(R.string.terminow_rdp_host_gone), true); return; }
+                showHostDialog(saved, null, edited -> {
+                    mActivity.getTermuxTerminalSessionClient().closeSession(session);
+                    if (sftp) connectSftp(edited); else connect(edited);
+                });
+            };
+            mConnectionUi.onConnectStart(session, title, connectionSubtitle(host), !sftp, cancel, retry, edit);
         }
 
         Runnable finish = () -> {
@@ -1745,6 +1780,7 @@ public class TerminowHome {
         // The tab was closed or the session ended
         if (session.getPid() > 0 && !session.isRunning()) {
             finish.run();
+            mConnectionUi.onConnectDone(session);
             return;
         }
 
@@ -1752,17 +1788,29 @@ public class TerminowHome {
         // Only what came after the previous output of a restored tab, or after "Reconnecting"
         if (transcript != null) transcript = TerminowWorkspace.afterMark(transcript);
         if (transcript != null) {
+            // Feed the security detector (post-quantum KEX advisory); only the new output, nothing stored.
+            mConnectionUi.onOutput(session, transcript);
+
+            String lastLine = transcript.substring(transcript.lastIndexOf('\n') + 1);
+            boolean waitingAtPrompt = CONNECTION_PROMPT_PATTERN.matcher(lastLine).find();
+
             Failure found = findConnectionFailure(transcript);
             String failure = found != null ? describeFailure(found, host) : null;
             if (failure != null) {
                 finish.run();
-                showConnectionFailed(session, host, sftp, failure, tab);
+                // Also mark the tab, for a restored tab that is not shown, then show the in-tab panel.
+                markSession(session, mActivity.getString(R.string.terminow_restore_failed_line, failure));
+                mConnectionUi.onFailed(session, failure);
                 return;
             }
 
-            String lastLine = transcript.substring(transcript.lastIndexOf('\n') + 1);
-            boolean waitingAtPrompt = CONNECTION_PROMPT_PATTERN.matcher(lastLine).find();
-            if ((sftp && transcript.contains("sftp>")) || (!waitingAtPrompt && check >= CONNECTION_MADE_AFTER_CHECKS)) {
+            // Authenticating only at a real password/passphrase/2FA prompt, not the host-key (yes/no).
+            if (AUTH_PROMPT_PATTERN.matcher(lastLine).find())
+                mConnectionUi.onPhase(session, TerminowConnectionPhase.AUTHENTICATING);
+
+            boolean sftpReady = sftp && transcript.contains("sftp>");
+            boolean shellReady = !sftp && !waitingAtPrompt && SHELL_PROMPT_PATTERN.matcher(lastLine).find();
+            if (sftpReady || shellReady || (!waitingAtPrompt && check >= CONNECTION_MADE_AFTER_CHECKS)) {
                 mStore.addRecentConnection(host, sftp);
                 // Never typed into a tmux session that is attached to again: it may run a program
                 TerminowStore.Snippet snippet = sftp || (again && host.remoteTmux) ? null : mStore.getSnippet(host.startupSnippet);
@@ -1770,6 +1818,9 @@ public class TerminowHome {
                 // or a login script is still printing — so it is not swallowed (why a snippet sometimes
                 // did not run). Completion itself does not wait, so a noisy prompt never hangs the tab.
                 if (snippet != null) sendSnippetWhenSettled(session, snippet, lastLine, 0);
+                // Show success (plugs join + check) only on a real signal; a timer-only completion hides quietly.
+                if (sftpReady || shellReady) mConnectionUi.onPhase(session, TerminowConnectionPhase.CONNECTED);
+                else mConnectionUi.onConnectDone(session);
                 finish.run();
                 if (!sftp && !host.telnet) watchConnectionLost(session, host, tab);
                 return;
