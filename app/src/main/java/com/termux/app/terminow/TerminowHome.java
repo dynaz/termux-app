@@ -1270,8 +1270,29 @@ public class TerminowHome {
             showHostDialog(null);
         });
         addMenuItem(menu, popup, R.drawable.ic_terminow_import, R.string.terminow_quick_import, this::showImportChooser);
+        addMenuItem(menu, popup, R.drawable.ic_terminow_hosts, R.string.terminow_discovery_menu, this::showNetworkDiscovery);
 
         popup.showAsDropDown(anchor, 0, dp(4));
+    }
+
+    /** Open Network Discovery, wired to the existing connect and Save-as-Host flows. */
+    private void showNetworkDiscovery() {
+        new TerminowDiscoveryUi(mActivity, mStore, new TerminowDiscoveryUi.Actions() {
+            @Override public void connectSsh(@NonNull TerminowStore.Host host) { connect(host); }
+            @Override public void saveAsHost(@NonNull TerminowStore.Host prefill) { showHostDialog(null, prefill, null); }
+            @Override public void openWeb(@NonNull String url) {
+                try {
+                    mActivity.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+                } catch (RuntimeException e) {
+                    mActivity.showToast(url, false);
+                }
+            }
+            @Override public void copyText(@NonNull String label, @NonNull String text) {
+                ClipboardManager cm = (ClipboardManager) mActivity.getSystemService(Context.CLIPBOARD_SERVICE);
+                if (cm != null) cm.setPrimaryClip(ClipData.newPlainText(label, text));
+                mActivity.showToast(text, false);
+            }
+        }).show();
     }
 
     /** Import: hosts from a file or Termius, or files into the session that is shown. */

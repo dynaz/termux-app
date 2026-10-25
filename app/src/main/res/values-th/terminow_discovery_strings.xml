@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_discovery_title">ค้นหาอุปกรณ์ในเครือข่าย</string>
+    <string name="terminow_discovery_menu">สแกนเครือข่ายภายใน</string>
+    <string name="terminow_discovery_source_this_device">สแกนจาก: อุปกรณ์นี้</string>
+    <string name="terminow_discovery_start">เริ่มสแกน</string>
+    <string name="terminow_discovery_stop">หยุด</string>
+    <string name="terminow_discovery_initial">ใส่ช่วงเครือข่ายแล้วแตะ เริ่มสแกน จะไม่มีการสแกนจนกว่าคุณจะกด</string>
+    <string name="terminow_discovery_bad_cidr">ใส่ช่วง IPv4 ที่ถูกต้อง เช่น 192.168.1.0/24</string>
+    <string name="terminow_discovery_too_large">ช่วง %1$d ที่อยู่ เกินขีดจำกัด %2$d ใช้ช่วงที่เล็กลง</string>
+    <string name="terminow_discovery_scanning">กำลังสแกน… %1$d/%2$d · พบ %3$d · %4$d วินาที</string>
+    <string name="terminow_discovery_stopped">หยุดแล้ว พบ %1$d</string>
+    <string name="terminow_discovery_none">ไม่มีอุปกรณ์ตอบสนองในช่วงนี้</string>
+    <string name="terminow_discovery_done">เสร็จแล้ว พบ %1$d อุปกรณ์</string>
+    <string name="terminow_discovery_unknown_device">อุปกรณ์ที่ไม่รู้จัก</string>
+    <string name="terminow_discovery_saved">บันทึกแล้ว</string>
+    <string name="terminow_discovery_connect_ssh">เชื่อมต่อ SSH</string>
+    <string name="terminow_discovery_open_web">เปิดเว็บ</string>
+    <string name="terminow_discovery_save_host">บันทึกเป็นโฮสต์</string>
+    <string name="terminow_discovery_copy_ip">คัดลอก IP</string>
+</resources>
