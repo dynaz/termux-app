@@ -2359,8 +2359,17 @@ public class TerminowLauncher {
         mToolbarEnvironment.setText(environment + "  ▾");
         mToolbarEnvironment.setContentDescription(mActivity.getString(R.string.terminow_toolbar_environment_description, environment));
         // Only the real folder is shown; it is never guessed and never taken from another session.
-        String folder = info != null && !info.folder.isEmpty() ? info.folder : "";
-        if (!folder.isEmpty() && info.environmentKey != null) {
+        // A live working directory confirmed by the shell via OSC 7 is preferred over the folder the
+        // launcher recorded at start, since the shell may have changed directory. It is only displayed,
+        // never executed, and comes from this session's own emulator.
+        String confirmedPath = "";
+        if (session != null && session.getEmulator() != null) {
+            TerminowOsc7.Location loc = TerminowOsc7.parse(session.getEmulator().getWorkingDirectoryUri());
+            if (loc != null) confirmedPath = loc.path;
+        }
+        String folder = !confirmedPath.isEmpty() ? confirmedPath
+            : (info != null && !info.folder.isEmpty() ? info.folder : "");
+        if (!folder.isEmpty() && info != null && info.environmentKey != null) {
             Environment env = environmentFor(info.environmentKey);
             if (env != null && folder.equals(homeOf(env))) folder = "~";
             else if (folder.startsWith(TermuxConstants.TERMUX_HOME_DIR_PATH + "/"))
