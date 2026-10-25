@@ -16,6 +16,19 @@ public final class TerminowShellIntegration {
 
     public enum Shell { BASH, ZSH, FISH }
 
+    /** The outcome of a remote install, from the output of {@link #remoteInstallCommand}. */
+    public enum Result { ALREADY, INSTALLED, FAILED, UNKNOWN }
+
+    /** Parse the outcome from the exec output; {@link Result#UNKNOWN} if no marker was printed. */
+    @NonNull
+    public static Result parseResult(String output) {
+        if (output == null) return Result.UNKNOWN;
+        if (output.contains("TERMINOW_SHELLINT=installed")) return Result.INSTALLED;
+        if (output.contains("TERMINOW_SHELLINT=already")) return Result.ALREADY;
+        if (output.contains("TERMINOW_SHELLINT=failed")) return Result.FAILED;
+        return Result.UNKNOWN;
+    }
+
     private static final String BEGIN = "# >>> TermiNow folder tracking (OSC 7) >>>";
     private static final String END = "# <<< TermiNow folder tracking (OSC 7) <<<";
 
@@ -84,5 +97,23 @@ public final class TerminowShellIntegration {
         if (isInstalled(content)) return content;
         String prefix = content.isEmpty() || content.endsWith("\n") ? content : content + "\n";
         return prefix + block(shell);
+    }
+
+    /**
+     * A shell command that installs the integration on a remote host, to be run over a <b>separate SSH
+     * exec</b> — never typed into the interactive terminal. It only appends to the shell's rc, guarded
+     * by the marker so a second run changes nothing (idempotent), and prints one of
+     * {@code TERMINOW_SHELLINT=already|installed|failed}. The block is written with a quoted heredoc so
+     * nothing in it is expanded by the remote shell, and no remote config is changed without this
+     * explicit action.
+     */
+    @NonNull
+    public static String remoteInstallCommand(@NonNull Shell shell) {
+        String rc = "$HOME/" + rcFile(shell);
+        return "f=\"" + rc + "\"; d=\"$(dirname \"$f\")\"; [ -d \"$d\" ] || mkdir -p \"$d\" 2>/dev/null\n"
+            + "if grep -q 'TermiNow folder tracking (OSC 7)' \"$f\" 2>/dev/null; then echo TERMINOW_SHELLINT=already; exit 0; fi\n"
+            + "cat >> \"$f\" <<'TERMINOW_SHELLINT_EOF' && echo TERMINOW_SHELLINT=installed || echo TERMINOW_SHELLINT=failed\n"
+            + block(shell)
+            + "TERMINOW_SHELLINT_EOF\n";
     }
 }

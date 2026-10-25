@@ -53,6 +53,29 @@ public class TerminowShellIntegrationTest {
         assertEquals(".config/fish/config.fish", TerminowShellIntegration.rcFile(Shell.FISH));
     }
 
+    @Test public void remoteInstallCommandIsGuardedAndEmbedsTheBlock() {
+        String cmd = TerminowShellIntegration.remoteInstallCommand(Shell.BASH);
+        assertTrue(cmd.contains("grep -q 'TermiNow folder tracking (OSC 7)'")); // idempotency guard
+        assertTrue(cmd.contains("<<'TERMINOW_SHELLINT_EOF'"));                   // quoted heredoc, no expansion
+        assertTrue(cmd.contains("# >>> TermiNow folder tracking (OSC 7) >>>"));  // the block
+        assertTrue(cmd.contains("]7;file://"));                                  // the OSC 7 emitter
+        assertTrue(cmd.contains("TERMINOW_SHELLINT=installed"));
+        assertTrue(cmd.contains("$HOME/.bashrc"));
+    }
+
+    @Test public void remoteInstallCommandTargetsEachShellRc() {
+        assertTrue(TerminowShellIntegration.remoteInstallCommand(Shell.ZSH).contains("$HOME/.zshrc"));
+        assertTrue(TerminowShellIntegration.remoteInstallCommand(Shell.FISH).contains("$HOME/.config/fish/config.fish"));
+    }
+
+    @Test public void parsesRemoteResult() {
+        assertEquals(TerminowShellIntegration.Result.INSTALLED, TerminowShellIntegration.parseResult("x\nTERMINOW_SHELLINT=installed\n"));
+        assertEquals(TerminowShellIntegration.Result.ALREADY, TerminowShellIntegration.parseResult("TERMINOW_SHELLINT=already"));
+        assertEquals(TerminowShellIntegration.Result.FAILED, TerminowShellIntegration.parseResult("TERMINOW_SHELLINT=failed"));
+        assertEquals(TerminowShellIntegration.Result.UNKNOWN, TerminowShellIntegration.parseResult("nothing"));
+        assertEquals(TerminowShellIntegration.Result.UNKNOWN, TerminowShellIntegration.parseResult(null));
+    }
+
     @Test public void shellOfRecognisesNameOrPath() {
         assertEquals(Shell.BASH, TerminowShellIntegration.shellOf("/bin/bash"));
         assertEquals(Shell.ZSH, TerminowShellIntegration.shellOf("/usr/bin/zsh"));
