@@ -80,6 +80,17 @@ public final class TerminalSession extends TerminalOutput {
     /** The pid of the shell process. 0 if not started and -1 if finished running. */
     int mShellPid;
 
+    /**
+     * When set, this session is driven by an external byte stream (a {@link TerminalSessionIo}, such
+     * as a USB serial console) instead of a forked process. The process path is left untouched and
+     * everything specific to the bridge is gated on {@code mIo != null}.
+     */
+    final TerminalSessionIo mIo;
+
+    /** A synthetic, always-positive pid used while a {@link #mIo} bridge session runs, so the shared
+     * "running" checks and the keystroke writer behave as for a process without pointing at a real pid. */
+    private static final int BRIDGE_PID = Integer.MAX_VALUE;
+
     /** The color theme of this session only, see {@link TerminalColors#setScheme}. Kept until the emulator exists. */
     private TerminalColorScheme mColorScheme;
     /** Whether the Backspace key sends Ctrl-H (^H) instead of DEL (^?), for a host that wants it. */
@@ -115,6 +126,22 @@ public final class TerminalSession extends TerminalOutput {
         this.mEnv = env;
         this.mTranscriptRows = transcriptRows;
         this.mClient = client;
+        this.mIo = null;
+    }
+
+    /**
+     * Create a session driven by an external byte stream instead of a forked process, such as a USB
+     * serial console. The emulator, session list and view treat it like any other tab; only the I/O
+     * is the given {@link TerminalSessionIo}.
+     */
+    public TerminalSession(TerminalSessionIo io, Integer transcriptRows, TerminalSessionClient client) {
+        this.mShellPath = null;
+        this.mCwd = null;
+        this.mArgs = null;
+        this.mEnv = null;
+        this.mTranscriptRows = transcriptRows;
+        this.mClient = client;
+        this.mIo = io;
     }
 
     /**
@@ -132,6 +159,9 @@ public final class TerminalSession extends TerminalOutput {
     public void updateSize(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
         if (mEmulator == null) {
             initializeEmulator(columns, rows, cellWidthPixels, cellHeightPixels);
+        } else if (mIo != null) {
+            mIo.resize(columns, rows);
+            mEmulator.resize(columns, rows, cellWidthPixels, cellHeightPixels);
         } else {
             JNI.setPtyWindowSize(mTerminalFileDescriptor, rows, columns, cellWidthPixels, cellHeightPixels);
             mEmulator.resize(columns, rows, cellWidthPixels, cellHeightPixels);
@@ -161,6 +191,11 @@ public final class TerminalSession extends TerminalOutput {
         if (mPrelude != null) {
             mEmulator.append(mPrelude, mPrelude.length);
             mPrelude = null;
+        }
+
+        if (mIo != null) {
+            startBridge(columns, rows);
+            return;
         }
 
         int[] processId = new int[1];
@@ -246,6 +281,90 @@ public final class TerminalSession extends TerminalOutput {
 
     }
 
+    /**
+     * Start the reader and writer threads for an external {@link #mIo} stream. Mirrors the process
+     * path: the reader hands bytes to the same screen queue, and keystrokes queued by {@link #write}
+     * are taken by the writer and sent to the stream. There is no waiter thread; the session ends
+     * when the reader reports the stream closed or fails.
+     */
+    private void startBridge(int columns, int rows) {
+        try {
+            mIo.open(columns, rows);
+        } catch (Exception e) {
+            // Opening failed: show the reason in the terminal and end the session at once.
+            mReaderError = describe(e);
+            byte[] message = ("\r\n[" + mReaderError + "]\r\n").getBytes(StandardCharsets.UTF_8);
+            mProcessToTerminalIOQueue.write(message, 0, message.length);
+            mMainThreadHandler.sendEmptyMessage(MSG_NEW_INPUT);
+            mMainThreadHandler.sendMessage(mMainThreadHandler.obtainMessage(MSG_PROCESS_EXITED, -1));
+            return;
+        }
+
+        mShellPid = BRIDGE_PID;
+        mClient.setTerminalShellPid(this, mShellPid);
+
+        if (mOnStarted != null) {
+            Runnable onStarted = mOnStarted;
+            mOnStarted = null;
+            mMainThreadHandler.post(onStarted);
+        }
+
+        new Thread("TermSessionBridgeReader") {
+            @Override
+            public void run() {
+                final byte[] buffer = new byte[4096];
+                try {
+                    while (true) {
+                        mReaderState = "reading";
+                        int read = mIo.read(buffer);
+                        if (read == -1) {
+                            mReaderState = "end of stream";
+                            break;
+                        }
+                        if (read <= 0) continue; // nothing arrived before the timeout; read again
+                        mLastReadAt = System.currentTimeMillis();
+                        mBytesRead += read;
+                        mReaderState = "handing to the screen";
+                        if (!mProcessToTerminalIOQueue.write(buffer, 0, read)) {
+                            mReaderState = "closed";
+                            return;
+                        }
+                        mMainThreadHandler.sendEmptyMessage(MSG_NEW_INPUT);
+                    }
+                } catch (Exception e) {
+                    mReaderError = describe(e);
+                    mReaderState = "ended: " + mReaderError;
+                }
+                // The stream ended or failed: end the session, like a process exit (0 = clean).
+                mMainThreadHandler.sendMessage(mMainThreadHandler.obtainMessage(MSG_PROCESS_EXITED, 0));
+            }
+        }.start();
+
+        new Thread("TermSessionBridgeWriter") {
+            @Override
+            public void run() {
+                try {
+                    while (true) {
+                        mWriterState = "waiting for input";
+                        byte[] chunk = mTerminalToProcessQueue.take();
+                        if (chunk == END_OF_INPUT) {
+                            mWriterState = "closed";
+                            return;
+                        }
+                        mWriterState = "writing";
+                        mIo.write(chunk, 0, chunk.length);
+                        mPendingInput.addAndGet(-chunk.length);
+                        mLastWriteAt = System.currentTimeMillis();
+                        mBytesWritten += chunk.length;
+                    }
+                } catch (Exception e) {
+                    mWriterError = describe(e);
+                    mWriterState = "ended: " + mWriterError;
+                }
+            }
+        }.start();
+    }
+
     /** Write data to the shell process. */
     @Override
     public void write(byte[] data, int offset, int count) {
@@ -325,14 +444,18 @@ public final class TerminalSession extends TerminalOutput {
         notifyScreenUpdate();
     }
 
-    /** Finish this terminal session by sending SIGKILL to the shell. */
+    /** Finish this terminal session by sending SIGKILL to the shell, or closing the bridge stream. */
     public void finishIfRunning() {
-        if (isRunning()) {
-            try {
-                Os.kill(mShellPid, OsConstants.SIGKILL);
-            } catch (ErrnoException e) {
-                Logger.logWarn(mClient, LOG_TAG, "Failed sending SIGKILL: " + e.getMessage());
-            }
+        if (!isRunning()) return;
+        if (mIo != null) {
+            // No process to signal: end the session and let the reader thread unwind.
+            mMainThreadHandler.sendMessage(mMainThreadHandler.obtainMessage(MSG_PROCESS_EXITED, 0));
+            return;
+        }
+        try {
+            Os.kill(mShellPid, OsConstants.SIGKILL);
+        } catch (ErrnoException e) {
+            Logger.logWarn(mClient, LOG_TAG, "Failed sending SIGKILL: " + e.getMessage());
         }
     }
 
@@ -346,6 +469,13 @@ public final class TerminalSession extends TerminalOutput {
         // Stop the reader and writer threads, and close the I/O streams: the duplicate only now
         mTerminalToProcessQueue.offer(END_OF_INPUT);
         mProcessToTerminalIOQueue.close();
+
+        if (mIo != null) {
+            // A bridge session owns no pty file descriptor; close its stream instead.
+            mIo.close();
+            return;
+        }
+
         JNI.close(mTerminalFileDescriptor);
         ParcelFileDescriptor streams = mTerminalStreams;
         if (streams != null) {
@@ -397,6 +527,10 @@ public final class TerminalSession extends TerminalOutput {
 
     /** Returns the shell's working directory or null if it was unavailable. */
     public String getCwd() {
+        if (mIo != null) {
+            // A serial console has no local working directory.
+            return null;
+        }
         if (mShellPid < 1) {
             return null;
         }
@@ -477,10 +611,14 @@ public final class TerminalSession extends TerminalOutput {
             }
 
             if (msg.what == MSG_PROCESS_EXITED) {
+                // A bridge session can report its end twice (a tab close and the reader unwinding);
+                // the process path fires once. Either way, handle the first and ignore the rest.
+                if (!isRunning()) return;
                 int exitCode = (Integer) msg.obj;
+                boolean bridge = mIo != null;
                 cleanupResources(exitCode);
 
-                String exitDescription = "\r\n[Process completed";
+                String exitDescription = bridge ? "\r\n[Disconnected" : "\r\n[Process completed";
                 if (exitCode > 0) {
                     // Non-zero process exit.
                     exitDescription += " (code " + exitCode + ")";

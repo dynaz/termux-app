@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_cloud_src_aws">AWS EC2</string>
+    <string name="terminow_cloud_src_do">DigitalOcean</string>
+    <string name="terminow_cloud_fetch">ดึงข้อมูล</string>
+    <string name="terminow_cloud_fetching">กำลังดึงรายการอินสแตนซ์…</string>
+    <string name="terminow_cloud_use_public">ใช้ IP สาธารณะ</string>
+    <string name="terminow_cloud_username">ชื่อผู้ใช้</string>
+    <string name="terminow_cloud_port">พอร์ต SSH</string>
+    <string name="terminow_cloud_key">ชื่อคีย์ในพวงกุญแจ (ไม่บังคับ)</string>
+    <string name="terminow_cloud_do_title">นำเข้าจาก DigitalOcean</string>
+    <string name="terminow_cloud_do_token">Personal access token (สิทธิ์อ่าน)</string>
+    <string name="terminow_cloud_need_token">กรุณาใส่โทเคนของ DigitalOcean</string>
+    <string name="terminow_cloud_aws_title">นำเข้าจาก AWS EC2</string>
+    <string name="terminow_cloud_aws_help">ใช้ข้อมูลรับรองของคุณเองในการเรียก ec2:DescribeInstances แบบอ่านอย่างเดียว ข้อมูลรับรองเก็บไว้ในหน่วยความจำเฉพาะการนำเข้าครั้งนี้ ไม่บันทึกและไม่พิมพ์ลงบันทึก</string>
+    <string name="terminow_cloud_aws_access_key">Access key ID</string>
+    <string name="terminow_cloud_aws_secret_key">Secret access key</string>
+    <string name="terminow_cloud_aws_session_token">Session token (ไม่บังคับ สำหรับข้อมูลรับรองชั่วคราว)</string>
+    <string name="terminow_cloud_aws_regions">ภูมิภาค (คั่นด้วยจุลภาค เช่น us-east-1)</string>
+    <string name="terminow_cloud_need_aws">กรุณาใส่ access key, secret key และภูมิภาคอย่างน้อยหนึ่งแห่ง</string>
+</resources>

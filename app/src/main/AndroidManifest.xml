@@ -11,6 +11,10 @@
     <uses-feature
         android:name="android.software.leanback"
         android:required="false" />
+    <!-- USB host is used by the Serial Connection feature; optional so the app still installs without it. -->
+    <uses-feature
+        android:name="android.hardware.usb.host"
+        android:required="false" />
 
     <permission
         android:name="${TERMUX_PACKAGE_NAME}.permission.RUN_COMMAND"

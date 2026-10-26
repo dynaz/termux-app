@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_qimport_menu">นำเข้าแบบด่วน</string>
+    <string name="terminow_qimport_src_filezilla">FileZilla (Site Manager XML)</string>
+    <string name="terminow_qimport_src_putty">PuTTY (เซสชัน .reg)</string>
+    <string name="terminow_qimport_src_securecrt">SecureCRT (เซสชัน .ini)</string>
+    <string name="terminow_qimport_src_csv">CSV</string>
+    <string name="terminow_qimport_src_openssh">OpenSSH config</string>
+    <string name="terminow_qimport_none">ไม่พบการเชื่อมต่อในไฟล์นั้น</string>
+    <string name="terminow_qimport_preview_title">%1$s — ตัวอย่าง</string>
+    <string name="terminow_qimport_search">ค้นหา</string>
+    <string name="terminow_qimport_group">กลุ่มปลายทาง</string>
+    <string name="terminow_qimport_preserve_folders">คงโฟลเดอร์จากต้นทาง</string>
+    <string name="terminow_qimport_passwords">นำเข้ารหัสผ่านที่บันทึกไว้</string>
+    <string name="terminow_qimport_select_all">เลือกทั้งหมด</string>
+    <string name="terminow_qimport_duplicates">รายการซ้ำ</string>
+    <string name="terminow_qimport_dup_skip">ข้ามรายการซ้ำ (แตะเพื่อเปลี่ยน)</string>
+    <string name="terminow_qimport_dup_keep">เก็บทั้งสอง (แตะเพื่อเปลี่ยน)</string>
+    <string name="terminow_qimport_dup_update">อัปเดตรายการเดิม (แตะเพื่อเปลี่ยน)</string>
+    <string name="terminow_qimport_import">นำเข้า</string>
+    <string name="terminow_qimport_counts">ใหม่ %1$d · ซ้ำ %2$d · ต้องใช้ข้อมูลรับรอง %3$d · ไม่รองรับ %4$d · ไม่ถูกต้อง %5$d</string>
+    <string name="terminow_qimport_cat_valid">ใหม่</string>
+    <string name="terminow_qimport_cat_duplicate">ซ้ำ</string>
+    <string name="terminow_qimport_cat_invalid">ไม่ถูกต้อง</string>
+    <string name="terminow_qimport_cat_unsupported">ไม่รองรับ</string>
+    <string name="terminow_qimport_cat_creds">ต้องใช้ข้อมูลรับรอง</string>
+    <string name="terminow_qimport_nothing_selected">ไม่มีรายการให้นำเข้า</string>
+    <string name="terminow_qimport_result">นำเข้า %1$d, อัปเดต %2$d, ข้าม %3$d</string>
+    <string name="terminow_qimport_done_title">นำเข้าเสร็จสิ้น</string>
+    <string name="terminow_qimport_view">ดูรายการที่นำเข้า</string>
+    <string name="terminow_qimport_undo">เลิกทำ</string>
+    <string name="terminow_qimport_undone">เลิกทำการนำเข้าแล้ว</string>
+</resources>

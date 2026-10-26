@@ -122,6 +122,7 @@ public class TerminowHome {
     private static final int REQUEST_UPLOAD_TMP = 2003;
     private static final int REQUEST_IMPORT_HOSTS = 2004;
     private static final int REQUEST_IMPORT_ROOTFS = 2006;
+    private static final int REQUEST_QUICK_IMPORT = 2007;
     private static final int REQUEST_SAVE_DEBUG_LOG = 2009;
     /** A certificate is one line of some kilobytes. */
     private static final int CERTIFICATE_MAX_SIZE = 64 * 1024;
@@ -1280,7 +1281,11 @@ public class TerminowHome {
             showHostDialog(null);
         });
         addMenuItem(menu, popup, R.drawable.ic_terminow_import, R.string.terminow_quick_import, this::showImportChooser);
+        addMenuItem(menu, popup, R.drawable.ic_terminow_import, R.string.terminow_qimport_menu, this::showQuickImport);
         addMenuItem(menu, popup, R.drawable.ic_terminow_hosts, R.string.terminow_discovery_menu, this::showNetworkDiscovery);
+        addMenuItem(menu, popup, R.drawable.ic_terminow_serial,
+            mActivity.getString(R.string.terminow_serial_menu), mActivity.getString(R.string.terminow_serial_menu_summary),
+            this::showSerial);
 
         popup.showAsDropDown(anchor, 0, dp(4));
     }
@@ -1303,6 +1308,11 @@ public class TerminowHome {
                 mActivity.showToast(text, false);
             }
         }).show();
+    }
+
+    /** Open the Serial Connection flow: pick a USB serial adapter, set the line, open a tab. */
+    private void showSerial() {
+        new TerminowSerialUi(mActivity).show();
     }
 
     /** Import: hosts from a file or Termius, or files into the session that is shown. */
@@ -3779,6 +3789,169 @@ public class TerminowHome {
             .show();
     }
 
+    /** The source chosen in the Quick Import flow before the file is picked. */
+    private TerminowImportParsers.Source mQuickImportSource = TerminowImportParsers.Source.FILEZILLA;
+
+    /** Quick Import: pick a source, choose a file, preview and import into Hosts with a safe Undo. */
+    private void showQuickImport() {
+        TerminowImportParsers.Source[] sources = TerminowImportParsers.Source.values();
+        int fileCount = sources.length;
+        CharSequence[] items = new CharSequence[fileCount + 2];
+        for (int i = 0; i < fileCount; i++) items[i] = mActivity.getString(sourceLabel(sources[i]));
+        items[fileCount] = mActivity.getString(R.string.terminow_cloud_src_aws);
+        items[fileCount + 1] = mActivity.getString(R.string.terminow_cloud_src_do);
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_qimport_menu)
+            .setItems(items, (d, which) -> {
+                if (which < fileCount) {
+                    mQuickImportSource = sources[which];
+                    pickQuickImportFile();
+                } else if (which == fileCount) {
+                    new TerminowCloudImportUi(mActivity, quickImportDelegate()).start(TerminowCloudImportUi.Provider.AWS);
+                } else {
+                    new TerminowCloudImportUi(mActivity, quickImportDelegate()).start(TerminowCloudImportUi.Provider.DIGITALOCEAN);
+                }
+            })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    private static int sourceLabel(@NonNull TerminowImportParsers.Source source) {
+        switch (source) {
+            case FILEZILLA: return R.string.terminow_qimport_src_filezilla;
+            case PUTTY: return R.string.terminow_qimport_src_putty;
+            case SECURECRT: return R.string.terminow_qimport_src_securecrt;
+            case CSV: return R.string.terminow_qimport_src_csv;
+            default: return R.string.terminow_qimport_src_openssh;
+        }
+    }
+
+    private void pickQuickImportFile() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        try {
+            mActivity.startActivityForResult(intent, REQUEST_QUICK_IMPORT);
+        } catch (Exception e) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_key_import_failed, e.getMessage()), true);
+        }
+    }
+
+    /** Read the picked file (at most 2 MB), decode its charset, and open the Quick Import preview. */
+    private void readQuickImportFile(@NonNull Uri uri) {
+        String fileName = queryDisplayName(uri);
+        new Thread(() -> {
+            String text = null;
+            String error = null;
+            try (InputStream in = mActivity.getContentResolver().openInputStream(uri)) {
+                if (in == null) throw new IOException("Failed to open the file");
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, read);
+                    if (out.size() > 2 * 1024 * 1024) throw new IOException("The file is too large to import");
+                }
+                text = decodeImportText(out.toByteArray());
+            } catch (IOException | RuntimeException e) {
+                error = String.valueOf(e.getMessage());
+            }
+            String finalText = text;
+            String finalError = error;
+            mActivity.runOnUiThread(() -> {
+                if (finalText != null)
+                    new TerminowQuickImportUi(mActivity, quickImportDelegate()).preview(mQuickImportSource, finalText, fileName);
+                else mActivity.showToast(mActivity.getString(R.string.terminow_import_failed, finalError), true);
+            });
+        }, "TerminowQuickImport").start();
+    }
+
+    /** Honour a byte-order mark: PuTTY .reg files are UTF-16, most others UTF-8. */
+    @NonNull
+    private static String decodeImportText(@NonNull byte[] bytes) {
+        if (bytes.length >= 2 && (bytes[0] & 0xFF) == 0xFF && (bytes[1] & 0xFF) == 0xFE)
+            return new String(bytes, 2, bytes.length - 2, java.nio.charset.StandardCharsets.UTF_16LE);
+        if (bytes.length >= 2 && (bytes[0] & 0xFF) == 0xFE && (bytes[1] & 0xFF) == 0xFF)
+            return new String(bytes, 2, bytes.length - 2, java.nio.charset.StandardCharsets.UTF_16BE);
+        if (bytes.length >= 3 && (bytes[0] & 0xFF) == 0xEF && (bytes[1] & 0xFF) == 0xBB && (bytes[2] & 0xFF) == 0xBF)
+            return new String(bytes, 3, bytes.length - 3, StandardCharsets.UTF_8);
+        return new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    @NonNull
+    private String queryDisplayName(@NonNull Uri uri) {
+        try (android.database.Cursor cursor = mActivity.getContentResolver().query(uri, null, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                int index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
+                if (index >= 0) {
+                    String name = cursor.getString(index);
+                    if (name != null) return name;
+                }
+            }
+        } catch (Exception ignored) {
+            // Some providers do not answer the query; the file name is only a fallback label.
+        }
+        return "";
+    }
+
+    /** Resolve an imported key reference to a local Keychain key, mirroring the hosts-file importer. */
+    @Nullable
+    private String resolveImportKey(@NonNull String reference) {
+        if (reference.isEmpty()) return null;
+        String base = reference;
+        int slash = Math.max(base.lastIndexOf('/'), base.lastIndexOf('\\'));
+        if (slash >= 0) base = base.substring(slash + 1);
+        File key = new File(getSshDir(), base);
+        if (key.isFile() && !base.endsWith(".pub")) return "~/.ssh/" + base;
+        for (KeyItem item : getKeys())
+            if (item.label.equalsIgnoreCase(base) && item.biometricId == null && item.fidoId == null) return item.getPath();
+        return null;
+    }
+
+    @NonNull
+    private TerminowQuickImportUi.Delegate quickImportDelegate() {
+        return new TerminowQuickImportUi.Delegate() {
+            @NonNull @Override public List<TerminowStore.Host> existingHosts() { return mHosts; }
+            @NonNull @Override public List<String> existingGroups() { return mGroups; }
+            @NonNull @Override public String defaultGroup() { return mCurrentGroup != null ? mCurrentGroup : ""; }
+            @Nullable @Override public String resolveKey(@NonNull String reference) { return resolveImportKey(reference); }
+
+            @NonNull @Override
+            public Runnable apply(@NonNull List<TerminowStore.Host> created, @NonNull List<TerminowStore.Host> updatedExisting,
+                                  @NonNull java.util.Set<String> newGroups) {
+                boolean groupsChanged = false;
+                for (String group : newGroups)
+                    if (!mGroups.contains(group)) { mGroups.add(group); groupsChanged = true; }
+                if (groupsChanged) mStore.setGroups(mGroups);
+                for (TerminowStore.Host host : created) {
+                    if (host.group.isEmpty() && mCurrentGroup != null) host.group = mCurrentGroup;
+                    mHosts.add(host);
+                }
+                mStore.setHosts(mHosts);
+                updateItems();
+
+                List<TerminowStore.Host> createdSnapshot = new ArrayList<>(created);
+                java.util.Set<String> addedGroups = new java.util.LinkedHashSet<>(newGroups);
+                return () -> {
+                    mHosts.removeAll(createdSnapshot);
+                    mStore.setHosts(mHosts);
+                    for (String group : addedGroups) {
+                        boolean used = false;
+                        for (TerminowStore.Host host : mHosts) used |= group.equals(host.group);
+                        if (!used) mGroups.remove(group);
+                    }
+                    mStore.setGroups(mGroups);
+                    updateItems();
+                };
+            }
+
+            @Override public void viewImported(@NonNull List<TerminowStore.Host> created) {
+                if (!isVisible()) show();
+                updateItems();
+            }
+        };
+    }
+
     /** Whether the file that is picked is for the import from Termius, which then asks for the keys. */
     private boolean mImportFromTermius;
 
@@ -5212,6 +5385,10 @@ public class TerminowHome {
         }
         if (requestCode == REQUEST_IMPORT_HOSTS) {
             if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null) readImportFile(data.getData());
+            return true;
+        }
+        if (requestCode == REQUEST_QUICK_IMPORT) {
+            if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null) readQuickImportFile(data.getData());
             return true;
         }
         if (requestCode == REQUEST_UPLOAD_TMP) {

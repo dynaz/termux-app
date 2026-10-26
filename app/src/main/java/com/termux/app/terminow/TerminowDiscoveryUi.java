@@ -12,6 +12,8 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -173,7 +175,7 @@ public class TerminowDiscoveryUi {
         if (mButton != null) mButton.setText(mActivity.getString(R.string.terminow_discovery_start));
     }
 
-    /** Add or refresh a device row. Called on the UI thread. */
+    /** Add or refresh a device row (icon + name/IP + service chips + chevron). On the UI thread. */
     private void showDevice(@NonNull TerminowDiscoveredDevice device) {
         if (mResults == null) return;
         // One row per IP: replace if it already exists (ports may have grown).
@@ -182,33 +184,104 @@ public class TerminowDiscoveryUi {
 
         LinearLayout row = new LinearLayout(mActivity);
         row.setTag(device.ip);
-        row.setOrientation(LinearLayout.VERTICAL);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
         row.setBackground(rounded(CARD, dp(12)));
-        row.setPadding(dp(14), dp(12), dp(14), dp(12));
+        row.setPadding(dp(12), dp(10), dp(10), dp(10));
         LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         rowLp.topMargin = dp(8);
         row.setLayoutParams(rowLp);
 
-        boolean saved = TerminowDiscoveryHosts.findPossibleDuplicate(mStore.getHosts(), device.ip) != null;
+        // Generic device icon with a green "reachable" dot (the device type is not claimed from ports).
+        FrameLayout iconFrame = new FrameLayout(mActivity);
+        ImageView icon = new ImageView(mActivity);
+        icon.setImageResource(R.drawable.ic_terminow_hosts);
+        icon.setColorFilter(SECONDARY);
+        iconFrame.addView(icon, new FrameLayout.LayoutParams(dp(26), dp(26)));
+        View dot = new View(mActivity);
+        android.graphics.drawable.GradientDrawable dotBg = new android.graphics.drawable.GradientDrawable();
+        dotBg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        dotBg.setColor(ACCENT);
+        dotBg.setStroke(dp(2), CARD);
+        dot.setBackground(dotBg);
+        iconFrame.addView(dot, new FrameLayout.LayoutParams(dp(11), dp(11), Gravity.BOTTOM | Gravity.END));
+        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(dp(28), dp(28));
+        iconLp.rightMargin = dp(12);
+        row.addView(iconFrame, iconLp);
+
+        // Name + IP
+        LinearLayout col = new LinearLayout(mActivity);
+        col.setOrientation(LinearLayout.VERTICAL);
         String name = !device.hostname.isEmpty() ? device.hostname : mActivity.getString(R.string.terminow_discovery_unknown_device);
-        TextView head = text(row, name + (saved ? "   ✓ " + mActivity.getString(R.string.terminow_discovery_saved) : ""), 15, TEXT, true);
-        head.setSingleLine(true);
-        head.setEllipsize(TextUtils.TruncateAt.END);
-        text(row, device.ip + portBadges(device), 12, SECONDARY, false);
+        TextView nameView = textPlain(name, 15, TEXT, true);
+        nameView.setSingleLine(true);
+        nameView.setEllipsize(TextUtils.TruncateAt.END);
+        col.addView(nameView);
+        col.addView(textPlain(device.ip, 12, SECONDARY, false));
+        row.addView(col, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        // Service chips (and a Saved chip), then a chevron
+        LinearLayout chips = new LinearLayout(mActivity);
+        chips.setOrientation(LinearLayout.HORIZONTAL);
+        chips.setGravity(Gravity.CENTER_VERTICAL);
+        if (TerminowDiscoveryHosts.findPossibleDuplicate(mStore.getHosts(), device.ip) != null)
+            chips.addView(chip(mActivity.getString(R.string.terminow_discovery_saved), 0xFF234634, ACCENT));
+        for (int p : device.openPorts) chips.addView(chip(portLabel(p), chipBg(p), chipFg(p)));
+        row.addView(chips);
+        TextView chevron = textPlain("›", 22, SECONDARY, false);
+        chevron.setPadding(dp(6), 0, 0, 0);
+        row.addView(chevron);
 
         row.setOnClickListener(v -> deviceActions(device));
         mResults.addView(row);
     }
 
     @NonNull
-    private String portBadges(@NonNull TerminowDiscoveredDevice device) {
-        if (device.openPorts.isEmpty()) return "";
-        StringBuilder sb = new StringBuilder("   ");
-        for (int p : device.openPorts) {
-            String label = p == 22 ? "SSH" : p == 80 ? "HTTP" : p == 443 ? "HTTPS" : p == 3389 ? "RDP" : String.valueOf(p);
-            sb.append("· ").append(label).append(' ');
+    private static String portLabel(int p) {
+        switch (p) {
+            case 22: return "SSH";
+            case 80: return "HTTP";
+            case 443: return "HTTPS";
+            case 3389: return "RDP";
+            default: return String.valueOf(p);
         }
-        return sb.toString().trim();
+    }
+
+    private static int chipBg(int p) {
+        if (p == 22) return 0xFF1E3A2E;
+        if (p == 80 || p == 443) return 0xFF1C2A3E;
+        if (p == 3389) return 0xFF3A2E1C;
+        return ROW;
+    }
+
+    private static int chipFg(int p) {
+        if (p == 22) return ACCENT;
+        if (p == 80 || p == 443) return 0xFF5AA0F2;
+        if (p == 3389) return 0xFFF2A14E;
+        return SECONDARY;
+    }
+
+    private TextView chip(@NonNull String label, int bg, int fg) {
+        TextView c = new TextView(mActivity);
+        c.setText(label);
+        c.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+        c.setTextColor(fg);
+        c.setTypeface(Typeface.DEFAULT_BOLD);
+        c.setPadding(dp(7), dp(3), dp(7), dp(3));
+        c.setBackground(rounded(bg, dp(8)));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.leftMargin = dp(4);
+        c.setLayoutParams(lp);
+        return c;
+    }
+
+    private TextView textPlain(@NonNull String s, float size, int color, boolean bold) {
+        TextView t = new TextView(mActivity);
+        t.setText(s);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, size);
+        t.setTextColor(color);
+        if (bold) t.setTypeface(Typeface.DEFAULT_BOLD);
+        return t;
     }
 
     private void deviceActions(@NonNull TerminowDiscoveredDevice device) {

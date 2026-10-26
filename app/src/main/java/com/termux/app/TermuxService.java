@@ -636,6 +636,31 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
         return newTermuxSession;
     }
 
+    /**
+     * Register a {@link TerminalSession} whose I/O is an external byte stream (a USB serial console,
+     * built with the {@link com.termux.terminal.TerminalSessionIo} constructor) as a new tab, the
+     * same way {@link #createTermuxSession(ExecutionCommand)} registers a process-backed one. No
+     * process is forked; the session is added to the list, the UI is notified and the notification
+     * refreshed.
+     */
+    public synchronized TermuxSession attachExternalTermuxSession(@NonNull TerminalSession terminalSession, String sessionName) {
+        ExecutionCommand executionCommand = new ExecutionCommand(TermuxShellManager.getNextShellId(),
+            null, null, null, null, Runner.TERMINAL_SESSION.getName(), false);
+        executionCommand.shellName = sessionName;
+
+        TermuxSession newTermuxSession = TermuxSession.wrapExternalSession(terminalSession, executionCommand, this);
+
+        mShellManager.mTermuxSessions.add(newTermuxSession);
+
+        if (mTermuxTerminalSessionActivityClient != null)
+            mTermuxTerminalSessionActivityClient.termuxSessionListNotifyUpdated();
+
+        updateNotification();
+        TermuxActivity.updateTermuxActivityStyling(this, false);
+
+        return newTermuxSession;
+    }
+
     /** Remove a TermuxSession. */
     public synchronized int removeTermuxSession(TerminalSession sessionToRemove) {
         int index = getIndexOfSession(sessionToRemove);

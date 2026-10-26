@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_serial_menu">เชื่อมต่อผ่าน Serial</string>
+    <string name="terminow_serial_menu_summary">USB console สำหรับเราเตอร์ สวิตช์ และอุปกรณ์ต่าง ๆ</string>
+    <string name="terminow_serial_title">เชื่อมต่อผ่าน Serial</string>
+    <string name="terminow_serial_no_usb">มือถือนี้ไม่รองรับ USB host จึงใช้อะแดปเตอร์ Serial ไม่ได้</string>
+    <string name="terminow_serial_none">ไม่พบอะแดปเตอร์ Serial เสียบสายหรืออะแดปเตอร์ USB Console แล้วแตะรีเฟรช</string>
+    <string name="terminow_serial_refresh">รีเฟรช</string>
+    <string name="terminow_serial_how">วิธีเชื่อมต่อ</string>
+    <string name="terminow_serial_baud">Baud rate</string>
+    <string name="terminow_serial_data_bits">Data bits</string>
+    <string name="terminow_serial_stop_bits">Stop bits</string>
+    <string name="terminow_serial_parity">Parity</string>
+    <string name="terminow_serial_flow">Flow control</string>
+    <string name="terminow_serial_connect">เชื่อมต่อ</string>
+    <string name="terminow_serial_connecting">กำลังเปิด %1$s…</string>
+    <string name="terminow_serial_permission_denied">สิทธิ์ USB ถูกปฏิเสธสำหรับ %1$s</string>
+    <string name="terminow_serial_open_failed">เปิดอุปกรณ์ Serial ไม่ได้ ลองถอดแล้วเสียบใหม่</string>
+    <string name="terminow_serial_no_service">บริการเทอร์มินัลยังไม่พร้อม ลองอีกครั้งในอีกสักครู่</string>
+    <string name="terminow_serial_parity_none">None</string>
+    <string name="terminow_serial_parity_odd">Odd</string>
+    <string name="terminow_serial_parity_even">Even</string>
+    <string name="terminow_serial_parity_mark">Mark</string>
+    <string name="terminow_serial_parity_space">Space</string>
+    <string name="terminow_serial_flow_none">None</string>
+    <string name="terminow_serial_flow_rtscts">RTS/CTS (ฮาร์ดแวร์)</string>
+    <string name="terminow_serial_flow_xonxoff">XON/XOFF (ซอฟต์แวร์)</string>
+    <string name="terminow_serial_how_title">วิธีเชื่อมต่อ serial console</string>
+    <string name="terminow_serial_how_body">• USB-C ของมือถือ → อะแดปเตอร์ OTG ถ้ามือถือจำเป็นต้องใช้ → อะแดปเตอร์ USB Console → ช่อง Console ของอุปกรณ์\n\n• สาย USB-C Console ที่ทำมาสำหรับรุ่นของคุณอาจต่อตรงได้เลย ไม่ต้องใช้อะแดปเตอร์เพิ่ม\n\n• ช่อง RJ45 Console ไม่ใช่ Ethernet แม้ช่องจะหน้าตาเหมือนกันแต่สัญญาณต่างกัน อย่าเสียบสาย Console เข้าพอร์ต LAN หรือสลับกัน\n\n• เลือกอะแดปเตอร์และ pinout ให้ตรงกับรุ่นของคุณ แต่ละผู้ผลิตไม่เหมือนกัน\n\n• อุปกรณ์ RS-232, TTL UART และ RS-485 ต้องใช้อะแดปเตอร์ที่ตรงประเภทและแรงดัน หากผิดประเภทหรือแรงดันอาจทำให้อุปกรณ์เสียหาย</string>
+</resources>
