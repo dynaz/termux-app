@@ -23,6 +23,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -38,9 +39,11 @@ import java.util.concurrent.TimeUnit;
  */
 public final class TerminowAgentUi {
 
-    /** How the chat reaches the Hosts screen: the host store, connecting, and viewing a host. */
+    /** How the chat reaches the Hosts screen: the host store, open sessions, connecting, and viewing. */
     public interface Delegate {
         @NonNull TerminowAgentTools.Hosts hostStore();
+
+        @NonNull List<String> sessionNames();
 
         void connect(@NonNull TerminowStore.Host host);
 
@@ -55,9 +58,16 @@ public final class TerminowAgentUi {
 
     private TerminowAgent mAgent;
     private final JSONArray mChatMessages = new JSONArray();
+    /** Text conversation kept across close/open: each entry is {text, "user"|"ai"}. */
+    private final java.util.List<String[]> mHistory = new java.util.ArrayList<>();
+    private String mDraft = "";
+    private String mLastSent = "";
+    private volatile boolean mCancelled;
     private boolean mAgentMode;
     private boolean mEnabled;
     private LinearLayout mThread;
+    private EditText mInput;
+    private TextView mSend;
     private AlertDialog mDialog;
     private boolean mSending;
 
@@ -96,7 +106,8 @@ public final class TerminowAgentUi {
     }
 
     private void openChat() {
-        mAgent = new TerminowAgent(mService::chatAgent, mDelegate.hostStore(), mConfirmer);
+        // Keep the agent (and its conversation context) across close/open.
+        if (mAgent == null) mAgent = new TerminowAgent(mService::chatAgent, mDelegate.hostStore(), mDelegate::sessionNames, mConfirmer);
 
         LinearLayout root = new LinearLayout(mActivity);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -115,28 +126,36 @@ public final class TerminowAgentUi {
         inputRow.setGravity(Gravity.CENTER_VERTICAL);
         inputRow.setPadding(0, dp(8), 0, dp(4));
         EditText input = new EditText(mActivity);
+        mInput = input;
         input.setHint(R.string.terminow_agent_input_hint);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        input.setText(mDraft);
         inputRow.addView(input, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         TextView send = new TextView(mActivity);
-        send.setText(R.string.terminow_agent_send);
+        mSend = send;
+        send.setText(mSending ? R.string.terminow_agent_stop : R.string.terminow_agent_send);
         send.setTypeface(Typeface.DEFAULT_BOLD);
         send.setTextColor(color(R.color.terminow_panel_accent));
         send.setPadding(dp(14), dp(10), dp(6), dp(10));
         send.setMinHeight(dp(48));
         send.setGravity(Gravity.CENTER_VERTICAL);
         send.setOnClickListener(v -> {
+            if (mSending) { stop(); return; }
             String text = input.getText().toString().trim();
-            if (text.isEmpty() || mSending || !mEnabled) return;
+            if (text.isEmpty() || !mEnabled) return;
             input.setText("");
+            mDraft = "";
             sendMessage(text);
         });
         inputRow.addView(send);
         root.addView(inputRow);
 
-        bubble(mActivity.getString(R.string.terminow_agent_welcome), false);
+        // Restore the conversation so far, or greet on a fresh chat.
+        if (mHistory.isEmpty()) bubble(mActivity.getString(R.string.terminow_agent_welcome), false, true);
+        else for (String[] entry : mHistory) renderBubble(entry[0], "user".equals(entry[1]));
 
         mDialog = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setOnDismissListener(d -> { if (mInput != null) mDraft = mInput.getText().toString(); })
             .setTitle(R.string.terminow_agent_title)
             .setView(root)
             .setNegativeButton(R.string.terminow_agent_close, null)
@@ -179,8 +198,10 @@ public final class TerminowAgentUi {
     }
 
     private void sendMessage(@NonNull String text) {
-        bubble(text, true);
-        mSending = true;
+        bubble(text, true, true);
+        mLastSent = text;
+        mCancelled = false;
+        setSending(true);
         TextView thinking = bubble(mActivity.getString(R.string.terminow_agent_thinking), false);
         new Thread(() -> {
             TerminowAgent.Turn turn = null;
@@ -196,11 +217,13 @@ public final class TerminowAgentUi {
             String finalReply = reply;
             String finalError = error;
             mActivity.runOnUiThread(() -> {
-                mSending = false;
+                setSending(false);
                 if (mThread != null) mThread.removeView(thinking);
-                if (finalError != null) bubble(mActivity.getString(R.string.terminow_agent_error, finalError), false);
+                // The person pressed Stop: do not act on the answer that arrived late.
+                if (mCancelled) { bubble(mActivity.getString(R.string.terminow_agent_stopped), false); return; }
+                if (finalError != null) { bubble(mActivity.getString(R.string.terminow_agent_error, finalError), false); retryRow(); }
                 else if (finalTurn != null) showTurn(finalTurn);
-                else if (finalReply != null && !finalReply.trim().isEmpty()) bubble(finalReply, false);
+                else if (finalReply != null && !finalReply.trim().isEmpty()) bubble(finalReply, false, true);
             });
         }, "TerminowAgent").start();
     }
@@ -219,13 +242,32 @@ public final class TerminowAgentUi {
     }
 
     private void showTurn(@NonNull TerminowAgent.Turn turn) {
-        if (!turn.reply.trim().isEmpty()) bubble(turn.reply, false);
+        if (!turn.reply.trim().isEmpty()) bubble(turn.reply, false, true);
         for (TerminowStore.Host host : turn.added) hostCard(host);
+        for (TerminowStore.Host host : turn.updated) hostCard(host);
         for (TerminowStore.Host host : turn.connect) {
             bubble(mActivity.getString(R.string.terminow_agent_connecting, host.getTitle()), false);
             if (mDialog != null) mDialog.dismiss();
             mDelegate.connect(host);
         }
+    }
+
+    private void setSending(boolean sending) {
+        mSending = sending;
+        if (mSend != null) mSend.setText(sending ? R.string.terminow_agent_stop : R.string.terminow_agent_send);
+    }
+
+    /** Stop acting on the current request. The network call may still finish, but its answer is dropped. */
+    private void stop() {
+        mCancelled = true;
+        setSending(false);
+    }
+
+    /** A tappable "Retry" under an error that resends the last message. */
+    private void retryRow() {
+        if (mLastSent.isEmpty()) return;
+        TextView retry = action(R.string.terminow_agent_retry, () -> { if (!mSending && mEnabled) sendMessage(mLastSent); });
+        if (mThread != null) { mThread.addView(retry); scrollDown(); }
     }
 
     // --- confirmation (runs on the agent thread, blocks until the person answers) ----------------
@@ -235,6 +277,12 @@ public final class TerminowAgentUi {
         public boolean confirmAddHost(@NonNull TerminowStore.Host proposed) {
             return confirm(mActivity.getString(R.string.terminow_agent_confirm_add_title),
                 details(proposed), mActivity.getString(R.string.terminow_agent_confirm_add));
+        }
+
+        @Override
+        public boolean confirmUpdateHost(@NonNull TerminowStore.Host updated) {
+            return confirm(mActivity.getString(R.string.terminow_agent_confirm_update_title),
+                details(updated), mActivity.getString(R.string.terminow_agent_confirm_update));
         }
 
         @Override
@@ -270,8 +318,21 @@ public final class TerminowAgentUi {
 
     // --- views ---------------------------------------------------------------------------------
 
+    /** A transient bubble (not kept across close/open). */
     @NonNull
     private TextView bubble(@NonNull String text, boolean fromUser) {
+        return renderBubble(text, fromUser);
+    }
+
+    /** A bubble that, when {@code record} is true, is kept and re-shown when the chat is reopened. */
+    @NonNull
+    private TextView bubble(@NonNull String text, boolean fromUser, boolean record) {
+        if (record) mHistory.add(new String[]{text, fromUser ? "user" : "ai"});
+        return renderBubble(text, fromUser);
+    }
+
+    @NonNull
+    private TextView renderBubble(@NonNull String text, boolean fromUser) {
         TextView view = new TextView(mActivity);
         view.setText(text);
         view.setTextColor(color(R.color.terminow_text));

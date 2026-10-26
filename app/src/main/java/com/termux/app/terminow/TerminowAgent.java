@@ -33,45 +33,56 @@ public final class TerminowAgent {
         @NonNull TerminowAiService.Reply chat(@NonNull JSONArray messages) throws IOException;
     }
 
-    /** Asks the person to confirm a host before it is saved or a connection before it is opened. */
+    /** Asks the person to confirm a host before it is saved/changed or a connection before it opens. */
     public interface Confirmer {
         boolean confirmAddHost(@NonNull TerminowStore.Host proposed);
+
+        boolean confirmUpdateHost(@NonNull TerminowStore.Host updated);
 
         boolean confirmConnect(@NonNull TerminowStore.Host host);
     }
 
+    /** The open terminal sessions, for list_sessions — names only, supplied by the UI. */
+    public interface Sessions {
+        @NonNull List<String> names();
+    }
+
     public static final String SYSTEM_PROMPT =
         "You are the TermiNow assistant. You help the person manage their SSH hosts and open terminals. "
-        + "Use the tools to add hosts and open connections; do not invent results. Ask only for a required "
-        + "field that is missing (the host address is required; the port defaults to 22; the username may be "
-        + "left empty). Never ask for or include a password or a private key — credentials stay on the device. "
-        + "Reply in the person's language (Thai or English). Be brief. You cannot delete hosts, run shell "
-        + "commands, or read credentials.";
+        + "Use the tools to list hosts, add or change a host, list open sessions, and open connections; do not "
+        + "invent results. Ask only for a required field that is missing (the host address is required; the port "
+        + "defaults to 22; the username may be left empty). Never ask for or include a password or a private key "
+        + "— credentials stay on the device. Reply in the person's language (Thai or English). Be brief. You "
+        + "cannot delete hosts, run shell commands, or read credentials.";
 
     private static final int MAX_STEPS = 6;
 
     private final Provider mProvider;
     private final TerminowAgentTools.Hosts mHosts;
+    private final Sessions mSessions;
     private final Confirmer mConfirmer;
     private final JSONArray mMessages = new JSONArray();
     private final Set<String> mExecuted = new HashSet<>();
 
-    public TerminowAgent(@NonNull Provider provider, @NonNull TerminowAgentTools.Hosts hosts, @NonNull Confirmer confirmer) {
-        this(provider, hosts, confirmer, SYSTEM_PROMPT);
+    public TerminowAgent(@NonNull Provider provider, @NonNull TerminowAgentTools.Hosts hosts,
+                         @NonNull Sessions sessions, @NonNull Confirmer confirmer) {
+        this(provider, hosts, sessions, confirmer, SYSTEM_PROMPT);
     }
 
     public TerminowAgent(@NonNull Provider provider, @NonNull TerminowAgentTools.Hosts hosts,
-                         @NonNull Confirmer confirmer, @NonNull String systemPrompt) {
+                         @NonNull Sessions sessions, @NonNull Confirmer confirmer, @NonNull String systemPrompt) {
         this.mProvider = provider;
         this.mHosts = hosts;
+        this.mSessions = sessions;
         this.mConfirmer = confirmer;
         add("system", systemPrompt);
     }
 
-    /** What one user message produced: the reply text and the hosts added / to connect this turn. */
+    /** What one user message produced: the reply text and the hosts added/changed / to connect this turn. */
     public static final class Turn {
         public String reply = "";
         public final List<TerminowStore.Host> added = new ArrayList<>();
+        public final List<TerminowStore.Host> updated = new ArrayList<>();
         public final List<TerminowStore.Host> connect = new ArrayList<>();
     }
 
@@ -102,9 +113,15 @@ public final class TerminowAgent {
         JSONObject args = call.arguments();
         if (args == null) return result("error", "The tool arguments were not valid JSON.");
         switch (call.name) {
+            case "list_hosts":
+                return listHosts();
+            case "list_sessions":
+                return listSessions();
             case "add_host":
                 return runAdd(args.optString("label", ""), args.optString("address", ""),
                     args.has("port") ? args.optInt("port") : null, args.optString("username", ""), turn);
+            case "update_host":
+                return runUpdate(args, turn);
             case "connect_host": {
                 TerminowStore.Host host = find(args.optString("host", ""));
                 if (host == null) return result("invalid", "No saved host matches that. Add it first or check the name.");
@@ -115,6 +132,50 @@ public final class TerminowAgent {
             default:
                 return result("error", "Unknown tool: " + call.name);
         }
+    }
+
+    /** Read-only list of saved hosts — names and connection fields only, never a credential. */
+    private String listHosts() {
+        try {
+            JSONArray hosts = new JSONArray();
+            for (TerminowStore.Host h : mHosts.all()) {
+                hosts.put(new JSONObject().put("label", h.label).put("address", h.address)
+                    .put("port", h.port).put("username", h.username));
+            }
+            return new JSONObject().put("status", "ok").put("hosts", hosts).toString();
+        } catch (JSONException e) {
+            return result("error", "Could not list hosts.");
+        }
+    }
+
+    /** Read-only list of open terminal sessions — names only. */
+    private String listSessions() {
+        try {
+            JSONArray sessions = new JSONArray();
+            for (String name : mSessions.names()) sessions.put(name);
+            return new JSONObject().put("status", "ok").put("sessions", sessions).toString();
+        } catch (JSONException e) {
+            return result("error", "Could not list sessions.");
+        }
+    }
+
+    private String runUpdate(@NonNull JSONObject args, @NonNull Turn turn) {
+        TerminowStore.Host existing = find(args.optString("host", ""));
+        if (existing == null) return result("invalid", "No saved host matches that. Check the name or address.");
+        Integer port = args.has("port") ? args.optInt("port") : null;
+        String address = args.has("address") ? args.optString("address", "") : null;
+        String username = args.has("username") ? args.optString("username", "") : null;
+        String label = args.has("label") ? args.optString("label", "") : null;
+        TerminowAgentTools.Result r = TerminowAgentTools.prepareUpdate(existing, label, address, port, username, mHosts);
+        if (r.status != TerminowAgentTools.Status.READY || r.host == null) return describe(r.status, r.message, r.host, r.missingField);
+        if (!mConfirmer.confirmUpdateHost(r.host)) return result("declined", "The person declined to change the host.");
+        existing.label = r.host.label;
+        existing.address = r.host.address;
+        existing.port = r.host.port;
+        existing.username = r.host.username;
+        mHosts.update(existing);
+        turn.updated.add(existing);
+        return describe(TerminowAgentTools.Status.ADDED, "Updated host " + existing.getTitle(), existing, "");
     }
 
     private String runAdd(@NonNull String label, @NonNull String address, @Nullable Integer port,

@@ -30,8 +30,15 @@ public class TerminowAgentTest {
 
     private static final class FakeHosts implements TerminowAgentTools.Hosts {
         final List<TerminowStore.Host> list = new ArrayList<>();
+        int updates;
         @Override public List<TerminowStore.Host> all() { return list; }
         @Override public void add(TerminowStore.Host host) { list.add(host); }
+        @Override public void update(TerminowStore.Host host) { updates++; /* edited in place; persist no-op for the fake */ }
+    }
+
+    private static final class FakeSessions implements TerminowAgent.Sessions {
+        final List<String> names = new ArrayList<>();
+        @Override public List<String> names() { return names; }
     }
 
     private static final class FakeProvider implements TerminowAgent.Provider {
@@ -47,9 +54,10 @@ public class TerminowAgentTest {
 
     private static final class FakeConfirmer implements TerminowAgent.Confirmer {
         boolean approve = true;
-        int addAsks, connectAsks;
+        int addAsks, updateAsks, connectAsks;
         final List<TerminowStore.Host> proposed = new ArrayList<>();
         @Override public boolean confirmAddHost(TerminowStore.Host host) { addAsks++; proposed.add(host); return approve; }
+        @Override public boolean confirmUpdateHost(TerminowStore.Host host) { updateAsks++; proposed.add(host); return approve; }
         @Override public boolean confirmConnect(TerminowStore.Host host) { connectAsks++; return approve; }
     }
 
@@ -189,7 +197,7 @@ public class TerminowAgentTest {
         FakeHosts h = new FakeHosts();
         FakeConfirmer c = new FakeConfirmer();
 
-        TerminowAgent.Turn turn = new TerminowAgent(p, h, c).send("เพิ่ม host 192.168.1.20 user root port 2299 ชื่อ Ubuntu");
+        TerminowAgent.Turn turn = new TerminowAgent(p, h, new FakeSessions(), c).send("เพิ่ม host 192.168.1.20 user root port 2299 ชื่อ Ubuntu");
         assertEquals("เพิ่มโฮสต์ Ubuntu แล้ว", turn.reply);
         assertEquals(1, turn.added.size());
         assertEquals("192.168.1.20", turn.added.get(0).address);
@@ -206,7 +214,7 @@ public class TerminowAgentTest {
         FakeConfirmer c = new FakeConfirmer();
         c.approve = false;
 
-        TerminowAgent.Turn turn = new TerminowAgent(p, h, c).send("add host 192.168.1.20");
+        TerminowAgent.Turn turn = new TerminowAgent(p, h, new FakeSessions(), c).send("add host 192.168.1.20");
         assertEquals(1, c.addAsks);
         assertTrue("nothing saved when declined", turn.added.isEmpty());
         assertEquals(0, h.list.size());
@@ -224,7 +232,7 @@ public class TerminowAgentTest {
         p.replies.add(textReply("Opening a terminal."));
         FakeConfirmer c = new FakeConfirmer();
 
-        TerminowAgent.Turn turn = new TerminowAgent(p, h, c).send("connect to Codemagic iOS");
+        TerminowAgent.Turn turn = new TerminowAgent(p, h, new FakeSessions(), c).send("connect to Codemagic iOS");
         assertEquals(1, turn.connect.size());
         assertEquals("build.codemagic.io", turn.connect.get(0).address);
         assertEquals(1, c.connectAsks);
@@ -239,7 +247,7 @@ public class TerminowAgentTest {
         FakeHosts h = new FakeHosts();
         FakeConfirmer c = new FakeConfirmer();
 
-        TerminowAgent.Turn turn = new TerminowAgent(p, h, c).send("add a host for user root");
+        TerminowAgent.Turn turn = new TerminowAgent(p, h, new FakeSessions(), c).send("add a host for user root");
         assertEquals("What is the address of the host?", turn.reply);
         assertTrue(turn.added.isEmpty());
         assertEquals("no confirmation for an invalid/incomplete host", 0, c.addAsks);
@@ -255,10 +263,79 @@ public class TerminowAgentTest {
         FakeHosts h = new FakeHosts();
         FakeConfirmer c = new FakeConfirmer();
 
-        TerminowAgent.Turn turn = new TerminowAgent(p, h, c).send("add it");
+        TerminowAgent.Turn turn = new TerminowAgent(p, h, new FakeSessions(), c).send("add it");
         assertEquals("a repeated tool id is not executed twice", 1, turn.added.size());
         assertEquals("10.0.0.1", turn.added.get(0).address);
         assertEquals(1, c.addAsks);
+    }
+
+    @Test
+    public void agentListsHostsWithoutConfirmation() throws Exception {
+        FakeHosts h = new FakeHosts();
+        TerminowAgentTools.addHost("Ubuntu", "192.168.1.20", 2299, "root", h);
+        TerminowAgentTools.addHost("Build", "build.example.com", 22, "deploy", h);
+        FakeProvider p = new FakeProvider();
+        p.replies.add(toolReply("c1", "list_hosts", "{}"));
+        p.replies.add(textReply("You have 2 hosts."));
+        FakeConfirmer c = new FakeConfirmer();
+
+        TerminowAgent.Turn turn = new TerminowAgent(p, h, new FakeSessions(), c).send("list my hosts");
+        assertEquals("You have 2 hosts.", turn.reply);
+        assertEquals("read-only, no confirmation", 0, c.addAsks + c.updateAsks + c.connectAsks);
+        // The tool result fed back to the model carries the host list (no credentials). Scan the data
+        // messages only; message 0 is the system prompt, which legitimately mentions "password".
+        String convo = p.lastMessages.toString();
+        assertTrue(convo.contains("192.168.1.20") && convo.contains("build.example.com"));
+        StringBuilder data = new StringBuilder();
+        for (int i = 1; i < p.lastMessages.length(); i++) data.append(p.lastMessages.optJSONObject(i));
+        assertFalse(data.toString().toLowerCase(Locale.ROOT).contains("password"));
+    }
+
+    @Test
+    public void agentListsSessions() throws Exception {
+        FakeSessions sessions = new FakeSessions();
+        sessions.names.add("Ubuntu");
+        sessions.names.add("local");
+        FakeProvider p = new FakeProvider();
+        p.replies.add(toolReply("c1", "list_sessions", "{}"));
+        p.replies.add(textReply("2 sessions open."));
+        TerminowAgent.Turn turn = new TerminowAgent(p, new FakeHosts(), sessions, new FakeConfirmer()).send("what sessions are open?");
+        assertEquals("2 sessions open.", turn.reply);
+        String convo = p.lastMessages.toString();
+        assertTrue(convo.contains("Ubuntu") && convo.contains("local"));
+    }
+
+    @Test
+    public void agentUpdatesHostAfterConfirmation() throws Exception {
+        FakeHosts h = new FakeHosts();
+        TerminowAgentTools.addHost("Ubuntu", "192.168.1.20", 22, "root", h);
+        FakeProvider p = new FakeProvider();
+        p.replies.add(toolReply("c1", "update_host", "{\"host\":\"Ubuntu\",\"port\":2299}"));
+        p.replies.add(textReply("Changed the port."));
+        FakeConfirmer c = new FakeConfirmer();
+
+        TerminowAgent.Turn turn = new TerminowAgent(p, h, new FakeSessions(), c).send("change Ubuntu port to 2299");
+        assertEquals(1, c.updateAsks);
+        assertEquals(1, turn.updated.size());
+        assertEquals("the change is persisted in place", 2299, h.list.get(0).port);
+        assertEquals(1, h.updates);
+    }
+
+    @Test
+    public void declinedUpdateIsNotSaved() throws Exception {
+        FakeHosts h = new FakeHosts();
+        TerminowAgentTools.addHost("Ubuntu", "192.168.1.20", 22, "root", h);
+        FakeProvider p = new FakeProvider();
+        p.replies.add(toolReply("c1", "update_host", "{\"host\":\"Ubuntu\",\"port\":2299}"));
+        p.replies.add(textReply("Left it unchanged."));
+        FakeConfirmer c = new FakeConfirmer();
+        c.approve = false;
+
+        TerminowAgent.Turn turn = new TerminowAgent(p, h, new FakeSessions(), c).send("change Ubuntu port to 2299");
+        assertEquals(1, c.updateAsks);
+        assertTrue(turn.updated.isEmpty());
+        assertEquals("unchanged when declined", 22, h.list.get(0).port);
+        assertEquals(0, h.updates);
     }
 
     @Test
@@ -267,7 +344,7 @@ public class TerminowAgentTest {
         p.replies.add(toolReply("c1", "add_host", "{\"address\":\"h\",\"username\":\"root\"}"));
         p.replies.add(textReply("done"));
         FakeHosts h = new FakeHosts();
-        new TerminowAgent(p, h, new FakeConfirmer()).send("add host h");
+        new TerminowAgent(p, h, new FakeSessions(), new FakeConfirmer()).send("add host h");
         // The data messages (user text, tool arguments, tool results) carry no credential — the only
         // place "password" may appear is the system instruction that forbids it, which is message 0.
         StringBuilder data = new StringBuilder();

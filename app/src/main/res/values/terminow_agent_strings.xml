@@ -5,6 +5,9 @@
     <string name="terminow_agent_title">AI Assistant</string>
     <string name="terminow_agent_input_hint">Add a host or connect — in Thai or English</string>
     <string name="terminow_agent_send">Send</string>
+    <string name="terminow_agent_stop">Stop</string>
+    <string name="terminow_agent_stopped">Stopped.</string>
+    <string name="terminow_agent_retry">Retry</string>
     <string name="terminow_agent_welcome">Hi! Tell me a host to add or one to connect to. For example: “add host 192.168.1.20 user root port 2299 named Ubuntu”.</string>
     <string name="terminow_agent_thinking">…</string>
     <string name="terminow_agent_checking">Checking Built-in AI…</string>
@@ -15,6 +18,8 @@
     <string name="terminow_agent_connecting">Opening a terminal to %1$s…</string>
     <string name="terminow_agent_confirm_add_title">Add this host?</string>
     <string name="terminow_agent_confirm_add">Add host</string>
+    <string name="terminow_agent_confirm_update_title">Change this host?</string>
+    <string name="terminow_agent_confirm_update">Save changes</string>
     <string name="terminow_agent_confirm_connect_title">Open a terminal?</string>
     <string name="terminow_agent_confirm_connect">Connect</string>
     <string name="terminow_agent_open_terminal">Open Terminal</string>

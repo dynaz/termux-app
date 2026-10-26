@@ -1334,7 +1334,23 @@ public class TerminowHome {
                         mStore.setHosts(mHosts);
                         updateItems();
                     }
+                    @Override public void update(@NonNull TerminowStore.Host host) {
+                        // The host object is already the one in mHosts (edited in place); just persist.
+                        mStore.setHosts(mHosts);
+                        updateItems();
+                    }
                 };
+            }
+
+            @NonNull @Override public List<String> sessionNames() {
+                List<String> names = new ArrayList<>();
+                TermuxService service = mActivity.getTermuxService();
+                if (service != null)
+                    for (TermuxSession s : service.getTermuxSessions()) {
+                        TerminalSession ts = s.getTerminalSession();
+                        if (ts != null) names.add(ts.mSessionName != null && !ts.mSessionName.isEmpty() ? ts.mSessionName : "session");
+                    }
+                return names;
             }
 
             @Override public void connect(@NonNull TerminowStore.Host host) { TerminowHome.this.connect(host); }

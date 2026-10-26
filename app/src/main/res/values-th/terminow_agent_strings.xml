@@ -5,6 +5,9 @@
     <string name="terminow_agent_title">ผู้ช่วย AI</string>
     <string name="terminow_agent_input_hint">เพิ่มโฮสต์หรือเชื่อมต่อ — ภาษาไทยหรืออังกฤษ</string>
     <string name="terminow_agent_send">ส่ง</string>
+    <string name="terminow_agent_stop">หยุด</string>
+    <string name="terminow_agent_stopped">หยุดแล้ว</string>
+    <string name="terminow_agent_retry">ลองใหม่</string>
     <string name="terminow_agent_welcome">สวัสดี! บอกโฮสต์ที่จะเพิ่มหรือที่จะเชื่อมต่อได้เลย เช่น “เพิ่ม host 192.168.1.20 user root port 2299 ชื่อ Ubuntu”</string>
     <string name="terminow_agent_thinking">…</string>
     <string name="terminow_agent_checking">กำลังตรวจสอบ Built-in AI…</string>
@@ -15,6 +18,8 @@
     <string name="terminow_agent_connecting">กำลังเปิดเทอร์มินัลไปยัง %1$s…</string>
     <string name="terminow_agent_confirm_add_title">เพิ่มโฮสต์นี้หรือไม่?</string>
     <string name="terminow_agent_confirm_add">เพิ่มโฮสต์</string>
+    <string name="terminow_agent_confirm_update_title">แก้ไขโฮสต์นี้หรือไม่?</string>
+    <string name="terminow_agent_confirm_update">บันทึกการแก้ไข</string>
     <string name="terminow_agent_confirm_connect_title">เปิดเทอร์มินัลหรือไม่?</string>
     <string name="terminow_agent_confirm_connect">เชื่อมต่อ</string>
     <string name="terminow_agent_open_terminal">เปิดเทอร์มินัล</string>

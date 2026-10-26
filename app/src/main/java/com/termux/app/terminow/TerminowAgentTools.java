@@ -64,6 +64,9 @@ public final class TerminowAgentTools {
         @NonNull List<TerminowStore.Host> all();
 
         void add(@NonNull TerminowStore.Host host);
+
+        /** Persist a change to a host already in the store (same uuid). */
+        void update(@NonNull TerminowStore.Host host);
     }
 
     private TerminowAgentTools() {}
@@ -112,6 +115,36 @@ public final class TerminowAgentTools {
         if (prepared.status != Status.READY || prepared.host == null) return prepared;
         hosts.add(prepared.host);
         return Result.added(prepared.host);
+    }
+
+    /**
+     * Validate a change to an existing host (only the given fields change), without saving. Returns
+     * READY with a copy carrying the new values (same uuid) so the caller can confirm before saving,
+     * INVALID for a bad value, or DUPLICATE if the change would collide with a different saved host.
+     */
+    @NonNull
+    public static Result prepareUpdate(@NonNull TerminowStore.Host existing, @Nullable String label, @Nullable String address,
+                                       @Nullable Integer port, @Nullable String username, @NonNull Hosts hosts) {
+        String addr = address == null || address.trim().isEmpty() ? existing.address : address.trim();
+        if (!TerminowStore.isValidAddress(addr)) return Result.invalid("That is not a valid address: " + addr);
+        int actualPort = port != null ? port : existing.port;
+        if (!TerminowStore.isValidPort(actualPort)) return Result.invalid("The port must be between 1 and 65535, not " + actualPort + ".");
+        String user = username == null ? existing.username : username.trim();
+        if (!user.isEmpty() && !TerminowStore.isValidUsername(user)) return Result.invalid("That is not a valid username: " + user);
+        String name = (label == null || label.trim().isEmpty()) ? existing.label : label.replaceAll("\\p{Cntrl}", " ").trim();
+
+        for (TerminowStore.Host other : hosts.all())
+            if (!other.uuid.equals(existing.uuid) && sameHost(other, addr, actualPort, user)) return Result.duplicate(other);
+
+        TerminowStore.Host copy = new TerminowStore.Host();
+        copy.uuid = existing.uuid;
+        copy.label = clip(name, 100);
+        copy.address = addr;
+        copy.port = actualPort;
+        copy.username = user;
+        copy.protocol = existing.protocol;
+        copy.group = existing.group;
+        return Result.ready(copy);
     }
 
     /** Whether a saved host is the same connection as the given address/port/user. */
