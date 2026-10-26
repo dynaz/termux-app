@@ -1286,6 +1286,9 @@ public class TerminowHome {
         addMenuItem(menu, popup, R.drawable.ic_terminow_serial,
             mActivity.getString(R.string.terminow_serial_menu), mActivity.getString(R.string.terminow_serial_menu_summary),
             this::showSerial);
+        addMenuItem(menu, popup, R.drawable.ic_terminow_agent,
+            mActivity.getString(R.string.terminow_agent_menu), mActivity.getString(R.string.terminow_agent_menu_summary),
+            this::showAgent);
 
         popup.showAsDropDown(anchor, 0, dp(4));
     }
@@ -1313,6 +1316,34 @@ public class TerminowHome {
     /** Open the Serial Connection flow: pick a USB serial adapter, set the line, open a tab. */
     private void showSerial() {
         new TerminowSerialUi(mActivity).show();
+    }
+
+    /** Open the AI Agent chat: manage hosts and open terminals by natural language. */
+    private void showAgent() {
+        new TerminowAgentUi(mActivity, mStore, new TerminowAgentUi.Delegate() {
+            @NonNull @Override
+            public TerminowAgentTools.Hosts hostStore() {
+                return new TerminowAgentTools.Hosts() {
+                    @NonNull @Override public List<TerminowStore.Host> all() { return mHosts; }
+                    @Override public void add(@NonNull TerminowStore.Host host) {
+                        if (!host.group.isEmpty() && !mGroups.contains(host.group)) {
+                            mGroups.add(host.group);
+                            mStore.setGroups(mGroups);
+                        }
+                        mHosts.add(host);
+                        mStore.setHosts(mHosts);
+                        updateItems();
+                    }
+                };
+            }
+
+            @Override public void connect(@NonNull TerminowStore.Host host) { TerminowHome.this.connect(host); }
+
+            @Override public void viewHost(@NonNull TerminowStore.Host host) {
+                if (!isVisible()) show();
+                updateItems();
+            }
+        }).show();
     }
 
     /** Import: hosts from a file or Termius, or files into the session that is shown. */

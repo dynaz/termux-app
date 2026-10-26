@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_agent_menu">ผู้ช่วย AI</string>
+    <string name="terminow_agent_menu_summary">เพิ่มโฮสต์และเปิดเทอร์มินัลด้วยการแชต</string>
+    <string name="terminow_agent_title">ผู้ช่วย AI</string>
+    <string name="terminow_agent_input_hint">เพิ่มโฮสต์หรือเชื่อมต่อ — ภาษาไทยหรืออังกฤษ</string>
+    <string name="terminow_agent_send">ส่ง</string>
+    <string name="terminow_agent_welcome">สวัสดี! บอกโฮสต์ที่จะเพิ่มหรือที่จะเชื่อมต่อได้เลย เช่น “เพิ่ม host 192.168.1.20 user root port 2299 ชื่อ Ubuntu”</string>
+    <string name="terminow_agent_thinking">…</string>
+    <string name="terminow_agent_checking">กำลังตรวจสอบ Built-in AI…</string>
+    <string name="terminow_agent_error">ข้อผิดพลาด: %1$s</string>
+    <string name="terminow_agent_sign_in">เข้าสู่ระบบบัญชี TermiNow ของคุณเพื่อใช้ผู้ช่วย AI</string>
+    <string name="terminow_agent_not_ready">บัญชีของคุณยังใช้ Built-in AI ไม่ได้ในขณะนี้</string>
+    <string name="terminow_agent_chat_only">ฉันพูดคุยได้ แต่การเพิ่มโฮสต์และเปิดการเชื่อมต่อยังไม่เปิดใช้งานในแพ็กเกจของคุณ</string>
+    <string name="terminow_agent_connecting">กำลังเปิดเทอร์มินัลไปยัง %1$s…</string>
+    <string name="terminow_agent_confirm_add_title">เพิ่มโฮสต์นี้หรือไม่?</string>
+    <string name="terminow_agent_confirm_add">เพิ่มโฮสต์</string>
+    <string name="terminow_agent_confirm_connect_title">เปิดเทอร์มินัลหรือไม่?</string>
+    <string name="terminow_agent_confirm_connect">เชื่อมต่อ</string>
+    <string name="terminow_agent_open_terminal">เปิดเทอร์มินัล</string>
+    <string name="terminow_agent_view_host">ดูโฮสต์</string>
+    <string name="terminow_agent_close">ปิด</string>
+</resources>
