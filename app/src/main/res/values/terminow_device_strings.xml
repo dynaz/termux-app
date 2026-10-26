@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_add_environment">Add Environment</string>
+    <string name="terminow_env_tab_local">Local Linux</string>
+    <string name="terminow_env_tab_remote">Remote Devices</string>
+    <string name="terminow_env_tab_labs">Virtual Labs</string>
+    <string name="terminow_labs_note">Connect to a VM or lab running on your server.</string>
+
+    <string name="terminow_device_generic">Generic Linux Server</string>
+    <string name="terminow_device_generic_help">A Linux server reached over SSH.</string>
+    <string name="terminow_device_synology">Synology NAS / DSM</string>
+    <string name="terminow_device_synology_help">Enable SSH in DSM &gt; Control Panel &gt; Terminal &amp; SNMP before connecting.</string>
+    <string name="terminow_device_mikrotik">MikroTik RouterOS</string>
+    <string name="terminow_device_mikrotik_help">Connect to RouterOS on a real device or CHR on an external VM. It uses the RouterOS CLI, not a Linux shell.</string>
+    <string name="terminow_device_cisco">Cisco IOS / IOS XE</string>
+    <string name="terminow_device_cisco_help">The device must have SSH enabled and an account with the right privilege. It uses the device CLI, not a Linux shell.</string>
+    <string name="terminow_device_esxi">VMware ESXi</string>
+    <string name="terminow_device_esxi_help">Enable SSH on ESXi per your host\'s policy before using it. It uses the ESXi shell.</string>
+    <string name="terminow_device_other">Other SSH Device</string>
+    <string name="terminow_device_other_help">Any device reached over SSH.</string>
+
+    <string name="terminow_lab_mikrotik_chr">MikroTik CHR</string>
+    <string name="terminow_lab_linux_vm">Linux VM</string>
+    <string name="terminow_lab_esxi">VMware ESXi Host</string>
+</resources>
