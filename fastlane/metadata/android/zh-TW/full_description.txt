@@ -1,0 +1,25 @@
+用手機管理你的伺服器。TermiNow 透過 SSH、RDP 和 SFTP 連線遠端裝置，在 Android 上執行完整的 Linux 命令列——無需 root。
+
+只需儲存一次主機資訊——位址、連接埠、使用者名稱和金鑰——然後一鍵連線。從 PuTTY、FileZilla、SecureCRT、OpenSSH config 或 CSV 匯入連線，從桌面用戶端遷移無需重新輸入。掃描本機網路尋找裝置，或從 DigitalOcean 和 AWS 匯入執行個體。
+
+功能一覽：
+
+• 使用儲存的主機設定檔和金鑰驗證透過 SSH 或 Mosh 連線
+• 透過遠端桌面 (RDP) 開啟 Windows 或 Linux 桌面
+• 使用 SFTP 瀏覽器瀏覽和傳輸檔案
+• 透過 WinRM 在 Windows 伺服器上執行 PowerShell
+• 使用完整的 Linux 終端，包含 Bash、Zsh 和 1000+ 可安裝套件
+• 透過引導精靈設定連接埠轉發——本機、遠端或動態
+• 將指令儲存為 Snippets，常用文字儲存在 QuickCut 中
+• 透過 USB 連接序列埠裝置
+• 管理 SSH 金鑰，包括 PuTTY (.ppk) 和 FIDO2 安全金鑰
+• 在裝置上安裝 Ubuntu、Debian 或 Alpine 作為 Linux 環境
+• 透過 AI Bridge 在 Linux 環境中執行 Claude Code
+• 使用 AI 助手透過對話新增主機或連線
+• 自訂終端佈景主題和字型
+
+Premium 增加檔案管理員（瀏覽裝置儲存空間和 SFTP 主機，附傳輸佇列）、多個 Linux 環境、tmux 工作階段管理、用於外部 AI 用戶端的 MCP Bridge 以及備份與還原功能。透過 Google Play 按月或按年訂閱。
+
+其他所有功能——SSH、RDP、SFTP、終端、連接埠轉發、序列埠、程式碼片段、金鑰、第一個 Linux 環境和 Claude Code——均免費。
+
+首次啟動時安裝小型基礎系統。透過 'pkg' 指令可安裝 1000+ 額外套件。

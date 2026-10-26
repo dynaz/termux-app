@@ -1,0 +1,25 @@
+Gérez vos serveurs depuis votre téléphone. TermiNow se connecte aux machines distantes via SSH, RDP et SFTP et exécute une ligne de commande Linux complète sur Android — sans root requis.
+
+Enregistrez vos hôtes une fois — adresse, port, nom d'utilisateur et clé — puis connectez-vous d'un seul geste. Importez des connexions depuis PuTTY, FileZilla, SecureCRT, OpenSSH config ou CSV pour migrer depuis un client de bureau sans tout ressaisir. Scannez votre réseau local ou importez des instances depuis DigitalOcean et AWS.
+
+Ce que vous pouvez faire :
+
+• Se connecter via SSH ou Mosh avec des profils d'hôtes enregistrés et authentification par clé
+• Ouvrir un bureau Windows ou Linux avec Remote Desktop (RDP)
+• Parcourir et transférer des fichiers avec le navigateur SFTP
+• Exécuter PowerShell sur des serveurs Windows via WinRM
+• Utiliser un terminal Linux complet avec Bash, Zsh et plus de 1000 paquets
+• Configurer la redirection de ports — locale, distante ou dynamique — avec un assistant guidé
+• Enregistrer des commandes comme Extraits et du texte fréquent dans QuickCut
+• Connecter des périphériques série via USB
+• Gérer les clés SSH, y compris PuTTY (.ppk) et FIDO2
+• Installer Ubuntu, Debian ou Alpine comme environnement Linux
+• Exécuter Claude Code dans l'environnement Linux avec AI Bridge
+• Utiliser l'assistant IA pour ajouter des hôtes ou se connecter par chat
+• Personnaliser le thème et la police du terminal
+
+Premium ajoute le Gestionnaire de fichiers (parcourir le stockage de l'appareil et les hôtes SFTP avec file d'attente de transfert), plusieurs environnements Linux, la gestion des sessions tmux, le MCP Bridge pour les clients IA externes et la Sauvegarde et restauration. Abonnement mensuel ou annuel via Google Play.
+
+Tout le reste — SSH, RDP, SFTP, le terminal, la redirection de ports, la console série, les extraits, les clés, le premier environnement Linux et Claude Code — est gratuit.
+
+Au premier lancement, un petit système de base est installé. Plus de 1000 paquets supplémentaires sont disponibles via la commande 'pkg'.

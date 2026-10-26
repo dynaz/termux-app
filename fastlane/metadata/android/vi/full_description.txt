@@ -1,0 +1,25 @@
+Quản lý máy chủ từ điện thoại. TermiNow kết nối với máy từ xa qua SSH, RDP và SFTP, chạy dòng lệnh Linux đầy đủ trên Android — không cần root.
+
+Lưu host một lần — địa chỉ, cổng, tên người dùng và khóa — rồi kết nối bằng một chạm. Nhập kết nối từ PuTTY, FileZilla, SecureCRT, OpenSSH config hoặc CSV. Quét mạng nội bộ hoặc nhập instance từ DigitalOcean và AWS.
+
+Bạn có thể làm gì:
+
+• Kết nối qua SSH hoặc Mosh với hồ sơ host đã lưu và xác thực khóa
+• Mở desktop Windows hoặc Linux bằng Remote Desktop (RDP)
+• Duyệt và truyền tệp bằng trình duyệt SFTP
+• Chạy PowerShell trên máy chủ Windows qua WinRM
+• Dùng terminal Linux đầy đủ với Bash, Zsh và hơn 1000 gói
+• Thiết lập chuyển tiếp cổng — cục bộ, từ xa hoặc động — bằng trình hướng dẫn
+• Lưu lệnh dưới dạng Đoạn mã và văn bản thường dùng trong QuickCut
+• Kết nối thiết bị nối tiếp qua USB
+• Quản lý khóa SSH gồm PuTTY (.ppk) và FIDO2
+• Cài Ubuntu, Debian hoặc Alpine làm môi trường Linux
+• Chạy Claude Code trong môi trường Linux với AI Bridge
+• Dùng AI Assistant để thêm host hoặc kết nối qua chat
+• Tùy chỉnh giao diện và phông chữ terminal
+
+Premium thêm Trình quản lý tệp, nhiều môi trường Linux, quản lý phiên tmux, MCP Bridge cho AI client bên ngoài và Sao lưu & Khôi phục. Đăng ký hàng tháng hoặc hàng năm qua Google Play.
+
+Tất cả phần còn lại — SSH, RDP, SFTP, terminal, chuyển tiếp cổng, nối tiếp, đoạn mã, khóa, môi trường Linux đầu tiên và Claude Code — miễn phí.
+
+Lần đầu khởi động, hệ thống cơ sở nhỏ được cài đặt. Hơn 1000 gói bổ sung có sẵn qua lệnh 'pkg'.

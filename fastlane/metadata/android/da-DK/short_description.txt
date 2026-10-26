@@ -1,0 +1,1 @@
+SSH, RDP og Linux-terminal med gemte værter, SFTP, AI-værktøjer

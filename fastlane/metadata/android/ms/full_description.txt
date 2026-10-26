@@ -1,0 +1,25 @@
+Urus pelayan anda dari telefon. TermiNow menyambung ke mesin jauh melalui SSH, RDP dan SFTP, serta menjalankan baris arahan Linux penuh pada Android — tanpa perlu root.
+
+Simpan hos sekali — alamat, port, nama pengguna dan kunci — kemudian sambung dengan satu ketukan. Import sambungan dari PuTTY, FileZilla, SecureCRT, OpenSSH config atau CSV. Imbas rangkaian tempatan atau import instance dari DigitalOcean dan AWS.
+
+Apa yang boleh anda lakukan:
+
+• Sambung melalui SSH atau Mosh dengan profil hos tersimpan dan pengesahan kunci
+• Buka desktop Windows atau Linux dengan Remote Desktop (RDP)
+• Layari dan pindahkan fail dengan pelayar SFTP
+• Jalankan PowerShell pada pelayan Windows melalui WinRM
+• Gunakan terminal Linux penuh dengan Bash, Zsh dan 1000+ pakej
+• Sediakan pemajuan port — tempatan, jauh atau dinamik — dengan wizard berpandu
+• Simpan arahan sebagai Coretan dan teks kerap dalam QuickCut
+• Sambungkan peranti bersiri melalui USB
+• Urus kunci SSH termasuk PuTTY (.ppk) dan FIDO2
+• Pasang Ubuntu, Debian atau Alpine sebagai persekitaran Linux
+• Jalankan Claude Code dalam persekitaran Linux dengan AI Bridge
+• Gunakan AI Assistant untuk menambah hos atau menyambung melalui sembang
+• Sesuaikan tema dan fon terminal
+
+Premium menambah Pengurus Fail (layari storan peranti dan hos SFTP dengan baris gilir pemindahan), beberapa persekitaran Linux, pengurusan sesi tmux, MCP Bridge untuk klien AI luaran, dan Sandaran & Pemulihan. Langganan bulanan atau tahunan melalui Google Play.
+
+Semua yang lain — SSH, RDP, SFTP, terminal, pemajuan port, bersiri, coretan, kunci, persekitaran Linux pertama dan Claude Code — percuma.
+
+Pada permulaan pertama, sistem asas kecil dipasang. Lebih 1000 pakej tambahan tersedia melalui arahan 'pkg'.

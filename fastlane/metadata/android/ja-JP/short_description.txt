@@ -1,0 +1,1 @@
+SSH、RDP、Linuxターミナル — ホスト保存、SFTP、AIツール搭載

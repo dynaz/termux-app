@@ -1,0 +1,25 @@
+Simamia seva zako kutoka simu yako. TermiNow inaunganisha na mashine za mbali kupitia SSH, RDP na SFTP, na kuendesha safu kamili ya amri za Linux kwenye Android — hakuna haja ya root.
+
+Hifadhi wenyeji wako mara moja — anwani, bandari, jina la mtumiaji na ufunguo — kisha unganisha kwa kugusa mara moja. Ingiza miunganisho kutoka PuTTY, FileZilla, SecureCRT, OpenSSH config au CSV. Changanua mtandao wa ndani au ingiza instance kutoka DigitalOcean na AWS.
+
+Unachoweza kufanya:
+
+• Unganisha kupitia SSH au Mosh na wasifu wa mwenyeji uliohifadhiwa
+• Fungua desktop ya Windows au Linux kwa Remote Desktop (RDP)
+• Vinjari na uhamishie faili kwa kivinjari cha SFTP
+• Endesha PowerShell kwenye seva za Windows kupitia WinRM
+• Tumia terminal kamili ya Linux na Bash, Zsh na pakiti 1000+
+• Sanidi usambazaji wa bandari — wa ndani, wa mbali au wa nguvu — kwa msaidizi
+• Hifadhi amri kama Vipande na maandishi ya mara kwa mara katika QuickCut
+• Unganisha vifaa vya serial kupitia USB
+• Simamia funguo za SSH ikiwa ni pamoja na PuTTY (.ppk) na FIDO2
+• Sakinisha Ubuntu, Debian au Alpine kama mazingira ya Linux
+• Endesha Claude Code katika mazingira ya Linux na AI Bridge
+• Tumia Msaidizi wa AI kuongeza wenyeji au kuunganisha kupitia mazungumzo
+• Badilisha mandhari na fonti ya terminal
+
+Premium inaongeza Meneja wa Faili, mazingira mengi ya Linux, usimamizi wa vikao vya tmux, MCP Bridge kwa wateja wa AI wa nje, na Hifadhi na Rejesha. Usajili wa kila mwezi au mwaka kupitia Google Play.
+
+Kila kitu kingine — SSH, RDP, SFTP, terminal, usambazaji wa bandari, serial, vipande, funguo, mazingira ya kwanza ya Linux na Claude Code — ni bure.
+
+Wakati wa kuanza kwa mara ya kwanza, mfumo mdogo wa msingi unawekwa. Pakiti zaidi ya 1000 zinapatikana kupitia amri ya 'pkg'.

@@ -1,0 +1,25 @@
+Sunucularınızı telefonunuzdan yönetin. TermiNow SSH, RDP ve SFTP üzerinden uzak makinelere bağlanır ve Android'de tam bir Linux komut satırı çalıştırır — root gerekmez.
+
+Sunucularınızı bir kez kaydedin — adres, port, kullanıcı adı ve anahtar — sonra tek dokunuşla bağlanın. PuTTY, FileZilla, SecureCRT, OpenSSH config veya CSV'den bağlantıları içe aktarın. Yerel ağınızı tarayın veya DigitalOcean ve AWS'den instance içe aktarın.
+
+Neler yapabilirsiniz:
+
+• Kayıtlı profiller ve anahtar doğrulamayla SSH veya Mosh ile bağlanma
+• Remote Desktop (RDP) ile Windows veya Linux masaüstü açma
+• SFTP tarayıcısıyla dosya gezinme ve aktarma
+• WinRM ile Windows sunucularda PowerShell çalıştırma
+• Bash, Zsh ve 1000'den fazla paketle tam Linux terminali
+• Rehberli sihirbazla port yönlendirme ayarlama — yerel, uzak veya dinamik
+• Komutları Parçacık olarak kaydetme, sık metni QuickCut'ta saklama
+• USB ile seri cihazlara bağlanma
+• PuTTY (.ppk) ve FIDO2 dahil SSH anahtarlarını yönetme
+• Ubuntu, Debian veya Alpine'ı Linux ortamı olarak kurma
+• AI Bridge ile Linux ortamında Claude Code çalıştırma
+• AI asistanını kullanarak sohbetle sunucu ekleme veya bağlanma
+• Terminal temasını ve yazı tipini özelleştirme
+
+Premium, Dosya Yöneticisi, birden fazla Linux ortamı, tmux oturum yönetimi, harici AI istemcileri için MCP Bridge ve Yedekleme ve Geri Yükleme ekler. Google Play üzerinden aylık veya yıllık abonelik.
+
+Geri kalan her şey — SSH, RDP, SFTP, terminal, port yönlendirme, seri, parçacıklar, anahtarlar, ilk Linux ortamı ve Claude Code — ücretsizdir.
+
+İlk başlatmada küçük bir temel sistem kurulur. 'pkg' komutuyla 1000'den fazla ek paket kullanılabilir.

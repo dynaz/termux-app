@@ -1,0 +1,25 @@
+Spravujte servery z telefónu. TermiNow sa pripája k vzdialeným strojom cez SSH, RDP a SFTP a spúšťa plnohodnotný príkazový riadok Linuxu na Androide — bez rootu.
+
+Uložte hostiteľov raz — adresu, port, meno používateľa a kľúč — a potom sa pripojte jedným ťuknutím. Importujte pripojenia z PuTTY, FileZilla, SecureCRT, OpenSSH config alebo CSV. Skenujte lokálnu sieť alebo importujte inštancie z DigitalOcean a AWS.
+
+Čo môžete robiť:
+
+• Pripojenie cez SSH alebo Mosh s uloženými profilmi a autentifikáciou kľúčom
+• Otvorenie plochy Windows alebo Linuxu cez Remote Desktop (RDP)
+• Prehliadanie a prenos súborov cez SFTP prehliadač
+• Spustenie PowerShell na serveroch Windows cez WinRM
+• Plnohodnotný Linux terminál s Bash, Zsh a 1000+ balíkmi
+• Nastavenie presmerovania portov — lokálne, vzdialené alebo dynamické — sprievodcom
+• Ukladanie príkazov ako úryvky a častého textu do QuickCut
+• Pripojenie sériových zariadení cez USB
+• Správa SSH kľúčov vrátane PuTTY (.ppk) a FIDO2
+• Inštalácia Ubuntu, Debian alebo Alpine ako prostredia Linux
+• Spustenie Claude Code v prostredí Linux cez AI Bridge
+• Použitie AI asistenta na pridanie hostiteľov alebo pripojenie chatom
+• Prispôsobenie motívu a písma terminálu
+
+Premium pridáva Správcu súborov, viacero prostredí Linux, správu relácií tmux, MCP Bridge pre externých AI klientov a Zálohovanie a obnovu. Mesačné alebo ročné predplatné cez Google Play.
+
+Všetko ostatné — SSH, RDP, SFTP, terminál, presmerovanie portov, sériový port, úryvky, kľúče, prvé prostredie Linux a Claude Code — je zadarmo.
+
+Pri prvom spustení sa nainštaluje malý základný systém. Viac ako 1000 ďalších balíkov cez príkaz 'pkg'.

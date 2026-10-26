@@ -1,0 +1,1 @@
+SSH, RDP och Linux-terminal med sparade värdar, SFTP, AI-verktyg
