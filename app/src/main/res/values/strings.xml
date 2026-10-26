@@ -279,6 +279,8 @@
     <string name="terminow_no_snippets">No snippets yet. Tap + to add one.</string>
     <string name="terminow_no_results">Nothing matches your search.</string>
     <string name="terminow_edit">Edit</string>
+    <string name="terminow_duplicate">Duplicate</string>
+    <string name="terminow_duplicate_suffix">%1$s copy</string>
     <string name="terminow_delete">Delete</string>
     <string name="terminow_save">Save</string>
     <string name="terminow_autofill_unavailable">No autofill service is enabled to fill in a password</string>
@@ -472,6 +474,7 @@
     <string name="terminow_connection_auth_failed">Authentication failed. Check the user name, password or key.</string>
     <string name="terminow_connection_timeout">The connection timed out. Check the address, port and network.</string>
     <string name="terminow_retry">Retry</string>
+    <string name="terminow_help">Help</string>
     <string name="terminow_close_dialog">Close</string>
     <string name="terminow_files_import">Import files</string>
     <string name="terminow_files_export">Export a file</string>

@@ -283,6 +283,135 @@ public class TerminowMcpBridgeTest {
         assertEquals("secret output", bridge.taskOutput(CLIENT, a, 0, 100).getString("output"));
     }
 
+    // A retry is a fresh attempt to the same session, owned by the same client, linked by lineage.
+    @Test
+    public void retryCreatesLinkedAttemptToSameSession() throws Exception {
+        shares.add(managed("s1"));
+        String a = submit("s1");
+        executor.complete(a, 0, "done");               // a is terminal
+        TerminowMcpBridgeTask retry = bridge.retryFromDevice(a);
+        assertEquals("same session", "s1", retry.sessionId);
+        assertEquals("same owner", CLIENT, retry.clientKey);
+        assertEquals("linked to the original", a, retry.parentId());
+        assertNotEquals("a new task id", a, retry.id);
+        assertEquals("the retry runs once the session is free", "running", state(CLIENT, retry.id));
+        assertTrue(executor.started.containsKey(retry.id));
+    }
+
+    // Only a finished task can be retried.
+    @Test
+    public void retryRefusedForUnfinishedTask() throws Exception {
+        shares.add(managed("s1"));
+        String a = submit("s1");                        // running
+        try {
+            bridge.retryFromDevice(a);
+            fail("expected refusal for an unfinished task");
+        } catch (TerminowAiError.Exception e) {
+            assertEquals(TerminowAiError.BAD_REQUEST, e.error);
+        }
+    }
+
+    // A retry never retargets: if the session is gone, it fails instead of running elsewhere.
+    @Test
+    public void retryRefusedWhenSessionUnshared() throws Exception {
+        shares.add(managed("s1"));
+        String a = submit("s1");
+        executor.complete(a, 0, "done");
+        shares.clear();                                 // the session was unshared
+        try {
+            bridge.retryFromDevice(a);
+            fail("expected refusal when the session is gone");
+        } catch (TerminowAiError.Exception e) {
+            assertEquals(TerminowAiError.SESSION_NOT_SHARED, e.error);
+        }
+    }
+
+    // The per-session task list shows only that session's tasks; the global list shows all.
+    @Test
+    public void perSessionListFiltersBySession() throws Exception {
+        shares.add(managed("s1"));
+        shares.add(managed("s2"));
+        String a = submit("s1");
+        String b = bridge.taskSubmit(CLIENT, "s2", "x", "", 0).getString("task_id");
+        JSONArray onlyS1 = bridge.taskList(CLIENT, "s1");
+        assertEquals(1, onlyS1.length());
+        assertEquals(a, onlyS1.getJSONObject(0).getString("task_id"));
+        assertEquals("the global list has both", 2, bridge.taskList(CLIENT, "").length());
+        assertNotEquals(a, b);
+    }
+
+    // A task keeps a human target snapshot (environment/folder) that survives an unshare and a reload.
+    @Test
+    public void taskKeepsTargetMetadataForDisplay() throws Exception {
+        shares.add(managed("s1"));                      // env "ubuntu", folder "/home/root/s1"
+        String a = submit("s1");
+        TerminowMcpBridgeTask task = findTask(bridge, a);
+        assertEquals("ubuntu", task.environmentKey);
+        assertEquals("/home/root/s1", task.folder);
+        shares.clear();                                 // even after unshare, the snapshot remains on the task
+        TerminowMcpBridge reloaded = newBridge(new FakeExecutor(), persistence);
+        TerminowMcpBridgeTask back = findTask(reloaded, a);
+        assertEquals("ubuntu", back.environmentKey);
+        assertEquals("/home/root/s1", back.folder);
+    }
+
+    // Attempt lineage survives a restart.
+    @Test
+    public void retryLineageSurvivesReload() throws Exception {
+        shares.add(managed("s1"));
+        String a = submit("s1");
+        executor.complete(a, 0, "done");
+        String retryId = bridge.retryFromDevice(a).id;
+        TerminowMcpBridge reloaded = newBridge(new FakeExecutor(), persistence);
+        assertEquals(a, findTask(reloaded, retryId).parentId());
+    }
+
+    @NonNull
+    private TerminowMcpBridgeTask findTask(@NonNull TerminowMcpBridge b, @NonNull String id) {
+        for (TerminowMcpBridgeTask t : b.allTasks()) if (t.id.equals(id)) return t;
+        throw new AssertionError("no task " + id);
+    }
+
+    // An SSH-host share in Mode A (local tools) accepts tasks and runs its local Claude environment.
+    @Test
+    public void sshHostLocalToolsShareAcceptsTasks() throws Exception {
+        shares.add(sshHost("s1", TerminowMcpBridge.MODE_LOCAL_TOOLS));
+        String a = submit("s1");
+        assertEquals("running", state(CLIENT, a));
+        assertEquals("ubuntu", findTask(bridge, a).environmentKey);
+    }
+
+    // Mode B (remote Claude on the host) is accepted and routed to the executor (which runs it on the host).
+    @Test
+    public void remoteHostModeIsAcceptedAndRoutes() throws Exception {
+        shares.add(sshHost("s1", TerminowMcpBridge.MODE_REMOTE_HOST));
+        String a = submit("s1");
+        assertEquals("running", state(CLIENT, a));
+        assertTrue("the task was handed to the executor", executor.started.containsKey(a));
+    }
+
+    // A local share's fingerprint ignores the SSH fields (migration-safe); an SSH-host share binds to its host.
+    @Test
+    public void localFingerprintStaysStableSshHostBindsToHost() {
+        List<String> caps = Arrays.asList(TerminowMcpBridge.CAP_SUBMIT);
+        TerminowMcpBridge.Share local7 = new TerminowMcpBridge.Share("s1", "L", true, "ubuntu", "root", "/f", caps);
+        TerminowMcpBridge.Share local11 = new TerminowMcpBridge.Share("s1", "L", true, "ubuntu", "root", "/f", caps,
+            TerminowMcpBridge.SHARE_LOCAL, TerminowMcpBridge.MODE_LOCAL_TOOLS, "ignored", "ignored");
+        assertEquals("a local fingerprint ignores ssh fields", local7.fingerprint(), local11.fingerprint());
+        TerminowMcpBridge.Share ssh = new TerminowMcpBridge.Share("s1", "L", true, "ubuntu", "root", "/f", caps,
+            TerminowMcpBridge.SHARE_SSH_HOST, TerminowMcpBridge.MODE_LOCAL_TOOLS, "host-1", "root@1.1.1.1:22");
+        assertNotEquals("an ssh-host share binds to its host", local7.fingerprint(), ssh.fingerprint());
+        TerminowMcpBridge.Share moved = new TerminowMcpBridge.Share("s1", "L", true, "ubuntu", "root", "/f", caps,
+            TerminowMcpBridge.SHARE_SSH_HOST, TerminowMcpBridge.MODE_LOCAL_TOOLS, "host-1", "root@2.2.2.2:22");
+        assertNotEquals("a changed host identity is a changed target", ssh.fingerprint(), moved.fingerprint());
+    }
+
+    private TerminowMcpBridge.Share sshHost(String id, String mode) {
+        return new TerminowMcpBridge.Share(id, "Session " + id, true, "ubuntu", "root", "/home/root/" + id,
+            Arrays.asList(TerminowMcpBridge.CAP_SUBMIT, TerminowMcpBridge.CAP_READ, TerminowMcpBridge.CAP_CANCEL),
+            TerminowMcpBridge.SHARE_SSH_HOST, mode, "host-" + id, "root@" + id + ".example:22");
+    }
+
     // ---------------------------------------------------------------------------------------
 
     private TerminowAiError lastError;

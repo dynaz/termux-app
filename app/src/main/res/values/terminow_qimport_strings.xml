@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_qimport_menu">Quick Import</string>
+    <string name="terminow_qimport_src_filezilla">FileZilla (Site Manager XML)</string>
+    <string name="terminow_qimport_src_putty">PuTTY (.reg sessions)</string>
+    <string name="terminow_qimport_src_securecrt">SecureCRT (session .ini)</string>
+    <string name="terminow_qimport_src_csv">CSV</string>
+    <string name="terminow_qimport_src_openssh">OpenSSH config</string>
+    <string name="terminow_qimport_none">No connections were found in that file.</string>
+    <string name="terminow_qimport_preview_title">%1$s — preview</string>
+    <string name="terminow_qimport_search">Search</string>
+    <string name="terminow_qimport_group">Destination group</string>
+    <string name="terminow_qimport_preserve_folders">Preserve source folders</string>
+    <string name="terminow_qimport_passwords">Import saved passwords</string>
+    <string name="terminow_qimport_select_all">Select all</string>
+    <string name="terminow_qimport_duplicates">Duplicates</string>
+    <string name="terminow_qimport_dup_skip">Skip duplicates (tap to change)</string>
+    <string name="terminow_qimport_dup_keep">Keep both (tap to change)</string>
+    <string name="terminow_qimport_dup_update">Update existing (tap to change)</string>
+    <string name="terminow_qimport_import">Import</string>
+    <string name="terminow_qimport_counts">Valid %1$d · Duplicate %2$d · Credentials %3$d · Unsupported %4$d · Invalid %5$d</string>
+    <string name="terminow_qimport_cat_valid">New</string>
+    <string name="terminow_qimport_cat_duplicate">Duplicate</string>
+    <string name="terminow_qimport_cat_invalid">Invalid</string>
+    <string name="terminow_qimport_cat_unsupported">Unsupported</string>
+    <string name="terminow_qimport_cat_creds">Credentials required</string>
+    <string name="terminow_qimport_nothing_selected">Nothing to import.</string>
+    <string name="terminow_qimport_result">Imported %1$d, updated %2$d, skipped %3$d.</string>
+    <string name="terminow_qimport_done_title">Import complete</string>
+    <string name="terminow_qimport_view">View imported</string>
+    <string name="terminow_qimport_undo">Undo</string>
+    <string name="terminow_qimport_undone">Import undone.</string>
+</resources>

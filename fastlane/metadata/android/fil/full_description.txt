@@ -1,0 +1,25 @@
+Pamahalaan ang iyong mga server mula sa iyong telepono. Kumokonekta ang TermiNow sa mga remote machine sa pamamagitan ng SSH, RDP at SFTP, at nagpapatakbo ng buong Linux command line sa Android — hindi kailangan ng root.
+
+I-save ang iyong mga host nang isang beses — address, port, username at key — tapos kumonekta sa isang tap. Mag-import ng mga koneksyon mula sa PuTTY, FileZilla, SecureCRT, OpenSSH config o CSV. I-scan ang local network o mag-import ng mga instance mula sa DigitalOcean at AWS.
+
+Ano ang magagawa mo:
+
+• Kumonekta sa SSH o Mosh gamit ang naka-save na host profile at key authentication
+• Magbukas ng Windows o Linux desktop gamit ang Remote Desktop (RDP)
+• Mag-browse at maglipat ng mga file gamit ang SFTP browser
+• Magpatakbo ng PowerShell sa Windows server sa pamamagitan ng WinRM
+• Gumamit ng buong Linux terminal na may Bash, Zsh at 1000+ package
+• Mag-setup ng port forwarding — local, remote o dynamic — gamit ang guided wizard
+• Mag-save ng mga command bilang Snippet at madalas na text sa QuickCut
+• Kumonekta sa serial device sa pamamagitan ng USB
+• Pamahalaan ang mga SSH key kasama ang PuTTY (.ppk) at FIDO2
+• Mag-install ng Ubuntu, Debian o Alpine bilang Linux environment
+• Magpatakbo ng Claude Code sa Linux environment gamit ang AI Bridge
+• Gamitin ang AI Assistant para magdagdag ng host o kumonekta sa pamamagitan ng chat
+• I-customize ang tema at font ng terminal
+
+Ang Premium ay nagdadagdag ng File Manager, maraming Linux environment, tmux session management, MCP Bridge para sa external AI client, at Backup & Restore. Buwanang o taunang subscription sa pamamagitan ng Google Play.
+
+Lahat ng iba pa — SSH, RDP, SFTP, terminal, port forwarding, serial, snippet, key, unang Linux environment at Claude Code — libre.
+
+Sa unang pagsisimula, isang maliit na base system ang na-install. Mahigit 1000 karagdagang package ang available sa pamamagitan ng 'pkg' command.

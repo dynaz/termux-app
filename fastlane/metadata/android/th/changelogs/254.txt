@@ -1,0 +1,7 @@
+• QuickCut — บันทึกและแทรกข้อความที่พิมพ์บ่อย
+• AI toolbar ปรับตัวตาม AI CLI ที่ใช้งานในแต่ละเซสชัน
+• ปัดซ้ายหรือขวาบนเทอร์มินัลเพื่อสลับเซสชัน
+• เครื่องมือติดตั้งเพิ่ม: Cursor CLI, gstack และปลั๊กอิน Claude Code
+• File Manager แสดง internal storage ทั้งหมดเมื่อให้สิทธิ์ All Files access
+• Backup & Restore ของ Ubuntu และ Linux environment (Premium)
+• แก้บัก: แท็บที่ค้างหลังใช้งานไปสักพักได้รับการแก้ไขแล้ว

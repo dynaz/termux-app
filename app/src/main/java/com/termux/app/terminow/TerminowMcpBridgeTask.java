@@ -69,6 +69,10 @@ public final class TerminowMcpBridgeTask {
     public final String clientKey;
     /** The shared session id the task was submitted to. */
     public final String sessionId;
+    /** A human snapshot of the target at submit time, so the task still shows its environment and
+     *  folder after the session is unshared. The {@link #targetFingerprint} is a hash, not displayable. */
+    public final String environmentKey;
+    public final String folder;
     /** A snapshot of the exact target at submit time; the task is bound to this and never retargeted. */
     public final String targetFingerprint;
     /** The client's idempotency key, empty if none. */
@@ -79,6 +83,8 @@ public final class TerminowMcpBridgeTask {
     public final long createdAt;
 
     private State mState = State.QUEUED;
+    /** The task this one is a retry of (attempt lineage), empty if this is an original submission. */
+    private String mParentId = "";
     private long mStartedAt;
     private long mEndedAt;
     @Nullable private Integer mExitCode;
@@ -90,11 +96,14 @@ public final class TerminowMcpBridgeTask {
     private boolean mTruncated;
 
     public TerminowMcpBridgeTask(@NonNull String id, @NonNull String clientKey, @NonNull String sessionId,
+                                 @NonNull String environmentKey, @NonNull String folder,
                                  @NonNull String targetFingerprint, @NonNull String idempotencyKey,
                                  @NonNull String request, int timeoutSeconds, long createdAt) {
         this.id = id;
         this.clientKey = clientKey;
         this.sessionId = sessionId;
+        this.environmentKey = environmentKey;
+        this.folder = folder;
         this.targetFingerprint = targetFingerprint;
         this.idempotencyKey = idempotencyKey;
         this.request = request;
@@ -112,6 +121,23 @@ public final class TerminowMcpBridgeTask {
 
     public synchronized long endedAt() {
         return mEndedAt;
+    }
+
+    @NonNull
+    public synchronized String parentId() {
+        return mParentId;
+    }
+
+    /** Link this task to the one it is a retry of; set once, at the retry's creation. */
+    public synchronized void setParentId(@NonNull String parentId) {
+        if (mParentId.isEmpty()) mParentId = parentId;
+    }
+
+    /** Elapsed run time in ms: start→end, or start→now while running; 0 if it never started. */
+    public synchronized long durationMillis(long now) {
+        if (mStartedAt == 0) return 0;
+        long end = mEndedAt != 0 ? mEndedAt : now;
+        return Math.max(0, end - mStartedAt);
     }
 
     @Nullable
@@ -252,12 +278,15 @@ public final class TerminowMcpBridgeTask {
         json.put("id", id);
         json.put("client", clientKey);
         json.put("session", sessionId);
+        if (!environmentKey.isEmpty()) json.put("environment", environmentKey);
+        if (!folder.isEmpty()) json.put("folder", folder);
         json.put("target", targetFingerprint);
         json.put("idempotency", idempotencyKey);
         json.put("request", request);
         json.put("timeout", timeoutSeconds);
         json.put("createdAt", createdAt);
         json.put("state", mState.name());
+        if (!mParentId.isEmpty()) json.put("parent", mParentId);
         json.put("startedAt", mStartedAt);
         json.put("endedAt", mEndedAt);
         if (mExitCode != null) json.put("exitCode", (int) mExitCode);
@@ -273,9 +302,11 @@ public final class TerminowMcpBridgeTask {
     public static TerminowMcpBridgeTask fromJson(@NonNull JSONObject json) {
         TerminowMcpBridgeTask task = new TerminowMcpBridgeTask(
             json.optString("id"), json.optString("client"), json.optString("session"),
+            json.optString("environment"), json.optString("folder"),
             json.optString("target"), json.optString("idempotency"), json.optString("request"),
             json.optInt("timeout"), json.optLong("createdAt"));
         task.mState = parseState(json.optString("state"));
+        task.mParentId = json.optString("parent");
         task.mStartedAt = json.optLong("startedAt");
         task.mEndedAt = json.optLong("endedAt");
         if (json.has("exitCode") && !json.isNull("exitCode")) task.mExitCode = json.optInt("exitCode");

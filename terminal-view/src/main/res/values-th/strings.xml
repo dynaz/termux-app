@@ -1,4 +1,5 @@
 <resources>
+  <string name="text_selection_save_quickcut">บันทึกไปยัง QuickCut</string>
   <string name="text_selection_open_in_chrome">เปิดใน Chrome</string>
     <string name="text_selection_open">เปิด</string>
     <string name="text_selection_open_with">เปิดด้วย</string>

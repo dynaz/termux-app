@@ -1,0 +1,1 @@
+SSH, RDP en Linux-terminal met opgeslagen hosts, SFTP, AI-tools

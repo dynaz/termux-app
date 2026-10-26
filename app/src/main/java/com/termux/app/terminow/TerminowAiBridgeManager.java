@@ -166,6 +166,9 @@ public final class TerminowAiBridgeManager {
         if (error == null) {
             mStore.setAiBridgePort(mServer.getPort());
             mLastError = null;
+            // The port may have changed on a rebind; refresh it for every connected environment so
+            // the helper reconnects to the live port instead of a stale one.
+            writeConnectedPortFiles(mServer.getPort());
         } else {
             mLastError = error;
         }
@@ -255,6 +258,7 @@ public final class TerminowAiBridgeManager {
         File rootfs = container.rootfs;
         File guestHelper = underRootfs(rootfs, guestHome, TerminowAiHelper.GUEST_HELPER_REL);
         File guestTokenFile = underRootfs(rootfs, guestHome, TerminowAiHelper.GUEST_TOKEN_REL);
+        File guestPortFile = underRootfs(rootfs, guestHome, TerminowAiHelper.GUEST_PORT_REL);
         File claudeConfig = underRootfs(rootfs, guestHome, TerminowClaudeConfig.USER_CONFIG_NAME);
 
         // The bridge must be listening for the helper to reach it
@@ -268,11 +272,13 @@ public final class TerminowAiBridgeManager {
             installAsset(TerminowAiHelper.HELPER_ASSET, guestHelper);
             String token = mSession.mint(environmentKey);
             writeTokenFile(guestTokenFile, token);
+            writePortFile(guestPortFile, mServer.getPort());
 
             String guestHelperPath = TerminowAiHelper.guestHelperPath(guestHome);
             String guestTokenPath = TerminowAiHelper.guestTokenPath(guestHome);
+            String guestPortPath = TerminowAiHelper.guestPortPath(guestHome);
             TerminowAiHelper.Transport transport = TerminowAiHelper.Transport.loopback(mServer.getPort());
-            JSONObject entry = TerminowAiHelper.registrationEntry(guestHelperPath, transport, guestTokenPath);
+            JSONObject entry = TerminowAiHelper.registrationEntry(guestHelperPath, transport, guestTokenPath, guestPortPath);
 
             String existing = claudeConfig.isFile() ? TerminowClaudeConfig.read(claudeConfig) : null;
             TerminowClaudeConfig.Plan plan = TerminowClaudeConfig.planAdd(existing, "user", guestHome,
@@ -296,8 +302,10 @@ public final class TerminowAiBridgeManager {
         String guestHome = TerminowMcpTargets.getGuestHome(container, user);
         File claudeConfig = underRootfs(container.rootfs, guestHome, TerminowClaudeConfig.USER_CONFIG_NAME);
         File guestTokenFile = underRootfs(container.rootfs, guestHome, TerminowAiHelper.GUEST_TOKEN_REL);
+        File guestPortFile = underRootfs(container.rootfs, guestHome, TerminowAiHelper.GUEST_PORT_REL);
         try {
             if (guestTokenFile.exists() && !guestTokenFile.delete()) { /* best effort */ }
+            if (guestPortFile.exists() && !guestPortFile.delete()) { /* best effort */ }
             if (claudeConfig.isFile()) {
                 String existing = TerminowClaudeConfig.read(claudeConfig);
                 TerminowClaudeConfig.Plan plan = TerminowClaudeConfig.planRemove(existing, "user", guestHome,
@@ -339,6 +347,31 @@ public final class TerminowAiBridgeManager {
         }
         destination.setReadable(true, false);
         destination.setExecutable(true, false);
+    }
+
+    /** Write the bridge's current port for every connected environment, so a rebind is picked up. */
+    private void writeConnectedPortFiles(int port) {
+        for (String env : mStore.getAiTokens().keySet()) {
+            TerminowMcpTargets.Container container = mTargets.getContainer(env);
+            if (container == null) continue;
+            String guestHome = TerminowMcpTargets.getGuestHome(container, "root");
+            try {
+                writePortFile(underRootfs(container.rootfs, guestHome, TerminowAiHelper.GUEST_PORT_REL), port);
+            } catch (IOException ignored) {
+                // Best effort; the env reconnects when its port file is next written
+            }
+        }
+    }
+
+    /** Write the current loopback port into the guest port file (not a secret), owner-readable. */
+    private void writePortFile(@NonNull File portFile, int port) throws IOException {
+        File parent = portFile.getParentFile();
+        if (parent != null && !parent.isDirectory() && !parent.mkdirs()) throw new IOException("Could not create " + parent);
+        try (OutputStream out = new FileOutputStream(portFile)) {
+            out.write(String.valueOf(port).getBytes(StandardCharsets.UTF_8));
+        }
+        portFile.setReadable(false, false);
+        portFile.setReadable(true, true);
     }
 
     private void writeTokenFile(@NonNull File tokenFile, @NonNull String token) throws IOException {

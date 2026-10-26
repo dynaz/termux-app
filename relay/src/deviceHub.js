@@ -10,16 +10,74 @@
 // gets a fresh stream and the old pending requests are rejected so the client can retry.
 
 import crypto from 'node:crypto';
+import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs';
+import path from 'node:path';
 
 export class DeviceHub {
   constructor(config) {
     this.config = config;
     this.byUser = new Map();   // userId -> Map(connId -> connection)
     this.ridCounter = 0;
+    // Per-device credentials issued at enrollment, each bound to a user and with its own expiry so
+    // it can be revoked and so access stops when Premium is not re-confirmed. In addition to the
+    // static config.deviceTokens map (the single-tenant/self-host fallback).
+    this.deviceCreds = new Map(); // credential -> { userId, expiresAt }
+    // Persist device credentials so a relay restart does not invalidate an enrolled device's
+    // connection (otherwise the device can't reconnect until its re-enroll timer fires, and MCP
+    // calls fail meanwhile). In-memory only when no state path is set.
+    this.statePath = config && config.statePath ? path.join(config.statePath, 'device-creds.json') : '';
+    this._loadCreds();
+  }
+
+  _loadCreds() {
+    if (!this.statePath) return;
+    let data;
+    try {
+      data = JSON.parse(readFileSync(this.statePath, 'utf8'));
+    } catch {
+      return;
+    }
+    const now = Date.now();
+    for (const [cred, e] of data.deviceCreds || []) if (e && e.expiresAt > now) this.deviceCreds.set(cred, e);
+  }
+
+  _saveCreds() {
+    if (!this.statePath) return;
+    try {
+      mkdirSync(path.dirname(this.statePath), { recursive: true });
+      const tmp = this.statePath + '.' + crypto.randomBytes(4).toString('hex');
+      writeFileSync(tmp, JSON.stringify({ deviceCreds: [...this.deviceCreds.entries()] }), { mode: 0o600 });
+      renameSync(tmp, this.statePath);
+    } catch {
+      // Best effort.
+    }
   }
 
   userForDeviceToken(token) {
-    return (token && this.config.deviceTokens[token]) || null;
+    if (!token) return null;
+    const dynamic = this.deviceCreds.get(token);
+    if (dynamic) {
+      if (dynamic.expiresAt > Date.now()) return dynamic.userId;
+      this.deviceCreds.delete(token); // expired: the device must enrol again
+      return null;
+    }
+    return this.config.deviceTokens[token] || null;
+  }
+
+  // Issue (or refresh) a per-device credential for a user. Called after Premium is confirmed.
+  enrollDevice(userId, ttlMs) {
+    const credential = crypto.randomBytes(32).toString('base64url');
+    const expiresAt = Date.now() + ttlMs;
+    this.deviceCreds.set(credential, { userId, expiresAt });
+    this._saveCreds();
+    return { credential, expiresAt };
+  }
+
+  // Revoke one device credential (e.g. the user unpaired a device or Premium ended).
+  revokeDevice(credential) {
+    const ok = this.deviceCreds.delete(credential);
+    if (ok) this._saveCreds();
+    return ok;
   }
 
   // Register an SSE stream for a device. Returns a disposer to call when the request closes.
@@ -32,6 +90,7 @@ export class DeviceHub {
       this.byUser.set(userId, conns);
     }
     conns.set(connId, conn);
+    console.log('relay: device connected uid=%s', userId);
 
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -51,6 +110,7 @@ export class DeviceHub {
       clearInterval(keepAlive);
       conns.delete(connId);
       if (conns.size === 0) this.byUser.delete(userId);
+      console.log('relay: device disconnected uid=%s', userId);
       for (const pending of conn.pending.values()) {
         clearTimeout(pending.timer);
         pending.reject(new Error('The device disconnected before it answered'));

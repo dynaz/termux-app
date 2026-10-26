@@ -1,0 +1,25 @@
+Beheer je servers vanaf je telefoon. TermiNow verbindt met externe machines via SSH, RDP en SFTP en draait een volledige Linux-opdrachtregel op Android — geen root vereist.
+
+Sla je hosts één keer op — adres, poort, gebruikersnaam en sleutel — en verbind daarna met één tik. Importeer verbindingen uit PuTTY, FileZilla, SecureCRT, OpenSSH config of CSV. Scan je lokale netwerk voor apparaten of importeer instances van DigitalOcean en AWS.
+
+Wat je kunt doen:
+
+• Verbinden via SSH of Mosh met opgeslagen hostprofielen en sleutelauthenticatie
+• Een Windows- of Linux-bureaublad openen met Remote Desktop (RDP)
+• Bestanden bladeren en overdragen met de SFTP-browser
+• PowerShell draaien op Windows-servers via WinRM
+• Een volledige Linux-terminal gebruiken met Bash, Zsh en meer dan 1000 pakketten
+• Poortdoorschakeling instellen — lokaal, extern of dynamisch — met een wizard
+• Opdrachten opslaan als Snippets en veelgebruikte tekst in QuickCut
+• Seriële apparaten verbinden via USB
+• SSH-sleutels beheren, inclusief PuTTY (.ppk) en FIDO2
+• Ubuntu, Debian of Alpine installeren als Linux-omgeving
+• Claude Code draaien in de Linux-omgeving met AI Bridge
+• De AI-assistent gebruiken om hosts toe te voegen of te verbinden via chat
+• Het thema en lettertype van de terminal aanpassen
+
+Premium voegt toe: Bestandsbeheer (opslag van apparaat en SFTP-hosts doorzoeken met wachtrij), meerdere Linux-omgevingen, tmux-sessiebeheer, MCP Bridge voor externe AI-clients en Back-up en herstel. Maandelijks of jaarlijks abonnement via Google Play.
+
+Al het andere — SSH, RDP, SFTP, de terminal, poortdoorschakeling, serieel, snippets, sleutels, de eerste Linux-omgeving en Claude Code — is gratis.
+
+Bij de eerste start wordt een klein basissysteem geïnstalleerd. Meer dan 1000 extra pakketten zijn beschikbaar via het 'pkg'-commando.

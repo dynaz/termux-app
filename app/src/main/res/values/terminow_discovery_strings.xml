@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_discovery_title">Network Discovery</string>
+    <string name="terminow_discovery_menu">Scan local network</string>
+    <string name="terminow_discovery_source_this_device">Scan from: This device</string>
+    <string name="terminow_discovery_start">Start Scan</string>
+    <string name="terminow_discovery_stop">Stop</string>
+    <string name="terminow_discovery_initial">Enter a network range and tap Start Scan. Nothing is scanned until you do.</string>
+    <string name="terminow_discovery_bad_cidr">Enter a valid IPv4 range like 192.168.1.0/24.</string>
+    <string name="terminow_discovery_too_large">Range of %1$d addresses is over the limit of %2$d. Use a smaller range.</string>
+    <string name="terminow_discovery_scanning">Scanning… %1$d/%2$d probes · %3$d found · %4$ds</string>
+    <string name="terminow_discovery_stopped">Stopped. %1$d found.</string>
+    <string name="terminow_discovery_none">No devices responded in this range.</string>
+    <string name="terminow_discovery_done">Done. %1$d devices found.</string>
+    <string name="terminow_discovery_unknown_device">Unknown device</string>
+    <string name="terminow_discovery_saved">Saved</string>
+    <string name="terminow_discovery_connect_ssh">Connect SSH</string>
+    <string name="terminow_discovery_open_web">Open Web</string>
+    <string name="terminow_discovery_save_host">Save as Host</string>
+    <string name="terminow_discovery_copy_ip">Copy IP</string>
+</resources>

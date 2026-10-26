@@ -56,7 +56,7 @@ final class TerminowAiSettings {
 
         TextView title = text(mActivity.getString(R.string.terminow_ai_integration), 22, R.color.terminow_text);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        mContent.addView(title);
+        mContent.addView(TerminowHelp.header(mActivity, title, "ai"));
 
         // A Premium feature: show the page only when Premium is active; otherwise give clear
         // feedback (checking, an error with Retry, or the upgrade), never a silent nothing.

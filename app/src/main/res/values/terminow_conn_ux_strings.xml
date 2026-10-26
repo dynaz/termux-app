@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_conn_connecting">Connecting…</string>
+    <string name="terminow_conn_authenticating">Authenticating…</string>
+    <string name="terminow_conn_connected">Connected</string>
+    <string name="terminow_conn_failed">Connection failed</string>
+    <string name="terminow_conn_disconnected">Disconnected</string>
+    <string name="terminow_conn_cancel">Cancel</string>
+    <string name="terminow_conn_retry">Retry</string>
+
+    <string name="terminow_security_unchecked">Security not checked</string>
+    <string name="terminow_security_advisory">Security advisory</string>
+    <string name="terminow_security_ok">No security advisories</string>
+    <string name="terminow_security_banner_title">Connected · security advice</string>
+    <string name="terminow_security_banner_body">This connection does not use a post-quantum key exchange. Review your server\'s SSH version and settings.</string>
+    <string name="terminow_security_details">Details</string>
+    <string name="terminow_security_ack">Got it</string>
+    <string name="terminow_security_details_title">Security advice</string>
+    <string name="terminow_security_open_link">Open openssh.com/pq.html</string>
+</resources>

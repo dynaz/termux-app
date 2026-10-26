@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_serial_menu">Connect via Serial</string>
+    <string name="terminow_serial_menu_summary">USB console for routers, switches and devices</string>
+    <string name="terminow_serial_title">Connect via Serial</string>
+    <string name="terminow_serial_no_usb">This phone has no USB host support, so a serial adapter can not be used.</string>
+    <string name="terminow_serial_none">No serial adapter detected. Plug in a USB console cable or adapter, then tap Refresh.</string>
+    <string name="terminow_serial_refresh">Refresh</string>
+    <string name="terminow_serial_how">How to connect</string>
+    <string name="terminow_serial_baud">Baud rate</string>
+    <string name="terminow_serial_data_bits">Data bits</string>
+    <string name="terminow_serial_stop_bits">Stop bits</string>
+    <string name="terminow_serial_parity">Parity</string>
+    <string name="terminow_serial_flow">Flow control</string>
+    <string name="terminow_serial_connect">Connect</string>
+    <string name="terminow_serial_connecting">Opening %1$s…</string>
+    <string name="terminow_serial_permission_denied">USB permission was denied for %1$s.</string>
+    <string name="terminow_serial_open_failed">The serial device could not be opened. Unplug it and plug it in again.</string>
+    <string name="terminow_serial_no_service">The terminal service is not ready yet. Try again in a moment.</string>
+    <string name="terminow_serial_parity_none">None</string>
+    <string name="terminow_serial_parity_odd">Odd</string>
+    <string name="terminow_serial_parity_even">Even</string>
+    <string name="terminow_serial_parity_mark">Mark</string>
+    <string name="terminow_serial_parity_space">Space</string>
+    <string name="terminow_serial_flow_none">None</string>
+    <string name="terminow_serial_flow_rtscts">RTS/CTS (hardware)</string>
+    <string name="terminow_serial_flow_xonxoff">XON/XOFF (software)</string>
+    <string name="terminow_serial_how_title">How to connect a serial console</string>
+    <string name="terminow_serial_how_body">• Phone USB-C → an OTG adapter if your phone needs one → a USB console adapter → the Console port of the device.\n\n• A USB-C console cable made for your device may connect directly, with no extra adapter.\n\n• An RJ45 Console port is not Ethernet. The sockets look alike but carry different signals — do not plug a console cable into a LAN port, or the other way around.\n\n• Choose the adapter and the pinout for your exact model; vendors differ.\n\n• RS-232, TTL UART and RS-485 devices each need an adapter of the matching type and voltage. The wrong type or voltage can damage the device.</string>
+</resources>

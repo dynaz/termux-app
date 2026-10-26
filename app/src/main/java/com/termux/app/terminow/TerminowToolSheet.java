@@ -12,6 +12,11 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.widget.CheckBox;
+import android.widget.EditText;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
@@ -44,12 +49,18 @@ import java.util.concurrent.Executors;
 final class TerminowToolSheet {
 
     private static final TerminowToolInstaller.Tool[] TOOLS = {
-        TerminowToolInstaller.Tool.CLAUDE, TerminowToolInstaller.Tool.CURSOR, TerminowToolInstaller.Tool.GSTACK,
+        TerminowToolInstaller.Tool.CLAUDE, TerminowToolInstaller.Tool.CURSOR,
+        TerminowToolInstaller.Tool.CODEX, TerminowToolInstaller.Tool.GEMINI, TerminowToolInstaller.Tool.GROK,
+        TerminowToolInstaller.Tool.OPENCODE, TerminowToolInstaller.Tool.AIDER, TerminowToolInstaller.Tool.HERMES,
+        TerminowToolInstaller.Tool.GSTACK,
         TerminowToolInstaller.Tool.GIT, TerminowToolInstaller.Tool.CURL, TerminowToolInstaller.Tool.TMUX, TerminowToolInstaller.Tool.FISH};
 
     /** The tools and the plugins: the jobs that the sheet shows. */
     private static final TerminowToolInstaller.Tool[] JOBS = {
-        TerminowToolInstaller.Tool.CLAUDE, TerminowToolInstaller.Tool.CURSOR, TerminowToolInstaller.Tool.GSTACK,
+        TerminowToolInstaller.Tool.CLAUDE, TerminowToolInstaller.Tool.CURSOR,
+        TerminowToolInstaller.Tool.CODEX, TerminowToolInstaller.Tool.GEMINI, TerminowToolInstaller.Tool.GROK,
+        TerminowToolInstaller.Tool.OPENCODE, TerminowToolInstaller.Tool.AIDER, TerminowToolInstaller.Tool.HERMES,
+        TerminowToolInstaller.Tool.GSTACK,
         TerminowToolInstaller.Tool.GIT, TerminowToolInstaller.Tool.CURL, TerminowToolInstaller.Tool.TMUX,
         TerminowToolInstaller.Tool.FISH, TerminowToolInstaller.Tool.PLUGINS};
 
@@ -115,6 +126,40 @@ final class TerminowToolSheet {
     private final List<TerminowToolInstaller.Job> mSeenEnded = new ArrayList<>();
     /** The tools whose log is shown in full. */
     private final java.util.Set<TerminowToolInstaller.Tool> mLogOpen = java.util.EnumSet.noneOf(TerminowToolInstaller.Tool.class);
+
+    // Tools Library filters: the search text, the chosen category (0=All) and the installed-only toggle.
+    private String mSearch = "";
+    private int mCategory = 0;
+    private boolean mInstalledOnly;
+    /** The category chips, in order. CAT_ALL is index 0. */
+    private static final int CAT_ALL = 0, CAT_AI = 1, CAT_TERMINAL = 2, CAT_DEVELOPER = 3, CAT_PLUGINS = 4;
+
+    /** Which category a tool belongs to, for the filter chips. */
+    private static int categoryOf(@NonNull TerminowToolInstaller.Tool tool) {
+        switch (tool) {
+            case CLAUDE: case CURSOR: case CODEX: case GEMINI: case GROK: case OPENCODE: case AIDER: case HERMES: return CAT_AI;
+            case TMUX: case FISH: return CAT_TERMINAL;
+            case GIT: case CURL: return CAT_DEVELOPER;
+            case GSTACK: case PLUGINS: return CAT_PLUGINS;
+            default: return CAT_ALL;
+        }
+    }
+
+    /** The scrolling list of tool rows; re-populated on a filter change so the search keeps focus. */
+    @Nullable private LinearLayout mList;
+
+    private boolean matchesSearch(@NonNull String name, @NonNull String description) {
+        if (mSearch.isEmpty()) return true;
+        String q = mSearch.toLowerCase(java.util.Locale.ROOT);
+        return name.toLowerCase(java.util.Locale.ROOT).contains(q)
+            || description.toLowerCase(java.util.Locale.ROOT).contains(q);
+    }
+
+    private boolean matchesFilters(@NonNull TerminowToolInstaller.Tool tool) {
+        if (mCategory != CAT_ALL && categoryOf(tool) != mCategory) return false;
+        if (mInstalledOnly && (mDetection == null || mDetection.versions.get(tool) == null)) return false;
+        return matchesSearch(nameOf(tool), descriptionOf(tool));
+    }
 
     private final Runnable mOnJobs = () -> mHandler.post(this::onJobsChanged);
 
@@ -182,7 +227,10 @@ final class TerminowToolSheet {
         sheet.addView(handle, handleParams);
         TextView title = text(mActivity.getString(R.string.terminow_install_title), 20, R.color.terminow_text);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        sheet.addView(title, matchWrap());
+        sheet.addView(TerminowHelp.header(mActivity, title, "support/tools"), matchWrap());
+        TextView subtitle = text(mActivity.getString(R.string.terminow_install_subtitle), 13, R.color.terminow_text_secondary);
+        subtitle.setPadding(0, dp(2), 0, 0);
+        sheet.addView(subtitle, matchWrap());
 
         ScrollView scroll = new ScrollView(mActivity);
         scroll.setVerticalScrollBarEnabled(false);
@@ -197,8 +245,9 @@ final class TerminowToolSheet {
         LinearLayout.LayoutParams sheetParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         root.addView(sheet, sheetParams);
         root.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
-            int width = Math.min(right - left, dp(640));
-            int maxHeight = Math.round((bottom - top) * 0.85f);
+            int cap = mActivity.getResources().getConfiguration().screenWidthDp >= 720 ? dp(900) : dp(640);
+            int width = Math.min(right - left, cap);
+            int maxHeight = Math.round((bottom - top) * 0.90f);
             ViewGroup.LayoutParams params = sheet.getLayoutParams();
             ViewGroup.LayoutParams scrollParams = scroll.getLayoutParams();
             int scrollMax = maxHeight - dp(70);
@@ -316,7 +365,7 @@ final class TerminowToolSheet {
         envRow.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout envTexts = new LinearLayout(mActivity);
         envTexts.setOrientation(LinearLayout.VERTICAL);
-        TextView envName = text(targetName(target, noLinux), 22, R.color.terminow_text);
+        TextView envName = text(targetName(target, noLinux), 15, R.color.terminow_text);
         envName.setTypeface(Typeface.DEFAULT_BOLD);
         envTexts.addView(envName);
         if (!noLinux) {
@@ -367,14 +416,144 @@ final class TerminowToolSheet {
             if (target.ssh) return;
         }
 
-        TerminowToolInstaller.Job running = TerminowToolInstaller.runningIn(target.key);
-        for (TerminowToolInstaller.Tool tool : TOOLS) toolRow(content, target, tool, running);
-        pluginsRow(content, target, running);
+        addFiltersBar(content, target);
+        mList = new LinearLayout(mActivity);
+        mList.setOrientation(LinearLayout.VERTICAL);
+        content.addView(mList, matchWrap());
+        populateList(target);
 
         TextView footer = note(mActivity.getString(mDetection != null && mDetection.isRoot() ? R.string.terminow_install_note_root :
             R.string.terminow_install_note_user, targetName(target, false), target.user));
         footer.setPadding(dp(4), dp(12), dp(4), 0);
         content.addView(footer, matchWrap());
+    }
+
+    /** Sticky search, category chips and the installed-only toggle; chips/toggle re-render, search re-lists. */
+    private void addFiltersBar(@NonNull LinearLayout content, @NonNull Target target) {
+        EditText search = new EditText(mActivity);
+        search.setSingleLine(true);
+        search.setHint(R.string.terminow_install_search_hint);
+        search.setText(mSearch);
+        search.setSelection(mSearch.length());
+        search.setTextSize(14);
+        search.setTextColor(color(R.color.terminow_text));
+        search.setHintTextColor(color(R.color.terminow_text_secondary));
+        search.setBackgroundResource(R.drawable.terminow_field);
+        search.setPadding(dp(12), dp(10), dp(12), dp(10));
+        search.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void afterTextChanged(Editable s) { mSearch = s.toString(); populateList(target); }
+        });
+        LinearLayout.LayoutParams searchParams = matchWrap();
+        searchParams.topMargin = dp(12);
+        content.addView(search, searchParams);
+
+        HorizontalScrollView chipScroll = new HorizontalScrollView(mActivity);
+        chipScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout chips = new LinearLayout(mActivity);
+        chips.setOrientation(LinearLayout.HORIZONTAL);
+        int[] cats = {CAT_ALL, CAT_AI, CAT_TERMINAL, CAT_DEVELOPER, CAT_PLUGINS};
+        int[] labels = {R.string.terminow_install_cat_all, R.string.terminow_install_cat_ai,
+            R.string.terminow_install_cat_terminal, R.string.terminow_install_cat_developer, R.string.terminow_install_cat_plugins};
+        for (int i = 0; i < cats.length; i++) {
+            int cat = cats[i];
+            chips.addView(chip(mActivity.getString(labels[i]), mCategory == cat, () -> { mCategory = cat; render(); }));
+        }
+        chipScroll.addView(chips);
+        LinearLayout.LayoutParams chipParams = matchWrap();
+        chipParams.topMargin = dp(10);
+        content.addView(chipScroll, chipParams);
+
+        CheckBox installedOnly = new CheckBox(mActivity);
+        installedOnly.setText(R.string.terminow_install_installed_only);
+        installedOnly.setTextSize(13);
+        installedOnly.setTextColor(color(R.color.terminow_text_secondary));
+        installedOnly.setChecked(mInstalledOnly);
+        installedOnly.setOnCheckedChangeListener((b, checked) -> { mInstalledOnly = checked; render(); });
+        LinearLayout.LayoutParams toggleParams = matchWrap();
+        toggleParams.topMargin = dp(4);
+        content.addView(installedOnly, toggleParams);
+    }
+
+    /** Fill the list with the tools that pass the filters; a useful empty state when none do. */
+    private void populateList(@NonNull Target target) {
+        LinearLayout list = mList;
+        if (list == null) return;
+        list.removeAllViews();
+        // Two columns when the window is wide (a tablet or an unfolded foldable), one on a phone.
+        boolean two = mActivity.getResources().getConfiguration().screenWidthDp >= 720;
+        mPairRow = null;
+        mPairCol = 0;
+        TerminowToolInstaller.Job running = TerminowToolInstaller.runningIn(target.key);
+        int shown = 0;
+        for (TerminowToolInstaller.Tool tool : TOOLS) {
+            if (!matchesFilters(tool)) continue;
+            toolRow(nextColumn(list, two), target, tool, running);
+            shown++;
+        }
+        if ((mCategory == CAT_ALL || mCategory == CAT_PLUGINS) && !mInstalledOnly
+                && matchesSearch(mActivity.getString(R.string.terminow_install_plugins),
+                    mActivity.getString(R.string.terminow_install_plugins_description))) {
+            pluginsRow(nextColumn(list, two), target, running);
+            shown++;
+        }
+        if (shown == 0) addEmptyState(list);
+    }
+
+    @Nullable private LinearLayout mPairRow;
+    private int mPairCol;
+
+    /** The parent to add the next card to: the list itself in one column, or a cell of a pair in two. */
+    @NonNull
+    private LinearLayout nextColumn(@NonNull LinearLayout list, boolean two) {
+        if (!two) return list;
+        if (mPairCol == 0) {
+            mPairRow = new LinearLayout(mActivity);
+            mPairRow.setOrientation(LinearLayout.HORIZONTAL);
+            list.addView(mPairRow, matchWrap());
+        }
+        LinearLayout cell = new LinearLayout(mActivity);
+        cell.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        if (mPairCol == 0) lp.rightMargin = dp(5); else lp.leftMargin = dp(5);
+        mPairRow.addView(cell, lp);
+        mPairCol = (mPairCol + 1) % 2;
+        return cell;
+    }
+
+    @NonNull
+    private TextView chip(@NonNull String label, boolean selected, @NonNull Runnable onClick) {
+        TextView chip = text(label, 13, selected ? R.color.terminow_text : R.color.terminow_text_secondary);
+        chip.setPadding(dp(14), dp(7), dp(14), dp(7));
+        chip.setMinHeight(dp(40));
+        chip.setGravity(Gravity.CENTER);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(dp(18));
+        bg.setColor(color(selected ? R.color.terminow_panel_accent : R.color.terminow_field));
+        chip.setBackground(bg);
+        chip.setOnClickListener(v -> onClick.run());
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        p.rightMargin = dp(8);
+        chip.setLayoutParams(p);
+        return chip;
+    }
+
+    private void addEmptyState(@NonNull LinearLayout list) {
+        TextView empty = text(mActivity.getString(R.string.terminow_install_empty), 14, R.color.terminow_text_secondary);
+        empty.setGravity(Gravity.CENTER);
+        empty.setPadding(0, dp(28), 0, dp(10));
+        list.addView(empty, matchWrap());
+        LinearLayout wrap = new LinearLayout(mActivity);
+        wrap.setGravity(Gravity.CENTER);
+        wrap.addView(button(mActivity.getString(R.string.terminow_install_clear_filters), false, true, () -> {
+            mSearch = "";
+            mCategory = CAT_ALL;
+            mInstalledOnly = false;
+            render();
+        }));
+        list.addView(wrap, matchWrap());
     }
 
     @NonNull
@@ -413,6 +592,7 @@ final class TerminowToolSheet {
         row.setGravity(Gravity.CENTER_VERTICAL);
         ImageView icon = new ImageView(mActivity);
         icon.setImageResource(iconOf(tool));
+        icon.setContentDescription(nameOf(tool));
         icon.setPadding(dp(9), dp(9), dp(9), dp(9));
         GradientDrawable tile = new GradientDrawable();
         tile.setColor(color(R.color.terminow_field));
@@ -432,6 +612,8 @@ final class TerminowToolSheet {
         texts.addView(status);
         row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         card.addView(row, matchWrap());
+        // Tapping the row opens the tool's details; the trailing button keeps its own action.
+        card.setOnClickListener(v -> toolDetailsDialog(target, tool));
 
         TerminowToolInstaller.Job job = TerminowToolInstaller.jobOf(target.key, target.user, tool);
         String version = mDetection != null ? mDetection.versions.get(tool) : null;
@@ -454,6 +636,8 @@ final class TerminowToolSheet {
                 line.setEllipsize(TextUtils.TruncateAt.END);
                 card.addView(line, matchWrap());
             }
+            // Hide closes the sheet while the install keeps running; Cancel stops it.
+            row.addView(button(mActivity.getString(R.string.terminow_install_hide), false, true, this::dismiss));
             row.addView(button(mActivity.getString(R.string.terminow_install_cancel), false, true, job::cancel));
             return;
         }
@@ -463,12 +647,19 @@ final class TerminowToolSheet {
             row.addView(spinner, new LinearLayout.LayoutParams(dp(24), dp(24)));
             return;
         }
-        boolean failed = job != null && job.getState() == TerminowToolInstaller.State.FAILED && version == null;
+        boolean failed = job != null && (job.getState() == TerminowToolInstaller.State.FAILED
+            || job.getState() == TerminowToolInstaller.State.UNKNOWN) && version == null;
         if (version != null) {
             status.setText(mActivity.getString(R.string.terminow_install_installed, version));
             status.setTextColor(color(R.color.terminow_quick_ready));
             if (tool == TerminowToolInstaller.Tool.FISH) {
                 fishInstalled(row, status, target, version);
+                return;
+            }
+            if (tool == TerminowToolInstaller.Tool.GIT || tool == TerminowToolInstaller.Tool.CURL) {
+                // Git and curl are libraries, not apps to open: show their details instead of Open.
+                row.addView(button(mActivity.getString(R.string.terminow_install_details), false, true,
+                    () -> toolDetailsDialog(target, tool)));
                 return;
             }
             boolean claude = tool == TerminowToolInstaller.Tool.CLAUDE || tool == TerminowToolInstaller.Tool.GSTACK;
@@ -484,7 +675,9 @@ final class TerminowToolSheet {
             return;
         }
         if (failed) {
-            status.setText(mActivity.getString(R.string.terminow_install_failed, stageName(job.getStage()), failureText(job)));
+            boolean unknown = job.getState() == TerminowToolInstaller.State.UNKNOWN;
+            status.setText(unknown ? mActivity.getString(R.string.terminow_install_unknown)
+                : mActivity.getString(R.string.terminow_install_failed, stageName(job.getStage()), failureText(job)));
             status.setTextColor(color(R.color.terminow_mcp_warn));
             boolean open = mLogOpen.contains(tool);
             String log = open ? job.getLog().trim() : job.getLogTail(8);
@@ -501,6 +694,9 @@ final class TerminowToolSheet {
                 });
                 card.addView(toggle);
             }
+        } else if (TerminowToolInstaller.experimental(tool)) {
+            status.setText(R.string.terminow_install_experimental);
+            status.setTextColor(color(R.color.terminow_panel_accent));
         } else {
             status.setText(R.string.terminow_install_not_installed);
         }
@@ -526,6 +722,7 @@ final class TerminowToolSheet {
         row.setGravity(Gravity.CENTER_VERTICAL);
         ImageView icon = new ImageView(mActivity);
         icon.setImageResource(iconOf(tool));
+        icon.setContentDescription(nameOf(tool));
         icon.setPadding(dp(9), dp(9), dp(9), dp(9));
         GradientDrawable tile = new GradientDrawable();
         tile.setColor(color(R.color.terminow_field));
@@ -563,6 +760,8 @@ final class TerminowToolSheet {
                 line.setEllipsize(TextUtils.TruncateAt.END);
                 card.addView(line, matchWrap());
             }
+            // Hide closes the sheet while the install keeps running; Cancel stops it.
+            row.addView(button(mActivity.getString(R.string.terminow_install_hide), false, true, this::dismiss));
             row.addView(button(mActivity.getString(R.string.terminow_install_cancel), false, true, job::cancel));
             return;
         }
@@ -571,8 +770,9 @@ final class TerminowToolSheet {
             return;
         }
         boolean hasClaude = mDetection.versions.get(TerminowToolInstaller.Tool.CLAUDE) != null;
-        if (job != null && job.getState() == TerminowToolInstaller.State.FAILED) {
-            status.setText(mActivity.getString(R.string.terminow_install_failed, stageName(job.getStage()), failureText(job)));
+        if (job != null && (job.getState() == TerminowToolInstaller.State.FAILED || job.getState() == TerminowToolInstaller.State.UNKNOWN)) {
+            status.setText(job.getState() == TerminowToolInstaller.State.UNKNOWN ? mActivity.getString(R.string.terminow_install_unknown)
+                : mActivity.getString(R.string.terminow_install_failed, stageName(job.getStage()), failureText(job)));
             status.setTextColor(color(R.color.terminow_mcp_warn));
             boolean open = mLogOpen.contains(tool);
             String log = open ? job.getLog().trim() : job.getLogTail(8);
@@ -644,6 +844,132 @@ final class TerminowToolSheet {
         }
         mActivity.getTermuxTerminalSessionClient().setCurrentSession(session);
         if (command != null) session.write(command + "\r");
+    }
+
+    /**
+     * The full details of a tool: its logo and description, its installation and authentication state
+     * (shown apart), compatibility, dependencies, documentation, the target, and its primary action
+     * with the installation log. Opened by tapping a row.
+     */
+    private void toolDetailsDialog(@NonNull Target target, @NonNull TerminowToolInstaller.Tool tool) {
+        String version = mDetection != null ? mDetection.versions.get(tool) : null;
+        String arch = mDetection != null ? mDetection.arch : "";
+        String os = mDetection != null ? mDetection.os : "";
+
+        LinearLayout box = new LinearLayout(mActivity);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(16), dp(20), dp(8));
+
+        LinearLayout head = new LinearLayout(mActivity);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        ImageView icon = new ImageView(mActivity);
+        icon.setImageResource(iconOf(tool));
+        icon.setPadding(dp(8), dp(8), dp(8), dp(8));
+        GradientDrawable tile = new GradientDrawable();
+        tile.setColor(color(R.color.terminow_field));
+        tile.setCornerRadius(dp(12));
+        icon.setBackground(tile);
+        head.addView(icon, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        TextView name = text(nameOf(tool), 18, R.color.terminow_text);
+        name.setTypeface(Typeface.DEFAULT_BOLD);
+        name.setPadding(dp(12), 0, 0, 0);
+        head.addView(name);
+        box.addView(head, matchWrap());
+        TextView desc = text(descriptionOf(tool), 13, R.color.terminow_text_secondary);
+        desc.setPadding(0, dp(8), 0, 0);
+        box.addView(desc);
+
+        detailSection(box, R.string.terminow_install_detail_installation,
+            version != null ? mActivity.getString(R.string.terminow_install_installed, version)
+                : TerminowToolInstaller.experimental(tool) ? mActivity.getString(R.string.terminow_install_experimental)
+                : mActivity.getString(R.string.terminow_install_not_installed));
+        if (categoryOf(tool) == CAT_AI)
+            detailSection(box, R.string.terminow_install_detail_auth, mActivity.getString(R.string.terminow_install_detail_auth_note));
+        if (!arch.isEmpty())
+            detailSection(box, R.string.terminow_install_detail_compat, arch + " · " + mActivity.getString(
+                TerminowToolInstaller.claudeSupports(arch) ? R.string.terminow_install_detail_supported
+                    : R.string.terminow_install_detail_unsupported));
+        String deps = depsOf(tool);
+        if (!deps.isEmpty()) detailSection(box, R.string.terminow_install_detail_deps, deps);
+        detailSection(box, R.string.terminow_install_detail_target, mActivity.getString(
+            R.string.terminow_install_env_details, target.user, arch.isEmpty() ? "?" : arch, os.isEmpty() ? "?" : os));
+
+        String docs = docsOf(tool);
+        if (!docs.isEmpty()) {
+            TextView link = text(mActivity.getString(R.string.terminow_install_detail_docs), 14, R.color.terminow_panel_accent);
+            link.setPadding(0, dp(14), 0, 0);
+            link.setOnClickListener(v -> openUrl(docs));
+            box.addView(link);
+        }
+        TerminowToolInstaller.Job job = TerminowToolInstaller.jobOf(target.key, target.user, tool);
+        if (job != null && !job.getLog().trim().isEmpty()) {
+            TextView log = text(mActivity.getString(R.string.terminow_install_detail_log), 14, R.color.terminow_panel_accent);
+            log.setPadding(0, dp(10), 0, 0);
+            log.setOnClickListener(v -> new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setTitle(nameOf(tool)).setMessage(job.getLog().trim()).setPositiveButton(android.R.string.ok, null).show());
+            box.addView(log);
+        }
+
+        ScrollView scroll = new ScrollView(mActivity);
+        scroll.addView(box);
+        android.app.AlertDialog.Builder b = new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setView(scroll)
+            .setNegativeButton(android.R.string.ok, null);
+        boolean canInstall = tool != TerminowToolInstaller.Tool.PLUGINS
+            && (arch.isEmpty() || TerminowToolInstaller.claudeSupports(arch) || categoryOf(tool) == CAT_TERMINAL || categoryOf(tool) == CAT_DEVELOPER);
+        if (version != null && categoryOf(tool) == CAT_AI) {
+            boolean claude = tool == TerminowToolInstaller.Tool.CLAUDE || tool == TerminowToolInstaller.Tool.GSTACK;
+            b.setPositiveButton(R.string.terminow_install_open, (d, w) -> openTool(target, claude));
+        } else if (version == null && canInstall) {
+            b.setPositiveButton(R.string.terminow_install_install, (d, w) -> install(target, tool));
+        }
+        b.show();
+    }
+
+    private void detailSection(@NonNull LinearLayout box, int labelRes, @NonNull String value) {
+        TextView label = text(mActivity.getString(labelRes), 12, R.color.terminow_text_secondary);
+        label.setPadding(0, dp(12), 0, dp(2));
+        box.addView(label);
+        box.addView(text(value, 14, R.color.terminow_text));
+    }
+
+    private void openUrl(@NonNull String url) {
+        try {
+            mActivity.startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)));
+        } catch (RuntimeException ignored) {
+            mActivity.showToast(url, false);
+        }
+    }
+
+    @NonNull
+    private static String docsOf(@NonNull TerminowToolInstaller.Tool tool) {
+        switch (tool) {
+            case CLAUDE: return "https://docs.claude.com/en/docs/claude-code/overview";
+            case CURSOR: return "https://docs.cursor.com/en/cli/overview";
+            case CODEX: return "https://github.com/openai/codex";
+            case GEMINI: return "https://github.com/google-gemini/gemini-cli";
+            case GROK: return "https://github.com/superagent-ai/grok-cli";
+            case OPENCODE: return "https://opencode.ai/docs";
+            case AIDER: return "https://aider.chat/docs/install.html";
+            case HERMES: return "https://hermes-agent.nousresearch.com/docs";
+            case GSTACK: return "https://github.com/garrytan/gstack";
+            case GIT: return "https://git-scm.com/doc";
+            case CURL: return "https://curl.se/docs/";
+            case TMUX: return "https://github.com/tmux/tmux/wiki";
+            case FISH: return "https://fishshell.com/docs/current/";
+            default: return "";
+        }
+    }
+
+    @NonNull
+    private String depsOf(@NonNull TerminowToolInstaller.Tool tool) {
+        switch (tool) {
+            case CODEX: case GEMINI: case GROK: return "Node.js, npm";
+            case OPENCODE: return "curl";
+            case AIDER: return "Python 3, pip";
+            case GSTACK: return "Claude Code, Bun, git";
+            default: return "";
+        }
     }
 
     void dismiss() {
@@ -720,6 +1046,12 @@ final class TerminowToolSheet {
         switch (tool) {
             case CLAUDE: return mActivity.getString(R.string.terminow_install_claude);
             case CURSOR: return mActivity.getString(R.string.terminow_install_cursor);
+            case CODEX: return "Codex CLI";
+            case GEMINI: return "Gemini CLI";
+            case GROK: return "Grok CLI";
+            case OPENCODE: return "OpenCode";
+            case AIDER: return "Aider";
+            case HERMES: return "Hermes Agent";
             case GSTACK: return mActivity.getString(R.string.terminow_install_gstack);
             case PLUGINS: return mActivity.getString(R.string.terminow_install_plugins);
             case GIT: return "Git";
@@ -734,6 +1066,12 @@ final class TerminowToolSheet {
         switch (tool) {
             case CLAUDE: return mActivity.getString(R.string.terminow_install_claude_description);
             case CURSOR: return mActivity.getString(R.string.terminow_install_cursor_description);
+            case CODEX: return mActivity.getString(R.string.terminow_install_codex_description);
+            case GEMINI: return mActivity.getString(R.string.terminow_install_gemini_description);
+            case GROK: return mActivity.getString(R.string.terminow_install_grok_description);
+            case OPENCODE: return mActivity.getString(R.string.terminow_install_opencode_description);
+            case AIDER: return mActivity.getString(R.string.terminow_install_aider_description);
+            case HERMES: return mActivity.getString(R.string.terminow_install_hermes_description);
             case GSTACK: return mActivity.getString(R.string.terminow_install_gstack_description);
             case PLUGINS: return mActivity.getString(R.string.terminow_install_plugins_description);
             case GIT: return mActivity.getString(R.string.terminow_install_git_description);
@@ -747,6 +1085,12 @@ final class TerminowToolSheet {
         switch (tool) {
             case CLAUDE: return R.drawable.ic_terminow_tool_claude;
             case CURSOR: return R.drawable.ic_terminow_tool_cursor;
+            case CODEX: return R.drawable.ic_terminow_tool_codex;
+            case GEMINI: return R.drawable.ic_terminow_tool_gemini;
+            case GROK: return R.drawable.ic_terminow_tool_grok;
+            case OPENCODE: return R.drawable.ic_terminow_tool_opencode;
+            case AIDER: return R.drawable.ic_terminow_tool_aider;
+            case HERMES: return R.drawable.ic_terminow_tool_hermes;
             case GSTACK: return R.drawable.ic_terminow_tool_gstack;
             case PLUGINS: return R.drawable.ic_terminow_tool_plugins;
             case GIT: return R.drawable.ic_terminow_tool_git;

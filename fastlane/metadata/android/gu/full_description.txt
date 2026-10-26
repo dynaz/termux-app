@@ -1,0 +1,25 @@
+તમારા ફોન પરથી સર્વર્સ મેનેજ કરો. TermiNow SSH, RDP અને SFTP દ્વારા રિમોટ મશીનો સાથે કનેક્ટ થાય છે અને Android પર પૂર્ણ Linux કમાન્ડ લાઇન ચલાવે છે — રૂટ જરૂરી નથી.
+
+હોસ્ટ્સ એકવાર સેવ કરો — એડ્રેસ, પોર્ટ, યુઝરનેમ અને કી — પછી એક ટેપમાં કનેક્ટ થાઓ. PuTTY, FileZilla, SecureCRT, OpenSSH config અથવા CSV માંથી કનેક્શન્સ ઇમ્પોર્ટ કરો. લોકલ નેટવર્ક સ્કેન કરો અથવા DigitalOcean અને AWS માંથી instance ઇમ્પોર્ટ કરો.
+
+શું કરી શકાય:
+
+• સેવ કરેલા હોસ્ટ પ્રોફાઇલ્સ સાથે SSH અથવા Mosh કનેક્શન
+• Remote Desktop (RDP) થી Windows અથવા Linux ડેસ્કટોપ ખોલો
+• SFTP બ્રાઉઝરમાં ફાઇલ્સ બ્રાઉઝ અને ટ્રાન્સફર કરો
+• WinRM થી Windows સર્વર્સ પર PowerShell ચલાવો
+• Bash, Zsh અને 1000+ પેકેજો સાથે પૂર્ણ Linux ટર્મિનલ
+• ગાઇડેડ વિઝાર્ડમાં port forwarding સેટઅપ કરો
+• કમાન્ડ્સ Snippets તરીકે સેવ કરો, વારંવાર ટેક્સ્ટ QuickCut માં
+• USB દ્વારા સીરિયલ ડિવાઇસ કનેક્ટ કરો
+• PuTTY (.ppk) અને FIDO2 સહિત SSH કીઓ મેનેજ કરો
+• Ubuntu, Debian અથવા Alpine Linux environment તરીકે ઇન્સ્ટોલ કરો
+• AI Bridge થી Linux environment માં Claude Code ચલાવો
+• AI સહાયક વાપરી ચેટમાં હોસ્ટ ઉમેરો અથવા કનેક્ટ થાઓ
+• ટર્મિનલની થીમ અને ફોન્ટ કસ્ટમાઇઝ કરો
+
+Premium ઉમેરે છે: File Manager, બહુવિધ Linux environment, tmux સેશન મેનેજમેન્ટ, બાહ્ય AI ક્લાયન્ટ્સ માટે MCP Bridge અને Backup & Restore. Google Play દ્વારા માસિક અથવા વાર્ષિક સબ્સ્ક્રિપ્શન.
+
+બાકી બધું — SSH, RDP, SFTP, ટર્મિનલ, port forwarding, serial, snippets, કીઓ, પ્રથમ Linux environment અને Claude Code — મફત છે.
+
+પ્રથમ શરૂઆત પર નાની બેઝ સિસ્ટમ ઇન્સ્ટોલ થાય છે. 'pkg' કમાન્ડ થી 1000+ પેકેજો ઉપલબ્ધ છે.

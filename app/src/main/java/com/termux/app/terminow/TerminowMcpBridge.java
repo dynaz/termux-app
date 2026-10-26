@@ -40,6 +40,12 @@ public final class TerminowMcpBridge {
     public static final String CAP_READ = "read_output";
     public static final String CAP_CANCEL = "cancel_task";
 
+    // What a share targets, and where its managed Claude runs (SSH host sharing).
+    public static final String SHARE_LOCAL = "local";        // a local environment (Ubuntu/Termux) on this device
+    public static final String SHARE_SSH_HOST = "ssh_host";  // a Vault SSH host
+    public static final String MODE_LOCAL_TOOLS = "local_tools";  // local Claude reaches the host via the AI Bridge's SSH tools
+    public static final String MODE_REMOTE_HOST = "remote_host";  // Claude runs on the host itself (Phase 2)
+
     public static final int DEFAULT_MAX_QUEUE = 8;
     /** Terminal tasks beyond this many are forgotten, oldest first, so memory stays bounded. */
     public static final int MAX_TASKS = 200;
@@ -59,9 +65,26 @@ public final class TerminowMcpBridge {
         public final String user;
         public final String folder;
         public final List<String> capabilities;
+        /** {@link #SHARE_LOCAL} (a local environment) or {@link #SHARE_SSH_HOST} (a Vault SSH host). */
+        public final String shareType;
+        /** For an SSH host: {@link #MODE_LOCAL_TOOLS} or {@link #MODE_REMOTE_HOST}. */
+        public final String executorMode;
+        /** For an SSH host: the Vault host's stable uuid; empty for a local share. */
+        public final String hostUuid;
+        /** For an SSH host: a snapshot of user@address:port at share time, for the fingerprint and display. */
+        public final String hostIdentity;
 
+        /** A local share (backward-compatible): a local environment on this device. */
         public Share(@NonNull String id, @NonNull String label, boolean managed, @NonNull String environmentKey,
                      @NonNull String user, @NonNull String folder, @NonNull List<String> capabilities) {
+            this(id, label, managed, environmentKey, user, folder, capabilities,
+                SHARE_LOCAL, MODE_LOCAL_TOOLS, "", "");
+        }
+
+        public Share(@NonNull String id, @NonNull String label, boolean managed, @NonNull String environmentKey,
+                     @NonNull String user, @NonNull String folder, @NonNull List<String> capabilities,
+                     @NonNull String shareType, @NonNull String executorMode, @NonNull String hostUuid,
+                     @NonNull String hostIdentity) {
             this.id = id;
             this.label = label;
             this.managed = managed;
@@ -69,16 +92,31 @@ public final class TerminowMcpBridge {
             this.user = user;
             this.folder = folder;
             this.capabilities = capabilities;
+            this.shareType = shareType.isEmpty() ? SHARE_LOCAL : shareType;
+            this.executorMode = executorMode.isEmpty() ? MODE_LOCAL_TOOLS : executorMode;
+            this.hostUuid = hostUuid;
+            this.hostIdentity = hostIdentity;
         }
 
         boolean allows(@NonNull String capability) {
             return capabilities.contains(capability);
         }
 
-        /** A stable snapshot of the target; a task bound to an old one is refused when it changed. */
+        boolean isSshHost() {
+            return SHARE_SSH_HOST.equals(shareType);
+        }
+
+        /**
+         * A stable snapshot of the target; a task bound to an old one is refused when it changed. For a
+         * local share the hash is unchanged from before (migration-safe); an SSH-host share also binds
+         * to its host identity and execution mode, so a changed host, port or mode is never retargeted.
+         */
         @NonNull
         String fingerprint() {
-            return sha256(id + "\u0000" + managed + "\u0000" + environmentKey + "\u0000" + user + "\u0000" + folder);
+            String base = id + "\u0000" + managed + "\u0000" + environmentKey + "\u0000" + user + "\u0000" + folder;
+            if (isSshHost())
+                base += "\u0000" + shareType + "\u0000" + executorMode + "\u0000" + hostUuid + "\u0000" + hostIdentity;
+            return sha256(base);
         }
     }
 
@@ -210,6 +248,12 @@ public final class TerminowMcpBridge {
                 json.put("environment", share.environmentKey);
                 json.put("folder", share.folder);
                 json.put("capabilities", new JSONArray(share.capabilities));
+                // Where the task runs, so a client knows the execution location and target (no secrets).
+                json.put("target_type", share.shareType);
+                if (share.isSshHost()) {
+                    json.put("executor_mode", share.executorMode);
+                    json.put("host", share.hostIdentity);
+                }
                 json.put("queued", queueOf(share.id).size());
                 json.put("busy", mActiveBySession.containsKey(share.id));
             } catch (JSONException ignored) {
@@ -249,7 +293,7 @@ public final class TerminowMcpBridge {
             throw TerminowAiError.QUEUE_FULL.of("The session already has " + mDeps.maxQueue() + " tasks waiting");
 
         TerminowMcpBridgeTask task = new TerminowMcpBridgeTask(UUID.randomUUID().toString(), clientKey, sessionId,
-            share.fingerprint(), idempotencyKey, request, timeoutSeconds, mClock.now());
+            share.environmentKey, share.folder, share.fingerprint(), idempotencyKey, request, timeoutSeconds, mClock.now());
         mTasks.put(task.id, task);
         if (!idempotencyKey.isEmpty())
             mIdempotency.put(idempotencyScope(clientKey, sessionId, idempotencyKey), task.id);
@@ -465,6 +509,38 @@ public final class TerminowMcpBridge {
         if (task.state() != TerminowMcpBridgeTask.State.CANCELLATION_REQUESTED) task.markCancellationRequested();
         persist();
         mExecutor.cancel(task.id);
+    }
+
+    /**
+     * From the device UI: submit a fresh attempt of a finished task to the same session, linked to
+     * the original by parent id (attempt lineage). A retry is a new submission bound to the session's
+     * current target; it never retargets or replays the original. Fails if the task is not finished,
+     * or the session is gone or no longer accepts tasks.
+     */
+    @NonNull
+    public synchronized TerminowMcpBridgeTask retryFromDevice(@NonNull String taskId) throws TerminowAiError.Exception {
+        TerminowMcpBridgeTask original = mTasks.get(taskId);
+        if (original == null) throw TerminowAiError.TASK_NOT_FOUND.of("No such task");
+        if (!original.state().isTerminal())
+            throw TerminowAiError.BAD_REQUEST.of("Only a finished task can be retried");
+        Share share = requireShare(original.sessionId); // fails if the session was unshared: no retarget
+        if (!share.managed || !share.allows(CAP_SUBMIT))
+            throw TerminowAiError.CAPABILITY_DENIED.of("This session no longer accepts tasks");
+        if (mActiveBySession.containsKey(original.sessionId) && queueOf(original.sessionId).size() >= mDeps.maxQueue())
+            throw TerminowAiError.QUEUE_FULL.of("The session already has " + mDeps.maxQueue() + " tasks waiting");
+        TerminowMcpBridgeTask task = new TerminowMcpBridgeTask(UUID.randomUUID().toString(), original.clientKey,
+            original.sessionId, share.environmentKey, share.folder, share.fingerprint(), "", original.request,
+            original.timeoutSeconds, mClock.now());
+        task.setParentId(original.id);
+        mTasks.put(task.id, task);
+        if (mActiveBySession.containsKey(original.sessionId)) {
+            queueOf(original.sessionId).addLast(task.id);
+        } else {
+            startTask(task, share);
+        }
+        persist();
+        trim();
+        return task;
     }
 
     /** A share's target changed or it was unshared: interrupt its active and queued tasks, no replay. */

@@ -168,8 +168,9 @@ public final class TerminowAiBridgeServer {
                 firstLine = null;
             }
             socket.setSoTimeout(0);
-            String env = serve(in, out, firstLine);
-            if (env != null) mConnections.put(socket, env);
+            // Map the socket to its environment the moment it authenticates, not when it ends, so a
+            // revoke or a reconnect can close this live connection through closeConnectionsOf().
+            serve(in, out, firstLine, env -> mConnections.put(socket, env));
         } catch (IOException ignored) {
             // The client went away
         } finally {
@@ -207,6 +208,12 @@ public final class TerminowAiBridgeServer {
      */
     @Nullable
     String serve(@NonNull BufferedReader in, @NonNull Writer out, @Nullable String firstLine) throws IOException {
+        return serve(in, out, firstLine, null);
+    }
+
+    @Nullable
+    String serve(@NonNull BufferedReader in, @NonNull Writer out, @Nullable String firstLine,
+                 @Nullable java.util.function.Consumer<String> onAuthenticated) throws IOException {
         String environmentKey = authenticatedEnvironment(mSession, firstLine);
         if (environmentKey == null) {
             out.write("ERR unauthorized\n");
@@ -215,6 +222,7 @@ public final class TerminowAiBridgeServer {
         }
         out.write("OK\n");
         out.flush();
+        if (onAuthenticated != null) onAuthenticated.accept(environmentKey);
         Handler server = mFactory.forEnvironment(environmentKey);
         String line;
         while ((line = in.readLine()) != null) {

@@ -190,6 +190,23 @@ public class TermuxSession {
     }
 
     /**
+     * Wrap an already-built {@link TerminalSession} whose I/O is an external byte stream (a serial
+     * console, created with {@link TerminalSession#TerminalSession(com.termux.terminal.TerminalSessionIo,
+     * Integer, com.termux.terminal.TerminalSessionClient)}) as a {@link TermuxSession}, so the
+     * service and UI list it like any other tab. No process is forked and no shell environment is
+     * set up: the given {@link ExecutionCommand} only identifies and labels the session.
+     */
+    @NonNull
+    public static TermuxSession wrapExternalSession(@NonNull final TerminalSession terminalSession,
+                                                    @NonNull final ExecutionCommand executionCommand,
+                                                    final TermuxSessionClient termuxSessionClient) {
+        executionCommand.setState(ExecutionCommand.ExecutionState.EXECUTING);
+        if (executionCommand.shellName != null)
+            terminalSession.mSessionName = executionCommand.shellName;
+        return new TermuxSession(terminalSession, executionCommand, termuxSessionClient, false);
+    }
+
+    /**
      * Signal that this {@link TermuxSession} has finished.  This should be called when
      * {@link TerminalSessionClient#onSessionFinished(TerminalSession)} callback is received by the caller.
      *

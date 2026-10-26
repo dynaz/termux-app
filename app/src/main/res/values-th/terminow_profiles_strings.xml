@@ -36,6 +36,10 @@
     <string name="terminow_toolbar_open_tab_here">เปิดแท็บที่นี่</string>
     <string name="terminow_toolbar_folder_unknown">ไม่ทราบโฟลเดอร์ของแท็บนี้</string>
     <string name="terminow_toolbar_copy_folder">คัดลอกพาธโฟลเดอร์</string>
+    <string name="terminow_folder_tracking_enable">เปิดการติดตามโฟลเดอร์</string>
+    <string name="terminow_folder_tracking_enabling">กำลังเปิดการติดตามโฟลเดอร์บน %1$s…</string>
+    <string name="terminow_folder_tracking_on">เปิดการติดตามโฟลเดอร์แล้ว เปิด shell ใหม่บนโฮสต์นี้เพื่อให้มีผล</string>
+    <string name="terminow_folder_tracking_failed">เปิดการติดตามโฟลเดอร์ไม่สำเร็จ เชื่อมต่อโฮสต์นี้หนึ่งครั้งเพื่อยอมรับคีย์ แล้วลองใหม่</string>
     <string name="terminow_toolbar_session_details">รายละเอียดแท็บ</string>
     <string name="terminow_toolbar_details">สภาพแวดล้อม: %1$s\nโปรแกรม: %2$s\nเริ่มใน: %3$s\ntmux: %4$s\nสถานะ: %5$s</string>
     <string name="terminow_toolbar_no_tmux">ไม่ได้อยู่ใน tmux</string>

@@ -215,6 +215,10 @@ public final class TerminalEmulator {
     private String mTitle;
     private final Stack<String> mTitleStack = new Stack<>();
 
+    /** The last working directory reported by OSC 7 as a {@code file://host/path} URI, empty if none.
+     * Stored raw and parsed by the app; the sequence is consumed, never rendered. */
+    private String mWorkingDirectoryUri = "";
+
     /** The cursor position. Between (0,0) and (mRows-1, mColumns-1). */
     private int mCursorRow, mCursorCol;
 
@@ -2777,6 +2781,10 @@ public final class TerminalEmulator {
             case 2: // Change window title to T.
                 setTitle(textParameter);
                 break;
+            case 7: // Report the working directory as a file:// URI (shell integration). Stored raw and
+                // parsed by the app; the sequence is consumed, never rendered, and the path is only data.
+                mWorkingDirectoryUri = textParameter;
+                break;
             case 4:
                 // P s = 4 ; c ; spec → Change Color Number c to the color specified by spec. This can be a name or RGB
                 // specification as per XParseColor. Any number of c name pairs may be given. The color numbers correspond
@@ -3526,6 +3534,11 @@ public final class TerminalEmulator {
     /** Get the terminal session's title (null if not set). */
     public String getTitle() {
         return mTitle;
+    }
+
+    /** The working directory reported by OSC 7 as a {@code file://host/path} URI, empty if none seen. */
+    public String getWorkingDirectoryUri() {
+        return mWorkingDirectoryUri;
     }
 
     /** Change the terminal session's title. */

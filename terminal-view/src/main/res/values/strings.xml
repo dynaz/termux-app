@@ -2,6 +2,7 @@
   <string name="paste_text">Paste</string>
   <string name="copy_text">Copy</string>
   <string name="text_selection_more">More…</string>
+  <string name="text_selection_save_quickcut">Save to QuickCut</string>
   <string name="text_selection_open_in_chrome">Open in Chrome</string>
     <string name="text_selection_open">Open</string>
     <string name="text_selection_open_with">Open with</string>

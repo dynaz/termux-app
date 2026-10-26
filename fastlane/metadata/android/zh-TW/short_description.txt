@@ -1,0 +1,1 @@
+SSH、RDP 與 Linux 終端，支援儲存主機、SFTP、AI 工具等

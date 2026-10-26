@@ -54,6 +54,8 @@ android {
         implementation "com.google.android.libraries.identity.googleid:googleid:1.1.1"
         // SFTP for the File Explorer, with known_hosts checking (maintained fork of JSch)
         implementation "com.github.mwiede:jsch:0.2.20"
+        // USB serial console (FTDI, CP210x, CH34x, PL2303, CDC-ACM) for the Serial Connection feature
+        implementation "com.github.mik3y:usb-serial-for-android:3.8.1"
         // FIDO2 security keys over USB and NFC (CTAP2), for the FIDO2 keys of the keychain
         implementation "com.yubico.yubikit:android:3.1.0"
         implementation "com.yubico.yubikit:fido:3.1.0"
@@ -71,8 +73,8 @@ android {
         applicationId "com.terminow"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 219
-        versionName "1.120.0.219"
+        versionCode 254
+        versionName "2.120.0.254"
 
         if (appVersionName) versionName = appVersionName
         // Optional CI override so a release build can use a versionCode above the

@@ -2,6 +2,7 @@
 <resources>
     <string name="terminow_host_vault_name">ห้องนิรภัย %1$s</string>
     <string name="terminow_host_vault_title">บันทึกในห้องนิรภัย</string>
+    <string name="terminow_vault_share_hint">รายการนี้บันทึกอยู่ในห้องนิรภัยส่วนตัวของคุณ สร้างห้องนิรภัยทีม (Team vault) ในหน้า บัญชีและพรีเมียม เพื่อแชร์โฮสต์ คีย์ และ snippet กับทีมของคุณ</string>
     <string name="terminow_host_saved_in_vault">บันทึกใน %1$s แล้ว</string>
     <string name="terminow_host_alias">ชื่อแทน</string>
     <string name="terminow_host_address_hint">ชื่อโฮสต์หรือที่อยู่ IP</string>
@@ -28,6 +29,10 @@
     <string name="terminow_host_env_remove">ลบตัวแปร</string>
     <string name="terminow_host_color_scheme">ชุดสี</string>
     <string name="terminow_host_color_scheme_default">ตามการตั้งค่า</string>
+    <string name="terminow_host_icon">ไอคอน</string>
+    <string name="terminow_host_color">สี</string>
+    <string name="terminow_host_icon_default">ค่าเริ่มต้น (ตามโปรโตคอล)</string>
+    <string name="terminow_host_color_auto">อัตโนมัติ</string>
     <string name="terminow_host_charset">ชุดอักขระ</string>
     <string name="terminow_host_charset_note">เทอร์มินัลของ TermiNow ใช้ UTF-8 เสมอ</string>
     <string name="terminow_host_telnet">Telnet</string>

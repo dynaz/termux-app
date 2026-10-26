@@ -11,8 +11,23 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import com.termux.app.terminow.files.TerminowSftpFs;
+
+import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
@@ -75,6 +90,16 @@ public final class TerminowMcpBridgeManager {
     private final TerminowMcpBridgeExecutor mExecutor;
     private final TerminowAiBridgeServer mServer;
     private final TerminowMcpBridgeRelay mRelay;
+    /** For enrolling this device with the relay using the account's Firebase ID token. */
+    private final TerminowAccount mAccount;
+    private final ScheduledExecutorService mEnroll = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "TerminowMcpBridge enroll");
+        t.setDaemon(true);
+        return t;
+    });
+    @Nullable private ScheduledFuture<?> mReenroll;
+    private static final long ENROLL_RENEW_BEFORE_MS = 5 * 60 * 1000;
+    private static final long ENROLL_RETRY_MS = 2 * 60 * 1000;
 
     @Nullable private String mLastError;
 
@@ -93,7 +118,8 @@ public final class TerminowMcpBridgeManager {
         });
 
         mExecutor = new TerminowMcpBridgeExecutor(new TerminowClaudeSetup(mContext, mTargets), mTargets,
-            new File(com.termux.shared.termux.TermuxConstants.TERMUX_HOME_DIR_PATH, ".terminow/mcp-tasks"));
+            new File(com.termux.shared.termux.TermuxConstants.TERMUX_HOME_DIR_PATH, ".terminow/mcp-tasks"),
+            this::grantHostForTask, this::startRemoteTask);
 
         mBridge = new TerminowMcpBridge(new TerminowMcpBridge.Deps() {
             @NonNull @Override public List<TerminowMcpBridge.Share> shares() { return loadShares(); }
@@ -110,7 +136,26 @@ public final class TerminowMcpBridgeManager {
         // The relay dials out to a remote MCP endpoint; its traffic is answered as the relay's own
         // paired client, so the same per-session authorization applies to remote AI clients.
         mRelay = new TerminowMcpBridgeRelay(
-            () -> new TerminowMcpBridgeMcpServer(mBridge, relayClientKey(), this::secrets, BuildConfig.VERSION_NAME));
+            () -> new TerminowMcpBridgeMcpServer(mBridge, relayClientKey(), this::secrets, BuildConfig.VERSION_NAME),
+            this::relayPairingCodes,
+            this::reenrollRelayDevice);
+
+        mAccount = new TerminowAccount(BuildConfig.TERMINOW_FIREBASE_API_KEY, mContext.getPackageName());
+        mAccount.setFirebaseBackend(BuildConfig.TERMINOW_FIREBASE_PROJECT_ID, BuildConfig.TERMINOW_FUNCTIONS_REGION);
+    }
+
+    /**
+     * The pairing codes to register with the relay: the tokens shown in "Pair a client". The relay's
+     * own entry (its clientId is {@link #relayClientKey()}, whose token is the device token) is left
+     * out, so the device token is never registered as a pairing code.
+     */
+    @NonNull
+    private synchronized List<String> relayPairingCodes() {
+        String relayKey = relayClientKey();
+        List<String> codes = new ArrayList<>();
+        for (Map.Entry<String, String> entry : mStore.getMcpClientTokens().entrySet())
+            if (!entry.getKey().equals(relayKey) && !entry.getValue().isEmpty()) codes.add(entry.getValue());
+        return codes;
     }
 
     // ---------------------------------------------------------------------------------------
@@ -184,6 +229,7 @@ public final class TerminowMcpBridgeManager {
         mStore.setMcpBridgeEnabled(false);
         mServer.stop();
         mRelay.stop();
+        cancelReenroll();
         return result(true, "The MCP Bridge is off");
     }
 
@@ -203,6 +249,7 @@ public final class TerminowMcpBridgeManager {
         String token = mClients.mint(clientId);
         String safeLabel = label.trim().isEmpty() ? "AI client" : label.trim();
         mStore.setMcpClient(clientId, token, safeLabel);
+        mRelay.refreshPairingCodes();
         return new PairResult(clientId, token, safeLabel);
     }
 
@@ -210,11 +257,13 @@ public final class TerminowMcpBridgeManager {
     public synchronized void revokeClient(@NonNull String clientId) {
         mClients.revoke(clientId);
         mServer.closeConnectionsOf(clientId);
+        mRelay.refreshPairingCodes();
     }
 
     public synchronized void revokeAllClients() {
         for (String id : new HashSet<>(mStore.getMcpClientTokens().keySet())) mServer.closeConnectionsOf(id);
         mClients.revokeAll();
+        mRelay.refreshPairingCodes();
     }
 
     /** The paired clients for the UI: id, label, pairing time. No token is returned. */
@@ -315,6 +364,8 @@ public final class TerminowMcpBridgeManager {
     public synchronized void clearRelay() {
         String clientId = relayClientKey();
         mRelay.stop();
+        cancelReenroll();
+        mStore.setMcpRelayCredential("", 0);
         if (!clientId.isEmpty()) {
             mClients.revoke(clientId);
             mServer.closeConnectionsOf(clientId);
@@ -325,9 +376,122 @@ public final class TerminowMcpBridgeManager {
     private void startRelayIfConfigured() {
         JSONObject relay = mStore.getMcpRelay();
         String url = relay.optString("url");
-        String clientId = relay.optString("clientId");
-        String token = clientId.isEmpty() ? "" : mStore.getMcpClientTokens().getOrDefault(clientId, "");
-        if (!url.isEmpty() && !token.isEmpty()) mRelay.start(url, token);
+        if (url.isEmpty()) return;
+        // When the account is signed in, enrol this device per-user with its Firebase ID token so
+        // the relay authorizes it against central Premium. Otherwise fall back to the static token.
+        if (mStore.getAccount() != null) {
+            mEnroll.execute(() -> enrollAndStart(url));
+        } else {
+            String clientId = relay.optString("clientId");
+            String token = clientId.isEmpty() ? "" : mStore.getMcpClientTokens().getOrDefault(clientId, "");
+            if (!token.isEmpty() && !mRelay.isActiveWith(url, token)) mRelay.start(url, token);
+        }
+    }
+
+    /** Enrol (or reuse a live credential), connect the relay with it, and schedule the next renewal. */
+    private void enrollAndStart(@NonNull String url) {
+        String credential = mStore.getMcpRelayCredential();
+        long expiry = mStore.getMcpRelayCredentialExpiry();
+        long now = System.currentTimeMillis();
+        if (credential.isEmpty() || expiry - now < ENROLL_RENEW_BEFORE_MS) {
+            long[] expiryOut = new long[1];
+            credential = enrollRelayDevice(url, expiryOut);
+            if (credential == null) {
+                // Not signed in, not Premium, or revoked: stop the relay and keep nothing.
+                mRelay.stop();
+                mStore.setMcpRelayCredential("", 0);
+                scheduleReenroll(url, ENROLL_RETRY_MS);
+                return;
+            }
+            expiry = expiryOut[0];
+            mStore.setMcpRelayCredential(credential, expiry);
+        }
+        // Only (re)start when not already connected with this credential: a repeat call (activity
+        // recreated, renew timer with a still-valid credential) must not churn a healthy connection.
+        if (!mRelay.isActiveWith(url, credential)) mRelay.start(url, credential);
+        long renewIn = Math.max(ENROLL_RETRY_MS, expiry - System.currentTimeMillis() - ENROLL_RENEW_BEFORE_MS);
+        scheduleReenroll(url, renewIn);
+    }
+
+    private synchronized void scheduleReenroll(@NonNull String url, long delayMs) {
+        if (mReenroll != null) mReenroll.cancel(false);
+        if (!mStore.isMcpBridgeEnabled()) return;
+        mReenroll = mEnroll.schedule(() -> enrollAndStart(url), delayMs, TimeUnit.MILLISECONDS);
+    }
+
+    private void cancelReenroll() {
+        if (mReenroll != null) {
+            mReenroll.cancel(false);
+            mReenroll = null;
+        }
+    }
+
+    /**
+     * Re-enrol this device for a fresh relay credential, invoked by the connector when the relay
+     * rejects the current one (HTTP 401) — e.g. the credential expired or the relay restarted and
+     * had not yet persisted it. Stores and returns the new credential, or {@code null} when the
+     * device cannot enrol (not signed in, not Premium, or revoked). This is the device channel only
+     * and never touches the user's OAuth sessions. Runs on the connector's background thread; the
+     * connector bounds how often it calls this and backs off, so there is no reconnect loop.
+     */
+    @Nullable
+    private String reenrollRelayDevice() {
+        String url = relayUrl();
+        if (url.isEmpty()) return null;
+        long[] expiryOut = new long[1];
+        String credential = enrollRelayDevice(url, expiryOut);
+        if (credential != null) mStore.setMcpRelayCredential(credential, expiryOut[0]);
+        return credential;
+    }
+
+    /**
+     * Enrol this device with the relay: send a fresh Firebase ID token to /device/enroll and keep
+     * the short-lived device credential it returns. Returns the credential (and its expiry in
+     * {@code expiryOut}), or {@code null} when not signed in, not Premium, or the relay refused.
+     * The ID token and the credential are never logged.
+     */
+    @Nullable
+    private String enrollRelayDevice(@NonNull String url, @NonNull long[] expiryOut) {
+        TerminowAccount.Session session = mStore.getAccount();
+        if (session == null) return null;
+        String idToken;
+        try {
+            idToken = mAccount.getIdToken(session);
+            mStore.setAccount(session); // persist a refreshed refresh token, if it changed
+        } catch (TerminowAccount.AccountException e) {
+            return null; // signed out or cannot refresh
+        }
+        if (idToken.isEmpty()) return null;
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(url + "/device/enroll").openConnection();
+            connection.setRequestMethod("POST");
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Authorization", "Bearer " + idToken);
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setConnectTimeout(20000);
+            connection.setReadTimeout(20000);
+            try (OutputStream out = connection.getOutputStream()) {
+                out.write("{}".getBytes(StandardCharsets.UTF_8));
+            }
+            int code = connection.getResponseCode();
+            if (code != 200) return null; // 401 bad token, 403 not Premium, 5xx try later
+            StringBuilder body = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) body.append(line);
+            }
+            JSONObject result = new JSONObject(body.toString());
+            String credential = result.optString("device_token");
+            long expiresIn = result.optLong("expires_in");
+            if (credential.isEmpty() || expiresIn <= 0) return null;
+            expiryOut[0] = System.currentTimeMillis() + expiresIn * 1000;
+            return credential;
+        } catch (java.io.IOException | JSONException e) {
+            return null;
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
     }
 
     @NonNull
@@ -400,11 +564,136 @@ public final class TerminowMcpBridgeManager {
         mBridge.cancelFromDevice(taskId);
     }
 
+    /** From the UI: retry a finished task as a fresh attempt to the same session (linked by lineage). */
+    @NonNull
+    public TerminowMcpBridgeTask retryTask(@NonNull String taskId) throws TerminowAiError.Exception {
+        return mBridge.retryFromDevice(taskId);
+    }
+
+    /**
+     * Mode A: grant the share's SSH host to its local Claude environment for a running task, scoped
+     * with a bounded TTL so it auto-expires — never ambient all-host access. Invoked by the executor
+     * just before a Mode-A task runs. Throws if the host is gone, which fails the task.
+     */
+    private void grantHostForTask(@NonNull TerminowMcpBridge.Share share, int timeoutSeconds) {
+        TerminowStore.Host host = TerminowStore.findHostByUuid(mStore.getHosts(), share.hostUuid);
+        if (host == null)
+            throw new IllegalStateException("The SSH host for this session is no longer in the vault");
+        long ttl = Math.max(60_000L, ((long) timeoutSeconds + 60) * 1000L);
+        TerminowAiBridgeManager.getInstance(mContext, mStore, mTargets).grant(share.environmentKey, host, ttl);
+    }
+
+    /**
+     * Mode B: start a task's managed Claude on the share's SSH host over an exec channel, reusing the
+     * host's Vault credentials and its verified known-hosts key. Fails closed — it never prompts and
+     * never logs in automatically, so an unknown host key or a credential it cannot supply throws and
+     * fails the task. The returned process closes its SSH session when it is destroyed.
+     */
+    @NonNull
+    private Process startRemoteTask(@NonNull TerminowMcpBridge.Share share, @NonNull String command) throws IOException {
+        TerminowStore.Host host = TerminowStore.findHostByUuid(mStore.getHosts(), share.hostUuid);
+        if (host == null) throw new IOException("The SSH host for this session is no longer in the vault");
+        if (host.telnet) throw new IOException("Remote Claude needs SSH; this host uses telnet");
+        if (host.address.isEmpty()) throw new IOException("The SSH host has no address");
+        File home = new File(com.termux.shared.termux.TermuxConstants.TERMUX_HOME_DIR_PATH);
+        TerminowSftpFs fs = new TerminowSftpFs(home, "mcp-remote:" + share.id, host.getTitle(),
+            host.address, host.port, host.username, host.password, host.keyPath, FAIL_CLOSED_PROMPTS);
+        try {
+            return new RemoteProcess(fs.exec(command), fs);
+        } catch (IOException | RuntimeException e) {
+            fs.close();
+            throw e;
+        }
+    }
+
+    /**
+     * Mode B preflight: check whether the share's SSH host is ready to run a managed Claude — host key
+     * trusted, a shell and the Claude CLI present, the folder there — reusing the host's Vault
+     * credentials. Read-only: it never installs or logs in automatically. With {@code trustHostKey}
+     * the host's current key is accepted and remembered (the person confirmed it in the UI). Runs on
+     * the caller's background thread.
+     */
+    @NonNull
+    TerminowMcpPreflight.Result remotePreflight(@NonNull TerminowMcpBridge.Share share, boolean trustHostKey) {
+        TerminowStore.Host host = TerminowStore.findHostByUuid(mStore.getHosts(), share.hostUuid);
+        if (host == null) return TerminowMcpPreflight.error("The SSH host for this session is no longer in the vault");
+        if (host.telnet) return TerminowMcpPreflight.error("Remote Claude needs SSH; this host uses telnet");
+        if (host.address.isEmpty()) return TerminowMcpPreflight.error("The SSH host has no address");
+        File home = new File(com.termux.shared.termux.TermuxConstants.TERMUX_HOME_DIR_PATH);
+        PreflightPrompts prompts = new PreflightPrompts(trustHostKey);
+        TerminowSftpFs fs = new TerminowSftpFs(home, "mcp-preflight:" + share.id, host.getTitle(),
+            host.address, host.port, host.username, host.password, host.keyPath, prompts);
+        try {
+            Process p = fs.exec(TerminowMcpPreflight.buildCommand(share.folder));
+            String out = readBounded(p.getInputStream(), TerminowMcpPreflight.OUTPUT_CAP);
+            try { p.waitFor(); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+            return TerminowMcpPreflight.parse(out);
+        } catch (IOException | RuntimeException e) {
+            if (!trustHostKey && !prompts.hostKeyInfo.isEmpty())
+                return TerminowMcpPreflight.untrustedHostKey(prompts.host, prompts.hostKeyInfo);
+            return TerminowMcpPreflight.error(String.valueOf(e.getMessage()));
+        } finally {
+            fs.close();
+        }
+    }
+
+    private static String readBounded(@NonNull InputStream in, int cap) throws IOException {
+        ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        byte[] chunk = new byte[1024];
+        int n;
+        while (buf.size() < cap && (n = in.read(chunk)) != -1) buf.write(chunk, 0, Math.min(n, cap - buf.size()));
+        return new String(buf.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    /** Preflight prompts: capture an unknown host key (so the UI can offer to trust it) and never ask
+     *  for a password. {@code trust} accepts and remembers the host's current key. */
+    private static final class PreflightPrompts implements TerminowSftpFs.Prompts {
+        final boolean trust;
+        volatile String host = "";
+        volatile String hostKeyInfo = "";
+        PreflightPrompts(boolean trust) { this.trust = trust; }
+        @Override public boolean confirmHostKey(@NonNull String host, @NonNull String keyType, @NonNull String fingerprint) {
+            this.host = host;
+            this.hostKeyInfo = keyType + " " + fingerprint;
+            return trust;
+        }
+        @Nullable @Override public String askPassword(@NonNull String prompt) { return null; }
+        @Nullable @Override public String askPassphrase(@NonNull String keyName) { return null; }
+    }
+
+    /** Never prompts: an unknown host key or a missing credential fails the connection (fail-closed). */
+    private static final TerminowSftpFs.Prompts FAIL_CLOSED_PROMPTS = new TerminowSftpFs.Prompts() {
+        @Override public boolean confirmHostKey(@NonNull String host, @NonNull String keyType, @NonNull String fingerprint) {
+            return false; // an untrusted/unknown host key is never accepted automatically
+        }
+        @Nullable @Override public String askPassword(@NonNull String prompt) { return null; }
+        @Nullable @Override public String askPassphrase(@NonNull String keyName) { return null; }
+    };
+
+    /** A remote exec process that also closes its SSH session when it is destroyed. */
+    private static final class RemoteProcess extends Process {
+        private final Process mInner;
+        private final TerminowSftpFs mFs;
+
+        RemoteProcess(@NonNull Process inner, @NonNull TerminowSftpFs fs) { mInner = inner; mFs = fs; }
+
+        @NonNull @Override public OutputStream getOutputStream() { return mInner.getOutputStream(); }
+        @NonNull @Override public InputStream getInputStream() { return mInner.getInputStream(); }
+        @NonNull @Override public InputStream getErrorStream() { return mInner.getErrorStream(); }
+        @Override public int waitFor() throws InterruptedException { return mInner.waitFor(); }
+        @Override public int exitValue() { return mInner.exitValue(); }
+        @Override public void destroy() {
+            try { mInner.destroy(); } finally { mFs.close(); }
+        }
+    }
+
     /** Emergency stop: turn the bridge off, drop the relay, and revoke every client at once. */
     public synchronized void emergencyStop() {
         mStore.setMcpBridgeEnabled(false);
         mServer.stop();
         mRelay.stop();
+        cancelReenroll();
+        mStore.setMcpRelayCredential("", 0);
         revokeAllClients();
     }
 
@@ -423,9 +712,13 @@ public final class TerminowMcpBridgeManager {
                 List<String> caps = new ArrayList<>();
                 JSONArray capArray = json.optJSONArray("capabilities");
                 for (int j = 0; capArray != null && j < capArray.length(); j++) caps.add(capArray.optString(j));
+                // An old share has no target_type and loads as a local share (migration-safe).
                 shares.add(new TerminowMcpBridge.Share(
                     json.optString("id"), json.optString("label"), json.optBoolean("managed", true),
-                    json.optString("environment"), json.optString("user"), json.optString("folder"), caps));
+                    json.optString("environment"), json.optString("user"), json.optString("folder"), caps,
+                    json.optString("target_type", TerminowMcpBridge.SHARE_LOCAL),
+                    json.optString("executor_mode", TerminowMcpBridge.MODE_LOCAL_TOOLS),
+                    json.optString("host_uuid"), json.optString("host_identity")));
             }
         } catch (JSONException e) {
             // A corrupt list is treated as empty rather than crashing the bridge
@@ -444,7 +737,11 @@ public final class TerminowMcpBridgeManager {
                     .put("environment", share.environmentKey)
                     .put("user", share.user)
                     .put("folder", share.folder)
-                    .put("capabilities", new JSONArray(share.capabilities)));
+                    .put("capabilities", new JSONArray(share.capabilities))
+                    .put("target_type", share.shareType)
+                    .put("executor_mode", share.executorMode)
+                    .put("host_uuid", share.hostUuid)
+                    .put("host_identity", share.hostIdentity));
             }
         } catch (JSONException ignored) {
             return;
@@ -498,5 +795,15 @@ public final class TerminowMcpBridgeManager {
                                                        @NonNull String folder) {
         return new TerminowMcpBridge.Share(id, label, true, environmentKey, user, folder,
             new ArrayList<>(Arrays.asList(TerminowMcpBridge.CAP_SUBMIT, TerminowMcpBridge.CAP_READ, TerminowMcpBridge.CAP_CANCEL)));
+    }
+
+    /** A managed share targeting a Vault SSH host, run by local Claude via the AI Bridge's SSH tools. */
+    @NonNull
+    public static TerminowMcpBridge.Share sshHostShare(@NonNull String id, @NonNull String label,
+            @NonNull String environmentKey, @NonNull String user, @NonNull String folder,
+            @NonNull String hostUuid, @NonNull String hostIdentity, @NonNull String executorMode) {
+        return new TerminowMcpBridge.Share(id, label, true, environmentKey, user, folder,
+            new ArrayList<>(Arrays.asList(TerminowMcpBridge.CAP_SUBMIT, TerminowMcpBridge.CAP_READ, TerminowMcpBridge.CAP_CANCEL)),
+            TerminowMcpBridge.SHARE_SSH_HOST, executorMode, hostUuid, hostIdentity);
     }
 }

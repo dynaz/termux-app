@@ -1,1 +1,1 @@
-Terminal emulator app with a large set of command line utilities
+SSH, RDP & Linux terminal with saved hosts, SFTP, AI tools and more

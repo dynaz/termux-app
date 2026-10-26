@@ -11,6 +11,10 @@
     <string name="terminow_keybar_choice_auto">Automatic: Claude Code while it runs</string>
     <string name="terminow_keybar_choice_terminal">Terminal keys</string>
     <string name="terminow_keybar_choice_claude">Claude Code keys</string>
+    <string name="terminow_keybar_choice_cursor">Cursor CLI keys</string>
+    <string name="terminow_keybar_choice_codex">Codex CLI keys</string>
+    <string name="terminow_keybar_choice_gemini">Gemini CLI keys</string>
+    <string name="terminow_keybar_ai_shortcuts">AI commands and shortcuts</string>
     <string name="terminow_keybar_keyboard">Show or hide the keyboard</string>
 
     <string name="terminow_keybar_commands_claude">Claude Code</string>

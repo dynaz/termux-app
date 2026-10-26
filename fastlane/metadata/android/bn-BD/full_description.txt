@@ -1,0 +1,25 @@
+আপনার ফোন থেকে সার্ভার পরিচালনা করুন। TermiNow SSH, RDP ও SFTP-এর মাধ্যমে রিমোট মেশিনে সংযোগ করে এবং Android-এ সম্পূর্ণ Linux কমান্ড লাইন চালায় — রুট প্রয়োজন নেই।
+
+হোস্ট একবার সেভ করুন — অ্যাড্রেস, পোর্ট, ইউজারনেম ও কী — তারপর এক ট্যাপে সংযোগ করুন। PuTTY, FileZilla, SecureCRT, OpenSSH config বা CSV থেকে কানেকশন ইম্পোর্ট করুন। লোকাল নেটওয়ার্ক স্ক্যান করুন বা DigitalOcean ও AWS থেকে instance ইম্পোর্ট করুন।
+
+যা করতে পারবেন:
+
+• সেভ করা হোস্ট প্রোফাইল ও কী অথেনটিকেশন সহ SSH বা Mosh-এ সংযোগ
+• Remote Desktop (RDP) দিয়ে Windows বা Linux ডেস্কটপ খুলুন
+• SFTP ব্রাউজারে ফাইল ব্রাউজ ও ট্রান্সফার করুন
+• WinRM-এর মাধ্যমে Windows সার্ভারে PowerShell চালান
+• Bash, Zsh ও ১০০০+ প্যাকেজ সহ সম্পূর্ণ Linux টার্মিনাল ব্যবহার করুন
+• গাইডেড উইজার্ডে port forwarding সেটআপ করুন — local, remote বা dynamic
+• কমান্ড Snippets হিসেবে সেভ করুন, ঘন ঘন টাইপ করা টেক্সট QuickCut-এ রাখুন
+• USB-এর মাধ্যমে সিরিয়াল ডিভাইসে সংযোগ করুন
+• PuTTY (.ppk) ও FIDO2 সহ SSH কী পরিচালনা করুন
+• ডিভাইসে Ubuntu, Debian বা Alpine Linux environment ইনস্টল করুন
+• AI Bridge দিয়ে Linux environment-এ Claude Code চালান
+• AI Assistant ব্যবহার করে চ্যাটে হোস্ট যোগ বা সংযোগ করুন
+• টার্মিনালের থিম ও ফন্ট কাস্টমাইজ করুন
+
+Premium যোগ করে File Manager, একাধিক Linux environment, tmux সেশন ম্যানেজমেন্ট, বাহ্যিক AI ক্লায়েন্টের জন্য MCP Bridge এবং Backup & Restore। Google Play-এর মাধ্যমে মাসিক বা বার্ষিক সাবস্ক্রিপশন।
+
+বাকি সব — SSH, RDP, SFTP, টার্মিনাল, port forwarding, serial, snippets, কী, প্রথম Linux environment ও Claude Code — বিনামূল্যে।
+
+প্রথম শুরুতে একটি ছোট বেস সিস্টেম ইনস্টল হয়। 'pkg' কমান্ড দিয়ে ১০০০+ অতিরিক্ত প্যাকেজ ইনস্টল করা যায়।

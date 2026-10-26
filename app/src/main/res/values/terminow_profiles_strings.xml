@@ -38,6 +38,10 @@
     <string name="terminow_toolbar_open_tab_here">Open a tab here</string>
     <string name="terminow_toolbar_folder_unknown">The folder of this tab is unknown</string>
     <string name="terminow_toolbar_copy_folder">Copy folder path</string>
+    <string name="terminow_folder_tracking_enable">Enable folder tracking</string>
+    <string name="terminow_folder_tracking_enabling">Enabling folder tracking on %1$s…</string>
+    <string name="terminow_folder_tracking_on">Folder tracking enabled. Open a new shell on this host for it to take effect.</string>
+    <string name="terminow_folder_tracking_failed">Could not enable folder tracking. Connect to this host once to accept its key, then try again.</string>
     <string name="terminow_toolbar_session_details">Tab details</string>
     <string name="terminow_toolbar_details">Environment: %1$s\nProgram: %2$s\nStarted in: %3$s\ntmux: %4$s\nState: %5$s</string>
     <string name="terminow_toolbar_no_tmux">Not in tmux</string>

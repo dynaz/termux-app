@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_cloud_src_aws">AWS EC2</string>
+    <string name="terminow_cloud_src_do">DigitalOcean</string>
+    <string name="terminow_cloud_fetch">Fetch</string>
+    <string name="terminow_cloud_fetching">Fetching instances…</string>
+    <string name="terminow_cloud_use_public">Use public IP address</string>
+    <string name="terminow_cloud_username">Username</string>
+    <string name="terminow_cloud_port">SSH port</string>
+    <string name="terminow_cloud_key">Keychain key name (optional)</string>
+    <string name="terminow_cloud_do_title">DigitalOcean import</string>
+    <string name="terminow_cloud_do_token">Personal access token (read scope)</string>
+    <string name="terminow_cloud_need_token">Enter a DigitalOcean token.</string>
+    <string name="terminow_cloud_aws_title">AWS EC2 import</string>
+    <string name="terminow_cloud_aws_help">Uses your own credentials for a read-only ec2:DescribeInstances call. Credentials are kept in memory for this import only and are never stored or logged.</string>
+    <string name="terminow_cloud_aws_access_key">Access key ID</string>
+    <string name="terminow_cloud_aws_secret_key">Secret access key</string>
+    <string name="terminow_cloud_aws_session_token">Session token (optional, for temporary credentials)</string>
+    <string name="terminow_cloud_aws_regions">Regions (comma-separated, e.g. us-east-1)</string>
+    <string name="terminow_cloud_need_aws">Enter the access key, secret key and at least one region.</string>
+</resources>

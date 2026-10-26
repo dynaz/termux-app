@@ -1,0 +1,25 @@
+จัดการเซิร์ฟเวอร์จากมือถือของคุณ TermiNow เชื่อมต่อกับเครื่องระยะไกลผ่าน SSH, RDP และ SFTP พร้อมรันบรรทัดคำสั่ง Linux เต็มรูปแบบบน Android — ไม่ต้องรูท
+
+บันทึกโฮสต์เพียงครั้งเดียว — ที่อยู่ พอร์ต ชื่อผู้ใช้ และคีย์ — จากนั้นเชื่อมต่อด้วยการแตะเพียงครั้งเดียว นำเข้าการเชื่อมต่อจาก PuTTY, FileZilla, SecureCRT, OpenSSH config หรือ CSV เพื่อย้ายจากโปรแกรมบนเดสก์ท็อปโดยไม่ต้องกรอกข้อมูลใหม่ สแกนเครือข่ายท้องถิ่นเพื่อค้นหาอุปกรณ์ หรือนำเข้า instance จาก DigitalOcean และ AWS
+
+สิ่งที่ทำได้:
+
+• เชื่อมต่อผ่าน SSH หรือ Mosh พร้อมโปรไฟล์โฮสต์และการยืนยันตัวตนด้วยคีย์
+• เปิดเดสก์ท็อป Windows หรือ Linux ด้วย Remote Desktop (RDP)
+• เรียกดูและถ่ายโอนไฟล์ด้วย SFTP browser
+• รัน PowerShell บนเซิร์ฟเวอร์ Windows ผ่าน WinRM
+• ใช้เทอร์มินัล Linux เต็มรูปแบบพร้อม Bash, Zsh และแพ็คเกจมากกว่า 1,000 รายการ
+• ตั้งค่า port forwarding — local, remote หรือ dynamic — ด้วยวิซาร์ดแนะนำ
+• บันทึกคำสั่งเป็น Snippets และเก็บข้อความที่ใช้บ่อยใน QuickCut
+• เชื่อมต่อกับอุปกรณ์ serial ผ่าน USB
+• จัดการคีย์ SSH รวมถึง PuTTY (.ppk) และ FIDO2 security key
+• ติดตั้ง Ubuntu, Debian หรือ Alpine เป็น Linux environment บนอุปกรณ์
+• รัน Claude Code ใน Linux environment ด้วย AI Bridge
+• ใช้ AI Assistant เพิ่มโฮสต์หรือเชื่อมต่อด้วยแชท เป็นภาษาไทยหรืออังกฤษ
+• ปรับแต่งธีมและฟอนต์ของเทอร์มินัล
+
+Premium เพิ่ม File Manager (เรียกดู storage ของอุปกรณ์และโฮสต์ SFTP พร้อมคิวถ่ายโอน), Linux environment หลายตัว, การจัดการเซสชัน tmux, MCP Bridge สำหรับ AI client ภายนอก และ Backup & Restore ของ Linux environment — เป็นการสมัครสมาชิกรายเดือนหรือรายปีผ่าน Google Play
+
+ทุกอย่างอื่น — SSH, RDP, SFTP, เทอร์มินัล, port forwarding, serial, snippets, คีย์, Linux environment แรก และ Claude Code — ใช้ได้ฟรี
+
+เมื่อเริ่มใช้งานครั้งแรก ระบบฐานขนาดเล็กจะถูกติดตั้ง แพ็คเกจเพิ่มเติมกว่า 1,000 รายการพร้อมให้ติดตั้งด้วยคำสั่ง 'pkg'

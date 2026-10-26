@@ -1,0 +1,25 @@
+اپنے فون سے سرورز کا نظم کریں۔ TermiNow SSH، RDP اور SFTP کے ذریعے ریموٹ مشینوں سے جڑتا ہے اور Android پر مکمل Linux کمانڈ لائن چلاتا ہے — روٹ کی ضرورت نہیں۔
+
+ہوسٹس ایک بار محفوظ کریں — ایڈریس، پورٹ، یوزرنیم اور کی — پھر ایک ٹیپ سے جڑیں۔ PuTTY، FileZilla، SecureCRT، OpenSSH config یا CSV سے کنکشن درآمد کریں۔ مقامی نیٹ ورک سکین کریں یا DigitalOcean اور AWS سے instance درآمد کریں۔
+
+کیا کر سکتے ہیں:
+
+• محفوظ شدہ ہوسٹ پروفائلز کے ساتھ SSH یا Mosh سے جڑنا
+• Remote Desktop (RDP) سے Windows یا Linux ڈیسک ٹاپ کھولنا
+• SFTP براؤزر سے فائلیں براؤز اور منتقل کرنا
+• WinRM سے Windows سرورز پر PowerShell چلانا
+• Bash، Zsh اور 1000+ پیکجز کے ساتھ مکمل Linux ٹرمینل
+• گائیڈڈ وزرڈ سے port forwarding سیٹ اپ
+• کمانڈز Snippets کے طور پر محفوظ کرنا، بار بار ٹیکسٹ QuickCut میں
+• USB سے سیریل ڈیوائسز جوڑنا
+• PuTTY (.ppk) اور FIDO2 سمیت SSH کیز کا نظم
+• Ubuntu، Debian یا Alpine بطور Linux ماحول نصب کرنا
+• AI Bridge سے Linux ماحول میں Claude Code چلانا
+• AI اسسٹنٹ سے چیٹ میں ہوسٹ شامل کرنا یا جڑنا
+• ٹرمینل کی تھیم اور فونٹ حسب ضرورت بنانا
+
+Premium شامل کرتا ہے: File Manager، متعدد Linux ماحول، tmux سیشن مینجمنٹ، بیرونی AI کلائنٹس کے لیے MCP Bridge اور Backup & Restore۔ Google Play کے ذریعے ماہانہ یا سالانہ سبسکرپشن۔
+
+باقی سب — SSH، RDP، SFTP، ٹرمینل، port forwarding، serial، snippets، کیز، پہلا Linux ماحول اور Claude Code — مفت ہے۔
+
+پہلی شروعات پر چھوٹا بنیادی نظام نصب ہوتا ہے۔ 'pkg' کمانڈ سے 1000+ پیکجز دستیاب ہیں۔

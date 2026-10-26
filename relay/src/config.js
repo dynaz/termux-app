@@ -32,5 +32,41 @@ export function loadConfig(env = process.env) {
     // Permit dynamic client registration (RFC 7591). Trending to CIMD in newer MCP revisions,
     // kept here for clients (including some ChatGPT/Claude Desktop builds) that rely on it.
     allowDynamicRegistration: env.RELAY_ALLOW_DCR !== 'false',
+    // "Sign in with Google" at the consent screen, as an alternative to the pairing code. The relay
+    // is a Google OAuth web client; set the id and secret from the Google Cloud console, and add
+    // <publicUrl>/oauth/google/callback as an authorized redirect URI. A signed-in Google email is
+    // mapped to a user id through RELAY_GOOGLE_USERS ("email=userId,...") or a device registration.
+    google: {
+      clientId: env.RELAY_GOOGLE_CLIENT_ID || '',
+      clientSecret: env.RELAY_GOOGLE_CLIENT_SECRET || '',
+      redirectUri: env.RELAY_GOOGLE_REDIRECT_URI || (publicUrl + '/oauth/google/callback'),
+      users: parseMap(env.RELAY_GOOGLE_USERS), // Google email -> user id
+    },
+    // The central Premium authority (cp.accmove.com relay_check.php): it verifies a Firebase ID
+    // token server-side and answers { uid, premium } for WHMCS and Google Play. The relay trusts
+    // only this, never a uid or premium flag from the app. The secret lives only here and there.
+    backend: {
+      url: env.RELAY_BACKEND_URL || '', // e.g. https://cp.accmove.com/terminow/relay_check.php
+      secret: env.RELAY_BACKEND_SECRET || '',
+    },
+    // How long an enrolled device credential (and a Google-login session) is trusted before Premium
+    // must be re-confirmed by enrolling again with a fresh Firebase ID token.
+    enrollTtlMs: parseInt(env.RELAY_ENROLL_TTL_MS || String(65 * 60 * 1000), 10),
+    // How long a device-registered dynamic pairing code lives before the app must re-register it.
+    // Longer than the app's re-register interval, so a connected device's codes never lapse.
+    pairingTtlMs: parseInt(env.RELAY_PAIRING_TTL_MS || String(2 * 60 * 60 * 1000), 10),
+    // A writable directory to persist OAuth tokens across restarts (so clients need not reconnect).
+    // systemd sets STATE_DIRECTORY when StateDirectory= is configured; empty keeps in-memory only.
+    statePath: env.RELAY_STATE_DIR || env.STATE_DIRECTORY || '',
+    // Public Firebase web config for "Sign in with Google" on the consent page (not secrets). The
+    // browser signs in and submits a Firebase ID token, which the backend authority then verifies.
+    firebaseWeb: {
+      apiKey: env.RELAY_FIREBASE_API_KEY || 'AIzaSyD-6m-iehXMSyiltMTAAd0soxsj4iWLgmo',
+      authDomain: env.RELAY_FIREBASE_AUTH_DOMAIN || 'linex-bf945.firebaseapp.com',
+      projectId: env.RELAY_FIREBASE_PROJECT_ID || 'linex-bf945',
+    },
+    // Temporarily hide "Sign in with Google" on the consent page (e.g. while the backend authority
+    // is being deployed) without unsetting RELAY_BACKEND_URL. The pairing code stays as a fallback.
+    googleSigninDisabled: env.RELAY_GOOGLE_SIGNIN_DISABLED === 'true' || env.RELAY_GOOGLE_SIGNIN_DISABLED === '1',
   };
 }

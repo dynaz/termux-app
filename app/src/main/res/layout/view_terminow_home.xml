@@ -517,6 +517,19 @@
             android:textColor="@color/terminow_text"
             android:textSize="15sp" />
 
+        <ImageView
+            android:id="@+id/terminow_section_help"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_below="@id/terminow_header"
+            android:layout_toEndOf="@id/terminow_section_title"
+            android:layout_marginStart="2dp"
+            android:layout_marginTop="10dp"
+            android:padding="10dp"
+            android:src="@drawable/ic_terminow_info"
+            android:contentDescription="@string/terminow_help"
+            android:visibility="gone" />
+
         <GridView
             android:id="@+id/terminow_grid"
             android:layout_width="match_parent"

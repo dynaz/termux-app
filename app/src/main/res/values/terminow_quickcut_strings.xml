@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_quickcut_title">QuickCut</string>
+    <string name="terminow_quickcut_empty">Nothing to save.</string>
+    <string name="terminow_quickcut_name_hint">Name (optional)</string>
+    <string name="terminow_quickcut_content_hint">Content</string>
+    <string name="terminow_quickcut_save_title">Save to QuickCut</string>
+    <string name="terminow_quickcut_edit_title">Edit QuickCut</string>
+    <string name="terminow_quickcut_save">Save</string>
+    <string name="terminow_quickcut_saved">Saved to QuickCut</string>
+    <string name="terminow_quickcut_name_in_use_title">Name in use</string>
+    <string name="terminow_quickcut_name_in_use">A QuickCut named “%1$s” already exists.</string>
+    <string name="terminow_quickcut_keep_both">Keep both</string>
+    <string name="terminow_quickcut_overwrite">Overwrite</string>
+    <string name="terminow_quickcut_search">Search</string>
+    <string name="terminow_quickcut_new">New</string>
+    <string name="terminow_quickcut_none">No QuickCuts yet. Select text in the terminal and tap “Save to QuickCut”, or add one.</string>
+    <string name="terminow_quickcut_no_match">No match.</string>
+    <string name="terminow_quickcut_pinned">Pinned</string>
+    <string name="terminow_quickcut_recent">Recent</string>
+    <string name="terminow_quickcut_all">All</string>
+    <string name="terminow_quickcut_pin">Pin</string>
+    <string name="terminow_quickcut_unpin">Unpin</string>
+    <string name="terminow_quickcut_edit">Edit</string>
+    <string name="terminow_quickcut_delete">Delete</string>
+    <string name="terminow_quickcut_delete_confirm">Delete “%1$s”?</string>
+    <string name="terminow_quickcut_no_session">Open a session to use QuickCut.</string>
+    <string name="terminow_quickcut_choose_session">Insert into which session?</string>
+    <string name="terminow_quickcut_session_gone">That session is no longer open. Choose another.</string>
+    <string name="terminow_quickcut_newline_warn">This contains a line break, which may run the command when inserted.</string>
+    <string name="terminow_quickcut_confirm_title">Insert multiline content?</string>
+    <string name="terminow_quickcut_insert">Insert</string>
+    <string name="terminow_quickcut_inserted">Inserted %1$s</string>
+</resources>

@@ -122,6 +122,7 @@ public class TerminowHome {
     private static final int REQUEST_UPLOAD_TMP = 2003;
     private static final int REQUEST_IMPORT_HOSTS = 2004;
     private static final int REQUEST_IMPORT_ROOTFS = 2006;
+    private static final int REQUEST_QUICK_IMPORT = 2007;
     private static final int REQUEST_SAVE_DEBUG_LOG = 2009;
     /** A certificate is one line of some kilobytes. */
     private static final int CERTIFICATE_MAX_SIZE = 64 * 1024;
@@ -209,6 +210,8 @@ public class TerminowHome {
     /** The terminal that files that are being picked are uploaded for. */
     @Nullable private WeakReference<TerminalSession> mUploadSession;
     private final TextView mSectionTitleView;
+    private final ImageView mSectionHelpView;
+    private final TerminowConnectionUi mConnectionUi;
     private final View mActionsView;
     private final TextView mEmptyView;
     private final ItemsAdapter mAdapter = new ItemsAdapter();
@@ -320,6 +323,16 @@ public class TerminowHome {
             }
 
             @Override
+            public void showRemoteDevices() {
+                showDeviceTemplates(TerminowRemoteDevices.remoteDevices(), R.string.terminow_env_tab_remote);
+            }
+
+            @Override
+            public void showVirtualLabs() {
+                showDeviceTemplates(TerminowRemoteDevices.virtualLabs(), R.string.terminow_env_tab_labs);
+            }
+
+            @Override
             public void openLocalFiles() {
                 setPage(PAGE_FILES);
             }
@@ -427,6 +440,8 @@ public class TerminowHome {
         TerminowBiometricKeys.setActivity(activity);
         TerminowBiometricKeys.startAgent();
         mSectionTitleView = activity.findViewById(R.id.terminow_section_title);
+        mSectionHelpView = activity.findViewById(R.id.terminow_section_help);
+        mConnectionUi = new TerminowConnectionUi(activity, activity.findViewById(R.id.terminow_terminal_overlay));
         mEmptyView = activity.findViewById(R.id.terminow_empty);
 
         mHomeButton.setOnClickListener(v -> show());
@@ -698,6 +713,8 @@ public class TerminowHome {
 
         boolean homeVisible = isVisible();
         TerminalSession currentSession = mActivity.getCurrentSession();
+        // Show the connection panel, security banner and shield of the session that is now shown.
+        if (mConnectionUi != null) mConnectionUi.onShowSession(homeVisible ? null : currentSession);
         List<TermuxSession> termuxSessions = service.getTermuxSessions();
         View selectedTab = null;
 
@@ -774,6 +791,7 @@ public class TerminowHome {
     }
 
     private void closeSession(@NonNull TerminalSession session) {
+        mConnectionUi.onCloseSession(session);
         if (!session.isRunning()) {
             mActivity.getTermuxTerminalSessionClient().closeSession(session);
             return;
@@ -795,11 +813,43 @@ public class TerminowHome {
         setPage(PAGE_LAUNCH);
     }
 
+    /** Shows the ⓘ help button on rail pages without their own help icon, pointing at the matching terminow.online page. */
+    private void updateSectionHelp() {
+        if (mSectionHelpView == null) return;
+        final String path;
+        switch (mPage) {
+            case PAGE_HOSTS:
+                path = "support/hosts";
+                break;
+            case PAGE_KEYCHAIN:
+                path = "support/keychain";
+                break;
+            case PAGE_FORWARDING:
+                path = "support/forwarding";
+                break;
+            case PAGE_SNIPPETS:
+                path = "support/snippets";
+                break;
+            case PAGE_FILES:
+            case PAGE_KNOWN_HOSTS:
+            case PAGE_LOGS:
+                path = "support";
+                break;
+            default:
+                // AI, MCP Servers and MCP Bridge carry their own ⓘ; Launch and Settings get none.
+                mSectionHelpView.setVisibility(View.GONE);
+                return;
+        }
+        mSectionHelpView.setVisibility(View.VISIBLE);
+        mSectionHelpView.setOnClickListener(v -> TerminowHelp.open(mActivity, path));
+    }
+
     private void setPage(int page) {
         if (page == PAGE_FILES) TerminowWhatsNew.seen(mActivity, TerminowWhatsNew.Feature.FILES);
         if (mPage == PAGE_FILES && page != PAGE_FILES) mExplorer.onHidden();
         if (mPage == PAGE_LAUNCH && page != PAGE_LAUNCH && mQuickLaunch != null) mQuickLaunch.hide();
         mPage = page;
+        updateSectionHelp();
         setRailItemSelected(mRailLaunch, page == PAGE_LAUNCH);
         if (page == PAGE_LAUNCH) {
             // Quick Launch has its own title, sections and actions over the whole content area
@@ -1113,7 +1163,12 @@ public class TerminowHome {
             return true;
         }
 
-        CharSequence[] actions = {mActivity.getString(R.string.terminow_edit), mActivity.getString(R.string.terminow_delete)};
+        // A host can also be duplicated; the other item types keep the plain Edit/Delete menu.
+        boolean isHost = item instanceof TerminowStore.Host;
+        CharSequence[] actions = isHost
+            ? new CharSequence[]{mActivity.getString(R.string.terminow_edit), mActivity.getString(R.string.terminow_duplicate),
+                mActivity.getString(R.string.terminow_delete)}
+            : new CharSequence[]{mActivity.getString(R.string.terminow_edit), mActivity.getString(R.string.terminow_delete)};
         new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog).setItems(actions, (dialog, which) -> {
             if (item instanceof Group) {
                 String group = ((Group) item).name;
@@ -1141,6 +1196,8 @@ public class TerminowHome {
                 TerminowStore.Host host = (TerminowStore.Host) item;
                 if (which == 0) {
                     showHostDialog(host);
+                } else if (which == 1) {
+                    duplicateHost(host);
                 } else {
                     mHosts.remove(host);
                     mStore.setHosts(mHosts);
@@ -1160,7 +1217,43 @@ public class TerminowHome {
         return true;
     }
 
+    /**
+     * Make an independent copy of a host and open it for editing. The copy gets a fresh uuid so it
+     * is a distinct host (its authorization, such as local AI access, does not carry the original's
+     * grants), and the password is copied over because {@link TerminowStore#hostToJson} leaves it out.
+     */
+    private void duplicateHost(@NonNull TerminowStore.Host host) {
+        TerminowStore.Host copy;
+        try {
+            copy = TerminowStore.hostFromJson(TerminowStore.hostToJson(host));
+        } catch (org.json.JSONException e) {
+            mActivity.showToast(String.valueOf(e.getMessage()), true);
+            return;
+        }
+        copy.uuid = TerminowStore.newHostId();
+        copy.password = host.password;
+        copy.label = duplicateLabel(host.getTitle());
+        int index = mHosts.indexOf(host);
+        if (index < 0) mHosts.add(copy); else mHosts.add(index + 1, copy);
+        mStore.setHosts(mHosts);
+        updateItems();
+        showHostDialog(copy);
+    }
 
+    /** A label for a copied host, like "web copy", then "web copy 2" if that one is taken. */
+    @NonNull
+    private String duplicateLabel(@NonNull String title) {
+        String base = mActivity.getString(R.string.terminow_duplicate_suffix, title);
+        String candidate = base;
+        int n = 2;
+        while (labelTaken(candidate)) candidate = base + " " + n++;
+        return candidate;
+    }
+
+    private boolean labelTaken(@NonNull String label) {
+        for (TerminowStore.Host host : mHosts) if (label.equals(host.label)) return true;
+        return false;
+    }
 
     /** Show the menu to start a session under the add button of the tab bar. */
     private void showNewSessionMenu(@NonNull View anchor) {
@@ -1177,7 +1270,9 @@ public class TerminowHome {
         popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
 
         // Compact: environments and profiles are one tap away in Quick Launch, exporting files is in the File Manager
-        addMenuItem(menu, popup, R.drawable.ic_terminow_terminal, R.string.terminow_quick_new_terminal, this::openLocalTerminal);
+        addMenuItem(menu, popup, R.drawable.ic_terminow_os_ubuntu,
+            mActivity.getString(R.string.terminow_quick_ubuntu_local), mActivity.getString(R.string.terminow_quick_ubuntu_local_summary),
+            mLauncher::launchLocalUbuntu);
         addMenuItem(menu, popup, R.drawable.ic_terminow_launch, R.string.terminow_quick_title, this::showQuickLaunch);
         addMenuItem(menu, popup, R.drawable.ic_terminow_add, R.string.terminow_quick_add_environment, () -> mQuickLaunch.showAddEnvironment());
         addMenuItem(menu, popup, R.drawable.ic_terminow_hosts, R.string.terminow_quick_add_ssh_host, () -> {
@@ -1186,8 +1281,85 @@ public class TerminowHome {
             showHostDialog(null);
         });
         addMenuItem(menu, popup, R.drawable.ic_terminow_import, R.string.terminow_quick_import, this::showImportChooser);
+        addMenuItem(menu, popup, R.drawable.ic_terminow_import, R.string.terminow_qimport_menu, this::showQuickImport);
+        addMenuItem(menu, popup, R.drawable.ic_terminow_hosts, R.string.terminow_discovery_menu, this::showNetworkDiscovery);
+        addMenuItem(menu, popup, R.drawable.ic_terminow_serial,
+            mActivity.getString(R.string.terminow_serial_menu), mActivity.getString(R.string.terminow_serial_menu_summary),
+            this::showSerial);
+        addMenuItem(menu, popup, R.drawable.ic_terminow_agent,
+            mActivity.getString(R.string.terminow_agent_menu), mActivity.getString(R.string.terminow_agent_menu_summary),
+            this::showAgent);
 
         popup.showAsDropDown(anchor, 0, dp(4));
+    }
+
+    /** Open Network Discovery, wired to the existing connect and Save-as-Host flows. */
+    private void showNetworkDiscovery() {
+        new TerminowDiscoveryUi(mActivity, mStore, new TerminowDiscoveryUi.Actions() {
+            @Override public void connectSsh(@NonNull TerminowStore.Host host) { connect(host); }
+            @Override public void saveAsHost(@NonNull TerminowStore.Host prefill) { showHostDialog(null, prefill, null); }
+            @Override public void openWeb(@NonNull String url) {
+                try {
+                    mActivity.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+                } catch (RuntimeException e) {
+                    mActivity.showToast(url, false);
+                }
+            }
+            @Override public void copyText(@NonNull String label, @NonNull String text) {
+                ClipboardManager cm = (ClipboardManager) mActivity.getSystemService(Context.CLIPBOARD_SERVICE);
+                if (cm != null) cm.setPrimaryClip(ClipData.newPlainText(label, text));
+                mActivity.showToast(text, false);
+            }
+        }).show();
+    }
+
+    /** Open the Serial Connection flow: pick a USB serial adapter, set the line, open a tab. */
+    private void showSerial() {
+        new TerminowSerialUi(mActivity).show();
+    }
+
+    /** Open the AI Agent chat: manage hosts and open terminals by natural language. */
+    private void showAgent() {
+        new TerminowAgentUi(mActivity, mStore, new TerminowAgentUi.Delegate() {
+            @NonNull @Override
+            public TerminowAgentTools.Hosts hostStore() {
+                return new TerminowAgentTools.Hosts() {
+                    @NonNull @Override public List<TerminowStore.Host> all() { return mHosts; }
+                    @Override public void add(@NonNull TerminowStore.Host host) {
+                        if (!host.group.isEmpty() && !mGroups.contains(host.group)) {
+                            mGroups.add(host.group);
+                            mStore.setGroups(mGroups);
+                        }
+                        mHosts.add(host);
+                        mStore.setHosts(mHosts);
+                        updateItems();
+                    }
+                    @Override public void update(@NonNull TerminowStore.Host host) {
+                        // The host object is already the one in mHosts (edited in place); just persist.
+                        mStore.setHosts(mHosts);
+                        updateItems();
+                    }
+                };
+            }
+
+            @NonNull @Override public List<String> sessionNames() {
+                List<String> names = new ArrayList<>();
+                TermuxService service = mActivity.getTermuxService();
+                if (service != null)
+                    for (TermuxSession s : service.getTermuxSessions()) {
+                        TerminalSession ts = s.getTerminalSession();
+                        if (ts != null) names.add(ts.mSessionName != null && !ts.mSessionName.isEmpty() ? ts.mSessionName : "session");
+                    }
+                return names;
+            }
+
+            @Override public void connect(@NonNull TerminowStore.Host host) { TerminowHome.this.connect(host); }
+
+            @Override public void viewHost(@NonNull TerminowStore.Host host) {
+                if (!isVisible()) show();
+                updateItems();
+            }
+        }).show();
     }
 
     /** Import: hosts from a file or Termius, or files into the session that is shown. */
@@ -1643,10 +1815,25 @@ public class TerminowHome {
     /** A prompt that a connection waits at for the user, like for a password or to accept the key of a new host. */
     private static final Pattern CONNECTION_PROMPT_PATTERN = Pattern.compile(
         "(password|passphrase|\\(yes/no[^)]*\\)\\?|Verification code)[^\\n]*:?\\s*$", Pattern.CASE_INSENSITIVE);
+    /** A ready shell prompt the startup snippet can be typed at: the last line ends with $, #, %, &gt; or ❯. */
+    private static final Pattern SHELL_PROMPT_PATTERN = Pattern.compile("[$#%>\\u276f]\\s*$");
+    /** An authentication prompt (password/passphrase/2FA), unlike the host-key (yes/no) confirmation. */
+    private static final Pattern AUTH_PROMPT_PATTERN = Pattern.compile(
+        "(password|passphrase|Verification code)[^\\n]*:?\\s*$", Pattern.CASE_INSENSITIVE);
 
     private boolean startConnecting(@NonNull TerminowStore.Host host, boolean sftp) {
         // A repeated tap does not start another connection while one is being made
         return mConnectingHosts.add(host.getKey() + (sftp ? ":sftp" : ":ssh"));
+    }
+
+    /** The connecting panel subtitle: user@address:port, never a password, key or other secret. */
+    @NonNull
+    private String connectionSubtitle(@NonNull TerminowStore.Host host) {
+        StringBuilder sb = new StringBuilder();
+        if (host.username != null && !host.username.isEmpty()) sb.append(host.username).append('@');
+        if (host.address != null) sb.append(host.address);
+        if (host.port != 0 && host.port != 22) sb.append(':').append(host.port);
+        return sb.toString();
     }
 
     /**
@@ -1661,6 +1848,23 @@ public class TerminowHome {
         if (check == 0) {
             session.mSessionName = mActivity.getString(R.string.terminow_connecting_session, title);
             refresh();
+            Runnable cancel = () -> mActivity.getTermuxTerminalSessionClient().closeSession(session);
+            Runnable retry = () -> {
+                // Close the old attempt cleanly before starting a new one, so no duplicate session is made.
+                if (!sftp && session.isRunning()) { reconnectInTab(session, host, tab); return; }
+                mActivity.getTermuxTerminalSessionClient().closeSession(session);
+                if (sftp) connectSftp(host); else connect(host);
+            };
+            Runnable edit = () -> {
+                // Correct what failed, then connect again with the saved host, replacing this attempt.
+                TerminowStore.Host saved = TerminowStore.findHost(mHosts, host.getKey());
+                if (saved == null) { mActivity.showToast(mActivity.getString(R.string.terminow_rdp_host_gone), true); return; }
+                showHostDialog(saved, null, edited -> {
+                    mActivity.getTermuxTerminalSessionClient().closeSession(session);
+                    if (sftp) connectSftp(edited); else connect(edited);
+                });
+            };
+            mConnectionUi.onConnectStart(session, title, connectionSubtitle(host), !sftp, cancel, retry, edit);
         }
 
         Runnable finish = () -> {
@@ -1672,6 +1876,7 @@ public class TerminowHome {
         // The tab was closed or the session ended
         if (session.getPid() > 0 && !session.isRunning()) {
             finish.run();
+            mConnectionUi.onConnectDone(session);
             return;
         }
 
@@ -1679,22 +1884,39 @@ public class TerminowHome {
         // Only what came after the previous output of a restored tab, or after "Reconnecting"
         if (transcript != null) transcript = TerminowWorkspace.afterMark(transcript);
         if (transcript != null) {
+            // Feed the security detector (post-quantum KEX advisory); only the new output, nothing stored.
+            mConnectionUi.onOutput(session, transcript);
+
+            String lastLine = transcript.substring(transcript.lastIndexOf('\n') + 1);
+            boolean waitingAtPrompt = CONNECTION_PROMPT_PATTERN.matcher(lastLine).find();
+
             Failure found = findConnectionFailure(transcript);
             String failure = found != null ? describeFailure(found, host) : null;
             if (failure != null) {
                 finish.run();
-                showConnectionFailed(session, host, sftp, failure, tab);
+                // Also mark the tab, for a restored tab that is not shown, then show the in-tab panel.
+                markSession(session, mActivity.getString(R.string.terminow_restore_failed_line, failure));
+                mConnectionUi.onFailed(session, failure);
                 return;
             }
 
-            String lastLine = transcript.substring(transcript.lastIndexOf('\n') + 1);
-            boolean waitingAtPrompt = CONNECTION_PROMPT_PATTERN.matcher(lastLine).find();
-            if ((sftp && transcript.contains("sftp>")) || (!waitingAtPrompt && check >= CONNECTION_MADE_AFTER_CHECKS)) {
+            // Authenticating only at a real password/passphrase/2FA prompt, not the host-key (yes/no).
+            if (AUTH_PROMPT_PATTERN.matcher(lastLine).find())
+                mConnectionUi.onPhase(session, TerminowConnectionPhase.AUTHENTICATING);
+
+            boolean sftpReady = sftp && transcript.contains("sftp>");
+            boolean shellReady = !sftp && !waitingAtPrompt && SHELL_PROMPT_PATTERN.matcher(lastLine).find();
+            if (sftpReady || shellReady || (!waitingAtPrompt && check >= CONNECTION_MADE_AFTER_CHECKS)) {
                 mStore.addRecentConnection(host, sftp);
                 // Never typed into a tmux session that is attached to again: it may run a program
                 TerminowStore.Snippet snippet = sftp || (again && host.remoteTmux) ? null : mStore.getSnippet(host.startupSnippet);
-                if (snippet != null && session.isRunning())
-                    session.write(snippet.command + "\r");
+                // Type the snippet only once the shell is idle at its prompt — not while a login banner
+                // or a login script is still printing — so it is not swallowed (why a snippet sometimes
+                // did not run). Completion itself does not wait, so a noisy prompt never hangs the tab.
+                if (snippet != null) sendSnippetWhenSettled(session, snippet, lastLine, 0);
+                // Show success (plugs join + check) only on a real signal; a timer-only completion hides quietly.
+                if (sftpReady || shellReady) mConnectionUi.onPhase(session, TerminowConnectionPhase.CONNECTED);
+                else mConnectionUi.onConnectDone(session);
                 finish.run();
                 if (!sftp && !host.telnet) watchConnectionLost(session, host, tab);
                 return;
@@ -1706,6 +1928,34 @@ public class TerminowHome {
             return;
         }
         mHandler.postDelayed(() -> watchConnection(session, host, sftp, title, check + 1, tab, again), CONNECTION_CHECK_DELAY_MS);
+    }
+
+    /** The snippet waits this many 500ms checks for an unrecognised prompt to settle, then a hard cap. */
+    private static final int SNIPPET_SETTLE_MIN_CHECKS = 2;
+    private static final int SNIPPET_SETTLE_MAX_CHECKS = 30;
+
+    /**
+     * Type the host's startup snippet once the shell is idle at its prompt. It waits until the last
+     * line of output is a recognised shell prompt, or has simply stopped changing (the login banner
+     * and any login scripts have finished), then types it — so the command is not swallowed by a shell
+     * that was still busy (why a snippet sometimes did not run). It never types over a password prompt,
+     * and after a bounded wait it types the snippet anyway rather than dropping it.
+     */
+    private void sendSnippetWhenSettled(@NonNull TerminalSession session, @NonNull TerminowStore.Snippet snippet,
+                                        @NonNull String prevLastLine, int check) {
+        if (!session.isRunning()) return;
+        String transcript = session.getPid() > 0 ? ShellUtils.getTerminalSessionTranscriptText(session, false, true) : null;
+        String lastLine = transcript != null ? transcript.substring(transcript.lastIndexOf('\n') + 1) : prevLastLine;
+        boolean waitingAtPrompt = transcript != null && CONNECTION_PROMPT_PATTERN.matcher(lastLine).find();
+        boolean settled = transcript != null && lastLine.equals(prevLastLine);
+        boolean promptReady = settled && !waitingAtPrompt && SHELL_PROMPT_PATTERN.matcher(lastLine).find();
+        boolean ready = promptReady || (settled && !waitingAtPrompt && check >= SNIPPET_SETTLE_MIN_CHECKS);
+        if (ready || check >= SNIPPET_SETTLE_MAX_CHECKS) {
+            // Do not type over a password or host-key prompt, even at the cap: the login is not done.
+            if (session.isRunning() && !waitingAtPrompt) session.write(snippet.command + "\r");
+            return;
+        }
+        mHandler.postDelayed(() -> sendSnippetWhenSettled(session, snippet, lastLine, check + 1), CONNECTION_CHECK_DELAY_MS);
     }
 
     private void showConnectionFailed(@NonNull TerminalSession session, @NonNull TerminowStore.Host host, boolean sftp,
@@ -1794,8 +2044,11 @@ public class TerminowHome {
      */
     private void openMcpTaskInTerminal(@NonNull File logFile, @NonNull String title) {
         String bash = new File(TermuxConstants.TERMUX_PREFIX_DIR_PATH, "bin/bash").getAbsolutePath();
-        String command = "clear 2>/dev/null; tail -n +1 -F " + TerminowStore.shellQuote(logFile.getAbsolutePath());
-        startSession(bash, new String[]{"-lc", command}, TermuxConstants.TERMUX_HOME_DIR_PATH, "task: " + title);
+        // A read-only monitor: it only tails the task's mirrored output. It never controls the task
+        // (Ctrl-C stops watching, not the task), so label it clearly rather than imply interaction.
+        String banner = "printf '\\033[2m== Read-only task monitor (Ctrl-C to stop watching) ==\\033[0m\\n'";
+        String command = "clear 2>/dev/null; " + banner + "; tail -n +1 -F " + TerminowStore.shellQuote(logFile.getAbsolutePath());
+        startSession(bash, new String[]{"-lc", command}, TermuxConstants.TERMUX_HOME_DIR_PATH, "monitor: " + title);
     }
 
     /** Open an interactive terminal in a shared session's environment at its folder. */
@@ -2549,6 +2802,28 @@ public class TerminowHome {
     }
 
     /** Show the form to add or edit a host in a panel at the side of the screen. */
+    /** Show device templates (remote devices or virtual labs); a choice shows its help then Add Host. */
+    private void showDeviceTemplates(@NonNull List<TerminowRemoteDevices.Template> templates, int titleRes) {
+        CharSequence[] names = new CharSequence[templates.size()];
+        for (int i = 0; i < templates.size(); i++) names[i] = mActivity.getString(templates.get(i).nameRes);
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(titleRes)
+            .setItems(names, (d, which) -> {
+                TerminowRemoteDevices.Template t = templates.get(which);
+                new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                    .setTitle(t.nameRes)
+                    .setMessage(t.helpRes)
+                    .setPositiveButton(R.string.terminow_quick_add_ssh_host, (d2, w) -> {
+                        mHosts = mStore.getHosts();
+                        mGroups = mStore.getGroups();
+                        showHostDialog(null, TerminowRemoteDevices.prefill(t), null);
+                    })
+                    .setNegativeButton(R.string.terminow_close_dialog, null)
+                    .show();
+            })
+            .show();
+    }
+
     private void showHostDialog(@Nullable TerminowStore.Host existingHost) {
         showHostDialog(existingHost, null, null);
     }
@@ -2608,6 +2883,8 @@ public class TerminowHome {
         EditText proxyView = dialog.findViewById(R.id.terminow_host_proxy);
         LinearLayout envList = dialog.findViewById(R.id.terminow_host_env);
         TextView schemeView = dialog.findViewById(R.id.terminow_host_scheme);
+        ImageView iconPreview = dialog.findViewById(R.id.terminow_host_icon_preview);
+        TextView colorValue = dialog.findViewById(R.id.terminow_host_color);
         CheckBox telnetView = dialog.findViewById(R.id.terminow_host_telnet);
         View telnetOptions = dialog.findViewById(R.id.terminow_host_telnet_options);
         EditText telnetPortView = dialog.findViewById(R.id.terminow_host_telnet_port);
@@ -2678,6 +2955,8 @@ public class TerminowHome {
             draft.proxyHost = existingHost.proxyHost;
             draft.proxyPort = existingHost.proxyPort;
             draft.colorScheme = existingHost.colorScheme;
+            draft.icon = existingHost.icon;
+            draft.iconColor = existingHost.iconColor;
             for (Map.Entry<String, String> variable : existingHost.env.entrySet())
                 addEnvRow(envList, variable.getKey(), variable.getValue());
         }
@@ -2890,6 +3169,23 @@ public class TerminowHome {
             mActivity.getString(R.string.terminow_host_color_scheme_default) : draft.colorScheme);
         showScheme.run();
         dialog.findViewById(R.id.terminow_host_scheme_row).setOnClickListener(v -> showSchemePicker(draft, showScheme));
+
+        // Icon and color: a custom look for the host in the list, or the protocol's default
+        Runnable showIcon = () -> {
+            iconPreview.setImageResource(hostIconDrawable(draft.icon, protocolIconDrawable(protocol[0])));
+            Integer custom = parseHostColor(draft.iconColor);
+            iconPreview.getBackground().mutate().setColorFilter(
+                custom != null ? custom : ContextCompat.getColor(mActivity, R.color.terminow_host_ssh), PorterDuff.Mode.SRC_IN);
+        };
+        showIcon.run();
+        dialog.findViewById(R.id.terminow_host_icon_row).setOnClickListener(v -> showHostIconPicker(draft, showIcon));
+        Runnable showColor = () -> colorValue.setText(draft.iconColor.isEmpty() ?
+            mActivity.getString(R.string.terminow_host_color_auto) : draft.iconColor);
+        showColor.run();
+        dialog.findViewById(R.id.terminow_host_color_row).setOnClickListener(v -> showHostColorPicker(draft, () -> {
+            showColor.run();
+            showIcon.run();
+        }));
         dialog.findViewById(R.id.terminow_host_charset_row).setOnClickListener(v ->
             mActivity.showToast(mActivity.getString(R.string.terminow_host_charset_note), true));
 
@@ -2936,6 +3232,15 @@ public class TerminowHome {
             }
 
             TerminowStore.Host host = new TerminowStore.Host();
+            // An edited host keeps its stable id and AI access, which are not shown in this form
+            if (existingHost != null) TerminowStore.copyIdentity(host, existingHost);
+            // The device type and web admin URL are not fields in this form yet; keep them from the
+            // edited host or the template that prefilled it, so a device host does not lose its type.
+            TerminowStore.Host deviceSource = existingHost != null ? existingHost : prefill;
+            if (deviceSource != null) {
+                host.deviceType = deviceSource.deviceType;
+                host.webAdminUrl = deviceSource.webAdminUrl;
+            }
             host.label = labelView.getText().toString().trim();
             host.address = address;
             host.port = port;
@@ -2962,6 +3267,8 @@ public class TerminowHome {
             host.proxyHost = host.proxyType.isEmpty() ? "" : draft.proxyHost;
             host.proxyPort = host.proxyType.isEmpty() ? 0 : draft.proxyPort;
             host.colorScheme = draft.colorScheme;
+            host.icon = draft.icon;
+            host.iconColor = draft.iconColor;
             host.identity = host.telnet ? "" : draft.identity;
             host.protocol = protocol[0];
             host.domain = windows ? domain : "";
@@ -3191,6 +3498,147 @@ public class TerminowHome {
             .show();
     }
 
+    // Host icon and color customization --------------------------------------------------------
+
+    /** The icon keys a host may store, in picker order; "" means the protocol's default icon. */
+    private static final String[] HOST_ICON_KEYS = {
+        "server", "desktop", "terminal", "cloud", "folder", "star", "lock", "key", "person", "phone", "github"};
+
+    /** A preset palette for the host icon color; "" means the protocol's default color. */
+    private static final String[] HOST_COLORS = {
+        "#E53935", "#FB8C00", "#FDD835", "#43A047", "#00897B", "#1E88E5",
+        "#3949AB", "#8E24AA", "#D81B60", "#6D4C41", "#607D8B", "#757575"};
+
+    /** The drawable for a host icon key, or {@code fallback} for an unknown or empty key. */
+    static int hostIconDrawable(@NonNull String key, int fallback) {
+        switch (key) {
+            case "server": return R.drawable.ic_terminow_hosts;
+            case "desktop": return R.drawable.ic_terminow_desktop;
+            case "terminal": return R.drawable.ic_terminow_terminal;
+            case "cloud": return R.drawable.ic_terminow_cloud;
+            case "folder": return R.drawable.ic_terminow_folder;
+            case "star": return R.drawable.ic_terminow_star;
+            case "lock": return R.drawable.ic_terminow_lock;
+            case "key": return R.drawable.ic_terminow_key;
+            case "person": return R.drawable.ic_terminow_person;
+            case "phone": return R.drawable.ic_terminow_phone;
+            case "github": return R.drawable.ic_terminow_logo_github;
+            default: return fallback;
+        }
+    }
+
+    /** The default list icon of a protocol, used when a host sets no custom icon. */
+    private static int protocolIconDrawable(@NonNull String protocol) {
+        if (TerminowStore.Host.PROTOCOL_RDP.equals(protocol)) return R.drawable.ic_terminow_desktop;
+        if (TerminowStore.Host.PROTOCOL_WINRM.equals(protocol)) return R.drawable.ic_terminow_terminal;
+        return R.drawable.ic_terminow_hosts;
+    }
+
+    /** A host's custom icon color as an ARGB int, or {@code null} when it has none or it is invalid. */
+    static Integer parseHostColor(@NonNull String value) {
+        if (value.isEmpty()) return null;
+        try {
+            return android.graphics.Color.parseColor(value);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    private void showHostIconPicker(@NonNull TerminowStore.Host draft, @NonNull Runnable onChanged) {
+        List<String> keys = new ArrayList<>();
+        keys.add("");
+        keys.addAll(java.util.Arrays.asList(HOST_ICON_KEYS));
+        Integer custom = parseHostColor(draft.iconColor);
+        int tint = custom != null ? custom : ContextCompat.getColor(mActivity, R.color.terminow_host_ssh);
+        android.widget.GridLayout grid = new android.widget.GridLayout(mActivity);
+        grid.setColumnCount(5);
+        int pad = dp(16);
+        grid.setPadding(pad, pad, pad, pad);
+        AlertDialog[] ref = new AlertDialog[1];
+        for (String key : keys) {
+            ImageView tile = new ImageView(mActivity);
+            tile.setBackgroundResource(R.drawable.terminow_host_icon);
+            tile.getBackground().mutate().setColorFilter(tint, PorterDuff.Mode.SRC_IN);
+            tile.setImageResource(hostIconDrawable(key, R.drawable.ic_terminow_hosts));
+            int p = dp(9);
+            tile.setPadding(p, p, p, p);
+            tile.setAlpha(key.equals(draft.icon) ? 1f : 0.55f);
+            int size = dp(46), m = dp(6);
+            android.widget.GridLayout.LayoutParams lp = new android.widget.GridLayout.LayoutParams();
+            lp.width = size;
+            lp.height = size;
+            lp.setMargins(m, m, m, m);
+            tile.setLayoutParams(lp);
+            tile.setOnClickListener(v -> {
+                draft.icon = key;
+                onChanged.run();
+                if (ref[0] != null) ref[0].dismiss();
+            });
+            grid.addView(tile);
+        }
+        ref[0] = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_host_icon)
+            .setView(wrapCenter(grid))
+            .setNeutralButton(R.string.terminow_host_icon_default, (d, w) -> { draft.icon = ""; onChanged.run(); })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    private void showHostColorPicker(@NonNull TerminowStore.Host draft, @NonNull Runnable onChanged) {
+        List<String> values = new ArrayList<>();
+        values.add("");
+        values.addAll(java.util.Arrays.asList(HOST_COLORS));
+        android.widget.GridLayout grid = new android.widget.GridLayout(mActivity);
+        grid.setColumnCount(6);
+        int pad = dp(16);
+        grid.setPadding(pad, pad, pad, pad);
+        AlertDialog[] ref = new AlertDialog[1];
+        for (String value : values) {
+            ImageView dot = new ImageView(mActivity);
+            android.graphics.drawable.GradientDrawable shape = new android.graphics.drawable.GradientDrawable();
+            shape.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+            Integer color = parseHostColor(value);
+            if (color != null) {
+                shape.setColor(color);
+            } else {
+                shape.setColor(android.graphics.Color.TRANSPARENT);
+                shape.setStroke(dp(2), ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+            }
+            if (value.equals(draft.iconColor))
+                shape.setStroke(dp(3), ContextCompat.getColor(mActivity, R.color.terminow_text));
+            dot.setBackground(shape);
+            int size = dp(44), m = dp(7);
+            android.widget.GridLayout.LayoutParams lp = new android.widget.GridLayout.LayoutParams();
+            lp.width = size;
+            lp.height = size;
+            lp.setMargins(m, m, m, m);
+            dot.setLayoutParams(lp);
+            dot.setOnClickListener(v -> {
+                draft.iconColor = value;
+                onChanged.run();
+                if (ref[0] != null) ref[0].dismiss();
+            });
+            grid.addView(dot);
+        }
+        ref[0] = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_host_color)
+            .setView(wrapCenter(grid))
+            .setNeutralButton(R.string.terminow_host_color_auto, (d, w) -> { draft.iconColor = ""; onChanged.run(); })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    /** Center a picker grid inside its dialog. */
+    @NonNull
+    private View wrapCenter(@NonNull View child) {
+        android.widget.FrameLayout frame = new android.widget.FrameLayout(mActivity);
+        android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.gravity = Gravity.CENTER;
+        frame.addView(child, lp);
+        return frame;
+    }
+
     /** A row of an environment variable: its name, its value and a button to remove it. */
     private void addEnvRow(@NonNull LinearLayout list, @NonNull String name, @NonNull String value) {
         LinearLayout row = new LinearLayout(mActivity);
@@ -3386,6 +3834,169 @@ public class TerminowHome {
             .setItems(items.toArray(new CharSequence[0]), (dialog, which) -> actions.get(which).run())
             .setNegativeButton(android.R.string.cancel, null)
             .show();
+    }
+
+    /** The source chosen in the Quick Import flow before the file is picked. */
+    private TerminowImportParsers.Source mQuickImportSource = TerminowImportParsers.Source.FILEZILLA;
+
+    /** Quick Import: pick a source, choose a file, preview and import into Hosts with a safe Undo. */
+    private void showQuickImport() {
+        TerminowImportParsers.Source[] sources = TerminowImportParsers.Source.values();
+        int fileCount = sources.length;
+        CharSequence[] items = new CharSequence[fileCount + 2];
+        for (int i = 0; i < fileCount; i++) items[i] = mActivity.getString(sourceLabel(sources[i]));
+        items[fileCount] = mActivity.getString(R.string.terminow_cloud_src_aws);
+        items[fileCount + 1] = mActivity.getString(R.string.terminow_cloud_src_do);
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_qimport_menu)
+            .setItems(items, (d, which) -> {
+                if (which < fileCount) {
+                    mQuickImportSource = sources[which];
+                    pickQuickImportFile();
+                } else if (which == fileCount) {
+                    new TerminowCloudImportUi(mActivity, quickImportDelegate()).start(TerminowCloudImportUi.Provider.AWS);
+                } else {
+                    new TerminowCloudImportUi(mActivity, quickImportDelegate()).start(TerminowCloudImportUi.Provider.DIGITALOCEAN);
+                }
+            })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    private static int sourceLabel(@NonNull TerminowImportParsers.Source source) {
+        switch (source) {
+            case FILEZILLA: return R.string.terminow_qimport_src_filezilla;
+            case PUTTY: return R.string.terminow_qimport_src_putty;
+            case SECURECRT: return R.string.terminow_qimport_src_securecrt;
+            case CSV: return R.string.terminow_qimport_src_csv;
+            default: return R.string.terminow_qimport_src_openssh;
+        }
+    }
+
+    private void pickQuickImportFile() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        try {
+            mActivity.startActivityForResult(intent, REQUEST_QUICK_IMPORT);
+        } catch (Exception e) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_key_import_failed, e.getMessage()), true);
+        }
+    }
+
+    /** Read the picked file (at most 2 MB), decode its charset, and open the Quick Import preview. */
+    private void readQuickImportFile(@NonNull Uri uri) {
+        String fileName = queryDisplayName(uri);
+        new Thread(() -> {
+            String text = null;
+            String error = null;
+            try (InputStream in = mActivity.getContentResolver().openInputStream(uri)) {
+                if (in == null) throw new IOException("Failed to open the file");
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, read);
+                    if (out.size() > 2 * 1024 * 1024) throw new IOException("The file is too large to import");
+                }
+                text = decodeImportText(out.toByteArray());
+            } catch (IOException | RuntimeException e) {
+                error = String.valueOf(e.getMessage());
+            }
+            String finalText = text;
+            String finalError = error;
+            mActivity.runOnUiThread(() -> {
+                if (finalText != null)
+                    new TerminowQuickImportUi(mActivity, quickImportDelegate()).preview(mQuickImportSource, finalText, fileName);
+                else mActivity.showToast(mActivity.getString(R.string.terminow_import_failed, finalError), true);
+            });
+        }, "TerminowQuickImport").start();
+    }
+
+    /** Honour a byte-order mark: PuTTY .reg files are UTF-16, most others UTF-8. */
+    @NonNull
+    private static String decodeImportText(@NonNull byte[] bytes) {
+        if (bytes.length >= 2 && (bytes[0] & 0xFF) == 0xFF && (bytes[1] & 0xFF) == 0xFE)
+            return new String(bytes, 2, bytes.length - 2, java.nio.charset.StandardCharsets.UTF_16LE);
+        if (bytes.length >= 2 && (bytes[0] & 0xFF) == 0xFE && (bytes[1] & 0xFF) == 0xFF)
+            return new String(bytes, 2, bytes.length - 2, java.nio.charset.StandardCharsets.UTF_16BE);
+        if (bytes.length >= 3 && (bytes[0] & 0xFF) == 0xEF && (bytes[1] & 0xFF) == 0xBB && (bytes[2] & 0xFF) == 0xBF)
+            return new String(bytes, 3, bytes.length - 3, StandardCharsets.UTF_8);
+        return new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    @NonNull
+    private String queryDisplayName(@NonNull Uri uri) {
+        try (android.database.Cursor cursor = mActivity.getContentResolver().query(uri, null, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                int index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
+                if (index >= 0) {
+                    String name = cursor.getString(index);
+                    if (name != null) return name;
+                }
+            }
+        } catch (Exception ignored) {
+            // Some providers do not answer the query; the file name is only a fallback label.
+        }
+        return "";
+    }
+
+    /** Resolve an imported key reference to a local Keychain key, mirroring the hosts-file importer. */
+    @Nullable
+    private String resolveImportKey(@NonNull String reference) {
+        if (reference.isEmpty()) return null;
+        String base = reference;
+        int slash = Math.max(base.lastIndexOf('/'), base.lastIndexOf('\\'));
+        if (slash >= 0) base = base.substring(slash + 1);
+        File key = new File(getSshDir(), base);
+        if (key.isFile() && !base.endsWith(".pub")) return "~/.ssh/" + base;
+        for (KeyItem item : getKeys())
+            if (item.label.equalsIgnoreCase(base) && item.biometricId == null && item.fidoId == null) return item.getPath();
+        return null;
+    }
+
+    @NonNull
+    private TerminowQuickImportUi.Delegate quickImportDelegate() {
+        return new TerminowQuickImportUi.Delegate() {
+            @NonNull @Override public List<TerminowStore.Host> existingHosts() { return mHosts; }
+            @NonNull @Override public List<String> existingGroups() { return mGroups; }
+            @NonNull @Override public String defaultGroup() { return mCurrentGroup != null ? mCurrentGroup : ""; }
+            @Nullable @Override public String resolveKey(@NonNull String reference) { return resolveImportKey(reference); }
+
+            @NonNull @Override
+            public Runnable apply(@NonNull List<TerminowStore.Host> created, @NonNull List<TerminowStore.Host> updatedExisting,
+                                  @NonNull java.util.Set<String> newGroups) {
+                boolean groupsChanged = false;
+                for (String group : newGroups)
+                    if (!mGroups.contains(group)) { mGroups.add(group); groupsChanged = true; }
+                if (groupsChanged) mStore.setGroups(mGroups);
+                for (TerminowStore.Host host : created) {
+                    if (host.group.isEmpty() && mCurrentGroup != null) host.group = mCurrentGroup;
+                    mHosts.add(host);
+                }
+                mStore.setHosts(mHosts);
+                updateItems();
+
+                List<TerminowStore.Host> createdSnapshot = new ArrayList<>(created);
+                java.util.Set<String> addedGroups = new java.util.LinkedHashSet<>(newGroups);
+                return () -> {
+                    mHosts.removeAll(createdSnapshot);
+                    mStore.setHosts(mHosts);
+                    for (String group : addedGroups) {
+                        boolean used = false;
+                        for (TerminowStore.Host host : mHosts) used |= group.equals(host.group);
+                        if (!used) mGroups.remove(group);
+                    }
+                    mStore.setGroups(mGroups);
+                    updateItems();
+                };
+            }
+
+            @Override public void viewImported(@NonNull List<TerminowStore.Host> created) {
+                if (!isVisible()) show();
+                updateItems();
+            }
+        };
     }
 
     /** Whether the file that is picked is for the import from Termius, which then asks for the keys. */
@@ -4594,6 +5205,11 @@ public class TerminowHome {
     }
 
     private void addMenuItem(@NonNull LinearLayout menu, @NonNull PopupWindow popup, int iconRes, @NonNull CharSequence title, @NonNull Runnable onClick) {
+        addMenuItem(menu, popup, iconRes, title, null, onClick);
+    }
+
+    private void addMenuItem(@NonNull LinearLayout menu, @NonNull PopupWindow popup, int iconRes, @NonNull CharSequence title,
+                             @Nullable CharSequence subtitle, @NonNull Runnable onClick) {
         LinearLayout item = new LinearLayout(mActivity);
         item.setOrientation(LinearLayout.HORIZONTAL);
         item.setGravity(Gravity.CENTER_VERTICAL);
@@ -4607,21 +5223,33 @@ public class TerminowHome {
         iconView.setColorFilter(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary), PorterDuff.Mode.SRC_IN);
         item.addView(iconView, new LinearLayout.LayoutParams(dp(22), dp(22)));
 
+        LinearLayout texts = new LinearLayout(mActivity);
+        texts.setOrientation(LinearLayout.VERTICAL);
         TextView titleView = new TextView(mActivity);
         titleView.setText(title);
         titleView.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
         titleView.setTextSize(16);
         titleView.setMaxLines(1);
         titleView.setEllipsize(TextUtils.TruncateAt.END);
-        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
-        titleParams.setMarginStart(dp(18));
-        item.addView(titleView, titleParams);
+        texts.addView(titleView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        if (subtitle != null && subtitle.length() > 0) {
+            TextView subtitleView = new TextView(mActivity);
+            subtitleView.setText(subtitle);
+            subtitleView.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+            subtitleView.setTextSize(12);
+            subtitleView.setMaxLines(1);
+            subtitleView.setEllipsize(TextUtils.TruncateAt.END);
+            texts.addView(subtitleView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
+        LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+        textParams.setMarginStart(dp(18));
+        item.addView(texts, textParams);
 
         item.setOnClickListener(v -> {
             popup.dismiss();
             onClick.run();
         });
-        menu.addView(item, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(56)));
+        menu.addView(item, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(subtitle != null && subtitle.length() > 0 ? 64 : 56)));
     }
 
     private boolean isValidNewKeyName(@NonNull String name) {
@@ -4806,6 +5434,10 @@ public class TerminowHome {
             if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null) readImportFile(data.getData());
             return true;
         }
+        if (requestCode == REQUEST_QUICK_IMPORT) {
+            if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null) readQuickImportFile(data.getData());
+            return true;
+        }
         if (requestCode == REQUEST_UPLOAD_TMP) {
             TerminalSession session = mUploadSession != null ? mUploadSession.get() : null;
             mUploadSession = null;
@@ -4955,6 +5587,53 @@ public class TerminowHome {
 
     private void showSnippetDialog(@Nullable TerminowStore.Snippet existingSnippet) {
         LinearLayout form = createForm();
+
+        // The vault the snippet is saved in — Personal or a team the phone has the key of. Shown as a
+        // pill at the top (like Termius), always visible so a snippet can be moved into a shared (team)
+        // vault. Tapping it with only the personal vault explains how to add a team.
+        List<String[]> vaults = mVaultsUi.getHostVaults();
+        String currentScope = mStore.getActiveVault();
+        final String[] scope = {currentScope};
+        TextView vaultRow = new TextView(form.getContext());
+        vaultRow.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
+        vaultRow.setTextSize(14);
+        vaultRow.setTypeface(Typeface.DEFAULT_BOLD);
+        vaultRow.setGravity(Gravity.CENTER);
+        vaultRow.setPadding(dp(16), dp(11), dp(16), dp(11));
+        android.graphics.drawable.GradientDrawable vaultBg = new android.graphics.drawable.GradientDrawable();
+        vaultBg.setColor(0xFF222631);
+        vaultBg.setCornerRadius(dp(12));
+        vaultRow.setBackground(vaultBg);
+        Runnable showVault = () -> {
+            String name = vaults.get(0)[1];
+            for (String[] vault : vaults) if (vault[0].equals(scope[0])) name = vault[1];
+            vaultRow.setText(mActivity.getString(R.string.terminow_host_vault_name, name) + "   ▾");
+        };
+        showVault.run();
+        vaultRow.setOnClickListener(v -> {
+            if (vaults.size() <= 1) {
+                new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                    .setTitle(R.string.terminow_host_vault_title)
+                    .setMessage(R.string.terminow_vault_share_hint)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show();
+                return;
+            }
+            String[] names = new String[vaults.size()];
+            for (int i = 0; i < vaults.size(); i++) names[i] = vaults.get(i)[1];
+            new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setTitle(R.string.terminow_host_vault_title)
+                .setItems(names, (d, which) -> {
+                    scope[0] = vaults.get(which)[0];
+                    showVault.run();
+                })
+                .show();
+        });
+        LinearLayout.LayoutParams vaultLp = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        vaultLp.bottomMargin = dp(14);
+        form.addView(vaultRow, vaultLp);
+
         EditText nameView = addField(form, R.string.terminow_snippet_name, InputType.TYPE_CLASS_TEXT);
         EditText commandView = addField(form, R.string.terminow_snippet_command,
             InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
@@ -4974,9 +5653,22 @@ public class TerminowHome {
             TerminowStore.Snippet snippet = existingSnippet != null ? existingSnippet : new TerminowStore.Snippet();
             snippet.name = nameView.getText().toString().trim();
             snippet.command = command;
-            if (existingSnippet == null)
-                mSnippets.add(snippet);
-            mStore.setSnippets(mSnippets);
+            if (scope[0].equals(currentScope)) {
+                if (existingSnippet == null) mSnippets.add(snippet);
+                mStore.setSnippets(mSnippets);
+            } else {
+                // Moved to another vault: take it out of the shown one and add it to the chosen one
+                if (existingSnippet != null) {
+                    mSnippets.remove(existingSnippet);
+                    mStore.setSnippets(mSnippets);
+                }
+                List<TerminowStore.Snippet> target = mStore.getSnippetsIn(scope[0]);
+                target.add(snippet);
+                mStore.setSnippetsIn(scope[0], target);
+                String name = vaults.get(0)[1];
+                for (String[] vault : vaults) if (vault[0].equals(scope[0])) name = vault[1];
+                mActivity.showToast(mActivity.getString(R.string.terminow_host_saved_in_vault, name), false);
+            }
             updateItems();
             return true;
         });
@@ -5632,8 +6324,15 @@ public class TerminowHome {
                 subtitleView.setText(snippet.command);
             }
 
+            Integer hostColor = null;
+            if (item instanceof TerminowStore.Host) {
+                TerminowStore.Host h = (TerminowStore.Host) item;
+                if (!h.icon.isEmpty()) iconRes = hostIconDrawable(h.icon, iconRes);
+                hostColor = parseHostColor(h.iconColor);
+            }
             iconView.setImageResource(iconRes);
-            iconView.getBackground().mutate().setColorFilter(ContextCompat.getColor(mActivity, iconColorRes), PorterDuff.Mode.SRC_IN);
+            int iconColorValue = hostColor != null ? hostColor : ContextCompat.getColor(mActivity, iconColorRes);
+            iconView.getBackground().mutate().setColorFilter(iconColorValue, PorterDuff.Mode.SRC_IN);
             countView.setText(sessionCount > 0 ? String.valueOf(sessionCount) : "");
             return view;
         }

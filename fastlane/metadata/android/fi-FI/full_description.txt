@@ -1,0 +1,25 @@
+Hallitse palvelimia puhelimestasi. TermiNow yhdistää etäkoneisiin SSH:n, RDP:n ja SFTP:n kautta ja käyttää täyttä Linux-komentoriviä Androidilla — ei vaadi roottausta.
+
+Tallenna isännät kerran — osoite, portti, käyttäjänimi ja avain — ja yhdistä sitten yhdellä napautuksella. Tuo yhteydet PuTTY:stä, FileZillasta, SecureCRT:stä, OpenSSH configista tai CSV:stä. Skannaa lähiverkko laitteiden löytämiseksi tai tuo instanssit DigitalOceanista ja AWS:stä.
+
+Mitä voit tehdä:
+
+• Yhdistä SSH:lla tai Moshilla tallennetuilla isäntäprofiileilla ja avainautentikoinnilla
+• Avaa Windows- tai Linux-työpöytä Remote Desktopilla (RDP)
+• Selaa ja siirrä tiedostoja SFTP-selaimella
+• Suorita PowerShell Windows-palvelimilla WinRM:llä
+• Käytä täyttä Linux-terminaalia Bashilla, Zsh:lla ja yli 1000 paketilla
+• Määritä porttiohjaus — paikallinen, etä tai dynaaminen — ohjatulla toiminnolla
+• Tallenna komentoja Snippeteinä ja usein kirjoitettua tekstiä QuickCutiin
+• Yhdistä sarjalaitteisiin USB:n kautta
+• Hallitse SSH-avaimia, mukaan lukien PuTTY (.ppk) ja FIDO2
+• Asenna Ubuntu, Debian tai Alpine Linux-ympäristöksi
+• Suorita Claude Code Linux-ympäristössä AI Bridgen avulla
+• Käytä AI-avustajaa isäntien lisäämiseen tai yhdistämiseen chatilla
+• Mukauta terminaalin teemaa ja fonttia
+
+Premium lisää Tiedostonhallinnan (laitteen tallennus ja SFTP-isännät siirtojonolla), useita Linux-ympäristöjä, tmux-istuntojen hallinnan, MCP Bridgen ulkoisille AI-asiakkaille sekä Varmuuskopioinnin ja palautuksen. Kuukausi- tai vuositilaus Google Playn kautta.
+
+Kaikki muu — SSH, RDP, SFTP, terminaali, porttiohjaus, sarjaportti, snippetit, avaimet, ensimmäinen Linux-ympäristö ja Claude Code — on ilmaista.
+
+Ensimmäisellä käynnistyksellä asennetaan pieni perusjärjestelmä. Yli 1000 lisäpakettia on saatavilla 'pkg'-komennolla.

@@ -1,0 +1,1 @@
+SSH、RDP 和 Linux 终端，支持保存主机、SFTP、AI 工具等

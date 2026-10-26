@@ -89,6 +89,8 @@
     <string name="terminow_quick_end_tmux_title">จบ %1$s หรือไม่</string>
     <string name="terminow_quick_end_tmux_message">เซสชัน tmux และสิ่งที่ทำงานอยู่ในนั้นจะจบ</string>
     <string name="terminow_quick_new_terminal">เทอร์มินัลใหม่</string>
+    <string name="terminow_quick_ubuntu_local">Ubuntu (ในเครื่อง)</string>
+    <string name="terminow_quick_ubuntu_local_summary">เปิด Ubuntu บนอุปกรณ์นี้</string>
     <string name="terminow_quick_add_ssh_host">เพิ่มโฮสต์ SSH</string>
     <string name="terminow_quick_import">นำเข้า</string>
     <string name="terminow_quick_import_hosts">นำเข้าโฮสต์ (SSH config, CSV, Termius)</string>

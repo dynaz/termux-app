@@ -41,6 +41,7 @@ import com.termux.app.terminow.linux.TerminowAndroidGroups;
 import com.termux.app.terminow.linux.TerminowLinuxEnv;
 import com.termux.app.TermuxActivity;
 import com.termux.terminal.TerminalEmulator;
+import com.termux.app.terminow.files.TerminowSftpFs;
 import com.termux.shared.termux.TermuxConstants;
 import com.termux.terminal.TerminalSession;
 
@@ -1091,6 +1092,32 @@ public class TerminowLauncher {
         if (mLinux == null) return;
         dismiss();
         new TerminowUbuntuSetupUi(mActivity, mLinux, this::openEnvironment).show();
+    }
+
+    private long mLastUbuntuTap;
+
+    /**
+     * Open local Ubuntu on this device in a new tab. Always the proot environment inside TermiNow,
+     * never SSH and never the current tab's host, command or folder: it builds a fresh login with
+     * the environment's own user, home and shell. When Ubuntu is not installed it shows the normal
+     * install flow (progress, error, retry) and opens Ubuntu once it is ready; an existing rootfs is
+     * never reinstalled. Repeated taps while it is opening are ignored.
+     */
+    public void launchLocalUbuntu() {
+        long now = android.os.SystemClock.uptimeMillis();
+        if (TerminowLaunchChoice.isRepeatTap(mLastUbuntuTap, now)) return;
+        mLastUbuntuTap = now;
+        Environment ubuntu = installedUbuntu();
+        if (ubuntu != null) launchUbuntu(ubuntu);
+        else confirmUbuntuSetup();
+    }
+
+    /** The installed local Ubuntu environment, or {@code null} when Ubuntu is not installed yet. */
+    @Nullable
+    private Environment installedUbuntu() {
+        for (Environment environment : environments())
+            if (environment.container != null && environment.container.isUbuntu) return environment;
+        return null;
     }
 
     /** Open an installed environment, like its Open button, with its user, folder and the terminal theme. */
@@ -2324,18 +2351,42 @@ public class TerminowLauncher {
         if (session != current) session = current;
         SessionInfo info = session != null ? mInfo.get(session) : null;
         String unknown = mActivity.getString(R.string.terminow_toolbar_unknown);
-        String environment = info != null ? info.environmentLabel : unknown;
+        // The environment the launcher tracked; for a tab it did not start, this session's own name
+        // (an SSH host title, a local shell name) rather than "Unknown". Never another session's data.
+        String environment;
+        if (info != null && !info.environmentLabel.isEmpty()) environment = info.environmentLabel;
+        else if (session != null && !TextUtils.isEmpty(session.mSessionName)) environment = session.mSessionName;
+        else environment = unknown;
         mToolbarEnvironment.setText(environment + "  ▾");
         mToolbarEnvironment.setContentDescription(mActivity.getString(R.string.terminow_toolbar_environment_description, environment));
-        String folder = info != null && !info.folder.isEmpty() ? info.folder : "";
-        if (!folder.isEmpty() && info.environmentKey != null) {
+        // Only the real folder is shown; it is never guessed and never taken from another session.
+        // A live working directory confirmed by the shell via OSC 7 is preferred over the folder the
+        // launcher recorded at start, since the shell may have changed directory. It is only displayed,
+        // never executed, and comes from this session's own emulator.
+        String confirmedPath = "";
+        if (session != null && session.getEmulator() != null) {
+            TerminowOsc7.Location loc = TerminowOsc7.parse(session.getEmulator().getWorkingDirectoryUri());
+            if (loc != null) confirmedPath = loc.path;
+        }
+        // For a local TermiNow session without OSC 7, the shell's own cwd from /proc is reliable and
+        // needs no shell setup. Never for a remote session: the local client's cwd is not the remote
+        // directory, so the phone's filesystem is never shown for a remote shell.
+        if (confirmedPath.isEmpty() && session != null && info != null
+                && TerminowMcpTargets.TARGET_TERMINOW.equals(info.environmentKey)) {
+            String proc = TerminowCwd.readProcCwd(new java.io.File("/proc"), session.getPid());
+            if (proc != null) confirmedPath = proc;
+        }
+        String folder = !confirmedPath.isEmpty() ? confirmedPath
+            : (info != null && !info.folder.isEmpty() ? info.folder : "");
+        if (!folder.isEmpty() && info != null && info.environmentKey != null) {
             Environment env = environmentFor(info.environmentKey);
             if (env != null && folder.equals(homeOf(env))) folder = "~";
             else if (folder.startsWith(TermuxConstants.TERMUX_HOME_DIR_PATH + "/"))
                 folder = "~" + folder.substring(TermuxConstants.TERMUX_HOME_DIR_PATH.length());
         }
-        mToolbarFolder.setText(folder.isEmpty() ? unknown : folder);
-        mToolbarFolder.setContentDescription(mActivity.getString(R.string.terminow_toolbar_folder_description, folder.isEmpty() ? unknown : folder));
+        String folderText = folder.isEmpty() ? mActivity.getString(R.string.terminow_toolbar_folder_unknown) : folder;
+        mToolbarFolder.setText(folderText);
+        mToolbarFolder.setContentDescription(mActivity.getString(R.string.terminow_toolbar_folder_description, folderText));
     }
 
     /**
@@ -2411,7 +2462,11 @@ public class TerminowLauncher {
         menu.getMenu().add(0, 2, 1, R.string.terminow_profiles_open_from);
         menu.getMenu().add(0, 3, 2, R.string.terminow_profiles_manage);
         menu.getMenu().add(0, 4, 3, R.string.terminow_toolbar_copy_folder);
-        menu.getMenu().add(0, 5, 4, R.string.terminow_launch_diagnostics_title);
+        // Only for a host TermiNow connected to (so we have its credentials and verified key); a
+        // manually typed ssh session has no host context, so folder tracking is not offered there.
+        final TerminowStore.Host sshHost = hostForCurrentSshSession();
+        if (sshHost != null) menu.getMenu().add(0, 6, 4, R.string.terminow_folder_tracking_enable);
+        menu.getMenu().add(0, 5, 5, R.string.terminow_launch_diagnostics_title);
         menu.setOnMenuItemClickListener(item -> {
             switch (item.getItemId()) {
                 case 5: showLaunchDiagnostics(); return true;
@@ -2419,10 +2474,73 @@ public class TerminowLauncher {
                 case 2: mProfiles.pickAndLaunch(); return true;
                 case 3: mProfiles.showManager(); return true;
                 case 4: copyFolder(); return true;
+                case 6: if (sshHost != null) enableFolderTracking(sshHost); return true;
                 default: return false;
             }
         });
         menu.show();
+    }
+
+    /** The host TermiNow connected to for the current SSH tab, or null for a local or manual-ssh tab. */
+    @Nullable
+    private TerminowStore.Host hostForCurrentSshSession() {
+        TerminalSession session = mActivity.getCurrentSession();
+        SessionInfo info = session != null ? mInfo.get(session) : null;
+        if (info == null || !"ssh".equals(info.tool)) return null;
+        for (TerminowStore.Host host : mStore.getHosts())
+            if (!host.isRdp() && !host.isWinrm() && host.getTitle().equals(info.environmentLabel)) return host;
+        return null;
+    }
+
+    private static final TerminowSftpFs.Prompts FOLDER_TRACKING_PROMPTS = new TerminowSftpFs.Prompts() {
+        // Host key verification stays on; an unknown or changed key is never accepted automatically.
+        @Override public boolean confirmHostKey(@NonNull String host, @NonNull String keyType, @NonNull String fingerprint) { return false; }
+        @Nullable @Override public String askPassword(@NonNull String prompt) { return null; }
+        @Nullable @Override public String askPassphrase(@NonNull String keyName) { return null; }
+    };
+
+    /**
+     * Enable OSC 7 folder tracking on a remote host over a <b>separate SSH exec</b> — never typed into
+     * the interactive terminal, so a running Claude/editor is not disturbed. It detects the login shell
+     * and idempotently appends the integration to its rc; the host key is verified (fail-closed) and no
+     * credential is logged.
+     */
+    private void enableFolderTracking(@NonNull TerminowStore.Host host) {
+        mActivity.showToast(mActivity.getString(R.string.terminow_folder_tracking_enabling, host.getTitle()), false);
+        new Thread(() -> {
+            String message;
+            TerminowSftpFs fs = null;
+            try {
+                fs = new TerminowSftpFs(new File(TermuxConstants.TERMUX_HOME_DIR_PATH), "shellint:" + host.getKey(),
+                    host.getTitle(), host.address, host.port, host.username, host.password, host.keyPath, FOLDER_TRACKING_PROMPTS);
+                String shellName = execRead(fs, "echo \"${SHELL:-}\"").trim();
+                TerminowShellIntegration.Shell shell = TerminowShellIntegration.shellOf(shellName);
+                TerminowShellIntegration.Result result =
+                    TerminowShellIntegration.parseResult(execRead(fs, TerminowShellIntegration.remoteInstallCommand(shell)));
+                message = mActivity.getString(result == TerminowShellIntegration.Result.INSTALLED || result == TerminowShellIntegration.Result.ALREADY
+                    ? R.string.terminow_folder_tracking_on : R.string.terminow_folder_tracking_failed);
+            } catch (Exception e) {
+                // The message never includes the exception or any credential.
+                message = mActivity.getString(R.string.terminow_folder_tracking_failed);
+            } finally {
+                if (fs != null) { TerminowSftpFs closing = fs; try { closing.close(); } catch (Exception ignored) {} }
+            }
+            final String msg = message;
+            mActivity.runOnUiThread(() -> mActivity.showToast(msg, true));
+        }, "TermiNow folder tracking").start();
+    }
+
+    @NonNull
+    private static String execRead(@NonNull TerminowSftpFs fs, @NonNull String command) throws Exception {
+        Process process = fs.exec(command);
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        byte[] buffer = new byte[4096];
+        try (java.io.InputStream in = process.getInputStream()) {
+            int n;
+            while ((n = in.read(buffer)) >= 0) out.write(buffer, 0, n);
+        }
+        process.waitFor();
+        return new String(out.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
     }
 
     private void copyFolder() {

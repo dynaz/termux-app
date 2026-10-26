@@ -40,9 +40,29 @@ public final class TerminowMcpBridgeRelay {
         @NonNull TerminowAiBridgeServer.Handler handler();
     }
 
+    /** Supplies the pairing codes to register with the relay (the tokens shown in "Pair a client"). */
+    public interface CodesProvider {
+        @NonNull java.util.List<String> pairingCodes();
+    }
+
+    /** Re-enrolls this device and returns a fresh device credential, or {@code null} if it cannot. */
+    public interface Reenroller {
+        @Nullable String reenroll();
+    }
+
+    /** The relay rejected the device credential (expired/invalid); re-enrol rather than retry it. */
+    private static final class CredentialRejected extends IOException {
+        CredentialRejected(String message) { super(message); }
+    }
+
+    /** After this many re-enrolments without a successful connection, back off to avoid a loop. */
+    private static final int MAX_REENROLL_BEFORE_BACKOFF = 5;
+
     public enum State { OFF, CONNECTING, CONNECTED, ERROR }
 
     private final HandlerFactory mFactory;
+    @Nullable private final CodesProvider mCodes;
+    @Nullable private final Reenroller mReenroll;
     private volatile String mBaseUrl = "";
     private volatile String mDeviceToken = "";
     private volatile boolean mRunning;
@@ -50,9 +70,34 @@ public final class TerminowMcpBridgeRelay {
     @Nullable private volatile HttpURLConnection mStream;
     private volatile State mState = State.OFF;
     @Nullable private volatile String mLastError;
+    // Bumped on every start()/stop(). Each loop thread captures its generation and exits as soon as a
+    // newer one supersedes it, so a fresh start() can never leave an old thread reconnecting in
+    // parallel (which previously opened overlapping streams — a connect/disconnect storm).
+    private volatile int mGeneration;
 
     public TerminowMcpBridgeRelay(@NonNull HandlerFactory factory) {
+        this(factory, null, null);
+    }
+
+    private final java.util.concurrent.ScheduledExecutorService mRepush =
+        java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "TerminowMcpBridge repush");
+            t.setDaemon(true);
+            return t;
+        });
+
+    public TerminowMcpBridgeRelay(@NonNull HandlerFactory factory, @Nullable CodesProvider codes) {
+        this(factory, codes, null);
+    }
+
+    public TerminowMcpBridgeRelay(@NonNull HandlerFactory factory, @Nullable CodesProvider codes, @Nullable Reenroller reenroll) {
         mFactory = factory;
+        mCodes = codes;
+        mReenroll = reenroll;
+        // Re-register the pairing codes periodically so the relay (which expires dynamic codes) keeps
+        // them valid during a long connection. A no-op while disconnected; a drop/restart re-registers
+        // on reconnect. Runs for the connector's lifetime.
+        mRepush.scheduleWithFixedDelay(this::refreshPairingCodes, 45, 45, java.util.concurrent.TimeUnit.MINUTES);
     }
 
     public synchronized void start(@NonNull String baseUrl, @NonNull String deviceToken) {
@@ -64,8 +109,9 @@ public final class TerminowMcpBridgeRelay {
             return;
         }
         mRunning = true;
+        final int gen = ++mGeneration; // this thread's generation; a later start()/stop() supersedes it
         mState = State.CONNECTING;
-        Thread thread = new Thread(this::loop, "TerminowMcpBridge relay");
+        Thread thread = new Thread(() -> loop(gen), "TerminowMcpBridge relay");
         thread.setDaemon(true);
         mThread = thread;
         thread.start();
@@ -73,6 +119,7 @@ public final class TerminowMcpBridgeRelay {
 
     public synchronized void stop() {
         mRunning = false;
+        mGeneration++; // invalidate any running loop so it cannot reconnect after we tear it down
         mState = State.OFF;
         HttpURLConnection stream = mStream;
         if (stream != null) stream.disconnect();
@@ -92,19 +139,49 @@ public final class TerminowMcpBridgeRelay {
         return mLastError;
     }
 
-    private void loop() {
+    /**
+     * True if a live loop already owns this exact base URL + credential. Callers use it to avoid a
+     * redundant {@link #start} that would tear down a healthy (or self-reconnecting) connection and
+     * cause needless churn, e.g. when the activity is recreated and re-runs startIfEnabled.
+     */
+    public synchronized boolean isActiveWith(@NonNull String baseUrl, @NonNull String deviceToken) {
+        return mRunning && mBaseUrl.equals(baseUrl.replaceAll("/+$", "")) && mDeviceToken.equals(deviceToken);
+    }
+
+    /** This loop is still the current one: running and not superseded by a newer start()/stop(). */
+    private boolean alive(int gen) {
+        return mRunning && gen == mGeneration;
+    }
+
+    private void loop(int gen) {
         long backoff = BACKOFF_START_MS;
-        while (mRunning) {
+        int reenrollTries = 0; // consecutive re-enrolments without a successful connection, bounds the loop
+        while (alive(gen)) {
             try {
                 runStream();
-                backoff = BACKOFF_START_MS; // a clean end (e.g. stop) resets the backoff
+                backoff = BACKOFF_START_MS; // a clean (connected) session ended: reset
+                reenrollTries = 0;
+            } catch (CredentialRejected e) {
+                if (!alive(gen)) break;
+                mState = State.ERROR;
+                mLastError = String.valueOf(e.getMessage());
+                // Re-enrol for a fresh credential instead of retrying the rejected one. Bounded: after
+                // MAX tries without a good connection, stop re-enrolling and back off (no tight loop).
+                String fresh = (mReenroll != null && reenrollTries < MAX_REENROLL_BEFORE_BACKOFF) ? safeReenroll() : null;
+                reenrollTries++;
+                if (fresh != null && !fresh.isEmpty()) {
+                    mDeviceToken = fresh;
+                    backoff = BACKOFF_START_MS; // reconnect promptly with the new credential
+                } else {
+                    backoff = Math.min(backoff * 2, BACKOFF_MAX_MS);
+                }
             } catch (IOException | RuntimeException e) {
-                if (!mRunning) break;
+                if (!alive(gen)) break;
                 mState = State.ERROR;
                 mLastError = String.valueOf(e.getMessage());
                 Logger.logDebug(LOG_TAG, "Relay stream ended: " + e.getMessage());
             }
-            if (!mRunning) break;
+            if (!alive(gen)) break;
             try {
                 Thread.sleep(backoff);
             } catch (InterruptedException e) {
@@ -113,7 +190,20 @@ public final class TerminowMcpBridgeRelay {
             }
             backoff = Math.min(backoff * 2, BACKOFF_MAX_MS);
         }
-        mState = State.OFF;
+        // Only the current generation owns the state; a superseded thread must not clobber the
+        // state (or stream) of the newer one that replaced it.
+        if (gen == mGeneration) mState = State.OFF;
+    }
+
+    /** Re-enrol for a fresh device credential; never throws, returns {@code null} on any failure. */
+    @Nullable
+    private String safeReenroll() {
+        try {
+            return mReenroll != null ? mReenroll.reenroll() : null;
+        } catch (RuntimeException e) {
+            Logger.logDebug(LOG_TAG, "Re-enrol failed: " + e.getMessage());
+            return null;
+        }
     }
 
     private void runStream() throws IOException {
@@ -129,10 +219,16 @@ public final class TerminowMcpBridgeRelay {
         if (code != 200) {
             mState = State.ERROR;
             mLastError = "The relay refused the device connection (HTTP " + code + ")";
+            // 401 = our device credential is invalid/expired (e.g. the relay forgot it on a restart):
+            // signal the loop to re-enrol for a fresh one rather than retry the dead credential.
+            if (code == 401) throw new CredentialRejected(mLastError);
             throw new IOException(mLastError);
         }
         mState = State.CONNECTED;
         mLastError = null;
+        // Register the current pairing codes so the relay's consent screen accepts them without the
+        // operator editing RELAY_PAIRING_CODES; re-sent on every (re)connect.
+        pushPairingCodes();
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
             String line;
             while (mRunning && (line = reader.readLine()) != null) {
@@ -178,6 +274,39 @@ public final class TerminowMcpBridgeRelay {
             connection.disconnect();
         } catch (IOException | org.json.JSONException e) {
             Logger.logDebug(LOG_TAG, "Could not post a relay response: " + e.getMessage());
+        }
+    }
+
+    /** Re-send the pairing codes to the relay, off the caller's thread. Call after pairing or revoking. */
+    public void refreshPairingCodes() {
+        if (!mRunning || mState != State.CONNECTED) return;
+        Thread thread = new Thread(this::pushPairingCodes, "TerminowMcpBridge codes");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    /** POST the current pairing codes to the relay. Best effort: a failure is retried on reconnect. */
+    private void pushPairingCodes() {
+        if (mCodes == null || mBaseUrl.isEmpty() || mDeviceToken.isEmpty()) return;
+        try {
+            org.json.JSONArray codes = new org.json.JSONArray();
+            for (String code : mCodes.pairingCodes()) if (code != null && !code.isEmpty()) codes.put(code);
+            byte[] body = new JSONObject().put("codes", codes).toString().getBytes(StandardCharsets.UTF_8);
+            URL url = new URL(mBaseUrl + "/device/pairing-codes");
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setRequestProperty("Authorization", "Bearer " + mDeviceToken);
+            connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            connection.setReadTimeout(CONNECT_TIMEOUT_MS);
+            try (OutputStream out = connection.getOutputStream()) {
+                out.write(body);
+            }
+            connection.getResponseCode();
+            connection.disconnect();
+        } catch (IOException | org.json.JSONException e) {
+            Logger.logDebug(LOG_TAG, "Could not register pairing codes: " + e.getMessage());
         }
     }
 

@@ -53,6 +53,12 @@ public class TerminowQuickLaunch {
 
         void addHost();
 
+        /** Pick a remote device template (Synology, MikroTik, Cisco, ESXi, …) and add it as a host. */
+        void showRemoteDevices();
+
+        /** Pick a virtual lab template (MikroTik CHR, Linux VM, ESXi Host) and connect over SSH. */
+        void showVirtualLabs();
+
         /** The File Manager at the home of the TermiNow shell. */
         void openLocalFiles();
 
@@ -664,6 +670,16 @@ public class TerminowQuickLaunch {
             mActivity.getString(R.string.terminow_quick_option_install_summary), () -> {
                 dialog.dismiss();
                 showDistributions();
+            }));
+        content.addView(optionRow(R.drawable.ic_terminow_hosts, mActivity.getString(R.string.terminow_env_tab_remote),
+            mActivity.getString(R.string.terminow_device_generic_help), () -> {
+                dialog.dismiss();
+                mHost.showRemoteDevices();
+            }));
+        content.addView(optionRow(R.drawable.ic_terminow_hosts, mActivity.getString(R.string.terminow_env_tab_labs),
+            mActivity.getString(R.string.terminow_labs_note), () -> {
+                dialog.dismiss();
+                mHost.showVirtualLabs();
             }));
         content.addView(optionRow(R.drawable.ic_terminow_archive, mActivity.getString(R.string.terminow_quick_option_import),
             mActivity.getString(R.string.terminow_quick_option_import_summary), () -> {

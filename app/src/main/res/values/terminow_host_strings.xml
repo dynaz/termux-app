@@ -3,6 +3,7 @@
     <!-- The host panel, laid out like the New host panel of Termius -->
     <string name="terminow_host_vault_name">%1$s Vault</string>
     <string name="terminow_host_vault_title">Save in vault</string>
+    <string name="terminow_vault_share_hint">This is saved in your Personal vault. Create a Team vault in Account &amp; Premium to share hosts, keys and snippets with your team.</string>
     <string name="terminow_host_saved_in_vault">Saved in %1$s</string>
     <string name="terminow_host_alias">Alias</string>
     <string name="terminow_host_address_hint">Hostname or IP Address</string>
@@ -32,6 +33,10 @@
     <string name="terminow_host_env_remove">Remove the variable</string>
     <string name="terminow_host_color_scheme">Color Scheme</string>
     <string name="terminow_host_color_scheme_default">Like the settings</string>
+    <string name="terminow_host_icon">Icon</string>
+    <string name="terminow_host_color">Color</string>
+    <string name="terminow_host_icon_default">Default (protocol)</string>
+    <string name="terminow_host_color_auto">Automatic</string>
     <string name="terminow_host_charset">Charset</string>
     <string name="terminow_host_charset_utf8" translatable="false">UTF-8</string>
     <string name="terminow_host_charset_note">TermiNow terminals always use UTF-8</string>

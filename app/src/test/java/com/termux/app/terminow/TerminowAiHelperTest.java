@@ -13,13 +13,14 @@ public class TerminowAiHelperTest {
     public void guestPathsJoinUnderTheHome() {
         assertEquals("/root/.local/share/terminow-ai/terminow-ai-bridge.py", TerminowAiHelper.guestHelperPath("/root"));
         assertEquals("/home/dev/.config/terminow-ai/token", TerminowAiHelper.guestTokenPath("/home/dev/"));
+        assertEquals("/root/.config/terminow-ai/port", TerminowAiHelper.guestPortPath("/root"));
     }
 
     @Test
     public void registrationEntryForUnixCarriesSocketAndTokenFileButNoSecret() throws Exception {
         TerminowAiHelper.Transport t = TerminowAiHelper.Transport.unix("/data/data/com.terminow/files/home/.terminow/ai/bridge.sock");
         JSONObject entry = TerminowAiHelper.registrationEntry("/root/.local/share/terminow-ai/terminow-ai-bridge.py", t,
-            "/root/.config/terminow-ai/token");
+            "/root/.config/terminow-ai/token", "/root/.config/terminow-ai/port");
         // No "type" field: a bare command/args stdio entry, matching what Claude Code writes
         assertFalse(entry.has("type"));
         assertEquals("python3", entry.optString("command"));
@@ -35,17 +36,22 @@ public class TerminowAiHelperTest {
     @Test
     public void registrationEntryForLoopbackCarriesHostAndPort() throws Exception {
         TerminowAiHelper.Transport t = TerminowAiHelper.Transport.loopback(47123);
-        JSONObject entry = TerminowAiHelper.registrationEntry("/root/helper.py", t, "/root/.config/terminow-ai/token");
+        JSONObject entry = TerminowAiHelper.registrationEntry("/root/helper.py", t,
+            "/root/.config/terminow-ai/token", "/root/.config/terminow-ai/port");
         JSONObject env = entry.optJSONObject("env");
         assertEquals("tcp", env.optString("TERMINOW_AI_TRANSPORT"));
         assertEquals("127.0.0.1", env.optString("TERMINOW_AI_HOST"));
         assertEquals("47123", env.optString("TERMINOW_AI_PORT"));
+        // The live port file is passed so the helper reconnects to the current port after a rebind
+        assertEquals("/root/.config/terminow-ai/port", env.optString("TERMINOW_AI_PORT_FILE"));
+        assertFalse(env.has("TERMINOW_AI_TOKEN"));
     }
 
     @Test
     public void registrationIsIdempotentThroughTheConfigPlanner() throws Exception {
         TerminowAiHelper.Transport t = TerminowAiHelper.Transport.loopback(47123);
-        JSONObject entry = TerminowAiHelper.registrationEntry("/root/helper.py", t, "/root/.config/terminow-ai/token");
+        JSONObject entry = TerminowAiHelper.registrationEntry("/root/helper.py", t,
+            "/root/.config/terminow-ai/token", "/root/.config/terminow-ai/port");
         // First add writes the server, keeping any other servers that are there
         String existing = "{\"mcpServers\":{\"github\":{\"type\":\"http\",\"url\":\"https://x\"}}}";
         TerminowClaudeConfig.Plan add = TerminowClaudeConfig.planAdd(existing, "user", "/root",

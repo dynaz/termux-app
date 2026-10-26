@@ -1,0 +1,25 @@
+Upravljajte poslužiteljima s telefona. TermiNow se povezuje s udaljenim strojevima putem SSH, RDP i SFTP te pokreće potpuni Linux naredbeni redak na Androidu — bez roota.
+
+Spremite domaćine jednom — adresu, port, korisničko ime i ključ — pa se povežite jednim dodirom. Uvezite veze iz PuTTY-a, FileZille, SecureCRT-a, OpenSSH configa ili CSV-a. Skenirajte lokalnu mrežu ili uvezite instance s DigitalOceana i AWS-a.
+
+Što možete raditi:
+
+• Povezivanje putem SSH ili Mosh sa spremljenim profilima i autentikacijom ključem
+• Otvaranje Windows ili Linux radne površine s Remote Desktop (RDP)
+• Pregledavanje i prijenos datoteka s SFTP preglednikom
+• Pokretanje PowerShella na Windows poslužiteljima putem WinRM
+• Potpuni Linux terminal s Bash, Zsh i 1000+ paketa
+• Postavljanje preusmjeravanja portova — lokalno, udaljeno ili dinamičko — s čarobnjakom
+• Spremanje naredbi kao Isječke i čestog teksta u QuickCut
+• Povezivanje serijskih uređaja putem USB-a
+• Upravljanje SSH ključevima uklj. PuTTY (.ppk) i FIDO2
+• Instalacija Ubuntu, Debian ili Alpine kao Linux okruženja
+• Pokretanje Claude Code u Linux okruženju s AI Bridge
+• Korištenje AI asistenta za dodavanje domaćina ili povezivanje chatom
+• Prilagodba teme i fonta terminala
+
+Premium dodaje Upravitelj datoteka, više Linux okruženja, upravljanje tmux sesijama, MCP Bridge za vanjske AI klijente i Sigurnosnu kopiju i vraćanje. Mjesečna ili godišnja pretplata putem Google Playa.
+
+Sve ostalo — SSH, RDP, SFTP, terminal, preusmjeravanje portova, serijski, isječci, ključevi, prvo Linux okruženje i Claude Code — besplatno je.
+
+Pri prvom pokretanju instalira se mali bazni sustav. Više od 1000 paketa dostupno naredbom 'pkg'.

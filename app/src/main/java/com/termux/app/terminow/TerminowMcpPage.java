@@ -146,7 +146,7 @@ public class TerminowMcpPage {
 
     private static final int TAB_SERVERS = 0;
     private static final int TAB_BROWSE = 1;
-    private int mTab = TAB_SERVERS;
+    private int mTab = TAB_BROWSE; // the marketplace (catalog) is the first page
     private String mCategory = TerminowMcpCatalog.CATEGORY_ALL;
 
     /** Whether MCP server management may be used: it is part of TermiNow Premium. */
@@ -243,9 +243,11 @@ public class TerminowMcpPage {
         LinearLayout tabs = new LinearLayout(mActivity);
         tabs.setOrientation(LinearLayout.HORIZONTAL);
         tabs.setPadding(0, 0, 0, dp(12));
-        int[] labels = {R.string.terminow_mcp_tab_servers, R.string.terminow_mcp_tab_browse};
-        for (int i = 0; i < labels.length; i++) {
-            int tab = i;
+        // Browse (the marketplace) comes first; the tab index is decoupled from the display order.
+        int[] order = {TAB_BROWSE, TAB_SERVERS};
+        int[] labels = {R.string.terminow_mcp_tab_browse, R.string.terminow_mcp_tab_servers};
+        for (int i = 0; i < order.length; i++) {
+            int tab = order[i];
             boolean selected = mTab == tab;
             TextView view = text(mActivity.getString(labels[i]), 15, selected ? R.color.terminow_text : R.color.terminow_text_secondary);
             view.setTypeface(selected ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
@@ -265,6 +267,7 @@ public class TerminowMcpPage {
             column.setContentDescription(mActivity.getString(labels[i]));
             tabs.addView(column, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         }
+        tabs.addView(TerminowHelp.icon(mActivity, "mcp"));
         mContainer.addView(tabs, matchWrap());
     }
 

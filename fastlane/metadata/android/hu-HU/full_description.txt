@@ -1,0 +1,25 @@
+Kezelje szervereit a telefonjáról. A TermiNow SSH, RDP és SFTP kapcsolatot létesít távoli gépekkel, és teljes Linux parancssort futtat Androidon — root nélkül.
+
+Mentse el gazdagépeit egyszer — cím, port, felhasználónév és kulcs — majd csatlakozzon egyetlen érintéssel. Importáljon kapcsolatokat PuTTY-ból, FileZillából, SecureCRT-ből, OpenSSH configból vagy CSV-ből. Szkennelje a helyi hálózatot, vagy importáljon instance-okat DigitalOceanről és AWS-ről.
+
+Amit tehet:
+
+• Csatlakozás SSH-n vagy Moshon mentett gazdagép-profilokkal és kulcsalapú hitelesítéssel
+• Windows vagy Linux asztal megnyitása Remote Desktoppal (RDP)
+• Fájlok böngészése és átvitele az SFTP-böngészővel
+• PowerShell futtatása Windows szervereken WinRM-mel
+• Teljes Linux terminál Bash, Zsh és 1000+ csomaggal
+• Porttovábbítás beállítása — helyi, távoli vagy dinamikus — varázslóval
+• Parancsok mentése Kódrészletként, gyakori szöveg QuickCutba
+• Soros eszközök csatlakoztatása USB-n
+• SSH-kulcsok kezelése, beleértve PuTTY (.ppk) és FIDO2
+• Ubuntu, Debian vagy Alpine telepítése Linux környezetként
+• Claude Code futtatása a Linux környezetben AI Bridge-dzsel
+• AI asszisztens gazdagépek hozzáadásához vagy csatlakozáshoz chatben
+• Terminál témájának és betűtípusának testreszabása
+
+A Premium hozzáadja a Fájlkezelőt (eszköztár és SFTP-gazdagépek átviteli sorral), több Linux környezetet, tmux munkamenet-kezelést, MCP Bridge-et külső AI kliensekhez és Biztonsági mentést. Havi vagy éves előfizetés a Google Playen.
+
+Minden más — SSH, RDP, SFTP, terminál, porttovábbítás, soros, kódrészletek, kulcsok, az első Linux környezet és Claude Code — ingyenes.
+
+Az első indításkor kis alaprendszer települ. Több mint 1000 csomag érhető el a 'pkg' paranccsal.

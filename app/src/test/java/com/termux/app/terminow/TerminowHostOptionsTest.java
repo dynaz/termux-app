@@ -193,4 +193,41 @@ public class TerminowHostOptionsTest {
         assertEquals("team.example.com", store.getHostsIn("team1").get(0).address);
     }
 
+    @Test
+    public void snippetsCanBeSavedInAnotherVault() {
+        TerminowStore store = new TerminowStore(new MemoryPreferences());
+        TerminowStore.Snippet snippet = new TerminowStore.Snippet();
+        snippet.name = "deploy";
+        snippet.command = "cd /opt/app && git pull";
+        store.setSnippetsIn("team1", Collections.singletonList(snippet));
+        assertTrue(store.getSnippets().isEmpty());
+        assertEquals("cd /opt/app && git pull", store.getSnippetsIn("team1").get(0).command);
+    }
+
+    @Test
+    public void copyIdentityKeepsUuidAndAiAccessOnAnEdit() {
+        TerminowStore.Host source = host("root", "web.example.com", 22);
+        source.uuid = "host-uuid-123";
+        source.aiAccess.enabled = true;
+        source.aiAccess.envs.add("ubuntu");
+        source.aiAccess.capabilities.add(TerminowStore.AiAccess.CAP_RUN_COMMAND);
+        source.aiAccess.approvalPolicy = "rules";
+        source.aiAccess.fingerprint = "fp-abc";
+
+        // The editor builds a fresh host; without copyIdentity it would lose the id and the grant.
+        TerminowStore.Host edited = new TerminowStore.Host();
+        TerminowStore.copyIdentity(edited, source);
+
+        assertEquals("host-uuid-123", edited.uuid);
+        assertTrue(edited.aiAccess.enabled);
+        assertTrue(edited.aiAccess.envs.contains("ubuntu"));
+        assertTrue(edited.aiAccess.allows(TerminowStore.AiAccess.CAP_RUN_COMMAND));
+        assertEquals("rules", edited.aiAccess.approvalPolicy);
+        assertEquals("fp-abc", edited.aiAccess.fingerprint);
+
+        // The copy is independent: changing the edited host does not touch the original.
+        edited.aiAccess.envs.add("debian");
+        assertFalse(source.aiAccess.envs.contains("debian"));
+    }
+
 }
