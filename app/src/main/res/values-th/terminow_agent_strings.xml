@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="terminow_agent_menu">ผู้ช่วย AI</string>
+    <string name="terminow_agent_rail">ผู้ช่วย AI</string>
     <string name="terminow_agent_menu_summary">เพิ่มโฮสต์และเปิดเทอร์มินัลด้วยการแชต</string>
     <string name="terminow_agent_title">ผู้ช่วย AI</string>
     <string name="terminow_agent_input_hint">เพิ่มโฮสต์หรือเชื่อมต่อ — ภาษาไทยหรืออังกฤษ</string>
