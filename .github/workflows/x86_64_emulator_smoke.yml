@@ -1,0 +1,97 @@
+name: x86_64 emulator smoke test
+
+# Boots a hardware-accelerated x86_64 Android emulator on a GitHub x86_64 runner and runs smoke
+# tests against the x86_64 debug APK: install, launch without crash (the native libraries load),
+# and that the x86_64 bootstrap extracts and its binaries are x86_64 ELF. Deeper flows (running a
+# shell/PTY, Ubuntu, SSH/SFTP, tmux, RDP) are not automated here and are reported as unverified.
+#
+# Run preflight_only first to confirm the runner has /dev/kvm; the full run needs x86_64 enabled in
+# app/terminow-bootstrap.properties (so the x86_64 APK can build).
+on:
+  workflow_dispatch:
+    inputs:
+      preflight_only:
+        description: "Only verify runner KVM support, do not build or run the emulator"
+        type: boolean
+        default: false
+      ref:
+        description: "Branch or ref to build and test"
+        default: x86_64-support
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      TERMUX_PACKAGE_VARIANT: apt-android-7
+    steps:
+      - name: Verify runner and KVM
+        run: |
+          echo "Runner arch: $(uname -m), CPUs: $(nproc)"
+          echo "--- /dev/kvm ---"
+          if [ -e /dev/kvm ]; then
+            ls -la /dev/kvm
+          else
+            echo "::error::/dev/kvm is absent: a hardware-accelerated x86_64 emulator cannot run on this runner."
+            exit 1
+          fi
+          echo "--- CPU virtualization flags ---"
+          grep -oE '(vmx|svm)' /proc/cpuinfo | sort -u || echo "(none reported; nested virtualization may still back /dev/kvm)"
+
+      - name: Enable KVM access
+        if: ${{ !inputs.preflight_only }}
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Checkout
+        if: ${{ !inputs.preflight_only }}
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Setup JDK 17
+        if: ${{ !inputs.preflight_only }}
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Build x86_64 debug APK
+        if: ${{ !inputs.preflight_only }}
+        run: |
+          ./gradlew :app:assembleFullDebug
+          APK="$(find app/build/outputs/apk -name '*_x86_64.apk' | head -1)"
+          if [ -z "$APK" ]; then
+            echo "::error::No x86_64 APK built. Is x86_64 enabled in app/terminow-bootstrap.properties? Built: $(find app/build/outputs/apk -name '*.apk')"
+            exit 1
+          fi
+          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
+          echo "Built $APK"
+
+      - name: Run smoke tests on x86_64 emulator
+        if: ${{ !inputs.preflight_only }}
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 24
+          arch: x86_64
+          target: default
+          force-avd-creation: true
+          disable-animations: true
+          emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu swiftshader_indirect -camera-back none -camera-front none
+          script: bash .github/scripts/x86_64_smoke.sh "$APK_PATH"
+
+      - name: Upload smoke-test logs
+        if: ${{ always() && !inputs.preflight_only }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: x86_64-smoke-logs
+          path: |
+            logcat.txt
+            bash.bin
+            smoke-result.txt
+          if-no-files-found: ignore
