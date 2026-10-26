@@ -383,6 +383,17 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
         return true;
     }
 
+    @Override
+    public boolean canSaveToQuickCut() {
+        return true;
+    }
+
+    /** Save the selected text as a QuickCut; the text is passed in, so the selection may already be gone. */
+    @Override
+    public void onSaveToQuickCut(String text) {
+        new com.termux.app.terminow.TerminowQuickCutUi(mActivity).saveFromSelection(text);
+    }
+
     /** Open a file path from the selection menu, resolved in the environment of the tab. */
     @Override
     public boolean onOpenPath(@NonNull String path, boolean chooser) {

@@ -119,6 +119,13 @@ public class TerminowKeyBar {
         return session != null && session.isRunning() ? session : null;
     }
 
+    /** Open the QuickCut picker for the session that is shown, to insert saved text into it. */
+    private void openQuickCut() {
+        TerminalSession session = currentRunning();
+        if (session == null) return;
+        new TerminowQuickCutUi(mActivity).showPicker(session);
+    }
+
     /** The keys for the tab that is shown, after it changed, ended or what it runs changed. */
     public void refresh() {
         TerminalSession session = mActivity.getCurrentSession();
@@ -163,6 +170,8 @@ public class TerminowKeyBar {
             });
         });
         row.addView(clipboard, index++);
+        // ⚡ QuickCut: insert saved text into the session, kept clearly apart from the clipboard
+        row.addView(iconCap(R.drawable.ic_terminow_quickcut, R.string.terminow_quickcut_title, this::openQuickCut), index++);
         boolean ai = TerminowKeyBarModel.isAi(mode);
         row.addView(iconCap(iconOf(mode),
             ai ? R.string.terminow_keybar_ai_shortcuts : R.string.terminow_keybar_commands, this::showCommands), index++);

@@ -36,6 +36,7 @@ public class TextSelectionCursorController implements CursorController {
     public final int ACTION_OPEN_URL = 4;
     public final int ACTION_OPEN = 5;
     public final int ACTION_OPEN_WITH = 6;
+    public final int ACTION_SAVE_QUICKCUT = 7;
 
     /** The links of the selection, found again only when the selection changed. */
     private java.util.List<String> mUrls = new java.util.ArrayList<>();
@@ -122,6 +123,9 @@ public class TextSelectionCursorController implements CursorController {
 
                 ClipboardManager clipboard = (ClipboardManager) terminalView.getContext().getSystemService(Context.CLIPBOARD_SERVICE);
                 menu.add(Menu.NONE, ACTION_COPY, Menu.NONE, R.string.copy_text).setShowAsAction(show);
+                // Save the selection as a QuickCut; moves to the overflow when there is no room
+                if (terminalView.mClient.canSaveToQuickCut())
+                    menu.add(Menu.NONE, ACTION_SAVE_QUICKCUT, Menu.NONE, R.string.text_selection_save_quickcut).setShowAsAction(show);
                 // Beside Copy, only while the selection has a link; it opens only when tapped
                 MenuItem open = menu.add(Menu.NONE, ACTION_OPEN_URL, Menu.NONE, R.string.text_selection_open_in_chrome);
                 open.setShowAsAction(show);
@@ -170,6 +174,14 @@ public class TextSelectionCursorController implements CursorController {
                         terminalView.mTermSession.onCopyTextToClipboard(selectedText);
                         terminalView.stopTextSelectionMode();
                         break;
+                    case ACTION_SAVE_QUICKCUT: {
+                        // Read the selection now and hand it over, so it survives the selection ending;
+                        // never read back from the clipboard.
+                        String quickCutText = getSelectedText();
+                        terminalView.stopTextSelectionMode();
+                        terminalView.mClient.onSaveToQuickCut(quickCutText);
+                        break;
+                    }
                     case ACTION_OPEN_URL: {
                         java.util.List<String> urls = new java.util.ArrayList<>(selectedUrls());
                         // Nothing is typed or sent to the terminal, and the keyboard is left as it was

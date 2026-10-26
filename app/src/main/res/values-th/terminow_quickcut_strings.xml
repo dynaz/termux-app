@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_quickcut_title">QuickCut</string>
+    <string name="terminow_quickcut_empty">ไม่มีข้อความให้บันทึก</string>
+    <string name="terminow_quickcut_name_hint">ชื่อ (ไม่บังคับ)</string>
+    <string name="terminow_quickcut_content_hint">เนื้อหา</string>
+    <string name="terminow_quickcut_save_title">บันทึกไปยัง QuickCut</string>
+    <string name="terminow_quickcut_edit_title">แก้ไข QuickCut</string>
+    <string name="terminow_quickcut_save">บันทึก</string>
+    <string name="terminow_quickcut_saved">บันทึกไปยัง QuickCut แล้ว</string>
+    <string name="terminow_quickcut_name_in_use_title">ชื่อซ้ำ</string>
+    <string name="terminow_quickcut_name_in_use">มี QuickCut ชื่อ “%1$s” อยู่แล้ว</string>
+    <string name="terminow_quickcut_keep_both">เก็บทั้งสอง</string>
+    <string name="terminow_quickcut_overwrite">เขียนทับ</string>
+    <string name="terminow_quickcut_search">ค้นหา</string>
+    <string name="terminow_quickcut_new">เพิ่มใหม่</string>
+    <string name="terminow_quickcut_none">ยังไม่มี QuickCut เลือกข้อความในเทอร์มินัลแล้วแตะ “บันทึกไปยัง QuickCut” หรือเพิ่มรายการใหม่</string>
+    <string name="terminow_quickcut_no_match">ไม่พบรายการที่ตรงกัน</string>
+    <string name="terminow_quickcut_pinned">ปักหมุด</string>
+    <string name="terminow_quickcut_recent">ล่าสุด</string>
+    <string name="terminow_quickcut_all">ทั้งหมด</string>
+    <string name="terminow_quickcut_pin">ปักหมุด</string>
+    <string name="terminow_quickcut_unpin">เลิกปักหมุด</string>
+    <string name="terminow_quickcut_edit">แก้ไข</string>
+    <string name="terminow_quickcut_delete">ลบ</string>
+    <string name="terminow_quickcut_delete_confirm">ลบ “%1$s” หรือไม่?</string>
+    <string name="terminow_quickcut_no_session">เปิด Session เพื่อใช้ QuickCut</string>
+    <string name="terminow_quickcut_choose_session">แทรกลงใน session ใด?</string>
+    <string name="terminow_quickcut_session_gone">session นั้นปิดไปแล้ว กรุณาเลือกใหม่</string>
+    <string name="terminow_quickcut_newline_warn">เนื้อหานี้มีการขึ้นบรรทัดใหม่ ซึ่งอาจทำให้คำสั่งทำงานเมื่อแทรก</string>
+    <string name="terminow_quickcut_confirm_title">แทรกเนื้อหาหลายบรรทัด?</string>
+    <string name="terminow_quickcut_insert">แทรก</string>
+    <string name="terminow_quickcut_inserted">แทรก %1$s แล้ว</string>
+</resources>

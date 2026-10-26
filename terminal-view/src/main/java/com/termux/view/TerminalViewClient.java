@@ -83,6 +83,15 @@ public interface TerminalViewClient {
         return false;
     }
 
+    /** Whether the selection menu offers "Save to QuickCut", see {@link #onSaveToQuickCut}. */
+    default boolean canSaveToQuickCut() {
+        return false;
+    }
+
+    /** Save the selected {@code text} as a QuickCut. The text is passed in, so it is kept even after
+     * the selection ends; the implementation never reads it back from the clipboard. */
+    default void onSaveToQuickCut(String text) {}
+
     /** Whether a sideways drag of a finger moves the terminal to another session, see {@link #onHorizontalDrag}. */
     default boolean canDragToSwitchSessions() {
         return false;
