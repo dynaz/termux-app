@@ -322,6 +322,16 @@ public class TerminowHome {
             }
 
             @Override
+            public void showRemoteDevices() {
+                showDeviceTemplates(TerminowRemoteDevices.remoteDevices(), R.string.terminow_env_tab_remote);
+            }
+
+            @Override
+            public void showVirtualLabs() {
+                showDeviceTemplates(TerminowRemoteDevices.virtualLabs(), R.string.terminow_env_tab_labs);
+            }
+
+            @Override
             public void openLocalFiles() {
                 setPage(PAGE_FILES);
             }
@@ -2735,6 +2745,28 @@ public class TerminowHome {
     }
 
     /** Show the form to add or edit a host in a panel at the side of the screen. */
+    /** Show device templates (remote devices or virtual labs); a choice shows its help then Add Host. */
+    private void showDeviceTemplates(@NonNull List<TerminowRemoteDevices.Template> templates, int titleRes) {
+        CharSequence[] names = new CharSequence[templates.size()];
+        for (int i = 0; i < templates.size(); i++) names[i] = mActivity.getString(templates.get(i).nameRes);
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(titleRes)
+            .setItems(names, (d, which) -> {
+                TerminowRemoteDevices.Template t = templates.get(which);
+                new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                    .setTitle(t.nameRes)
+                    .setMessage(t.helpRes)
+                    .setPositiveButton(R.string.terminow_quick_add_ssh_host, (d2, w) -> {
+                        mHosts = mStore.getHosts();
+                        mGroups = mStore.getGroups();
+                        showHostDialog(null, TerminowRemoteDevices.prefill(t), null);
+                    })
+                    .setNegativeButton(R.string.terminow_close_dialog, null)
+                    .show();
+            })
+            .show();
+    }
+
     private void showHostDialog(@Nullable TerminowStore.Host existingHost) {
         showHostDialog(existingHost, null, null);
     }
@@ -3145,6 +3177,13 @@ public class TerminowHome {
             TerminowStore.Host host = new TerminowStore.Host();
             // An edited host keeps its stable id and AI access, which are not shown in this form
             if (existingHost != null) TerminowStore.copyIdentity(host, existingHost);
+            // The device type and web admin URL are not fields in this form yet; keep them from the
+            // edited host or the template that prefilled it, so a device host does not lose its type.
+            TerminowStore.Host deviceSource = existingHost != null ? existingHost : prefill;
+            if (deviceSource != null) {
+                host.deviceType = deviceSource.deviceType;
+                host.webAdminUrl = deviceSource.webAdminUrl;
+            }
             host.label = labelView.getText().toString().trim();
             host.address = address;
             host.port = port;
