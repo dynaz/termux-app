@@ -11,6 +11,10 @@
     <string name="terminow_keybar_choice_auto">อัตโนมัติ: ใช้ปุ่ม Claude Code ขณะที่รันอยู่</string>
     <string name="terminow_keybar_choice_terminal">ปุ่มเทอร์มินัล</string>
     <string name="terminow_keybar_choice_claude">ปุ่ม Claude Code</string>
+    <string name="terminow_keybar_choice_cursor">ปุ่ม Cursor CLI</string>
+    <string name="terminow_keybar_choice_codex">ปุ่ม Codex CLI</string>
+    <string name="terminow_keybar_choice_gemini">ปุ่ม Gemini CLI</string>
+    <string name="terminow_keybar_ai_shortcuts">คำสั่งและปุ่มลัดของ AI</string>
     <string name="terminow_keybar_keyboard">แสดงหรือซ่อนคีย์บอร์ด</string>
 
     <string name="terminow_keybar_commands_claude">Claude Code</string>

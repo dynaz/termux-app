@@ -24,11 +24,31 @@ public final class TerminowKeyBarModel {
 
     private TerminowKeyBarModel() {}
 
-    /** The keys that are shown. */
-    public enum Mode { TERMINAL, CLAUDE }
+    /** The keys that are shown: a shell, or one of the AI CLIs while it runs in the tab. */
+    public enum Mode { TERMINAL, CLAUDE, CURSOR, CODEX, GEMINI }
 
-    /** What the user chose for a tab with the mode button: found out, or always one of them. */
-    public enum Choice { AUTO, TERMINAL, CLAUDE }
+    /** What the user chose for a tab with the mode button: found out (AUTO), or forced to one. */
+    public enum Choice { AUTO, TERMINAL, CLAUDE, CURSOR, CODEX, GEMINI }
+
+    /** The AI modes, in the order shown in the picker; TERMINAL is the shell, not an AI. */
+    public static final List<Mode> AI_MODES = Collections.unmodifiableList(Arrays.asList(Mode.CLAUDE, Mode.CURSOR, Mode.CODEX, Mode.GEMINI));
+
+    /** Whether a mode is an AI CLI (not the plain shell). */
+    public static boolean isAi(@NonNull Mode mode) {
+        return mode != Mode.TERMINAL;
+    }
+
+    /** The Choice that forces a mode, for the picker and Reset-to-Auto. */
+    @NonNull
+    public static Choice choiceFor(@NonNull Mode mode) {
+        switch (mode) {
+            case CLAUDE: return Choice.CLAUDE;
+            case CURSOR: return Choice.CURSOR;
+            case CODEX: return Choice.CODEX;
+            case GEMINI: return Choice.GEMINI;
+            default: return Choice.TERMINAL;
+        }
+    }
 
     /** The key of the bar that opens the key panel with more keys. It is never typed. */
     public static final String MORE = "MORE";
@@ -39,13 +59,28 @@ public final class TerminowKeyBarModel {
     /** The same with Shift+Tab, which switches the mode of Claude Code. */
     public static final List<String> CLAUDE_KEYS = Collections.unmodifiableList(Arrays.asList("ESC", "TAB", "SHIFT TAB", "CTRL", "ALT", "/"));
 
+    /** Cursor rotates its modes (Agent/Plan/Ask) with Shift+Tab, and takes @ for file context. */
+    public static final List<String> CURSOR_KEYS = Collections.unmodifiableList(Arrays.asList("ESC", "TAB", "SHIFT TAB", "CTRL", "ALT", "/", "@"));
+
+    /** Codex interrupts with Esc and queues with Tab; a conservative base set. */
+    public static final List<String> CODEX_KEYS = Collections.unmodifiableList(Arrays.asList("ESC", "TAB", "CTRL", "ALT", "/"));
+
+    /** Gemini takes @ for file context and ! for a shell command, besides the base keys. */
+    public static final List<String> GEMINI_KEYS = Collections.unmodifiableList(Arrays.asList("ESC", "TAB", "CTRL", "ALT", "/", "@", "!"));
+
     /** The arrows, always together, in the order of Vim and of most terminal key bars. */
     public static final List<String> NAVIGATION_KEYS = Collections.unmodifiableList(Arrays.asList("LEFT", "DOWN", "UP", "RIGHT"));
 
     /** The keys of the bar for a mode, as the names that the extra keys send, a macro like "SHIFT TAB", or a character. */
     @NonNull
     public static List<String> keysOf(@NonNull Mode mode) {
-        return mode == Mode.CLAUDE ? CLAUDE_KEYS : TERMINAL_KEYS;
+        switch (mode) {
+            case CLAUDE: return CLAUDE_KEYS;
+            case CURSOR: return CURSOR_KEYS;
+            case CODEX: return CODEX_KEYS;
+            case GEMINI: return GEMINI_KEYS;
+            default: return TERMINAL_KEYS;
+        }
     }
 
     /** Whether a key of the bar is a modifier, which is on for the next key instead of being sent. */
@@ -118,6 +153,31 @@ public final class TerminowKeyBarModel {
     }
 
     /**
+     * The mode of a tab for any provider: a manual override wins (and stays until the user picks AUTO),
+     * else the AI the app launched, else the one detected, else the shell. An ended tab is always the
+     * shell. A per-session choice never leaks to another tab, since each tab resolves from its own
+     * {@code choice}, {@code launched} and {@code detected}.
+     *
+     * @param launched  The AI the app started in the tab (from Tools Library / Quick Launch), or null.
+     * @param detected  The AI found running in the tab by the detection scan, or null.
+     */
+    @NonNull
+    public static Mode resolve(@NonNull Choice choice, boolean running, @Nullable Mode launched, @Nullable Mode detected) {
+        if (!running) return Mode.TERMINAL;
+        switch (choice) {
+            case TERMINAL: return Mode.TERMINAL;
+            case CLAUDE: return Mode.CLAUDE;
+            case CURSOR: return Mode.CURSOR;
+            case CODEX: return Mode.CODEX;
+            case GEMINI: return Mode.GEMINI;
+            default:
+                if (launched != null) return launched;
+                if (detected != null) return detected;
+                return Mode.TERMINAL;
+        }
+    }
+
+    /**
      * Whether Claude Code looks to be running from the terminal output, used when it can not be found
      * in the local process tree — for example when it runs on a remote host over SSH, so its process
      * is not in this device's {@code /proc}. It matches the persistent markers of the Claude Code
@@ -135,11 +195,13 @@ public final class TerminowKeyBarModel {
     /** Where a command is listed in the panel, in the order of a session. */
     public enum Category { CONVERSATION, MODEL, PROJECT, TOOLS, ACCOUNT }
 
-    /** A command of Claude Code, which is put on its prompt for the user to send. */
+    /** A command of an AI CLI, which is put on its prompt for the user to send. */
     public static final class Command {
         public final String text;
-        /** Which string says what it does, by its name, see the strings of the key bar. */
+        /** Which string says what it does, by its name, see the strings of the key bar (Claude). Empty for providers that carry a literal {@link #description} instead. */
         public final String descriptionName;
+        /** A literal description, used when {@link #descriptionName} is empty (the non-Claude providers). */
+        public final String description;
         public final Category category;
         /** What it takes after its name, like "<path>" when it needs it or "[name]" when it may have it, empty for nothing. */
         public final String argument;
@@ -152,8 +214,14 @@ public final class TerminowKeyBarModel {
 
         Command(@NonNull String text, @NonNull String descriptionName, @NonNull Category category, @NonNull String argument,
                 @NonNull String since) {
+            this(text, descriptionName, "", category, argument, since);
+        }
+
+        Command(@NonNull String text, @NonNull String descriptionName, @NonNull String description, @NonNull Category category,
+                @NonNull String argument, @NonNull String since) {
             this.text = text;
             this.descriptionName = descriptionName;
+            this.description = description;
             this.category = category;
             this.argument = argument;
             this.since = since;
@@ -163,6 +231,12 @@ public final class TerminowKeyBarModel {
         public boolean needsArgument() {
             return argument.startsWith("<");
         }
+    }
+
+    /** A command of a non-Claude AI CLI, with a literal description (no string resource needed). */
+    @NonNull
+    static Command aiCommand(@NonNull String text, @NonNull String argument, @NonNull String description) {
+        return new Command(text, "", description, Category.CONVERSATION, argument, "1.0.0");
     }
 
     /** Whether a command matches what was typed in the filter of the panel: its name or what it does. */
@@ -226,12 +300,24 @@ public final class TerminowKeyBarModel {
         public final String label;
         public final String keys;
         public final String descriptionName;
+        /** A literal description, used when {@link #descriptionName} is empty. */
+        public final String description;
 
         Shortcut(@NonNull String label, @NonNull String keys, @NonNull String descriptionName) {
+            this(label, keys, descriptionName, "");
+        }
+
+        Shortcut(@NonNull String label, @NonNull String keys, @NonNull String descriptionName, @NonNull String description) {
             this.label = label;
             this.keys = keys;
             this.descriptionName = descriptionName;
+            this.description = description;
         }
+    }
+
+    @NonNull
+    static Shortcut aiShortcut(@NonNull String label, @NonNull String keys, @NonNull String description) {
+        return new Shortcut(label, keys, "", description);
     }
 
     /** The commands of https://code.claude.com/docs/en/commands that are of use in a terminal on a phone. */
@@ -304,6 +390,98 @@ public final class TerminowKeyBarModel {
         new Shortcut("PgUp", "PGUP", "terminow_keybar_key_pgup"),
         new Shortcut("PgDn", "PGDN", "terminow_keybar_key_pgdn")));
 
+    // Commands/shortcuts below are from each tool's documentation (verified, not guessed); when a
+    // tool's set is uncertain the list stays small and Help is always present. See the research notes.
+
+    public static final List<Command> GEMINI_COMMANDS = Collections.unmodifiableList(Arrays.asList(
+        aiCommand("/help", "", "List the available commands"),
+        aiCommand("/clear", "", "Clear the screen"),
+        aiCommand("/chat", "[save|resume|list]", "Save, resume or list chats"),
+        aiCommand("/compress", "", "Compress the conversation context"),
+        aiCommand("/memory", "[show|add|refresh]", "Manage memory (GEMINI.md)"),
+        aiCommand("/tools", "", "List the available tools"),
+        aiCommand("/mcp", "", "List MCP servers"),
+        aiCommand("/stats", "", "Show session statistics"),
+        aiCommand("/theme", "", "Change the theme"),
+        aiCommand("/about", "", "Show version and account info"),
+        aiCommand("/copy", "", "Copy the last output"),
+        aiCommand("/quit", "", "Exit")));
+
+    public static final List<Command> CODEX_COMMANDS = Collections.unmodifiableList(Arrays.asList(
+        aiCommand("/model", "", "Choose the model"),
+        aiCommand("/approvals", "", "Choose the approval preset"),
+        aiCommand("/new", "", "Start a new conversation"),
+        aiCommand("/init", "", "Create an AGENTS.md"),
+        aiCommand("/diff", "", "Show the git diff"),
+        aiCommand("/compact", "", "Compact the context"),
+        aiCommand("/status", "", "Show the session status"),
+        aiCommand("/quit", "", "Exit")));
+
+    public static final List<Command> CURSOR_COMMANDS = Collections.unmodifiableList(Arrays.asList(
+        aiCommand("/model", "[filter]", "Choose the model"),
+        aiCommand("/plan", "", "Switch to Plan mode"),
+        aiCommand("/ask", "", "Switch to Ask (read-only) mode"),
+        aiCommand("/debug", "[prompt]", "Toggle Debug mode"),
+        aiCommand("/logs", "", "Show the debug log path"),
+        aiCommand("/rename", "", "Rename the chat"),
+        aiCommand("/clear", "", "Start a new chat"),
+        aiCommand("/about", "", "Show CLI and account info")));
+
+    public static final List<Shortcut> GEMINI_SHORTCUTS = Collections.unmodifiableList(Arrays.asList(
+        aiShortcut("Esc", "ESC", "Cancel the current request"),
+        new Shortcut("Ctrl+C", "CTRL c", "terminow_keybar_key_ctrl_c"),
+        new Shortcut("Ctrl+L", "CTRL l", "terminow_keybar_key_ctrl_l"),
+        aiShortcut("@", "@", "Add a file to the context"),
+        aiShortcut("!", "!", "Run a shell command")));
+
+    public static final List<Shortcut> CODEX_SHORTCUTS = Collections.unmodifiableList(Arrays.asList(
+        aiShortcut("Esc", "ESC", "Interrupt the current task"),
+        new Shortcut("Tab", "TAB", "terminow_keybar_key_claude_tab"),
+        new Shortcut("Ctrl+C", "CTRL c", "terminow_keybar_key_ctrl_c"),
+        new Shortcut("Ctrl+L", "CTRL l", "terminow_keybar_key_ctrl_l")));
+
+    public static final List<Shortcut> CURSOR_SHORTCUTS = Collections.unmodifiableList(Arrays.asList(
+        aiShortcut("Esc", "ESC", "Cancel"),
+        aiShortcut("Shift+Tab", "SHIFT TAB", "Rotate Agent / Plan / Ask modes"),
+        new Shortcut("Ctrl+C", "CTRL c", "terminow_keybar_key_ctrl_c"),
+        aiShortcut("@", "@", "Add a file to the context")));
+
+    /** The commands put on the prompt for an AI, by its mode; empty for a shell. */
+    @NonNull
+    public static List<Command> commandsForProvider(@NonNull Mode mode) {
+        switch (mode) {
+            case CLAUDE: return CLAUDE_COMMANDS;
+            case CURSOR: return CURSOR_COMMANDS;
+            case CODEX: return CODEX_COMMANDS;
+            case GEMINI: return GEMINI_COMMANDS;
+            default: return Collections.emptyList();
+        }
+    }
+
+    /** The key shortcuts for a mode; the terminal set for a shell. */
+    @NonNull
+    public static List<Shortcut> shortcutsForProvider(@NonNull Mode mode) {
+        switch (mode) {
+            case CLAUDE: return CLAUDE_SHORTCUTS;
+            case CURSOR: return CURSOR_SHORTCUTS;
+            case CODEX: return CODEX_SHORTCUTS;
+            case GEMINI: return GEMINI_SHORTCUTS;
+            default: return TERMINAL_SHORTCUTS;
+        }
+    }
+
+    /** The provider's display name, for the picker and the icon label. */
+    @NonNull
+    public static String displayName(@NonNull Mode mode) {
+        switch (mode) {
+            case CLAUDE: return "Claude Code";
+            case CURSOR: return "Cursor CLI";
+            case CODEX: return "Codex CLI";
+            case GEMINI: return "Gemini CLI";
+            default: return "Shell";
+        }
+    }
+
     /**
      * The text that a command puts on the prompt: the command alone, with no Enter or line
      * break, so that Claude Code only runs it when the user sends it.
@@ -332,6 +510,32 @@ public final class TerminowKeyBarModel {
     }
 
     /**
+     * Which AI CLI a process is, by its program name or its npm install, or {@code null} for none.
+     * Claude, Cursor ({@code cursor-agent}), Codex and Gemini are matched by their real executables;
+     * the bare name {@code agent} is deliberately not matched, so ssh-agent and the like never count.
+     */
+    @Nullable
+    public static Mode providerOf(@NonNull List<String> argv) {
+        if (argv.isEmpty()) return null;
+        if (isClaudeProcess(argv)) return Mode.CLAUDE;
+        String program = argv.get(0);
+        String name = program.substring(program.lastIndexOf('/') + 1);
+        if (name.equals("cursor-agent")) return Mode.CURSOR;
+        if (name.equals("codex")) return Mode.CODEX;
+        if (name.equals("gemini")) return Mode.GEMINI;
+        if (program.contains("/cursor-agent/")) return Mode.CURSOR;
+        if (name.equals("node") || name.equals("nodejs")) {
+            for (int i = 1; i < argv.size() && i < 4; i++) {
+                String arg = argv.get(i);
+                if (arg.contains("@openai/codex") || arg.endsWith("/bin/codex")) return Mode.CODEX;
+                if (arg.contains("@google/gemini-cli") || arg.endsWith("/bin/gemini")) return Mode.GEMINI;
+                if (arg.contains("cursor-agent") || arg.contains("@cursor/")) return Mode.CURSOR;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Whether Claude Code runs in the processes that a tab started: the process of the tab and
      * all that came from it, as /proc shows them to the app (its own processes, also those of
      * proot, which keep their arguments). Processes that can not be read are left out.
@@ -339,9 +543,21 @@ public final class TerminowKeyBarModel {
      * @param proc The /proc folder, another one in tests.
      */
     public static boolean isClaudeRunningUnder(@NonNull File proc, int rootPid) {
-        if (rootPid <= 0) return false;
+        return providerRunningUnder(proc, rootPid) == Mode.CLAUDE;
+    }
+
+    /**
+     * Which AI CLI runs in the processes a tab started: the tab's process and all descended from it,
+     * as /proc shows them (the app's own, and proot's, which keep their arguments). The first AI found
+     * in the tree is returned, or {@code null} for none. Processes that can not be read are skipped.
+     *
+     * @param proc The /proc folder, another one in tests.
+     */
+    @Nullable
+    public static Mode providerRunningUnder(@NonNull File proc, int rootPid) {
+        if (rootPid <= 0) return null;
         File[] entries = proc.listFiles();
-        if (entries == null) return false;
+        if (entries == null) return null;
         Map<Integer, List<Integer>> children = new HashMap<>();
         for (File entry : entries) {
             int pid = parsePid(entry.getName());
@@ -357,11 +573,14 @@ public final class TerminowKeyBarModel {
         for (int i = 0; i < todo.size() && i < 4096; i++) {
             int pid = todo.get(i);
             List<String> argv = argvOf(new File(proc, pid + "/cmdline"));
-            if (argv != null && isClaudeProcess(argv)) return true;
+            if (argv != null) {
+                Mode provider = providerOf(argv);
+                if (provider != null) return provider;
+            }
             List<Integer> list = children.get(pid);
             if (list != null) todo.addAll(list);
         }
-        return false;
+        return null;
     }
 
     private static int parsePid(@NonNull String name) {

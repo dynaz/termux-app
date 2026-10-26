@@ -55,8 +55,8 @@ public class TerminowKeyBar {
     private final ExecutorService mExecutor = Executors.newSingleThreadExecutor();
     /** What the user chose with the mode button, for each tab. */
     private final Map<TerminalSession, TerminowKeyBarModel.Choice> mChoices = new WeakHashMap<>();
-    /** Whether Claude Code was found running in a tab, the last time it was looked at. */
-    private final Map<TerminalSession, Boolean> mFound = new WeakHashMap<>();
+    /** Which AI CLI was found running in a tab, the last time it was looked at; null for none. */
+    private final Map<TerminalSession, TerminowKeyBarModel.Mode> mFound = new WeakHashMap<>();
     @Nullable private TerminalSession mShownSession;
     @Nullable private TerminowKeyBarModel.Mode mShownMode;
     private boolean mShownUserKeys;
@@ -163,9 +163,9 @@ public class TerminowKeyBar {
             });
         });
         row.addView(clipboard, index++);
-        boolean claude = mode == TerminowKeyBarModel.Mode.CLAUDE;
-        row.addView(iconCap(claude ? R.drawable.ic_terminow_tool_claude : R.drawable.ic_terminow_commands,
-            claude ? R.string.terminow_keybar_claude_shortcuts : R.string.terminow_keybar_commands, this::showCommands), index++);
+        boolean ai = TerminowKeyBarModel.isAi(mode);
+        row.addView(iconCap(iconOf(mode),
+            ai ? R.string.terminow_keybar_ai_shortcuts : R.string.terminow_keybar_commands, this::showCommands), index++);
         row.addView(gap(), index++);
         if (extraKeysView != null) extraKeysView.setVisibility(userKeys ? View.VISIBLE : View.GONE);
         if (userKeys && extraKeysView != null) {
@@ -220,8 +220,8 @@ public class TerminowKeyBar {
     private ImageButton iconCap(@DrawableRes int icon, @StringRes int label, @Nullable Runnable action) {
         ImageButton button = new ImageButton(mActivity);
         button.setImageResource(icon);
-        // The Claude mark has its own color
-        if (icon != R.drawable.ic_terminow_tool_claude) button.setImageTintList(ColorStateList.valueOf(color(R.color.terminow_text)));
+        // The AI provider marks keep their own brand colors; the plain icons take the text color.
+        if (!isProviderIcon(icon)) button.setImageTintList(ColorStateList.valueOf(color(R.color.terminow_text)));
         button.setScaleType(ImageButton.ScaleType.FIT_CENTER);
         int pad = dp(14);
         button.setPadding(pad, pad, pad, pad);
@@ -232,6 +232,23 @@ public class TerminowKeyBar {
         if (action != null) button.setOnClickListener(v -> action.run());
         button.setLayoutParams(new LinearLayout.LayoutParams(dp(48), dp(48)));
         return button;
+    }
+
+    /** The icon of the commands/shortcuts button: the AI provider's mark, or the generic commands icon. */
+    @DrawableRes
+    private static int iconOf(@NonNull TerminowKeyBarModel.Mode mode) {
+        switch (mode) {
+            case CLAUDE: return R.drawable.ic_terminow_tool_claude;
+            case CURSOR: return R.drawable.ic_terminow_tool_cursor;
+            case CODEX: return R.drawable.ic_terminow_tool_codex;
+            case GEMINI: return R.drawable.ic_terminow_tool_gemini;
+            default: return R.drawable.ic_terminow_commands;
+        }
+    }
+
+    private static boolean isProviderIcon(@DrawableRes int icon) {
+        return icon == R.drawable.ic_terminow_tool_claude || icon == R.drawable.ic_terminow_tool_cursor
+            || icon == R.drawable.ic_terminow_tool_codex || icon == R.drawable.ic_terminow_tool_gemini;
     }
 
     /**
@@ -449,7 +466,9 @@ public class TerminowKeyBar {
         section(content, R.string.terminow_keybar_mode);
         TerminowKeyBarModel.Choice choice = choiceOf(session);
         TerminowKeyBarModel.Choice[] choices = TerminowKeyBarModel.Choice.values();
-        int[] labels = {R.string.terminow_keybar_choice_auto, R.string.terminow_keybar_choice_terminal, R.string.terminow_keybar_choice_claude};
+        // Order must match Choice.values(): AUTO, TERMINAL, CLAUDE, CURSOR, CODEX, GEMINI. Auto is the reset.
+        int[] labels = {R.string.terminow_keybar_choice_auto, R.string.terminow_keybar_choice_terminal, R.string.terminow_keybar_choice_claude,
+            R.string.terminow_keybar_choice_cursor, R.string.terminow_keybar_choice_codex, R.string.terminow_keybar_choice_gemini};
         for (int i = 0; i < choices.length; i++) {
             TerminowKeyBarModel.Choice option = choices[i];
             // A mark, not only a color, says which one is chosen
@@ -467,9 +486,9 @@ public class TerminowKeyBar {
         if (session == null) return TerminowKeyBarModel.Mode.TERMINAL;
         TerminowKeyBarModel.Choice choice = choiceOf(session);
         TerminowHome home = mActivity.getTerminowHome();
-        boolean launched = home != null && home.isClaudeTab(session);
-        Boolean found = mFound.get(session);
-        return TerminowKeyBarModel.resolve(choice, session.isRunning(), launched, found != null && found);
+        TerminowKeyBarModel.Mode launched = (home != null && home.isClaudeTab(session)) ? TerminowKeyBarModel.Mode.CLAUDE : null;
+        TerminowKeyBarModel.Mode detected = mFound.get(session);
+        return TerminowKeyBarModel.resolve(choice, session.isRunning(), launched, detected);
     }
 
     @NonNull
@@ -507,12 +526,16 @@ public class TerminowKeyBar {
         String transcript = pid > 0 ? ShellUtils.getTerminalSessionTranscriptText(session, false, true) : null;
         mScanning = true;
         mExecutor.execute(() -> {
-            boolean found = TerminowKeyBarModel.isClaudeRunningUnder(new File("/proc"), pid)
-                || TerminowKeyBarModel.isClaudeInOutput(transcript);
+            TerminowKeyBarModel.Mode detected = TerminowKeyBarModel.providerRunningUnder(new File("/proc"), pid);
+            // Over SSH the remote process is not in this device's /proc; Claude is then found from its
+            // interface in the output. The other CLIs have no verified output marker, so they rely on
+            // the local process scan and fall back to manual selection on a remote host.
+            if (detected == null && TerminowKeyBarModel.isClaudeInOutput(transcript)) detected = TerminowKeyBarModel.Mode.CLAUDE;
+            final TerminowKeyBarModel.Mode found = detected;
             mHandler.post(() -> {
                 mScanning = false;
-                Boolean before = mFound.put(session, found);
-                if (before == null || before != found) refresh();
+                TerminowKeyBarModel.Mode before = mFound.put(session, found);
+                if (before != found) refresh();
             });
         });
     }
@@ -525,18 +548,36 @@ public class TerminowKeyBar {
     public void showCommands() {
         TerminalSession session = currentRunning();
         if (session == null) return;
-        boolean claude = modeOf(session) == TerminowKeyBarModel.Mode.CLAUDE;
-        LinearLayout content = openSheet(mActivity.getString(claude ? R.string.terminow_keybar_commands_claude : R.string.terminow_keybar_commands_terminal));
-        if (claude) {
+        TerminowKeyBarModel.Mode mode = modeOf(session);
+        if (mode == TerminowKeyBarModel.Mode.CLAUDE) {
+            LinearLayout content = openSheet(mActivity.getString(R.string.terminow_keybar_commands_claude));
             mFilter = "";
             mContent = content;
             mPanelSession = session;
             fillClaude(content, session);
+        } else if (TerminowKeyBarModel.isAi(mode)) {
+            // Cursor, Codex, Gemini: their documented shortcuts and commands, with Help always present.
+            LinearLayout content = openSheet(TerminowKeyBarModel.displayName(mode));
+            section(content, R.string.terminow_keybar_section_shortcuts);
+            for (TerminowKeyBarModel.Shortcut shortcut : TerminowKeyBarModel.shortcutsForProvider(mode))
+                row(content, shortcut.label, describeShortcut(shortcut), () -> sendKeys(session, shortcut.keys));
+            section(content, R.string.terminow_keybar_section_commands);
+            for (TerminowKeyBarModel.Command command : TerminowKeyBarModel.commandsForProvider(mode)) {
+                String label = command.text + (command.argument.isEmpty() ? "" : " " + command.argument);
+                row(content, label, command.description, () -> typeCommand(session, command));
+            }
         } else {
+            LinearLayout content = openSheet(mActivity.getString(R.string.terminow_keybar_commands_terminal));
             section(content, R.string.terminow_keybar_section_shortcuts);
             for (TerminowKeyBarModel.Shortcut shortcut : TerminowKeyBarModel.TERMINAL_SHORTCUTS)
                 row(content, shortcut.label, describe(shortcut.descriptionName), () -> sendKeys(session, shortcut.keys));
         }
+    }
+
+    /** A shortcut's description: its string resource, or the literal one the non-Claude providers carry. */
+    @NonNull
+    private String describeShortcut(@NonNull TerminowKeyBarModel.Shortcut shortcut) {
+        return shortcut.descriptionName.isEmpty() ? shortcut.description : describe(shortcut.descriptionName);
     }
 
     /**
