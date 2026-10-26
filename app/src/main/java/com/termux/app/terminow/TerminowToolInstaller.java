@@ -54,7 +54,12 @@ public final class TerminowToolInstaller {
     /** The stages of an install, in their order. */
     public enum Stage { CHECKING, DEPENDENCIES, INSTALLING, VERIFYING }
 
-    public enum State { RUNNING, SUCCEEDED, FAILED }
+    /**
+     * RUNNING while it installs, then SUCCEEDED or FAILED. UNKNOWN is a running install that ended
+     * without reporting a result and with no real exit code — a dropped SSH channel is the usual
+     * cause — so the outcome is genuinely not known and is re-checked on the next look, not a failure.
+     */
+    public enum State { RUNNING, SUCCEEDED, FAILED, UNKNOWN }
 
     /** Why an install failed, from its TERMINOW_FAILED line, or how the process ended. */
     public enum Failure {
@@ -161,6 +166,10 @@ public final class TerminowToolInstaller {
                 mState = State.FAILED;
             } else if (exitCode == 0 && !mVersion.isEmpty()) {
                 mState = State.SUCCEEDED;
+            } else if (mFailure == null && exitCode < 0) {
+                // Ended with no result and no real exit code (e.g. the SSH channel dropped): the
+                // install may have finished on the host or not. Not a definite failure — re-check it.
+                mState = State.UNKNOWN;
             } else {
                 if (mFailure == null) mFailure = exitCode == 0 ? Failure.VERIFY : Failure.EXIT;
                 mState = State.FAILED;

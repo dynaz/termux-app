@@ -40,6 +40,8 @@
     <string name="terminow_install_install">ติดตั้ง</string>
     <string name="terminow_install_retry">ลองใหม่</string>
     <string name="terminow_install_cancel">ยกเลิก</string>
+    <string name="terminow_install_hide">ซ่อน</string>
+    <string name="terminow_install_unknown">ไม่ทราบสถานะ — การเชื่อมต่อหลุดก่อนติดตั้งเสร็จ เชื่อมต่อใหม่แล้วตรวจสอบอีกครั้ง หรือลองใหม่</string>
     <string name="terminow_install_open">เปิด</string>
     <string name="terminow_install_details">รายละเอียด</string>
     <string name="terminow_install_open_claude">เปิด Claude</string>

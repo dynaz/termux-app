@@ -40,6 +40,8 @@
     <string name="terminow_install_install">Install</string>
     <string name="terminow_install_retry">Retry</string>
     <string name="terminow_install_cancel">Cancel</string>
+    <string name="terminow_install_hide">Hide</string>
+    <string name="terminow_install_unknown">Status unknown — the connection dropped before it finished. Reconnect and re-check, or retry.</string>
     <string name="terminow_install_open">Open</string>
     <string name="terminow_install_details">Details</string>
     <string name="terminow_install_open_claude">Open Claude</string>

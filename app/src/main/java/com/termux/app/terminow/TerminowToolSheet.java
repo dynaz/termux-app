@@ -636,6 +636,8 @@ final class TerminowToolSheet {
                 line.setEllipsize(TextUtils.TruncateAt.END);
                 card.addView(line, matchWrap());
             }
+            // Hide closes the sheet while the install keeps running; Cancel stops it.
+            row.addView(button(mActivity.getString(R.string.terminow_install_hide), false, true, this::dismiss));
             row.addView(button(mActivity.getString(R.string.terminow_install_cancel), false, true, job::cancel));
             return;
         }
@@ -645,7 +647,8 @@ final class TerminowToolSheet {
             row.addView(spinner, new LinearLayout.LayoutParams(dp(24), dp(24)));
             return;
         }
-        boolean failed = job != null && job.getState() == TerminowToolInstaller.State.FAILED && version == null;
+        boolean failed = job != null && (job.getState() == TerminowToolInstaller.State.FAILED
+            || job.getState() == TerminowToolInstaller.State.UNKNOWN) && version == null;
         if (version != null) {
             status.setText(mActivity.getString(R.string.terminow_install_installed, version));
             status.setTextColor(color(R.color.terminow_quick_ready));
@@ -672,7 +675,9 @@ final class TerminowToolSheet {
             return;
         }
         if (failed) {
-            status.setText(mActivity.getString(R.string.terminow_install_failed, stageName(job.getStage()), failureText(job)));
+            boolean unknown = job.getState() == TerminowToolInstaller.State.UNKNOWN;
+            status.setText(unknown ? mActivity.getString(R.string.terminow_install_unknown)
+                : mActivity.getString(R.string.terminow_install_failed, stageName(job.getStage()), failureText(job)));
             status.setTextColor(color(R.color.terminow_mcp_warn));
             boolean open = mLogOpen.contains(tool);
             String log = open ? job.getLog().trim() : job.getLogTail(8);
@@ -755,6 +760,8 @@ final class TerminowToolSheet {
                 line.setEllipsize(TextUtils.TruncateAt.END);
                 card.addView(line, matchWrap());
             }
+            // Hide closes the sheet while the install keeps running; Cancel stops it.
+            row.addView(button(mActivity.getString(R.string.terminow_install_hide), false, true, this::dismiss));
             row.addView(button(mActivity.getString(R.string.terminow_install_cancel), false, true, job::cancel));
             return;
         }
@@ -763,8 +770,9 @@ final class TerminowToolSheet {
             return;
         }
         boolean hasClaude = mDetection.versions.get(TerminowToolInstaller.Tool.CLAUDE) != null;
-        if (job != null && job.getState() == TerminowToolInstaller.State.FAILED) {
-            status.setText(mActivity.getString(R.string.terminow_install_failed, stageName(job.getStage()), failureText(job)));
+        if (job != null && (job.getState() == TerminowToolInstaller.State.FAILED || job.getState() == TerminowToolInstaller.State.UNKNOWN)) {
+            status.setText(job.getState() == TerminowToolInstaller.State.UNKNOWN ? mActivity.getString(R.string.terminow_install_unknown)
+                : mActivity.getString(R.string.terminow_install_failed, stageName(job.getStage()), failureText(job)));
             status.setTextColor(color(R.color.terminow_mcp_warn));
             boolean open = mLogOpen.contains(tool);
             String log = open ? job.getLog().trim() : job.getLogTail(8);

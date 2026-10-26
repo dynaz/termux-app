@@ -1,0 +1,24 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+    <!-- the cable between the two connectors -->
+    <path
+        android:fillColor="#8A93A3"
+        android:pathData="M36,56 H84 V64 H36 Z" />
+    <!-- left USB-A connector -->
+    <path
+        android:fillColor="#5AA0F2"
+        android:pathData="M20,48 H40 V72 H20 A4,4 0 0 1 16,68 V52 A4,4 0 0 1 20,48 Z" />
+    <path
+        android:fillColor="#2E6DA8"
+        android:pathData="M23,55 H28 V59 H23 Z M31,55 H36 V59 H31 Z M23,62 H36 V65 H23 Z" />
+    <!-- right serial / console connector -->
+    <path
+        android:fillColor="#21C17A"
+        android:pathData="M80,48 H100 A4,4 0 0 1 104,52 V68 A4,4 0 0 1 100,72 H80 Z" />
+    <path
+        android:fillColor="#178A54"
+        android:pathData="M84,54 H100 V56 H84 Z M84,59 H100 V61 H84 Z M84,64 H100 V66 H84 Z" />
+</vector>

@@ -3,6 +3,7 @@ package com.termux.app.terminow;
 import android.app.AlertDialog;
 import android.view.Gravity;
 import android.widget.ArrayAdapter;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Spinner;
@@ -52,11 +53,25 @@ public final class TerminowSerialUi {
             .setNegativeButton(android.R.string.cancel, null);
 
         if (devices.isEmpty()) {
+            LinearLayout box = new LinearLayout(mActivity);
+            box.setOrientation(LinearLayout.VERTICAL);
+            box.setGravity(Gravity.CENTER_HORIZONTAL);
+            int pad = dp(20);
+            box.setPadding(pad, dp(16), pad, dp(8));
+
+            // A USB console cable in the middle, above the message.
+            ImageView cable = new ImageView(mActivity);
+            cable.setImageResource(R.drawable.ic_terminow_serial_cable);
+            LinearLayout.LayoutParams cableLp = new LinearLayout.LayoutParams(dp(120), dp(120));
+            cableLp.bottomMargin = dp(12);
+            box.addView(cable, cableLp);
+
             TextView empty = new TextView(mActivity);
             empty.setText(R.string.terminow_serial_none);
-            int pad = dp(20);
-            empty.setPadding(pad, pad, pad, pad);
-            builder.setView(empty);
+            empty.setGravity(Gravity.CENTER);
+            box.addView(empty);
+
+            builder.setView(box);
             // Refresh re-lists without leaving the picker.
             builder.setPositiveButton(R.string.terminow_serial_refresh, (d, w) -> showPicker());
             builder.show();
