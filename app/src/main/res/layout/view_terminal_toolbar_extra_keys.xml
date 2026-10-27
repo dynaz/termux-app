@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The key bar, see TerminowKeyBar: tools, keys, arrows and More scroll; the keyboard button stays at the right -->
+<!-- The key bar, see TerminowKeyBar. Two rows: keys + arrows on top, tools below; both scroll
+     horizontally. The keyboard button stays pinned at the right across both rows. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/terminow_keybar"
     android:layout_width="match_parent"
@@ -9,32 +10,57 @@
     android:paddingStart="4dp"
     android:paddingEnd="2dp">
 
-    <HorizontalScrollView
-        android:id="@+id/terminow_keybar_keys"
+    <LinearLayout
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_weight="1"
-        android:fillViewport="false"
-        android:overScrollMode="never"
-        android:scrollbars="none">
+        android:orientation="vertical">
 
-        <LinearLayout
-            android:id="@+id/terminow_keybar_row"
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
+        <!-- Row 1: the keys and the arrows (or the user's termux.properties keys) -->
+        <HorizontalScrollView
+            android:id="@+id/terminow_keybar_keys"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:fillViewport="false"
+            android:overScrollMode="never"
+            android:scrollbars="none">
 
-            <!-- Keys that the user set in termux.properties, instead of the keys of the bar -->
-            <com.termux.shared.termux.extrakeys.ExtraKeysView
-                android:id="@+id/terminal_toolbar_extra_keys"
-                style="?android:attr/buttonBarStyle"
+            <LinearLayout
+                android:id="@+id/terminow_keybar_row"
                 android:layout_width="wrap_content"
                 android:layout_height="match_parent"
-                android:orientation="horizontal"
-                android:visibility="gone" />
-        </LinearLayout>
-    </HorizontalScrollView>
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <!-- Keys that the user set in termux.properties, instead of the keys of the bar -->
+                <com.termux.shared.termux.extrakeys.ExtraKeysView
+                    android:id="@+id/terminal_toolbar_extra_keys"
+                    style="?android:attr/buttonBarStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:orientation="horizontal"
+                    android:visibility="gone" />
+            </LinearLayout>
+        </HorizontalScrollView>
+
+        <!-- Row 2: the tools (clipboard/attach, QuickCut, commands/AI, More) -->
+        <HorizontalScrollView
+            android:id="@+id/terminow_keybar_tools"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/terminow_keybar_height"
+            android:fillViewport="false"
+            android:overScrollMode="never"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/terminow_keybar_row2"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal" />
+        </HorizontalScrollView>
+    </LinearLayout>
 
     <ImageButton
         android:id="@+id/terminow_keybar_keyboard"

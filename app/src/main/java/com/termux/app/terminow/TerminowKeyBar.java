@@ -72,6 +72,7 @@ public class TerminowKeyBar {
 
     @Nullable private LinearLayout mBar;
     @Nullable private LinearLayout mRow;
+    @Nullable private LinearLayout mRow2;
     @Nullable private TextView mCtrlCap;
     @Nullable private TextView mAltCap;
     @Nullable private ImageButton mKeyboardButton;
@@ -85,11 +86,15 @@ public class TerminowKeyBar {
         mActivity = activity;
     }
 
-    /** The height of the bar: one row of keys, or the rows of keys the user set in termux.properties. */
+    /**
+     * The height of the bar: two rows — the keys/arrows on top (one row, or the rows of keys the
+     * user set in termux.properties) and the tools below (one row).
+     */
     public int heightOf(int userKeysHeight) {
         int row = mActivity.getResources().getDimensionPixelSize(R.dimen.terminow_keybar_height);
         TermuxTerminalExtraKeys extraKeys = mActivity.getTermuxTerminalExtraKeys();
-        return extraKeys != null && extraKeys.hasUserKeys() ? Math.max(row, userKeysHeight) : row;
+        int keysRow = extraKeys != null && extraKeys.hasUserKeys() ? Math.max(row, userKeysHeight) : row;
+        return keysRow + row;
     }
 
     /**
@@ -100,6 +105,7 @@ public class TerminowKeyBar {
         if (mBar != null) mBar.getViewTreeObserver().removeOnGlobalLayoutListener(mKeyboardWatcher);
         mBar = bar;
         mRow = bar.findViewById(R.id.terminow_keybar_row);
+        mRow2 = bar.findViewById(R.id.terminow_keybar_row2);
         mKeyboardButton = bar.findViewById(R.id.terminow_keybar_keyboard);
         mKeyboardButton.setBackground(keycap(false, false));
         mKeyboardButton.setImageTintList(ColorStateList.valueOf(color(R.color.terminow_text)));
@@ -151,14 +157,32 @@ public class TerminowKeyBar {
      * More. Every button is at least 48dp to tap; the keycaps in them are smaller.
      */
     private void fillRow(@NonNull TerminowKeyBarModel.Mode mode, boolean userKeys) {
-        LinearLayout row = mRow;
-        if (row == null) return;
+        LinearLayout keysRow = mRow;
+        LinearLayout toolsRow = mRow2;
+        if (keysRow == null || toolsRow == null) return;
         ExtraKeysView extraKeysView = mActivity.getExtraKeysView();
-        // The keys of termux.properties stay in the row, the others are made again
-        for (int i = row.getChildCount() - 1; i >= 0; i--) if (row.getChildAt(i) != extraKeysView) row.removeViewAt(i);
+        // The keys of termux.properties stay in the keys row; everything else is made again.
+        for (int i = keysRow.getChildCount() - 1; i >= 0; i--) if (keysRow.getChildAt(i) != extraKeysView) keysRow.removeViewAt(i);
+        toolsRow.removeAllViews();
         mCtrlCap = null;
         mAltCap = null;
+
+        // Row 1: the keys and the arrows (or the user's termux.properties keys in their place).
         int index = 0;
+        if (extraKeysView != null) extraKeysView.setVisibility(userKeys ? View.VISIBLE : View.GONE);
+        if (userKeys && extraKeysView != null) {
+            extraKeysView.reload(mActivity.getTermuxTerminalExtraKeys().getExtraKeysInfo(), mActivity.getTerminalToolbarDefaultHeight());
+            ViewGroup.LayoutParams params = extraKeysView.getLayoutParams();
+            params.width = extraKeysView.getMinimumKeysWidth();
+            extraKeysView.setLayoutParams(params);
+        } else {
+            for (String key : TerminowKeyBarModel.keysOf(mode)) keysRow.addView(keyCap(key), index++);
+            keysRow.addView(gap(), index++);
+            for (String key : TerminowKeyBarModel.NAVIGATION_KEYS) keysRow.addView(arrowCap(key), index++);
+        }
+
+        // Row 2: the tools — clipboard/attach, QuickCut, commands/AI shortcuts, and More.
+        int t = 0;
         // The clipboard: paste text, or attach files, which go to /tmp of the tab
         ImageButton clipboard = iconCap(R.drawable.ic_terminow_paste, R.string.terminow_keybar_paste_attach, null);
         clipboard.setOnClickListener(v -> {
@@ -169,28 +193,14 @@ public class TerminowKeyBar {
                     mActivity.getTermuxTerminalSessionClient().onPasteTextFromClipboard(null);
             });
         });
-        row.addView(clipboard, index++);
+        toolsRow.addView(clipboard, t++);
         // ⚡ QuickCut: insert saved text into the session, kept clearly apart from the clipboard
-        row.addView(iconCap(R.drawable.ic_terminow_quickcut, R.string.terminow_quickcut_title, this::openQuickCut), index++);
+        toolsRow.addView(iconCap(R.drawable.ic_terminow_quickcut, R.string.terminow_quickcut_title, this::openQuickCut), t++);
         boolean ai = TerminowKeyBarModel.isAi(mode);
-        row.addView(iconCap(iconOf(mode),
-            ai ? R.string.terminow_keybar_ai_shortcuts : R.string.terminow_keybar_commands, this::showCommands), index++);
-        row.addView(gap(), index++);
-        if (extraKeysView != null) extraKeysView.setVisibility(userKeys ? View.VISIBLE : View.GONE);
-        if (userKeys && extraKeysView != null) {
-            // The keys of the user, in the place of the keys of the bar
-            extraKeysView.reload(mActivity.getTermuxTerminalExtraKeys().getExtraKeysInfo(), mActivity.getTerminalToolbarDefaultHeight());
-            ViewGroup.LayoutParams params = extraKeysView.getLayoutParams();
-            params.width = extraKeysView.getMinimumKeysWidth();
-            extraKeysView.setLayoutParams(params);
-            index = row.indexOfChild(extraKeysView) + 1;
-        } else {
-            for (String key : TerminowKeyBarModel.keysOf(mode)) row.addView(keyCap(key), index++);
-            row.addView(gap(), index++);
-            for (String key : TerminowKeyBarModel.NAVIGATION_KEYS) row.addView(arrowCap(key), index++);
-        }
-        row.addView(gap(), index++);
-        row.addView(iconCap(R.drawable.ic_terminow_more, R.string.terminow_keybar_more, this::showMore), index);
+        toolsRow.addView(iconCap(iconOf(mode),
+            ai ? R.string.terminow_keybar_ai_shortcuts : R.string.terminow_keybar_commands, this::showCommands), t++);
+        toolsRow.addView(gap(), t++);
+        toolsRow.addView(iconCap(R.drawable.ic_terminow_more, R.string.terminow_keybar_more, this::showMore), t);
         updateModifiers();
     }
 
