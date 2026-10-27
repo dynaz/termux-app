@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Launcher icon. -->
-    <color name="terminow_launcher_background">#071328</color>
+    <color name="terminow_launcher_background">#0B1428</color>
 
     <!-- Home screen and tab bar. -->
     <color name="terminow_bg">#1E2132</color>
