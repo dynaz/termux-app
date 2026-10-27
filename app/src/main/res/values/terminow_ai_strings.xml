@@ -38,4 +38,24 @@
     <string name="terminow_ai_policy_ask">Ask each time</string>
     <string name="terminow_ai_not_ssh">Only SSH hosts can be used by the AI.</string>
     <string name="terminow_ai_bridge_off_note">Turn on the Local AI Bridge above to use it.</string>
+    <string name="terminow_bridge_title">AI Bridge</string>
+    <string name="terminow_bridge_open">AI Bridge</string>
+    <string name="terminow_bridge_open_desc">Let Claude Code here use your authorized hosts</string>
+    <string name="terminow_bridge_source">Source</string>
+    <string name="terminow_bridge_session">Session: %1$s</string>
+    <string name="terminow_bridge_env">Environment: %1$s</string>
+    <string name="terminow_bridge_no_env">Open this from a local Linux session to connect Claude Code.</string>
+    <string name="terminow_bridge_client">AI client</string>
+    <string name="terminow_bridge_claude">Claude Code</string>
+    <string name="terminow_bridge_actions">Bridge</string>
+    <string name="terminow_bridge_connect_test">Connect &amp; Test</string>
+    <string name="terminow_bridge_connect_test_desc">Install the helper, authenticate, and verify MCP tools</string>
+    <string name="terminow_bridge_diagnose_desc">Layer-by-layer report, with Copy</string>
+    <string name="terminow_bridge_working">Working…</string>
+    <string name="terminow_bridge_tap_test">Allowed · tap to test from Claude</string>
+    <string name="terminow_bridge_host_result">%1$s: %2$s</string>
+    <string name="terminow_bridge_no_hosts">No authorized hosts</string>
+    <string name="terminow_bridge_no_hosts_desc">Allow local AI access on a host in AI settings</string>
+    <string name="terminow_bridge_tool_name">TermiNow Bridge</string>
+    <string name="terminow_bridge_tool_desc">Set up, diagnose and let Claude Code here use your hosts</string>
 </resources>

@@ -487,6 +487,14 @@ final class TerminowToolSheet {
         mPairCol = 0;
         TerminowToolInstaller.Job running = TerminowToolInstaller.runningIn(target.key);
         int shown = 0;
+        // The Local AI Bridge for this environment: the same sheet the toolbar opens, reusing the same
+        // services (no second helper per tab). Only for a local environment, under All / AI.
+        if (!target.ssh && target.environment != null && (mCategory == CAT_ALL || mCategory == CAT_AI) && !mInstalledOnly
+                && matchesSearch(mActivity.getString(R.string.terminow_bridge_tool_name),
+                    mActivity.getString(R.string.terminow_bridge_tool_desc))) {
+            bridgeRow(nextColumn(list, two), target);
+            shown++;
+        }
         for (TerminowToolInstaller.Tool tool : TOOLS) {
             if (!matchesFilters(tool)) continue;
             toolRow(nextColumn(list, two), target, tool, running);
@@ -499,6 +507,36 @@ final class TerminowToolSheet {
             shown++;
         }
         if (shown == 0) addEmptyState(list);
+    }
+
+    /** The "TermiNow Bridge" entry: opens the shared bridge sheet for this local environment. */
+    private void bridgeRow(@NonNull LinearLayout parent, @NonNull Target target) {
+        if (target.ssh || target.environment == null) return;
+        final String envKey = target.environment.key;
+        final String envLabel = target.environment.label;
+        final String user = target.user;
+        LinearLayout card = new LinearLayout(mActivity);
+        card.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(dp(12));
+        bg.setColor(color(R.color.terminow_field));
+        card.setBackground(bg);
+        card.setPadding(dp(14), dp(12), dp(14), dp(12));
+        card.setClickable(true);
+        card.setFocusable(true);
+        card.setOnClickListener(v -> {
+            TerminowHome home = mActivity.getTerminowHome();
+            if (home == null) return;
+            new TerminowAiBridgeSheet(mActivity, home.getAiBridge(), home.getStore())
+                .open(envKey, user, envLabel, mActivity.getString(R.string.terminow_install_title));
+        });
+        TextView name = text(mActivity.getString(R.string.terminow_bridge_tool_name), 15, R.color.terminow_text);
+        name.setTypeface(Typeface.DEFAULT_BOLD);
+        card.addView(name);
+        card.addView(text(mActivity.getString(R.string.terminow_bridge_tool_desc), 13, R.color.terminow_text_secondary));
+        LinearLayout.LayoutParams lp = matchWrap();
+        lp.bottomMargin = dp(8);
+        parent.addView(card, lp);
     }
 
     @Nullable private LinearLayout mPairRow;

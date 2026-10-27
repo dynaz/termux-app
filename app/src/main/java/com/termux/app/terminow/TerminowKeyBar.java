@@ -497,7 +497,32 @@ public class TerminowKeyBar {
             });
             ViewCompat.setStateDescription(row, mActivity.getString(option == choice ? R.string.terminow_keybar_chosen : R.string.terminow_keybar_not_chosen));
         }
+        section(content, R.string.terminow_bridge_title);
+        row(content, mActivity.getString(R.string.terminow_bridge_open), mActivity.getString(R.string.terminow_bridge_open_desc), this::showBridge);
         addMore(content);
+    }
+
+    // AI Bridge
+
+    /**
+     * The Local AI Bridge for the current session's environment: Connect &amp; Test, Diagnose, and a
+     * test of each authorized host from Claude's view, all reusing {@link TerminowAiBridgeManager}.
+     * The source environment and session are captured from the session that is open now. Install and
+     * network work runs off the main thread; only the result is shown. Host authorization stays in AI
+     * settings — this never changes what a host allows, it only connects, tests and reports.
+     */
+    private void showBridge() {
+        TerminalSession session = mActivity.getCurrentSession();
+        TerminowHome home = mActivity.getTerminowHome();
+        if (session == null || home == null) return;
+        TerminowLauncher launcher = home.getLauncher();
+        TerminowLauncher.SessionInfo info = launcher != null ? launcher.infoOf(session) : null;
+        String envKey = info != null ? info.environmentKey : null;
+        String user = info != null ? info.user : "";
+        String envLabel = info != null ? info.environmentLabel : "";
+        String sessionLabel = info != null ? info.tool : "shell";
+        new TerminowAiBridgeSheet(mActivity, home.getAiBridge(), home.getStore())
+            .open(envKey, user, envLabel, sessionLabel);
     }
 
     @NonNull
