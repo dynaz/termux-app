@@ -230,6 +230,32 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/terminow_rail_agent"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="14dp"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <ImageView
+                    android:layout_width="56dp"
+                    android:layout_height="34dp"
+                    android:padding="6dp"
+                    android:src="@drawable/ic_terminow_agent"
+                    android:tint="@color/terminow_text"
+                    tools:ignore="ContentDescription,UseAppTint" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:text="@string/terminow_agent_rail"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <LinearLayout
                 android:id="@+id/terminow_rail_mcp_bridge"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

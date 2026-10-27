@@ -184,6 +184,7 @@ public class TerminowHome {
     private final TerminowMcpPage mMcpPage;
     private final View mRailFiles;
     private final View mRailAi;
+    private final View mRailAgent;
     private final View mAiScrollView;
     private TerminowAiSettings mAiPage;
     private final View mRailMcpBridge;
@@ -466,6 +467,8 @@ public class TerminowHome {
         mRailFiles.setOnClickListener(v -> setPage(PAGE_FILES));
         mRailAi = activity.findViewById(R.id.terminow_rail_ai);
         mRailAi.setOnClickListener(v -> setPage(PAGE_AI));
+        mRailAgent = activity.findViewById(R.id.terminow_rail_agent);
+        mRailAgent.setOnClickListener(v -> showAgent());
         mAiScrollView = activity.findViewById(R.id.terminow_ai_scroll);
         mExplorerView = activity.findViewById(R.id.terminow_explorer);
         mExplorer = new TerminowExplorer(activity, mStore, activity.findViewById(R.id.terminow_explorer), new TerminowExplorer.Host() {
@@ -775,6 +778,17 @@ public class TerminowHome {
         LinearLayout.LayoutParams addParams = new LinearLayout.LayoutParams(dp(40), dp(40));
         addParams.setMarginStart(dp(6));
         mTabsView.addView(addView, addParams);
+
+        // An AI button next to add: open the assistant from a terminal, acting on the current session.
+        ImageView agentView = new ImageView(mActivity);
+        agentView.setImageResource(R.drawable.ic_terminow_agent);
+        agentView.setColorFilter(androidx.core.content.ContextCompat.getColor(mActivity, R.color.terminow_text));
+        agentView.setPadding(dp(8), dp(8), dp(8), dp(8));
+        agentView.setContentDescription(mActivity.getString(R.string.terminow_agent_menu));
+        agentView.setOnClickListener(v -> showAgent());
+        LinearLayout.LayoutParams agentParams = new LinearLayout.LayoutParams(dp(40), dp(40));
+        agentParams.setMarginStart(dp(2));
+        mTabsView.addView(agentView, agentParams);
 
         if (selectedTab != null) {
             final View tab = selectedTab;

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="terminow_agent_menu">AI Assistant</string>
+    <string name="terminow_agent_rail">AI Agent</string>
     <string name="terminow_agent_menu_summary">Add hosts and open terminals by chat</string>
     <string name="terminow_agent_title">AI Assistant</string>
     <string name="terminow_agent_input_hint">Add a host or connect — in Thai or English</string>
