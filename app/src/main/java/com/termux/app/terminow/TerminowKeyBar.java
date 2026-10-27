@@ -520,9 +520,11 @@ public class TerminowKeyBar {
         String envKey = info != null ? info.environmentKey : null;
         String user = info != null ? info.user : "";
         String envLabel = info != null ? info.environmentLabel : "";
-        String sessionLabel = info != null ? info.tool : "shell";
+        // The real session name (same resolver as the tabs and drawer), not the shell/process name.
+        String sessionName = home.sessionDisplayName(session);
+        String shell = info != null ? info.tool : "";
         new TerminowAiBridgeSheet(mActivity, home.getAiBridge(), home.getStore())
-            .open(envKey, user, envLabel, sessionLabel);
+            .open(envKey, user, envLabel, sessionName, shell, session.mHandle);
     }
 
     @NonNull

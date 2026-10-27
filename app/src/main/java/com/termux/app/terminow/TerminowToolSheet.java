@@ -536,7 +536,7 @@ final class TerminowToolSheet {
             TerminowHome home = mActivity.getTerminowHome();
             if (home == null) return;
             new TerminowAiBridgeSheet(mActivity, home.getAiBridge(), home.getStore())
-                .open(envKey, user, envLabel, mActivity.getString(R.string.terminow_install_title));
+                .open(envKey, user, envLabel, mActivity.getString(R.string.terminow_install_title), "", "");
         });
         TextView name = text(mActivity.getString(R.string.terminow_bridge_tool_name), 15, R.color.terminow_text);
         name.setTypeface(Typeface.DEFAULT_BOLD);

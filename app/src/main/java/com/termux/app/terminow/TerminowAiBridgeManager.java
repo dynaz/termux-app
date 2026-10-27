@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -450,6 +451,27 @@ public final class TerminowAiBridgeManager {
         }
     }
 
+    /** The outcome of the last helper verification (self-test) for an environment, kept apart from its registration. */
+    public static final class Verification {
+        public final boolean ok;
+        public final long at;            // epoch millis when the probe ran
+        @Nullable public final String error;
+
+        Verification(boolean ok, long at, @Nullable String error) {
+            this.ok = ok;
+            this.at = at;
+            this.error = error;
+        }
+    }
+
+    private final Map<String, Verification> mLastVerify = new HashMap<>();
+
+    /** The last self-test outcome for an environment, or {@code null} if it has never been tested. */
+    @Nullable
+    public synchronized Verification lastVerification(@NonNull String environmentKey) {
+        return mLastVerify.get(environmentKey);
+    }
+
     /**
      * Run the real MCP handshake against the live listener with the environment's token (minting one
      * if needed for the test), optionally testing one host. Verifies the Android side end to end.
@@ -459,7 +481,11 @@ public final class TerminowAiBridgeManager {
         if (!mServer.isRunning()) startServer();
         String token = mSession.tokenOf(environmentKey);
         if (token.isEmpty()) token = mSession.mint(environmentKey);
-        return TerminowAiBridgeProbe.probe("127.0.0.1", mServer.getPort(), token, sshTestHostId);
+        TerminowAiBridgeProbe.Result result = TerminowAiBridgeProbe.probe("127.0.0.1", mServer.getPort(), token, sshTestHostId);
+        // Record the verification apart from registration: a configured environment whose helper is not
+        // reachable must never read as "Connected".
+        mLastVerify.put(environmentKey, new Verification(result.ok(), System.currentTimeMillis(), result.error));
+        return result;
     }
 
     /** Walk every layer of the bridge path and return a sanitized, copyable report. */

@@ -121,13 +121,31 @@ final class TerminowAiSettings {
                 TextView name = text(container.label, 16, R.color.terminow_text);
                 name.setTypeface(Typeface.DEFAULT_BOLD);
                 texts.addView(name);
-                boolean connected = mManager.hasToken(container.name);
-                texts.addView(text(mActivity.getString(connected ? R.string.terminow_ai_connected : R.string.terminow_ai_not_connected),
-                    12, connected ? R.color.terminow_quick_ready : R.color.terminow_text_secondary));
+                // Registration and a verified connection are shown separately: a configured environment
+                // whose helper did not pass the self-test never reads as "Connected".
+                boolean configured = mManager.hasToken(container.name);
+                TerminowAiBridgeManager.Verification verify = mManager.lastVerification(container.name);
+                String statusText;
+                int statusColor;
+                if (!configured) {
+                    statusText = mActivity.getString(R.string.terminow_ai_state_not_configured);
+                    statusColor = R.color.terminow_text_secondary;
+                } else if (verify == null) {
+                    statusText = mActivity.getString(R.string.terminow_ai_state_configured_untested);
+                    statusColor = R.color.terminow_text_secondary;
+                } else if (verify.ok) {
+                    statusText = mActivity.getString(R.string.terminow_ai_state_verified,
+                        android.text.format.DateUtils.getRelativeTimeSpanString(verify.at).toString());
+                    statusColor = R.color.terminow_quick_ready;
+                } else {
+                    statusText = mActivity.getString(R.string.terminow_ai_state_test_failed);
+                    statusColor = R.color.terminow_mcp_warn;
+                }
+                texts.addView(text(statusText, 12, statusColor));
                 line.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-                String label = mActivity.getString(connected ? R.string.terminow_ai_disconnect : R.string.terminow_ai_connect);
-                line.addView(button(label, !connected, () -> {
-                    if (connected) {
+                String label = mActivity.getString(configured ? R.string.terminow_ai_disconnect : R.string.terminow_ai_connect);
+                line.addView(button(label, !configured, () -> {
+                    if (configured) {
                         TerminowAiBridgeManager.SetupResult result = mManager.disconnectClaude(container.name, "root");
                         mActivity.showToast(result.message, !result.ok);
                     } else {

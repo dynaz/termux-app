@@ -871,6 +871,27 @@ public class TerminowHome {
         return mActivity.getString(R.string.terminow_local_terminal) + " " + (index + 1);
     }
 
+    /**
+     * The display name of a session, resolved exactly as the tabs and the session drawer do: the
+     * user-assigned name, then the resolved terminal title, then a numbered fallback. Never the shell
+     * or process name. Used by the AI Bridge so a tab named "YMOBD" is shown as "YMOBD", not "bash".
+     */
+    @NonNull
+    public String sessionDisplayName(@NonNull TerminalSession session) {
+        int index = 0;
+        TermuxService service = mActivity.getTermuxService();
+        if (service != null) {
+            List<TermuxSession> list = service.getTermuxSessions();
+            for (int i = 0; i < list.size(); i++) {
+                if (list.get(i).getTerminalSession() == session) {
+                    index = i;
+                    break;
+                }
+            }
+        }
+        return getSessionTitle(session, index);
+    }
+
     private void closeSession(@NonNull TerminalSession session) {
         mConnectionUi.onCloseSession(session);
         if (!session.isRunning()) {

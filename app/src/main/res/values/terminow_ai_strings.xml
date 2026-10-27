@@ -17,7 +17,11 @@
     <string name="terminow_ai_diag_copied">Diagnostics copied</string>
     <string name="terminow_ai_diag_close">Close</string>
     <string name="terminow_ai_connect_tested">Connected · self-test OK (%1$d host(s), tools verified). Restart Claude Code to load it.</string>
-    <string name="terminow_ai_connect_test_failed">Connected, but the self-test failed: %1$s</string>
+    <string name="terminow_ai_connect_test_failed">Configured — connection test failed: %1$s</string>
+    <string name="terminow_ai_state_not_configured">Not configured</string>
+    <string name="terminow_ai_state_configured_untested">Configured · not tested</string>
+    <string name="terminow_ai_state_verified">Verified %1$s</string>
+    <string name="terminow_ai_state_test_failed">Configured — connection test failed</string>
     <string name="terminow_ai_connected">Connected · restart Claude Code to load it</string>
     <string name="terminow_ai_not_connected">Not connected</string>
     <string name="terminow_ai_no_env">Install a Linux environment first (File Manager → Browse Linux).</string>
@@ -58,4 +62,6 @@
     <string name="terminow_bridge_no_hosts_desc">Allow local AI access on a host in AI settings</string>
     <string name="terminow_bridge_tool_name">TermiNow Bridge</string>
     <string name="terminow_bridge_tool_desc">Set up, diagnose and let Claude Code here use your hosts</string>
+    <string name="terminow_bridge_shell">shell: %1$s</string>
+    <string name="terminow_bridge_scope_env">Available to Claude sessions in this Ubuntu environment</string>
 </resources>

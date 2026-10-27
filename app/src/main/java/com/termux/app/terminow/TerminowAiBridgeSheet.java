@@ -52,14 +52,21 @@ final class TerminowAiBridgeSheet {
      * Open the sheet for a captured source. {@code environmentKey} null means the session is not a
      * local environment (e.g. a remote SSH tab), so only the source is shown, nothing to connect.
      */
-    void open(@Nullable String environmentKey, @NonNull String user, @NonNull String environmentLabel, @NonNull String sessionLabel) {
+    void open(@Nullable String environmentKey, @NonNull String user, @NonNull String environmentLabel,
+              @NonNull String sessionName, @NonNull String shell, @NonNull String sessionHandle) {
         LinearLayout content = openSheet(mActivity.getString(R.string.terminow_bridge_title));
 
         section(content, R.string.terminow_bridge_source);
-        row(content, mActivity.getString(R.string.terminow_bridge_session, sessionLabel),
-            environmentKey != null ? mActivity.getString(R.string.terminow_bridge_env, environmentLabel)
-                                   : mActivity.getString(R.string.terminow_bridge_no_env),
-            () -> { });
+        // The real session name is primary; the shell/process is secondary metadata, never a substitute.
+        String secondary = shell.isEmpty() ? "" : mActivity.getString(R.string.terminow_bridge_shell, shell);
+        row(content, mActivity.getString(R.string.terminow_bridge_session, sessionName), secondary, () -> { });
+        if (environmentKey != null) {
+            // Grants apply to the whole Ubuntu environment, not this one tab.
+            row(content, mActivity.getString(R.string.terminow_bridge_env, environmentLabel),
+                mActivity.getString(R.string.terminow_bridge_scope_env), () -> { });
+        } else {
+            row(content, mActivity.getString(R.string.terminow_bridge_no_env), "", () -> { });
+        }
 
         section(content, R.string.terminow_bridge_client);
         row(content, mActivity.getString(R.string.terminow_bridge_claude), "", () -> { });
