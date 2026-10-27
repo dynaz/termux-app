@@ -189,6 +189,14 @@ final class TerminowToolSheet {
         open(Target.local(chosen, chosenUser, mLocalRunner));
     }
 
+    /** Open the Tools Library for an environment scrolled to the AI Agents category. */
+    void showAi(@NonNull TerminowLauncher.Environment environment, @Nullable String user) {
+        mCategory = CAT_AI;
+        mSearch = "";
+        mInstalledOnly = false;
+        show(environment, user);
+    }
+
     /** Open the sheet for a saved SSH host: tools go onto that server over its own connection. */
     void showSsh(@NonNull TerminowStore.Host host, @NonNull TerminalSession session, @NonNull TerminowRemoteTools remoteTools) {
         mRemoteTools = remoteTools;

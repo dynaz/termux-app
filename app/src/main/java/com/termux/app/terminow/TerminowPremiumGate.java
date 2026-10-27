@@ -13,7 +13,7 @@ import com.termux.app.TermuxActivity;
  */
 public final class TerminowPremiumGate {
 
-    public enum Feature { LINUX_FILES, MULTIPLE_ENVIRONMENTS, TMUX, MCP, BACKUP }
+    public enum Feature { LINUX_FILES, MULTIPLE_ENVIRONMENTS, TMUX, MCP, BACKUP, AI_AGENTS }
 
     private TerminowPremiumGate() {}
 
@@ -59,6 +59,7 @@ public final class TerminowPremiumGate {
             case MULTIPLE_ENVIRONMENTS: what = R.string.terminow_linux_premium_multiple; break;
             case MCP: what = 0; break;
             case BACKUP: what = R.string.terminow_backup_premium_what; break;
+            case AI_AGENTS: what = R.string.terminow_ai_agents_premium_what; break;
             default: what = R.string.terminow_linux_premium_tmux; break;
         }
         TerminowAccountUi accountUi = new TerminowAccountUi(activity, store, () -> {});

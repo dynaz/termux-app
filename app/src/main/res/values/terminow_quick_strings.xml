@@ -29,6 +29,17 @@
     <string name="terminow_quick_open_terminal">Open terminal</string>
     <string name="terminow_quick_install">Install (%1$s)</string>
     <string name="terminow_quick_claude">Claude</string>
+    <string name="terminow_quick_ai">AI</string>
+    <string name="terminow_ai_agents_title">AI Agents in Ubuntu</string>
+    <string name="terminow_ai_agents_source">Source</string>
+    <string name="terminow_ai_agents_env">Environment: %1$s</string>
+    <string name="terminow_ai_agents_detecting">Detecting installed AI agents…</string>
+    <string name="terminow_ai_agents_installed">Installed in this environment</string>
+    <string name="terminow_ai_agents_empty">No AI agent is installed in this environment yet.</string>
+    <string name="terminow_ai_agents_open_library">Open Tools Library (AI Agents)</string>
+    <string name="terminow_ai_agents_remembered">last used</string>
+    <string name="terminow_ai_agents_claude_conversation">Claude Code conversation</string>
+    <string name="terminow_ai_agents_premium_what">AI agents in Ubuntu</string>
     <string name="terminow_quick_files">Files</string>
     <string name="terminow_quick_manage">Manage environment</string>
     <string name="terminow_quick_add_environment">Add environment</string>

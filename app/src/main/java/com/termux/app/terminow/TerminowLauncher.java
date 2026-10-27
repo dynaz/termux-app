@@ -229,6 +229,8 @@ public class TerminowLauncher {
     private final ExecutorService mExecutor = Executors.newSingleThreadExecutor();
     private final Map<String, ClaudeState> mClaude = new HashMap<>();
     private final Set<String> mChecking = new HashSet<>();
+    /** AI-agent detection (all installed AI CLIs + versions) cached per environment. */
+    private final Map<String, TerminowToolInstaller.Detection> mAiAgents = new HashMap<>();
     /** The sessions that the launcher started, by what they run, to switch to them instead of starting more. */
     private final Map<String, WeakReference<TerminalSession>> mSessions = new HashMap<>();
     private final Map<String, TerminowTmux.State> mTmux = new HashMap<>();
@@ -507,6 +509,97 @@ public class TerminowLauncher {
         Environment environment = info != null && info.environmentKey != null ? environmentFor(info.environmentKey) : null;
         if (environment == null) environment = currentEnvironment();
         mToolSheet.show(environment, info != null && environment.key.equals(info.environmentKey) && !info.user.isEmpty() ? info.user : null);
+    }
+
+    // ---- AI Agents (detection, Tools Library at AI category, generic launch) ----
+
+    /** The last AI-agent detection for an environment, or {@code null} until it has been run. */
+    @Nullable
+    TerminowToolInstaller.Detection aiAgentsOf(@NonNull Environment environment) {
+        return mAiAgents.get(stateKey(environment));
+    }
+
+    /** Detect the AI CLIs installed in this environment (versions too), off the main thread, then {@code onDone}. */
+    void detectAiAgents(@NonNull Environment environment, @NonNull Runnable onDone) {
+        String key = stateKey(environment);
+        String user = getUser(environment);
+        String alias = environment.key;
+        mExecutor.execute(() -> {
+            TerminowClaudeSetup setup = new TerminowClaudeSetup(mActivity, mTargets);
+            TerminowToolInstaller.Runner runner = (a, u, script, args) ->
+                setup.start(TerminowToolInstaller.command(mTargets.getPrefixDir(), a, u, script, args));
+            TerminowToolInstaller.Detection detection = TerminowToolInstaller.detect(runner, alias, user);
+            mHandler.post(() -> {
+                if (detection != null && detection.ran) mAiAgents.put(key, detection);
+                onDone.run();
+            });
+        });
+    }
+
+    /** Open the Tools Library for this environment at the AI Agents category (to install an agent). */
+    void showAiTools(@NonNull Environment environment) {
+        if (mToolSheet == null) mToolSheet = new TerminowToolSheet(mActivity, this, mTargets.getPrefixDir());
+        mToolSheet.showAi(environment, getUser(environment));
+    }
+
+    /**
+     * Start an AI agent in a new tab from the folder the session starts in. Claude keeps its own flow
+     * ({@link #openClaude}) for conversation options and sign-in help; this is for the other agents and
+     * for a plain new conversation. The binary comes from the registry id, so no Claude flag is applied
+     * to another agent. Nothing is ever typed into a tab that is already running.
+     */
+    @Nullable
+    TerminalSession launchAiInNewTab(@NonNull Environment environment, @NonNull TerminowToolInstaller.Tool tool,
+                                     @NonNull String[] args) {
+        String binary = TerminowAiAgentsModel.binaryOf(tool);
+        String script = TerminowLaunchPlan.READY_SIGN + "PATH=\"$HOME/.local/bin:$PATH\"; export PATH; exec " + binary + " \"$@\"";
+        String user = getUser(environment);
+        String folder = getFolder(environment);
+        String executable;
+        List<String> a = new ArrayList<>();
+        String workingDirectory;
+        if (environment.isLocal()) {
+            executable = new File(mTargets.getPrefixDir(), "bin/bash").getPath();
+            a.addAll(Arrays.asList("-c", script, binary));
+            workingDirectory = folder;
+        } else {
+            executable = new File(mTargets.getPrefixDir(), "bin/proot-distro").getPath();
+            a.addAll(Arrays.asList("login", environment.key, "--user", user, "--work-dir", folder));
+            a.addAll(bindsOf(environment));
+            a.addAll(Arrays.asList("--", "/bin/sh", "-c", script, binary));
+            workingDirectory = TermuxConstants.TERMUX_HOME_DIR_PATH;
+        }
+        a.addAll(Arrays.asList(args));
+        String label = aiLabel(tool);
+        String tabName = mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), label);
+        String key = "ai|" + tool.id + "|" + environment.key + "|" + folder + "|" + TextUtils.join(" ", args) + "|" + System.nanoTime();
+        return launch(key, executable, a.toArray(new String[0]), workingDirectory, tabName, true,
+            new SessionInfo(environment.key, environment.shortName(), label, folder, ""));
+    }
+
+    /** Launch a Claude Code conversation by its (verified) option, keeping Claude's flags Claude-only. */
+    void launchClaudeConversation(@NonNull Environment environment, @NonNull TerminowAiAgentsModel.Conversation conversation) {
+        switch (conversation) {
+            case CONTINUE: launchClaudeInNewTab(environment, new String[]{"--continue"}); break;
+            case RESUME: launchClaudeInNewTab(environment, new String[]{"--resume"}); break;
+            default: launchClaudeInNewTab(environment, new String[0]); break;
+        }
+    }
+
+    /** A short display label for an AI agent, used for the tab name. */
+    @NonNull
+    String aiLabel(@NonNull TerminowToolInstaller.Tool tool) {
+        switch (tool) {
+            case CLAUDE: return "Claude";
+            case CURSOR: return "Cursor";
+            case CODEX: return "Codex";
+            case GEMINI: return "Gemini";
+            case GROK: return "Grok";
+            case OPENCODE: return "OpenCode";
+            case AIDER: return "Aider";
+            case HERMES: return "Hermes";
+            default: return tool.id;
+        }
     }
 
     /** A saved SSH host by its title, with its credentials; {@code null} if it is gone or not an SSH terminal. */

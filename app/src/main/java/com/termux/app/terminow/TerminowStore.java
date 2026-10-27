@@ -1522,6 +1522,20 @@ public class TerminowStore {
         mPreferences.edit().putString(KEY_CLAUDE_LAUNCH, behavior).apply();
     }
 
+    /** The AI agent (tool id) last chosen for an environment, empty if none; remembered per environment. */
+    @NonNull
+    public String getRememberedAiAgent(@NonNull String environmentKey) {
+        return mPreferences.getString("terminow_ai_agent_" + environmentKey, "");
+    }
+
+    public void setRememberedAiAgent(@NonNull String environmentKey, @NonNull String toolId) {
+        mPreferences.edit().putString("terminow_ai_agent_" + environmentKey, toolId).apply();
+    }
+
+    public void clearRememberedAiAgent(@NonNull String environmentKey) {
+        mPreferences.edit().remove("terminow_ai_agent_" + environmentKey).apply();
+    }
+
     /**
      * The shell of new tabs of local Ubuntu: Fish, Bash, or not chosen, which keeps the shell
      * that Ubuntu gives, so an Ubuntu installed before this setting opens as it always did.

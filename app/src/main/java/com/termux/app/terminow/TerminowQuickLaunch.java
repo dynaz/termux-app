@@ -311,11 +311,14 @@ public class TerminowQuickLaunch {
         LinearLayout secondary = new LinearLayout(mActivity);
         secondary.setOrientation(LinearLayout.HORIZONTAL);
         if (environment.container != null) {
-            // Claude Code only where it was found
-            TerminowLauncher.ClaudeState claude = mLauncher.claudeOf(environment);
-            if (claude != null && claude.isInstalled())
-                secondary.addView(secondaryButton(R.drawable.ic_terminow_launch, mActivity.getString(R.string.terminow_quick_claude),
-                    () -> mLauncher.openClaude(environment)), weighted());
+            // AI agents: the button is always shown; free users see a Premium mark and tapping opens the
+            // upgrade page, premium users open "AI Agents in Ubuntu" (only agents installed in this distro).
+            boolean premium = TerminowAccountUi.isPremium(mStore);
+            CharSequence aiLabel = premium ? mActivity.getString(R.string.terminow_quick_ai)
+                : mActivity.getString(R.string.terminow_quick_ai) + "  ♛";
+            secondary.addView(secondaryButton(R.drawable.ic_terminow_agent, aiLabel, () ->
+                TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.AI_AGENTS, 1,
+                    () -> new TerminowAiAgentsPicker(mActivity, mLauncher, mStore).open(environment))), weighted());
             secondary.addView(secondaryButton(R.drawable.ic_terminow_folder, mActivity.getString(R.string.terminow_quick_files),
                 () -> mLauncher.openFilesOf(environment)), weighted());
             if (linux != null)
