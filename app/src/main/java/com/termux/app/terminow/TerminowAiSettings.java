@@ -127,12 +127,16 @@ final class TerminowAiSettings {
                 line.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
                 String label = mActivity.getString(connected ? R.string.terminow_ai_disconnect : R.string.terminow_ai_connect);
                 line.addView(button(label, !connected, () -> {
-                    TerminowAiBridgeManager.SetupResult result = connected
-                        ? mManager.disconnectClaude(container.name, "root")
-                        : mManager.connectClaude(container.name, "root");
-                    mActivity.showToast(result.message, !result.ok);
+                    if (connected) {
+                        TerminowAiBridgeManager.SetupResult result = mManager.disconnectClaude(container.name, "root");
+                        mActivity.showToast(result.message, !result.ok);
+                    } else {
+                        connectAndTest(container.name, "root");
+                    }
                     render();
                 }));
+                line.addView(button(mActivity.getString(R.string.terminow_ai_diagnose), false,
+                    () -> showDiagnostics(container.name, "root")));
                 row.addView(line, matchWrap());
             }
         }
@@ -335,6 +339,40 @@ final class TerminowAiSettings {
         params.topMargin = dp(10);
         parent.addView(card, params);
         return card;
+    }
+
+    /** Connect Claude Code for an environment and immediately self-test the bridge end to end. */
+    private void connectAndTest(@NonNull String environmentKey, @NonNull String user) {
+        TerminowAiBridgeManager.SetupResult result = mManager.connectClaude(environmentKey, user);
+        if (!result.ok) {
+            mActivity.showToast(result.message, true);
+            return;
+        }
+        TerminowAiBridgeProbe.Result probe = mManager.selfTest(environmentKey, null);
+        if (probe.ok()) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_ai_connect_tested, probe.hostCount), false);
+        } else {
+            mActivity.showToast(mActivity.getString(R.string.terminow_ai_connect_test_failed,
+                probe.error != null ? probe.error : "failed"), true);
+        }
+    }
+
+    /** Run the layered diagnostics for an environment and show the sanitized report with Copy. */
+    private void showDiagnostics(@NonNull String environmentKey, @NonNull String user) {
+        TerminowAiBridgeManager.Diagnostics diag = mManager.diagnose(environmentKey, user);
+        String report = diag.toText();
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_ai_diagnose)
+            .setMessage(report)
+            .setPositiveButton(R.string.terminow_ai_copy_diag, (d, w) -> {
+                android.content.ClipboardManager clipboard =
+                    (android.content.ClipboardManager) mActivity.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+                if (clipboard != null)
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("TermiNow diagnostics", report));
+                mActivity.showToast(mActivity.getString(R.string.terminow_ai_diag_copied), false);
+            })
+            .setNegativeButton(R.string.terminow_ai_diag_close, null)
+            .show();
     }
 
     @NonNull

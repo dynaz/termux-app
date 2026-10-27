@@ -27,6 +27,10 @@ public final class TerminowAiHelper {
 
     /** The helper asset inside the APK. */
     public static final String HELPER_ASSET = "terminow-ai/terminow-ai-bridge.py";
+
+    /** The `terminow` CLI wrapper asset and where it installs in the guest (on ~/.local/bin). */
+    public static final String CLI_ASSET = "terminow-ai/terminow";
+    public static final String GUEST_CLI_REL = ".local/bin/terminow";
     /** Where the helper is installed in the guest home. */
     public static final String GUEST_HELPER_REL = ".local/share/terminow-ai/terminow-ai-bridge.py";
     /** Where the token file is kept in the guest home, with 0600 permissions. */

@@ -154,7 +154,101 @@ def connect_with_backoff():
         delay = min(delay * 2, 8.0)
 
 
+def _recv_line(sock):
+    buf = b""
+    while not buf.endswith(b"\n"):
+        chunk = sock.recv(65536)
+        if not chunk:
+            break
+        buf += chunk
+    return buf.decode("utf-8", "replace").strip()
+
+
+def _rpc(sock, mid, method, params):
+    import json
+    sock.sendall((json.dumps({"jsonrpc": "2.0", "id": mid, "method": method, "params": params}) + "\n").encode("utf-8"))
+    line = _recv_line(sock)
+    return json.loads(line) if line else None
+
+
+def doctor(verbose):
+    # Connect to the bridge from inside the environment and run the real MCP handshake. Prints a
+    # sanitized report to stdout; never prints the token or any credential. Exit 0 only if usable.
+    import json
+    print("TermiNow Local AI Bridge — doctor")
+    token = read_token()
+    print("token:", "present" if token else "MISSING (run Connect & Test in TermiNow)")
+    port = read_port()
+    print("port:", port if port else "unknown")
+    if not token:
+        return 2
+    try:
+        sock = connect()
+    except OSError as e:
+        print("bridge: UNREACHABLE (%s)" % e)
+        return 3
+    if sock is None:
+        print("bridge: UNREACHABLE (no transport configured)")
+        return 3
+    try:
+        if not authenticate(sock, token):
+            print("auth: REJECTED (token not accepted — reconnect in TermiNow)")
+            return 3
+        print("auth: OK")
+        init = _rpc(sock, 1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {},
+                                            "clientInfo": {"name": "terminow-doctor", "version": "1"}})
+        res = (init or {}).get("result") or {}
+        print("mcp:", "OK protocol", res.get("protocolVersion", "?"), "server", (res.get("serverInfo") or {}).get("name", "?"))
+        sock.sendall((json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n").encode("utf-8"))
+        tl = _rpc(sock, 2, "tools/list", {})
+        tools = [t.get("name") for t in ((tl or {}).get("result") or {}).get("tools", [])]
+        print("tools:", ", ".join(tools) if tools else "NONE")
+        hl = _rpc(sock, 3, "tools/call", {"name": "hosts_list", "arguments": {}})
+        content = ((hl or {}).get("result") or {}).get("content") or []
+        hosts = []
+        if content:
+            try:
+                hosts = json.loads(content[0].get("text", "{}")).get("hosts", [])
+            except (ValueError, AttributeError):
+                hosts = []
+        print("authorized hosts:", len(hosts))
+        if verbose:
+            for h in hosts:
+                print("  - %s  %s@%s:%s  caps=%s" % (h.get("host_id"), h.get("username"), h.get("hostname"),
+                                                     h.get("port"), ",".join(h.get("capabilities", []))))
+        return 0
+    finally:
+        try:
+            sock.close()
+        except OSError:
+            pass
+
+
+def status():
+    token = read_token()
+    port = read_port()
+    print("token:", "present" if token else "missing")
+    print("port:", port if port else "unknown")
+    if not token:
+        print("bridge: not provisioned")
+        return 2
+    try:
+        sock = connect()
+        ok = sock is not None and authenticate(sock, token)
+        if sock is not None:
+            sock.close()
+        print("bridge:", "connected" if ok else "reachable but auth failed" if sock is not None else "unreachable")
+        return 0 if ok else 3
+    except OSError as e:
+        print("bridge: unreachable (%s)" % e)
+        return 3
+
+
 def main():
+    # Subcommands for the `terminow bridge` CLI; with no subcommand this is the MCP stdio relay.
+    args = sys.argv[1:]
+    if args and args[0] in ("doctor", "status"):
+        return doctor("-v" in args or "--verbose" in args) if args[0] == "doctor" else status()
     if not read_token():
         log("no token; run 'Connect Claude Code' in TermiNow")
         return 2

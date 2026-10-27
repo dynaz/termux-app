@@ -270,6 +270,8 @@ public final class TerminowAiBridgeManager {
 
         try {
             installAsset(TerminowAiHelper.HELPER_ASSET, guestHelper);
+            // The `terminow` CLI wrapper, so `terminow bridge status|doctor` works in the environment.
+            installAsset(TerminowAiHelper.CLI_ASSET, underRootfs(rootfs, guestHome, TerminowAiHelper.GUEST_CLI_REL));
             String token = mSession.mint(environmentKey);
             writeTokenFile(guestTokenFile, token);
             writePortFile(guestPortFile, mServer.getPort());
@@ -395,5 +397,155 @@ public final class TerminowAiBridgeManager {
         for (TerminowStore.Identity identity : mStore.getIdentities()) if (!identity.password.isEmpty()) secrets.add(identity.password);
         for (String token : mStore.getAiTokens().values()) secrets.add(token);
         return secrets;
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Verification and diagnostics
+    //
+    // A bound socket proves nothing about the integration. selfTest() connects to our own listener
+    // as the helper would and runs the real MCP handshake + hosts_list (+ optional ssh_test), so the
+    // Android side (listener, auth, MCP, tool discovery, host authorization) is actually verified.
+    // diagnose() walks every layer and returns a sanitized, copyable report so the failing layer is
+    // named rather than assumed. Neither reveals a token or a credential.
+    // ---------------------------------------------------------------------------------------
+
+    public enum Step { OK, WARN, FAIL }
+
+    public static final class Diag {
+        public final String label;
+        public final Step step;
+        public final String detail;
+
+        Diag(@NonNull String label, @NonNull Step step, @NonNull String detail) {
+            this.label = label;
+            this.step = step;
+            this.detail = detail;
+        }
+    }
+
+    public static final class Diagnostics {
+        public final List<Diag> steps;
+        @Nullable public final TerminowAiBridgeProbe.Result selfTest;
+        public final long at;
+
+        Diagnostics(@NonNull List<Diag> steps, @Nullable TerminowAiBridgeProbe.Result selfTest, long at) {
+            this.steps = steps;
+            this.selfTest = selfTest;
+            this.at = at;
+        }
+
+        public boolean ok() {
+            for (Diag d : steps) if (d.step == Step.FAIL) return false;
+            return true;
+        }
+
+        /** A sanitized plain-text report for the "Copy diagnostics" action. No token or credential. */
+        @NonNull
+        public String toText() {
+            StringBuilder sb = new StringBuilder("TermiNow Local AI Bridge diagnostics\n");
+            for (Diag d : steps)
+                sb.append(d.step == Step.OK ? "[OK]   " : d.step == Step.WARN ? "[WARN] " : "[FAIL] ")
+                  .append(d.label).append(": ").append(d.detail).append('\n');
+            return sb.toString();
+        }
+    }
+
+    /**
+     * Run the real MCP handshake against the live listener with the environment's token (minting one
+     * if needed for the test), optionally testing one host. Verifies the Android side end to end.
+     */
+    @NonNull
+    public synchronized TerminowAiBridgeProbe.Result selfTest(@NonNull String environmentKey, @Nullable String sshTestHostId) {
+        if (!mServer.isRunning()) startServer();
+        String token = mSession.tokenOf(environmentKey);
+        if (token.isEmpty()) token = mSession.mint(environmentKey);
+        return TerminowAiBridgeProbe.probe("127.0.0.1", mServer.getPort(), token, sshTestHostId);
+    }
+
+    /** Walk every layer of the bridge path and return a sanitized, copyable report. */
+    @NonNull
+    public synchronized Diagnostics diagnose(@NonNull String environmentKey, @NonNull String user) {
+        List<Diag> steps = new ArrayList<>();
+        steps.add(mServer.isRunning()
+            ? new Diag("Bridge service", Step.OK, "Listening on 127.0.0.1:" + mServer.getPort())
+            : new Diag("Bridge service", Step.FAIL, mLastError != null ? mLastError : "Stopped"));
+        steps.add(premium()
+            ? new Diag("Premium", Step.OK, "active")
+            : new Diag("Premium", Step.FAIL, "The Local AI Bridge needs TermiNow Premium"));
+
+        TerminowMcpTargets.Container container = mTargets.getContainer(environmentKey);
+        if (container == null) {
+            steps.add(new Diag("Environment", Step.FAIL, environmentKey + " is not installed"));
+            return new Diagnostics(steps, null, System.currentTimeMillis());
+        }
+        steps.add(new Diag("Environment", Step.OK, container.label + " (" + environmentKey + ", user " + user + ")"));
+        String guestHome = TerminowMcpTargets.getGuestHome(container, user);
+
+        File helper = underRootfs(container.rootfs, guestHome, TerminowAiHelper.GUEST_HELPER_REL);
+        steps.add(!helper.isFile()
+            ? new Diag("Ubuntu helper", Step.FAIL, "Missing — run Connect & Test")
+            : helper.canExecute()
+                ? new Diag("Ubuntu helper", Step.OK, "Installed at ~/" + TerminowAiHelper.GUEST_HELPER_REL)
+                : new Diag("Ubuntu helper", Step.WARN, "Installed but not executable"));
+
+        String python = guestPython3(container.rootfs);
+        steps.add(python != null
+            ? new Diag("python3", Step.OK, python)
+            : new Diag("python3", Step.FAIL, "Not found in the environment — install it (e.g. apt install python3)"));
+
+        boolean hasToken = mSession.hasToken(environmentKey);
+        File tokenFile = underRootfs(container.rootfs, guestHome, TerminowAiHelper.GUEST_TOKEN_REL);
+        steps.add(hasToken && tokenFile.isFile()
+            ? new Diag("Token", Step.OK, "Provisioned")
+            : hasToken
+                ? new Diag("Token", Step.WARN, "Minted but the guest token file is missing — run Connect & Test")
+                : new Diag("Token", Step.FAIL, "Not provisioned — run Connect & Test"));
+
+        File portFile = underRootfs(container.rootfs, guestHome, TerminowAiHelper.GUEST_PORT_REL);
+        steps.add(portFile.isFile()
+            ? new Diag("Port file", Step.OK, "present")
+            : new Diag("Port file", Step.WARN, "Missing — the helper falls back to the registered port"));
+
+        File config = underRootfs(container.rootfs, guestHome, TerminowClaudeConfig.USER_CONFIG_NAME);
+        steps.add(configHasServer(config)
+            ? new Diag("Claude MCP", Step.OK, "Configured (" + TerminowAiHelper.SERVER_NAME + ") — restart Claude Code to load it")
+            : new Diag("Claude MCP", Step.FAIL, "Not configured — run Connect & Test"));
+
+        boolean connected = mServer.openConnectionCount() > 0 && mSession.hasToken(environmentKey);
+        steps.add(connected
+            ? new Diag("Claude connection", Step.OK, "A helper is connected now")
+            : new Diag("Claude connection", Step.WARN, "No helper connected yet (open Claude Code after Connect & Test)"));
+
+        TerminowAiBridgeProbe.Result probe = selfTest(environmentKey, null);
+        if (probe.ok())
+            steps.add(new Diag("Bridge self-test", Step.OK,
+                "MCP " + probe.protocolVersion + ", tools " + probe.tools + ", " + probe.hostCount + " authorized host(s)"));
+        else
+            steps.add(new Diag("Bridge self-test", Step.FAIL, probe.error != null ? probe.error : "failed"));
+
+        return new Diagnostics(steps, probe, System.currentTimeMillis());
+    }
+
+    /** The guest path of python3 if one is present in the environment, else null (checked on the rootfs). */
+    @Nullable
+    private static String guestPython3(@NonNull File rootfs) {
+        for (String rel : new String[]{"usr/bin/python3", "bin/python3", "usr/local/bin/python3"}) {
+            if (new File(rootfs, rel).exists()) return "/" + rel;
+        }
+        return null;
+    }
+
+    /** Whether the guest's user Claude config registers our MCP server (top-level, user scope). */
+    private static boolean configHasServer(@NonNull File config) {
+        if (!config.isFile()) return false;
+        try {
+            String text = TerminowClaudeConfig.read(config);
+            if (text == null || text.isEmpty()) return false;
+            JSONObject root = new JSONObject(text);
+            JSONObject servers = root.optJSONObject("mcpServers");
+            return servers != null && servers.has(TerminowAiHelper.SERVER_NAME);
+        } catch (TerminowClaudeConfig.ConfigException | org.json.JSONException | RuntimeException e) {
+            return false;
+        }
     }
 }

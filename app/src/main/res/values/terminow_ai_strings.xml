@@ -10,8 +10,14 @@
     <string name="terminow_ai_status_off">Off</string>
     <string name="terminow_ai_restart">Restart bridge</string>
     <string name="terminow_ai_connect_section">Connect Claude Code</string>
-    <string name="terminow_ai_connect">Connect</string>
+    <string name="terminow_ai_connect">Connect &amp; Test</string>
     <string name="terminow_ai_disconnect">Disconnect</string>
+    <string name="terminow_ai_diagnose">Diagnose</string>
+    <string name="terminow_ai_copy_diag">Copy diagnostics</string>
+    <string name="terminow_ai_diag_copied">Diagnostics copied</string>
+    <string name="terminow_ai_diag_close">Close</string>
+    <string name="terminow_ai_connect_tested">Connected · self-test OK (%1$d host(s), tools verified). Restart Claude Code to load it.</string>
+    <string name="terminow_ai_connect_test_failed">Connected, but the self-test failed: %1$s</string>
     <string name="terminow_ai_connected">Connected · restart Claude Code to load it</string>
     <string name="terminow_ai_not_connected">Not connected</string>
     <string name="terminow_ai_no_env">Install a Linux environment first (File Manager → Browse Linux).</string>
