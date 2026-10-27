@@ -17,6 +17,7 @@
         android:orientation="horizontal">
 
     <ScrollView
+        android:id="@+id/terminow_rail_scroll"
         android:layout_width="84dp"
         android:layout_height="match_parent"
         android:overScrollMode="never"
@@ -448,6 +449,18 @@
                 android:layout_marginTop="18dp"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
+
+                <ImageView
+                    android:id="@+id/terminow_sidebar_toggle"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/terminow_field"
+                    android:contentDescription="@string/terminow_sidebar_hide"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_terminow_panel_left_close"
+                    android:tint="@color/terminow_text"
+                    tools:ignore="UseAppTint" />
 
                 <EditText
                     android:id="@+id/terminow_search"

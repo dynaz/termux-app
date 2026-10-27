@@ -185,6 +185,10 @@ public class TerminowHome {
     private final View mRailFiles;
     private final View mRailAi;
     private final View mRailAgent;
+    private final View mRailScroll;
+    private final android.widget.ImageView mSidebarToggle;
+    /** Per-layout-class sidebar visibility preference ("compact"/"large"/"tablet"/"desktop"). */
+    private final android.content.SharedPreferences mSidebarPrefs;
     private final View mAiScrollView;
     private TerminowAiSettings mAiPage;
     private final View mRailMcpBridge;
@@ -469,6 +473,11 @@ public class TerminowHome {
         mRailAi.setOnClickListener(v -> setPage(PAGE_AI));
         mRailAgent = activity.findViewById(R.id.terminow_rail_agent);
         mRailAgent.setOnClickListener(v -> showAgent());
+        mRailScroll = activity.findViewById(R.id.terminow_rail_scroll);
+        mSidebarToggle = activity.findViewById(R.id.terminow_sidebar_toggle);
+        mSidebarPrefs = activity.getSharedPreferences("terminow_sidebar", android.content.Context.MODE_PRIVATE);
+        mSidebarToggle.setOnClickListener(v -> toggleSidebar());
+        applySidebar();
         mAiScrollView = activity.findViewById(R.id.terminow_ai_scroll);
         mExplorerView = activity.findViewById(R.id.terminow_explorer);
         mExplorer = new TerminowExplorer(activity, mStore, activity.findViewById(R.id.terminow_explorer), new TerminowExplorer.Host() {
@@ -650,8 +659,66 @@ public class TerminowHome {
             mCurrentGroup = null;
         if (mPage == PAGE_SETTINGS)
             mSettings.update();
+        applySidebar();
         refresh();
         showWhatsNewIfPending();
+    }
+
+    // --- Adaptive sidebar -----------------------------------------------------------------------
+    // The rail is home-screen chrome (a sibling of the content, inside the home overlay that is
+    // separate from the terminal view), so showing/hiding it is a pure visibility change and never
+    // touches a terminal, SSH/Mosh session, distro, scrollback, the AI Agent, or SFTP state.
+
+    private static final int SIDEBAR_COMPACT_MAX = 400;   // below: hidden by default (drawer)
+    private static final int SIDEBAR_TABLET_MIN = 600;
+    private static final int SIDEBAR_DESKTOP_MIN = 1024;
+
+    @NonNull
+    private String sidebarClass() {
+        int w = mActivity.getResources().getConfiguration().screenWidthDp;
+        if (w < SIDEBAR_COMPACT_MAX) return "compact";
+        if (w < SIDEBAR_TABLET_MIN) return "large";
+        if (w < SIDEBAR_DESKTOP_MIN) return "tablet";
+        return "desktop";
+    }
+
+    /** Larger screens show the sidebar by default; compact phones hide it (hamburger/drawer). */
+    private boolean sidebarDefaultVisible(@NonNull String cls) {
+        return !cls.equals("compact");
+    }
+
+    private int sidebarWidthDp(@NonNull String cls) {
+        return cls.equals("desktop") ? 112 : (cls.equals("tablet") ? 96 : 84);
+    }
+
+    private boolean sidebarVisible() {
+        String cls = sidebarClass();
+        return mSidebarPrefs.getBoolean("visible_" + cls, sidebarDefaultVisible(cls));
+    }
+
+    /** Apply the remembered (or default) sidebar state for the current width class. No page rebuild. */
+    public void applySidebar() {
+        if (mRailScroll == null) return;
+        String cls = sidebarClass();
+        boolean visible = sidebarVisible();
+        ViewGroup.LayoutParams lp = mRailScroll.getLayoutParams();
+        lp.width = Math.round(sidebarWidthDp(cls) * mActivity.getResources().getDisplayMetrics().density);
+        mRailScroll.setLayoutParams(lp);
+        mRailScroll.setVisibility(visible ? View.VISIBLE : View.GONE);
+        mSidebarToggle.setImageResource(visible ? R.drawable.ic_terminow_panel_left_close : R.drawable.ic_terminow_panel_left_open);
+        mSidebarToggle.setContentDescription(mActivity.getString(visible ? R.string.terminow_sidebar_hide : R.string.terminow_sidebar_show));
+    }
+
+    private void toggleSidebar() {
+        String cls = sidebarClass();
+        boolean next = !sidebarVisible();
+        mSidebarPrefs.edit().putBoolean("visible_" + cls, next).apply();
+        applySidebar();
+    }
+
+    /** Recompute the sidebar when the width class may have changed (rotation, fold, resize). */
+    public void onConfigurationChanged() {
+        if (isVisible()) applySidebar();
     }
 
     /** Hide the home screen and show the terminal. */
@@ -968,6 +1035,11 @@ public class TerminowHome {
     /** Go back to all hosts from a group. Returns {@code false} if there was nothing to go back from. */
     public boolean onBackPressed() {
         if (!isVisible() && mSftpBrowser != null && mSftpBrowser.onBackPressed()) return true;
+        // On a compact phone the sidebar acts like a drawer: Back closes it first.
+        if (isVisible() && sidebarClass().equals("compact") && mRailScroll != null && mRailScroll.getVisibility() == View.VISIBLE) {
+            toggleSidebar();
+            return true;
+        }
         if (isVisible() && mPage == PAGE_FILES) return mExplorer.onBackPressed();
         if (!isVisible() || mPage != PAGE_HOSTS || mCurrentGroup == null) return false;
         mCurrentGroup = null;
