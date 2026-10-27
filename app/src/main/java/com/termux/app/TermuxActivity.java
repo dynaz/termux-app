@@ -671,8 +671,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     public void onConfigurationChanged(@NonNull android.content.res.Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
         setTerminalToolbarHeight();
-        if (mTerminowHome != null && mTermuxService != null)
+        if (mTerminowHome != null && mTermuxService != null) {
+            mTerminowHome.onConfigurationChanged();
             mTerminowHome.refresh();
+        }
     }
 
     @Override
