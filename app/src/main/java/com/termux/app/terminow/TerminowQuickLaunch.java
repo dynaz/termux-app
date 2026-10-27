@@ -321,10 +321,15 @@ public class TerminowQuickLaunch {
                     () -> new TerminowAiAgentsPicker(mActivity, mLauncher, mStore).open(environment))), weighted());
             secondary.addView(secondaryButton(R.drawable.ic_terminow_folder, mActivity.getString(R.string.terminow_quick_files),
                 () -> mLauncher.openFilesOf(environment)), weighted());
-            if (linux != null)
-                secondary.addView(secondaryButton(R.drawable.ic_terminow_download,
-                    TerminowWhatsNew.label(mActivity, mActivity.getString(R.string.terminow_quick_backup), TerminowWhatsNew.Feature.BACKUP),
+            if (linux != null) {
+                // Backup & Restore is Premium (enforced at the action and service level). Free users see a
+                // Premium mark here and tapping opens the upgrade page; nothing is started before entitlement.
+                CharSequence backupLabel = TerminowWhatsNew.label(mActivity,
+                    mActivity.getString(R.string.terminow_quick_backup), TerminowWhatsNew.Feature.BACKUP);
+                if (!premium) backupLabel = TextUtils.concat(backupLabel, "  ♛");
+                secondary.addView(secondaryButton(R.drawable.ic_terminow_download, backupLabel,
                     () -> mHost.backupAndRestore(linux.alias, environment.shortName())), weighted());
+            }
         } else {
             secondary.addView(secondaryButton(R.drawable.ic_terminow_folder, mActivity.getString(R.string.terminow_quick_files),
                 mHost::openLocalFiles), weighted());
