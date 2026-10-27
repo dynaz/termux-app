@@ -242,7 +242,8 @@
                     android:layout_height="34dp"
                     android:padding="6dp"
                     android:src="@drawable/ic_terminow_agent"
-                    tools:ignore="ContentDescription" />
+                    android:tint="@color/terminow_text"
+                    tools:ignore="ContentDescription,UseAppTint" />
 
                 <TextView
                     android:layout_width="wrap_content"

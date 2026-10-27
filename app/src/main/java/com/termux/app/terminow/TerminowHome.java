@@ -782,6 +782,7 @@ public class TerminowHome {
         // An AI button next to add: open the assistant from a terminal, acting on the current session.
         ImageView agentView = new ImageView(mActivity);
         agentView.setImageResource(R.drawable.ic_terminow_agent);
+        agentView.setColorFilter(androidx.core.content.ContextCompat.getColor(mActivity, R.color.terminow_text));
         agentView.setPadding(dp(8), dp(8), dp(8), dp(8));
         agentView.setContentDescription(mActivity.getString(R.string.terminow_agent_menu));
         agentView.setOnClickListener(v -> showAgent());
