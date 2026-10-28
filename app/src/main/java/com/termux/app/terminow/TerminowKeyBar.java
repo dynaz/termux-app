@@ -80,6 +80,21 @@ public class TerminowKeyBar {
     @Nullable private Boolean mKeyboardShown;
     private final android.view.ViewTreeObserver.OnGlobalLayoutListener mKeyboardWatcher = this::updateKeyboardButton;
 
+    // --- Width-aware two-row layout ---------------------------------------------------------------
+    /** The cells built for the current mode: the keys, then the arrows (kept together). */
+    private final java.util.List<View> mKeyCells = new java.util.ArrayList<>();
+    private final java.util.List<View> mArrowCells = new java.util.ArrayList<>();
+    /** The tools, in order; the secondary ones may move to the More overflow when space is tight. */
+    @Nullable private View mClipboardCell, mQuickCutCell, mCommandsCell, mMoreCell;
+    private boolean mUserKeysShown;
+    /** Which secondary tools did not fit in two rows and were moved to the More sheet. */
+    private boolean mQuickCutOverflow, mCommandsOverflow;
+    /** The width (px) the rows were last laid out for, so a no-op width change does not rebuild. */
+    private int mDistributedWidth = -1;
+    private final View.OnLayoutChangeListener mWidthWatcher = (v, l, t, r, b, ol, ot, or, ob) -> {
+        if ((r - l) != (or - ol)) distribute();
+    };
+
     private final Runnable mScan = this::scan;
 
     public TerminowKeyBar(@NonNull TermuxActivity activity) {
@@ -113,6 +128,9 @@ public class TerminowKeyBar {
         mKeyboardShown = null;
         // The keyboard shows and hides with a new layout of the window, which is resized for it
         bar.getViewTreeObserver().addOnGlobalLayoutListener(mKeyboardWatcher);
+        // Re-distribute the keys across the two rows whenever the bar's width changes (fold/unfold,
+        // rotate, split-screen, insets), without rebuilding the session.
+        if (mRow != null) { mRow.removeOnLayoutChangeListener(mWidthWatcher); mRow.addOnLayoutChangeListener(mWidthWatcher); }
         updateKeyboardButton();
         sShown = this;
         mShownMode = null;
@@ -161,14 +179,13 @@ public class TerminowKeyBar {
         LinearLayout toolsRow = mRow2;
         if (keysRow == null || toolsRow == null) return;
         ExtraKeysView extraKeysView = mActivity.getExtraKeysView();
-        // The keys of termux.properties stay in the keys row; everything else is made again.
-        for (int i = keysRow.getChildCount() - 1; i >= 0; i--) if (keysRow.getChildAt(i) != extraKeysView) keysRow.removeViewAt(i);
-        toolsRow.removeAllViews();
         mCtrlCap = null;
         mAltCap = null;
+        mUserKeysShown = userKeys;
 
-        // Row 1: the keys and the arrows (or the user's termux.properties keys in their place).
-        int index = 0;
+        // Build the cells for this mode once; distribute() places them across the two rows by width.
+        mKeyCells.clear();
+        mArrowCells.clear();
         if (extraKeysView != null) extraKeysView.setVisibility(userKeys ? View.VISIBLE : View.GONE);
         if (userKeys && extraKeysView != null) {
             extraKeysView.reload(mActivity.getTermuxTerminalExtraKeys().getExtraKeysInfo(), mActivity.getTerminalToolbarDefaultHeight());
@@ -176,14 +193,11 @@ public class TerminowKeyBar {
             params.width = extraKeysView.getMinimumKeysWidth();
             extraKeysView.setLayoutParams(params);
         } else {
-            for (String key : TerminowKeyBarModel.keysOf(mode)) keysRow.addView(keyCap(key), index++);
-            keysRow.addView(gap(), index++);
-            for (String key : TerminowKeyBarModel.NAVIGATION_KEYS) keysRow.addView(arrowCap(key), index++);
+            for (String key : TerminowKeyBarModel.keysOf(mode)) mKeyCells.add(keyCap(key));
+            for (String key : TerminowKeyBarModel.NAVIGATION_KEYS) mArrowCells.add(arrowCap(key));
         }
 
-        // Row 2: the tools — clipboard/attach, QuickCut, commands/AI shortcuts, and More.
-        int t = 0;
-        // The clipboard: paste text, or attach files, which go to /tmp of the tab
+        // The clipboard: paste text, or attach files, which go to /tmp of the tab.
         ImageButton clipboard = iconCap(R.drawable.ic_terminow_paste, R.string.terminow_keybar_paste_attach, null);
         clipboard.setOnClickListener(v -> {
             TerminowHome home = mActivity.getTerminowHome();
@@ -193,15 +207,84 @@ public class TerminowKeyBar {
                     mActivity.getTermuxTerminalSessionClient().onPasteTextFromClipboard(null);
             });
         });
-        toolsRow.addView(clipboard, t++);
-        // ⚡ QuickCut: insert saved text into the session, kept clearly apart from the clipboard
-        toolsRow.addView(iconCap(R.drawable.ic_terminow_quickcut, R.string.terminow_quickcut_title, this::openQuickCut), t++);
+        mClipboardCell = clipboard;
+        mQuickCutCell = iconCap(R.drawable.ic_terminow_quickcut, R.string.terminow_quickcut_title, this::openQuickCut);
         boolean ai = TerminowKeyBarModel.isAi(mode);
-        toolsRow.addView(iconCap(iconOf(mode),
-            ai ? R.string.terminow_keybar_ai_shortcuts : R.string.terminow_keybar_commands, this::showCommands), t++);
-        toolsRow.addView(gap(), t++);
-        toolsRow.addView(iconCap(R.drawable.ic_terminow_more, R.string.terminow_keybar_more, this::showMore), t);
+        mCommandsCell = iconCap(iconOf(mode), ai ? R.string.terminow_keybar_ai_shortcuts : R.string.terminow_keybar_commands, this::showCommands);
+        mMoreCell = iconCap(R.drawable.ic_terminow_more, R.string.terminow_keybar_more, this::showMore);
+
+        mDistributedWidth = -1;
+        distribute();
         updateModifiers();
+    }
+
+    /**
+     * Place the keys, arrows and tools across the two rows for the current width: every row fills the
+     * available width with weighted cells (at least 48dp each), the arrows stay together, and when the
+     * keys and arrows do not fit in the top row they reflow into the bottom row. If even then the tools
+     * do not fit, the secondary ones (QuickCut, the commands/AI shortcut) move to the More overflow
+     * rather than being clipped or shrunk. Re-run on any width change — no session restart.
+     */
+    private void distribute() {
+        LinearLayout keysRow = mRow, toolsRow = mRow2;
+        if (keysRow == null || toolsRow == null) return;
+        int width = keysRow.getWidth();
+        if (width <= 0) { keysRow.post(this::distribute); return; }   // not measured yet
+        if (width == mDistributedWidth && mMoreCell != null && mMoreCell.getParent() != null) return;
+
+        ExtraKeysView extraKeysView = mActivity.getExtraKeysView();
+        for (int i = keysRow.getChildCount() - 1; i >= 0; i--)
+            if (keysRow.getChildAt(i) != extraKeysView) keysRow.removeViewAt(i);
+        toolsRow.removeAllViews();
+        mQuickCutOverflow = false;
+        mCommandsOverflow = false;
+
+        int perRow = Math.max(1, width / dp(48));
+        java.util.List<View> row1 = new java.util.ArrayList<>();
+        java.util.List<View> row2 = new java.util.ArrayList<>();
+
+        if (!mUserKeysShown) {
+            int keysAndArrows = mKeyCells.size() + mArrowCells.size();
+            if (keysAndArrows <= perRow) {
+                row1.addAll(mKeyCells);
+                row1.addAll(mArrowCells);
+            } else if (mKeyCells.size() <= perRow) {
+                row1.addAll(mKeyCells);
+                row2.addAll(mArrowCells);                 // arrows reflow together into row 2
+            } else {
+                for (int i = 0; i < mKeyCells.size(); i++) (i < perRow ? row1 : row2).add(mKeyCells.get(i));
+                row2.addAll(mArrowCells);
+            }
+        }
+
+        // Tools follow any reflowed keys on row 2; secondary ones overflow to More when it is tight.
+        java.util.List<View> row2Tools = new java.util.ArrayList<>();
+        if (mClipboardCell != null) row2Tools.add(mClipboardCell);
+        if (mQuickCutCell != null) row2Tools.add(mQuickCutCell);
+        if (mCommandsCell != null) row2Tools.add(mCommandsCell);
+        if (mMoreCell != null) row2Tools.add(mMoreCell);
+        row2.addAll(row2Tools);
+        while (row2.size() > perRow) {
+            if (mCommandsCell != null && row2.remove(mCommandsCell)) mCommandsOverflow = true;
+            else if (mQuickCutCell != null && row2.remove(mQuickCutCell)) mQuickCutOverflow = true;
+            else break;   // only core cells remain; the fillViewport scroll is the last-resort fallback
+        }
+
+        for (View v : row1) keysRow.addView(stretch(v));
+        for (View v : row2) toolsRow.addView(stretch(v));
+        mDistributedWidth = width;
+    }
+
+    /** Lay a cell out to share its row's width evenly (weight), at least 48dp, with a small gap. */
+    @NonNull
+    private View stretch(@NonNull View v) {
+        if (v.getParent() instanceof ViewGroup) ((ViewGroup) v.getParent()).removeView(v);
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
+        int m = dp(2);
+        p.setMargins(m, m, m, m);
+        v.setMinimumWidth(dp(48));
+        v.setLayoutParams(p);
+        return v;
     }
 
     // ---------------------------------------------------------------------------------------
@@ -226,13 +309,6 @@ public class TerminowKeyBar {
         mask.setColor(0xFFFFFFFF);
         return new android.graphics.drawable.RippleDrawable(ColorStateList.valueOf(0x33FFFFFF), cap,
             new android.graphics.drawable.InsetDrawable(mask, insetX, insetY, insetX, insetY));
-    }
-
-    @NonNull
-    private View gap() {
-        View gap = new View(mActivity);
-        gap.setLayoutParams(new LinearLayout.LayoutParams(dp(6), 1));
-        return gap;
     }
 
     @NonNull
@@ -696,6 +772,16 @@ public class TerminowKeyBar {
 
     /** Snippets, more keys and the password, for a terminal. */
     private void addMore(@NonNull LinearLayout content) {
+        // Secondary keys that did not fit the two rows at the current width are reachable here.
+        if (mQuickCutOverflow || mCommandsOverflow) {
+            section(content, R.string.terminow_keybar_section_shortcuts);
+            if (mQuickCutOverflow)
+                row(content, mActivity.getString(R.string.terminow_quickcut_title), "", this::openQuickCut);
+            if (mCommandsOverflow) {
+                boolean ai = TerminowKeyBarModel.isAi(modeOf(mActivity.getCurrentSession()));
+                row(content, mActivity.getString(ai ? R.string.terminow_keybar_ai_shortcuts : R.string.terminow_keybar_commands), "", this::showCommands);
+            }
+        }
         section(content, R.string.terminow_keybar_section_more);
         TerminowHome home = mActivity.getTerminowHome();
         if (home != null) {

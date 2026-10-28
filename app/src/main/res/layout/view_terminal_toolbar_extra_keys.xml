@@ -16,19 +16,20 @@
         android:layout_weight="1"
         android:orientation="vertical">
 
-        <!-- Row 1: the keys and the arrows (or the user's termux.properties keys) -->
+        <!-- Row 1: the keys and the arrows (or the user's termux.properties keys). Fills the viewport so
+             the keys spread across the width; scrolls only as a fallback on extremely narrow screens. -->
         <HorizontalScrollView
             android:id="@+id/terminow_keybar_keys"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:fillViewport="false"
+            android:fillViewport="true"
             android:overScrollMode="never"
             android:scrollbars="none">
 
             <LinearLayout
                 android:id="@+id/terminow_keybar_row"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
@@ -44,18 +45,19 @@
             </LinearLayout>
         </HorizontalScrollView>
 
-        <!-- Row 2: the tools (clipboard/attach, QuickCut, commands/AI, More) -->
+        <!-- Row 2: the tools (clipboard/attach, QuickCut, commands/AI, More), and keys that reflowed
+             down from row 1 on narrow screens. Fills the viewport width; scrolls only as a fallback. -->
         <HorizontalScrollView
             android:id="@+id/terminow_keybar_tools"
             android:layout_width="match_parent"
             android:layout_height="@dimen/terminow_keybar_height"
-            android:fillViewport="false"
+            android:fillViewport="true"
             android:overScrollMode="never"
             android:scrollbars="none">
 
             <LinearLayout
                 android:id="@+id/terminow_keybar_row2"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:gravity="center_vertical"
                 android:orientation="horizontal" />
