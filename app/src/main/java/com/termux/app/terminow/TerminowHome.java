@@ -200,6 +200,7 @@ public class TerminowHome {
     private final View mExplorerView;
     private final TerminowExplorer mExplorer;
     private final TerminowLauncher mLauncher;
+    @Nullable private TerminowInstallProgress mInstallProgress;
     /** The saved tabs, to bring them back after the app was closed. */
     private final TerminowWorkspace mWorkspace;
     /** The previous output of the next tab that {@link #startSession} starts, for a restored tab. */
@@ -268,6 +269,8 @@ public class TerminowHome {
                 openTerminalAt(directory);
             }
         });
+        mInstallProgress = new TerminowInstallProgress(activity, mLauncher);
+        mInstallProgress.attach();
         mLinuxUi = new TerminowLinuxUi(activity, mStore, new TerminowLinuxUi.Host() {
             @Override
             public void openFiles(@NonNull com.termux.app.terminow.linux.TerminowLinuxEnv env, @NonNull String user, @NonNull String path) {
@@ -2533,6 +2536,7 @@ public class TerminowHome {
     /** The activity ends: close what only lives as long as it, like connections to MCP servers. */
     public void onDestroy() {
         mMcpPage.onDestroy();
+        if (mInstallProgress != null) mInstallProgress.detach();
     }
 
     public void onStoragePermissionResult() {

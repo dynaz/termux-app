@@ -137,4 +137,5 @@
     <string name="terminow_tools_github_done">ติดตั้ง %1$s แล้ว</string>
     <string name="terminow_tools_github_install_failed">ติดตั้งล้มเหลว:
 %1$s</string>
+    <string name="terminow_tools_progress_queued"> · อีก %1$d รายการในคิว</string>
 </resources>

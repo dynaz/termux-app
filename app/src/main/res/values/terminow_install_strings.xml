@@ -139,4 +139,5 @@
     <string name="terminow_tools_github_done">Installed %1$s</string>
     <string name="terminow_tools_github_install_failed">Install failed:
 %1$s</string>
+    <string name="terminow_tools_progress_queued"> · %1$d more queued</string>
 </resources>

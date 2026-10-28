@@ -602,6 +602,22 @@ public final class TerminowToolInstaller {
         return null;
     }
 
+    /** Every install running right now, across environments, for the floating progress card. */
+    @NonNull
+    public static synchronized List<Job> runningJobs() {
+        List<Job> out = new ArrayList<>();
+        for (Job job : sJobs.values()) if (job.mState == State.RUNNING) out.add(job);
+        return out;
+    }
+
+    /** A short display name for a job: the plan's tool name, or the tool's id. */
+    @NonNull
+    public static String jobLabel(@NonNull Job job) {
+        if (job.planLabel != null && !job.planLabel.isEmpty()) return job.planLabel;
+        String id = job.tool.id;
+        return id.isEmpty() ? id : Character.toUpperCase(id.charAt(0)) + id.substring(1);
+    }
+
     /** Forget an ended job, like after its state was checked again. */
     public static synchronized void forget(@NonNull String alias, @NonNull String user, @NonNull Tool tool) {
         Job job = sJobs.get(keyOf(alias, user, tool));
