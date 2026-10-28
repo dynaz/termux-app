@@ -502,14 +502,89 @@ final class TerminowToolSheet {
     }
 
     /**
-     * From GitHub: analyse a public repository and install what it describes. The analysis backend
-     * (DeepSeek + repository reading) lands in a later phase; until it is wired up this states that
-     * plainly rather than pretending it can install — the button reflects the real capability.
+     * From GitHub: ask for a public repository URL, read the real repository (metadata, README,
+     * manifests — pinned to a commit), then show what was read. Reading is real and off the main
+     * thread; the AI analysis that turns it into an install plan (and any install) is gated on the
+     * built-in AI being available, so nothing is faked and nothing from the repo is run on its own.
      */
     private void fromGithub() {
+        EditText input = new EditText(mActivity);
+        input.setSingleLine(true);
+        input.setHint("github.com/owner/repo");
+        input.setTextColor(color(R.color.terminow_text));
+        input.setHintTextColor(color(R.color.terminow_text_secondary));
+        input.setBackgroundResource(R.drawable.terminow_field);
+        input.setPadding(dp(12), dp(10), dp(12), dp(10));
+        android.widget.FrameLayout box = new android.widget.FrameLayout(mActivity);
+        box.setPadding(dp(20), dp(8), dp(20), dp(4));
+        box.addView(input);
         new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
             .setTitle(R.string.terminow_tools_from_github)
-            .setMessage(R.string.terminow_tools_github_soon)
+            .setMessage(R.string.terminow_tools_github_hint)
+            .setView(box)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(R.string.terminow_tools_github_analyze, (d, w) -> analyzeGithub(input.getText().toString()))
+            .show();
+    }
+
+    private void analyzeGithub(@NonNull String url) {
+        TerminowGithubRepo.Parsed parsed = TerminowGithubRepo.parse(url);
+        if (parsed == null) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_tools_github_bad_url), true);
+            return;
+        }
+        android.app.ProgressDialog progress = new android.app.ProgressDialog(mActivity);
+        progress.setMessage(mActivity.getString(R.string.terminow_tools_github_reading, parsed.slug()));
+        progress.setCancelable(true);
+        progress.show();
+        new Thread(() -> {
+            String error = null;
+            TerminowGithubRepo.Repo repo = null;
+            try {
+                repo = TerminowGithubRepo.fetch(parsed);
+            } catch (java.io.IOException e) {
+                error = e.getMessage();
+            }
+            final String err = error;
+            final TerminowGithubRepo.Repo result = repo;
+            mActivity.runOnUiThread(() -> {
+                if (progress.isShowing()) progress.dismiss();
+                if (result != null) showGithubPlan(result);
+                else mActivity.showToast(mActivity.getString(R.string.terminow_tools_github_read_failed,
+                    err == null ? "?" : err), true);
+            });
+        }, "TermiNow github " + parsed.slug()).start();
+    }
+
+    /**
+     * Show what was read from the repository, pinned to its commit. The install plan comes from the
+     * built-in AI (next phase); the Install action stays disabled until there is a validated, supported
+     * plan, and the raw repository text is shown only as untrusted reference, never run.
+     */
+    private void showGithubPlan(@NonNull TerminowGithubRepo.Repo repo) {
+        LinearLayout box = new LinearLayout(mActivity);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(12), dp(20), dp(8));
+        box.addView(text(repo.revision(), 15, R.color.terminow_text));
+        if (!repo.description.isEmpty()) box.addView(text(repo.description, 13, R.color.terminow_text_secondary));
+        StringBuilder sum = new StringBuilder();
+        sum.append(mActivity.getString(R.string.terminow_tools_github_read_ok)).append("\n");
+        if (!repo.readme.isEmpty()) sum.append("• README (").append(repo.readme.length()).append(" chars)\n");
+        for (TerminowGithubRepo.Blob b : repo.manifests) sum.append("• ").append(b.path).append("\n");
+        if (repo.releaseTag != null) sum.append("• release ").append(repo.releaseTag).append("\n");
+        TextView s = text(sum.toString().trim(), 13, R.color.terminow_text_secondary);
+        s.setPadding(0, dp(8), 0, 0);
+        box.addView(s);
+        // The AI analysis + plan is the next phase; keep the install off until a real supported plan exists.
+        TextView pending = text(mActivity.getString(R.string.terminow_tools_github_plan_pending), 12, R.color.terminow_mcp_warn);
+        pending.setPadding(0, dp(10), 0, 0);
+        box.addView(pending);
+        ScrollView scroll = new ScrollView(mActivity);
+        scroll.addView(box);
+        new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(repo.owner + "/" + repo.repo)
+            .setView(scroll)
+            .setNeutralButton(R.string.terminow_install_detail_docs, (d, w) -> openUrl(repo.htmlUrl))
             .setPositiveButton(android.R.string.ok, null)
             .show();
     }

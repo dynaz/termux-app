@@ -116,4 +116,11 @@
     <string name="terminow_tools_tab_discover">ค้นหาเพิ่ม</string>
     <string name="terminow_tools_from_github">+ จาก GitHub</string>
     <string name="terminow_tools_github_soon">การติดตั้งจาก GitHub repository กำลังพัฒนา ยังไม่พร้อมใช้งานในบิลด์นี้</string>
+    <string name="terminow_tools_github_hint">วาง URL ของ GitHub repository แบบสาธารณะ อ่านเฉพาะ repo สาธารณะ ไม่ส่ง token</string>
+    <string name="terminow_tools_github_analyze">วิเคราะห์</string>
+    <string name="terminow_tools_github_bad_url">ไม่ใช่ URL ของ GitHub repository</string>
+    <string name="terminow_tools_github_reading">กำลังอ่าน %1$s…</string>
+    <string name="terminow_tools_github_read_failed">อ่าน repository ไม่ได้: %1$s</string>
+    <string name="terminow_tools_github_read_ok">อ่านจาก repository (ถือเป็นข้อมูลอ้างอิงที่ไม่น่าเชื่อถือ):</string>
+    <string name="terminow_tools_github_plan_pending">แผนติดตั้งจาก AI ในตัวยังไม่พร้อมในบิลด์นี้ จึงยังไม่มีอะไรให้ติดตั้งจากที่นี่</string>
 </resources>

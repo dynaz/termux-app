@@ -118,4 +118,11 @@
     <string name="terminow_tools_tab_discover">Discover</string>
     <string name="terminow_tools_from_github">+ From GitHub</string>
     <string name="terminow_tools_github_soon">Installing from a GitHub repository is being set up and isn\'t available in this build yet.</string>
+    <string name="terminow_tools_github_hint">Paste a public GitHub repository URL. Only public repositories are read; no token is sent.</string>
+    <string name="terminow_tools_github_analyze">Analyze</string>
+    <string name="terminow_tools_github_bad_url">That is not a GitHub repository URL</string>
+    <string name="terminow_tools_github_reading">Reading %1$s…</string>
+    <string name="terminow_tools_github_read_failed">Could not read the repository: %1$s</string>
+    <string name="terminow_tools_github_read_ok">Read from the repository (treated as untrusted reference):</string>
+    <string name="terminow_tools_github_plan_pending">The install plan from the built-in AI is not available in this build yet, so there is nothing to install from here.</string>
 </resources>
