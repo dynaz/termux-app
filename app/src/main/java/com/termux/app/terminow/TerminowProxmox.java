@@ -62,16 +62,76 @@ public final class TerminowProxmox {
 
     public static final class Result {
         public final Status status;
-        @Nullable public final String version;       // on OK
+        @Nullable public final String version;       // on OK (from /version)
         @Nullable public final String fingerprint;   // on CERT_UNTRUSTED: the server's, to show and trust
         @Nullable public final String error;         // sanitized
+        @Nullable public final String body;          // on OK for a data GET
 
         Result(Status status, @Nullable String version, @Nullable String fingerprint, @Nullable String error) {
+            this(status, version, fingerprint, error, null);
+        }
+
+        Result(Status status, @Nullable String version, @Nullable String fingerprint, @Nullable String error, @Nullable String body) {
             this.status = status;
             this.version = version;
             this.fingerprint = fingerprint;
             this.error = error;
+            this.body = body;
         }
+    }
+
+    /** A Proxmox node (host in the cluster). */
+    public static final class PveNode {
+        public String name = "";
+        public String status = "";   // "online" / "offline" / ...
+    }
+
+    /** A guest: a QEMU VM or an LXC container on a node. */
+    public static final class PveGuest {
+        public int vmid;
+        public String name = "";
+        public String status = "";   // "running" / "stopped" / ...
+        public String type = "";     // "qemu" or "lxc"
+        public String node = "";
+    }
+
+    /** Parse the node list from {@code GET /nodes}. */
+    @NonNull
+    public static java.util.List<PveNode> parseNodes(@NonNull String body) {
+        java.util.List<PveNode> out = new java.util.ArrayList<>();
+        try {
+            org.json.JSONArray data = new JSONObject(body).optJSONArray("data");
+            for (int i = 0; data != null && i < data.length(); i++) {
+                JSONObject o = data.optJSONObject(i);
+                if (o == null) continue;
+                PveNode n = new PveNode();
+                n.name = o.optString("node");
+                n.status = o.optString("status");
+                if (!n.name.isEmpty()) out.add(n);
+            }
+        } catch (JSONException ignored) { }
+        return out;
+    }
+
+    /** Parse the guest list from {@code GET /nodes/{node}/qemu} or {@code .../lxc}; {@code type} is "qemu"/"lxc". */
+    @NonNull
+    public static java.util.List<PveGuest> parseGuests(@NonNull String body, @NonNull String type, @NonNull String node) {
+        java.util.List<PveGuest> out = new java.util.ArrayList<>();
+        try {
+            org.json.JSONArray data = new JSONObject(body).optJSONArray("data");
+            for (int i = 0; data != null && i < data.length(); i++) {
+                JSONObject o = data.optJSONObject(i);
+                if (o == null) continue;
+                PveGuest g = new PveGuest();
+                g.vmid = o.optInt("vmid");
+                g.name = o.optString("name", o.optString("hostname", "vm-" + g.vmid));
+                g.status = o.optString("status");
+                g.type = type;
+                g.node = node;
+                if (g.vmid > 0) out.add(g);
+            }
+        } catch (JSONException ignored) { }
+        return out;
     }
 
     // ---- pure helpers (unit-tested) ----
@@ -124,6 +184,55 @@ public final class TerminowProxmox {
         };
     }
 
+    /** The status of a Proxmox task (UPID), from {@code /tasks/{upid}/status}. */
+    public static final class TaskStatus {
+        public boolean running;
+        public String exitStatus = "";   // "OK" when a finished task succeeded, else the failure reason
+    }
+
+    /** The API path for a guest power action: start, shutdown, reboot or stop. */
+    @NonNull
+    public static String guestActionPath(@NonNull PveGuest g, @NonNull String action) {
+        String kind = "lxc".equals(g.type) ? "lxc" : "qemu";
+        return "/nodes/" + g.node + "/" + kind + "/" + g.vmid + "/status/" + action;
+    }
+
+    @NonNull
+    public static String taskStatusPath(@NonNull String node, @NonNull String upid) {
+        return "/nodes/" + node + "/tasks/" + upid + "/status";
+    }
+
+    /** The task id (UPID) returned by a power action, or empty. */
+    @NonNull
+    public static String parseUpid(@NonNull String body) {
+        try {
+            return new JSONObject(body).optString("data", "");
+        } catch (JSONException e) {
+            return "";
+        }
+    }
+
+    @NonNull
+    public static TaskStatus parseTaskStatus(@NonNull String body) {
+        TaskStatus t = new TaskStatus();
+        try {
+            JSONObject d = new JSONObject(body).optJSONObject("data");
+            if (d != null) {
+                t.running = "running".equals(d.optString("status"));
+                t.exitStatus = d.optString("exitstatus", "");
+            }
+        } catch (JSONException ignored) { }
+        return t;
+    }
+
+    /** The Proxmox web UI URL for a connection. */
+    @NonNull
+    public static String webUrl(@NonNull Connection c) {
+        String h = c.host.trim();
+        if (h.contains(":") && !h.startsWith("[")) h = "[" + h + "]";
+        return "https://" + h + ":" + (c.port > 0 ? c.port : DEFAULT_PORT) + "/";
+    }
+
     /** The Proxmox version string from a {@code /version} response body, or empty if absent. */
     @NonNull
     public static String parseVersion(@NonNull String body) {
@@ -154,12 +263,7 @@ public final class TerminowProxmox {
             return new Result(Status.ERROR, null, null, "bad address");
         }
         try {
-            HttpsURLConnection conn = (HttpsURLConnection) url.openConnection();
-            if (!c.fingerprint.isEmpty()) conn.setSSLSocketFactory(pinnedFactory(c.fingerprint));
-            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
-            conn.setReadTimeout(READ_TIMEOUT_MS);
-            conn.setRequestProperty("Authorization", authHeader(c.tokenId, c.tokenSecret));
-            conn.setRequestProperty("Accept", "application/json");
+            HttpsURLConnection conn = connect(c, url);
             int code = conn.getResponseCode();
             if (code == 401 || code == 403) return new Result(Status.AUTH_FAILED, null, null, "token not accepted");
             if (code / 100 == 2) {
@@ -177,6 +281,68 @@ public final class TerminowProxmox {
         } catch (IOException | RuntimeException e) {
             return new Result(Status.ERROR, null, null, e.getClass().getSimpleName());
         }
+    }
+
+    /** An authenticated GET of an API path (e.g. "/nodes"); returns the body on OK, or a typed failure. */
+    @NonNull
+    public static Result get(@NonNull Connection c, @NonNull String path) {
+        URL url;
+        try {
+            url = new URL(baseUrl(c.host, c.port) + path);
+        } catch (IOException e) {
+            return new Result(Status.ERROR, null, null, "bad address");
+        }
+        try {
+            HttpsURLConnection conn = connect(c, url);
+            int code = conn.getResponseCode();
+            if (code == 401 || code == 403) return new Result(Status.AUTH_FAILED, null, null, "token not accepted");
+            if (code / 100 == 2) return new Result(Status.OK, null, null, null, read(conn.getInputStream()));
+            return new Result(Status.ERROR, null, null, "HTTP " + code);
+        } catch (SSLHandshakeException e) {
+            return new Result(c.fingerprint.isEmpty() ? Status.CERT_UNTRUSTED : Status.CERT_MISMATCH, null, null, "TLS not trusted");
+        } catch (ConnectException | SocketTimeoutException | UnknownHostException e) {
+            return new Result(Status.UNREACHABLE, null, null, "could not reach the server");
+        } catch (IOException | RuntimeException e) {
+            return new Result(Status.ERROR, null, null, e.getClass().getSimpleName());
+        }
+    }
+
+    /** An authenticated POST (empty body) of an API path, e.g. a guest power action; returns the UPID body on OK. */
+    @NonNull
+    public static Result post(@NonNull Connection c, @NonNull String path) {
+        URL url;
+        try {
+            url = new URL(baseUrl(c.host, c.port) + path);
+        } catch (IOException e) {
+            return new Result(Status.ERROR, null, null, "bad address");
+        }
+        try {
+            HttpsURLConnection conn = connect(c, url);
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            conn.getOutputStream().close();   // empty body
+            int code = conn.getResponseCode();
+            if (code == 401 || code == 403) return new Result(Status.AUTH_FAILED, null, null, "token not accepted");
+            if (code / 100 == 2) return new Result(Status.OK, null, null, null, read(conn.getInputStream()));
+            return new Result(Status.ERROR, null, null, "HTTP " + code);
+        } catch (SSLHandshakeException e) {
+            return new Result(c.fingerprint.isEmpty() ? Status.CERT_UNTRUSTED : Status.CERT_MISMATCH, null, null, "TLS not trusted");
+        } catch (ConnectException | SocketTimeoutException | UnknownHostException e) {
+            return new Result(Status.UNREACHABLE, null, null, "could not reach the server");
+        } catch (IOException | RuntimeException e) {
+            return new Result(Status.ERROR, null, null, e.getClass().getSimpleName());
+        }
+    }
+
+    @NonNull
+    private static HttpsURLConnection connect(@NonNull Connection c, @NonNull URL url) throws IOException {
+        HttpsURLConnection conn = (HttpsURLConnection) url.openConnection();
+        if (!c.fingerprint.isEmpty()) conn.setSSLSocketFactory(pinnedFactory(c.fingerprint));
+        conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+        conn.setReadTimeout(READ_TIMEOUT_MS);
+        conn.setRequestProperty("Authorization", authHeader(c.tokenId, c.tokenSecret));
+        conn.setRequestProperty("Accept", "application/json");
+        return conn;
     }
 
     /** Read the server's leaf-certificate fingerprint for the trust-on-confirm prompt. Reads it, does not trust it. */

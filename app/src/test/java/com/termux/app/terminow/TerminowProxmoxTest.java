@@ -87,6 +87,65 @@ public class TerminowProxmoxTest {
     }
 
     @Test
+    public void parseNodesReadsNamesAndStatus() {
+        java.util.List<TerminowProxmox.PveNode> nodes = TerminowProxmox.parseNodes(
+            "{\"data\":[{\"node\":\"pve\",\"status\":\"online\"},{\"node\":\"pve2\",\"status\":\"offline\"}]}");
+        assertEquals(2, nodes.size());
+        assertEquals("pve", nodes.get(0).name);
+        assertEquals("online", nodes.get(0).status);
+        assertEquals("offline", nodes.get(1).status);
+        assertTrue(TerminowProxmox.parseNodes("{}").isEmpty());
+        assertTrue(TerminowProxmox.parseNodes("bad").isEmpty());
+    }
+
+    @Test
+    public void parseGuestsReadsVmidNameStatusAndType() {
+        java.util.List<TerminowProxmox.PveGuest> g = TerminowProxmox.parseGuests(
+            "{\"data\":[{\"vmid\":100,\"name\":\"web\",\"status\":\"running\"},{\"vmid\":101,\"status\":\"stopped\"}]}",
+            "qemu", "pve");
+        assertEquals(2, g.size());
+        assertEquals(100, g.get(0).vmid);
+        assertEquals("web", g.get(0).name);
+        assertEquals("running", g.get(0).status);
+        assertEquals("qemu", g.get(0).type);
+        assertEquals("pve", g.get(0).node);
+        assertEquals("vm-101", g.get(1).name);   // name falls back to vm-<vmid>
+    }
+
+    @Test
+    public void guestActionAndTaskPaths() {
+        TerminowProxmox.PveGuest vm = new TerminowProxmox.PveGuest();
+        vm.vmid = 100; vm.type = "qemu"; vm.node = "pve";
+        assertEquals("/nodes/pve/qemu/100/status/start", TerminowProxmox.guestActionPath(vm, "start"));
+        assertEquals("/nodes/pve/qemu/100/status/shutdown", TerminowProxmox.guestActionPath(vm, "shutdown"));
+        TerminowProxmox.PveGuest ct = new TerminowProxmox.PveGuest();
+        ct.vmid = 201; ct.type = "lxc"; ct.node = "pve2";
+        assertEquals("/nodes/pve2/lxc/201/status/reboot", TerminowProxmox.guestActionPath(ct, "reboot"));
+        assertEquals("/nodes/pve/tasks/UPID:x/status", TerminowProxmox.taskStatusPath("pve", "UPID:x"));
+    }
+
+    @Test
+    public void parseUpidAndTaskStatus() {
+        assertEquals("UPID:pve:00:...:qmstart:100:root@pam:",
+            TerminowProxmox.parseUpid("{\"data\":\"UPID:pve:00:...:qmstart:100:root@pam:\"}"));
+        assertEquals("", TerminowProxmox.parseUpid("{}"));
+        TerminowProxmox.TaskStatus running = TerminowProxmox.parseTaskStatus("{\"data\":{\"status\":\"running\"}}");
+        assertTrue(running.running);
+        TerminowProxmox.TaskStatus done = TerminowProxmox.parseTaskStatus("{\"data\":{\"status\":\"stopped\",\"exitstatus\":\"OK\"}}");
+        assertTrue(!done.running);
+        assertEquals("OK", done.exitStatus);
+    }
+
+    @Test
+    public void webUrlFromConnection() {
+        TerminowProxmox.Connection c = new TerminowProxmox.Connection();
+        c.host = "pve.local"; c.port = 8006;
+        assertEquals("https://pve.local:8006/", TerminowProxmox.webUrl(c));
+        c.host = "fe80::1"; c.port = 0;
+        assertEquals("https://[fe80::1]:8006/", TerminowProxmox.webUrl(c));
+    }
+
+    @Test
     public void parseVersionReadsTheData() {
         assertEquals("8.1.4", TerminowProxmox.parseVersion("{\"data\":{\"version\":\"8.1.4\",\"release\":\"8.1\"}}"));
         assertEquals("", TerminowProxmox.parseVersion("{\"data\":{}}"));
