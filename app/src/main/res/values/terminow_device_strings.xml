@@ -22,4 +22,8 @@
     <string name="terminow_lab_mikrotik_chr">MikroTik CHR</string>
     <string name="terminow_lab_linux_vm">Linux VM</string>
     <string name="terminow_lab_esxi">VMware ESXi Host</string>
+    <string name="terminow_lab_proxmox">Proxmox VE</string>
+    <string name="terminow_lab_proxmox_help">A Proxmox VE server over SSH. Manage VMs and containers with qm and pct from the node shell. The SSH host key is verified; credentials stay in the keychain.</string>
+    <string name="terminow_lab_docker">Docker</string>
+    <string name="terminow_lab_docker_help">A Docker host over SSH. Run docker commands on the host. The SSH host key is verified; credentials stay in the keychain.</string>
 </resources>

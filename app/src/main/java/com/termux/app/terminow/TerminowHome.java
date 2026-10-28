@@ -2917,24 +2917,125 @@ public class TerminowHome {
     /** Show the form to add or edit a host in a panel at the side of the screen. */
     /** Show device templates (remote devices or virtual labs); a choice shows its help then Add Host. */
     private void showDeviceTemplates(@NonNull List<TerminowRemoteDevices.Template> templates, int titleRes) {
-        CharSequence[] names = new CharSequence[templates.size()];
-        for (int i = 0; i < templates.size(); i++) names[i] = mActivity.getString(templates.get(i).nameRes);
-        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+        // A card for each template: one column on a phone, two on a wide screen or an unfolded foldable.
+        // Tapping a card opens the SSH host form prefilled for that type (Test connection + Save there).
+        boolean two = mActivity.getResources().getConfiguration().screenWidthDp >= 720;
+        ScrollView scroll = new ScrollView(mActivity);
+        LinearLayout grid = new LinearLayout(mActivity);
+        grid.setOrientation(LinearLayout.VERTICAL);
+        grid.setPadding(dp(16), dp(4), dp(16), dp(4));
+        scroll.addView(grid);
+        AlertDialog dialog = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
             .setTitle(titleRes)
-            .setItems(names, (d, which) -> {
-                TerminowRemoteDevices.Template t = templates.get(which);
-                new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
-                    .setTitle(t.nameRes)
-                    .setMessage(t.helpRes)
-                    .setPositiveButton(R.string.terminow_quick_add_ssh_host, (d2, w) -> {
-                        mHosts = mStore.getHosts();
-                        mGroups = mStore.getGroups();
-                        showHostDialog(null, TerminowRemoteDevices.prefill(t), null);
-                    })
-                    .setNegativeButton(R.string.terminow_close_dialog, null)
-                    .show();
-            })
-            .show();
+            .setView(scroll)
+            .setNegativeButton(R.string.terminow_close_dialog, null)
+            .create();
+        LinearLayout row = null;
+        for (int i = 0; i < templates.size(); i++) {
+            final TerminowRemoteDevices.Template t = templates.get(i);
+            View card = deviceCard(t, () -> {
+                dialog.dismiss();
+                mHosts = mStore.getHosts();
+                mGroups = mStore.getGroups();
+                showHostDialog(null, TerminowRemoteDevices.prefill(t), null);
+            });
+            if (two) {
+                if (i % 2 == 0) {
+                    row = new LinearLayout(mActivity);
+                    row.setOrientation(LinearLayout.HORIZONTAL);
+                    grid.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                }
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+                lp.setMargins(i % 2 == 0 ? 0 : dp(5), dp(4), i % 2 == 0 ? dp(5) : 0, dp(4));
+                row.addView(card, lp);
+            } else {
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                lp.setMargins(0, dp(4), 0, dp(4));
+                grid.addView(card, lp);
+            }
+        }
+        if (two && templates.size() % 2 == 1 && row != null) {
+            View spacer = new View(mActivity);   // balance the last odd card
+            LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(0, 1, 1f);
+            slp.leftMargin = dp(5);
+            row.addView(spacer, slp);
+        }
+        dialog.show();
+    }
+
+    /** One device/lab template as a rounded card: icon, name, short description, type badge and arrow. */
+    @NonNull
+    private View deviceCard(@NonNull TerminowRemoteDevices.Template t, @NonNull Runnable onClick) {
+        LinearLayout card = new LinearLayout(mActivity);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(dp(14));
+        bg.setColor(ContextCompat.getColor(mActivity, R.color.terminow_field));
+        bg.setStroke(dp(1), ContextCompat.getColor(mActivity, R.color.terminow_quick_border));
+        card.setBackground(bg);
+        card.setPadding(dp(14), dp(12), dp(10), dp(12));
+        card.setClickable(true);
+        card.setFocusable(true);
+        card.setOnClickListener(v -> onClick.run());
+
+        ImageView icon = new ImageView(mActivity);
+        icon.setImageResource(iconFor(t.type));
+        icon.setColorFilter(ContextCompat.getColor(mActivity, R.color.terminow_panel_accent));
+        LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(32), dp(32));
+        ilp.rightMargin = dp(12);
+        card.addView(icon, ilp);
+
+        LinearLayout texts = new LinearLayout(mActivity);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        TextView name = new TextView(mActivity);
+        name.setText(mActivity.getString(t.nameRes));
+        name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        name.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
+        name.setTypeface(Typeface.DEFAULT_BOLD);
+        texts.addView(name);
+        TextView desc = new TextView(mActivity);
+        desc.setText(mActivity.getString(t.helpRes));
+        desc.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        desc.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+        desc.setMaxLines(2);
+        desc.setEllipsize(TextUtils.TruncateAt.END);
+        texts.addView(desc);
+        String tag = TerminowRemoteDevices.tagFor(t.type);
+        if (!tag.isEmpty()) {
+            TextView badge = new TextView(mActivity);
+            badge.setText(tag);
+            badge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+            badge.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
+            badge.setPadding(dp(8), dp(2), dp(8), dp(2));
+            GradientDrawable pill = new GradientDrawable();
+            pill.setCornerRadius(dp(10));
+            pill.setColor(ContextCompat.getColor(mActivity, R.color.terminow_surface));
+            badge.setBackground(pill);
+            LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            blp.topMargin = dp(6);
+            badge.setLayoutParams(blp);
+            texts.addView(badge);
+        }
+        card.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        ImageView arrow = new ImageView(mActivity);
+        arrow.setImageResource(R.drawable.ic_terminow_forward);
+        arrow.setColorFilter(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+        LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(dp(20), dp(20));
+        alp.leftMargin = dp(6);
+        card.addView(arrow, alp);
+        return card;
+    }
+
+    private int iconFor(@NonNull TerminowDeviceProfile.Type type) {
+        switch (type) {
+            case PROXMOX_VE: return R.drawable.ic_terminow_lab_proxmox;
+            case DOCKER: return R.drawable.ic_terminow_lab_docker;
+            case MIKROTIK: case CISCO: return R.drawable.ic_terminow_lab_router;
+            case ESXI: return R.drawable.ic_terminow_lab_hypervisor;
+            default: return R.drawable.ic_terminow_lab_vm;
+        }
     }
 
     private void showHostDialog(@Nullable TerminowStore.Host existingHost) {

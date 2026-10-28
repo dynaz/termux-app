@@ -53,8 +53,10 @@ public final class TerminowRemoteDevices {
     @NonNull
     public static List<Template> virtualLabs() {
         List<Template> list = new ArrayList<>();
-        list.add(new Template(R.string.terminow_lab_mikrotik_chr, R.string.terminow_device_mikrotik_help, TerminowDeviceProfile.Type.MIKROTIK, 22));
+        list.add(new Template(R.string.terminow_lab_proxmox, R.string.terminow_lab_proxmox_help, TerminowDeviceProfile.Type.PROXMOX_VE, 22));
+        list.add(new Template(R.string.terminow_lab_docker, R.string.terminow_lab_docker_help, TerminowDeviceProfile.Type.DOCKER, 22));
         list.add(new Template(R.string.terminow_lab_linux_vm, R.string.terminow_device_generic_help, TerminowDeviceProfile.Type.GENERIC_LINUX, 22));
+        list.add(new Template(R.string.terminow_lab_mikrotik_chr, R.string.terminow_device_mikrotik_help, TerminowDeviceProfile.Type.MIKROTIK, 22));
         list.add(new Template(R.string.terminow_lab_esxi, R.string.terminow_device_esxi_help, TerminowDeviceProfile.Type.ESXI, 22));
         return Collections.unmodifiableList(list);
     }
@@ -81,6 +83,8 @@ public final class TerminowRemoteDevices {
             case SYNOLOGY: return "NAS";
             case MIKROTIK: case CISCO: return "Router";
             case ESXI: return "Hypervisor";
+            case PROXMOX_VE: return "Virtualization";
+            case DOCKER: return "Containers";
             case GENERIC_LINUX: return "Server";
             default: return "";
         }

@@ -22,4 +22,8 @@
     <string name="terminow_lab_mikrotik_chr">MikroTik CHR</string>
     <string name="terminow_lab_linux_vm">Linux VM</string>
     <string name="terminow_lab_esxi">VMware ESXi Host</string>
+    <string name="terminow_lab_proxmox">Proxmox VE</string>
+    <string name="terminow_lab_proxmox_help">เซิร์ฟเวอร์ Proxmox VE ผ่าน SSH จัดการ VM และคอนเทนเนอร์ด้วย qm และ pct จากเชลล์ของโหนด ตรวจสอบ SSH host key และเก็บข้อมูลเข้าสู่ระบบใน keychain</string>
+    <string name="terminow_lab_docker">Docker</string>
+    <string name="terminow_lab_docker_help">โฮสต์ Docker ผ่าน SSH รันคำสั่ง docker บนโฮสต์ ตรวจสอบ SSH host key และเก็บข้อมูลเข้าสู่ระบบใน keychain</string>
 </resources>

@@ -20,7 +20,7 @@ public final class TerminowDeviceProfile {
 
     /** The device type stored on a host. The stored key is the enum name lower-cased. */
     public enum Type {
-        GENERIC_LINUX, SYNOLOGY, MIKROTIK, CISCO, ESXI, OTHER_SSH
+        GENERIC_LINUX, SYNOLOGY, MIKROTIK, CISCO, ESXI, PROXMOX_VE, DOCKER, OTHER_SSH
     }
 
     /** A capability that is either known to be supported, known not to be, or not yet known. */
@@ -40,6 +40,8 @@ public final class TerminowDeviceProfile {
             case "mikrotik": return Type.MIKROTIK;
             case "cisco": return Type.CISCO;
             case "esxi": return Type.ESXI;
+            case "proxmox_ve": case "proxmox": return Type.PROXMOX_VE;
+            case "docker": return Type.DOCKER;
             case "other_ssh": case "other": return Type.OTHER_SSH;
             case "generic_linux": case "generic": case "": return Type.GENERIC_LINUX;
             default: return Type.GENERIC_LINUX;
@@ -65,7 +67,10 @@ public final class TerminowDeviceProfile {
 
     /** Whether the SSH session is a POSIX shell where Linux commands make sense. */
     public static boolean isLinuxShell(@NonNull Type type) {
-        return type == Type.GENERIC_LINUX || type == Type.SYNOLOGY;
+        // Proxmox VE (Debian) and a Docker host are real POSIX shells reached over SSH, where Linux
+        // commands (and pct/qm/docker) make sense; TermiNow still does not auto-bootstrap into them.
+        return type == Type.GENERIC_LINUX || type == Type.SYNOLOGY
+            || type == Type.PROXMOX_VE || type == Type.DOCKER;
     }
 
     /** Whether the device speaks its own CLI rather than a POSIX shell (no bash/apt/fish is sent). */
