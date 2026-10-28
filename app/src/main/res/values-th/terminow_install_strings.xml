@@ -78,6 +78,7 @@
     <string name="terminow_install_opencode_description">AI coding agent แบบโอเพนซอร์สสำหรับเทอร์มินัล</string>
     <string name="terminow_install_aider_description">AI pair programming ในเทอร์มินัลของคุณ (Aider)</string>
     <string name="terminow_install_hermes_description">ผู้ช่วย AI พร้อมหน่วยความจำ, สกิล และ MCP</string>
+    <string name="terminow_install_antigravity_description">เอเจนต์โค้ด CLI ของ Google Antigravity (agy) ส่วน Antigravity IDE เป็นแอปเดสก์ท็อปแยกต่างหาก</string>
     <string name="terminow_install_gstack_description">สกิลสำหรับ Claude Code โดย Garry Tan: รีวิว ทดสอบ ส่งงาน และอื่น ๆ พร้อม Bun ต้องมี Claude Code</string>
     <string name="terminow_install_fail_needs_claude">ยังไม่ได้ติดตั้ง Claude Code ติดตั้งก่อน</string>
     <string name="terminow_install_plugins">ปลั๊กอิน Claude Code</string>

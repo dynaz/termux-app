@@ -38,6 +38,8 @@ public final class TerminowToolInstaller {
         CODEX("codex"), GEMINI("gemini"), GROK("grok"), OPENCODE("opencode"), AIDER("aider"),
         /** Hermes Agent by Nous Research, from its official installer; not verified on proot. */
         HERMES("hermes"),
+        /** Google Antigravity CLI (agy), from its official installer; not verified on proot. */
+        ANTIGRAVITY("antigravity"),
         GSTACK("gstack"), GIT("git"), CURL("curl"), TMUX("tmux"),
         /** Fish, the interactive shell with suggestions from its history, from apt. */
         FISH("fish"),
@@ -252,12 +254,13 @@ public final class TerminowToolInstaller {
         "( . /etc/os-release 2>/dev/null; [ -n \"$PRETTY_NAME\" ] && echo \"TERMINOW_OS=$PRETTY_NAME\" ) 2>/dev/null\n" +
         "command -v apt-get >/dev/null 2>&1 && echo TERMINOW_APT=yes\n" +
         "command -v sudo >/dev/null 2>&1 && echo TERMINOW_SUDO=yes\n" +
-        "for t in claude cursor codex gemini grok opencode aider hermes gstack git curl tmux fish; do\n" +
+        "for t in claude cursor codex gemini grok opencode aider hermes antigravity gstack git curl tmux fish; do\n" +
         "  v=\n" +
         "  case $t in\n" +
         "    claude) v=$(claude --version 2>/dev/null);;\n" +
         "    cursor) v=$(cursor-agent --version 2>/dev/null);;\n" +
         "    hermes) command -v hermes >/dev/null 2>&1 && { v=$(hermes --version 2>/dev/null | head -n 1); [ -n \"$v\" ] || v=hermes; };;\n" +
+        "    antigravity) command -v agy >/dev/null 2>&1 && { v=$(agy --version 2>/dev/null | head -n 1); [ -n \"$v\" ] || v=agy; };;\n" +
         "    gstack) [ -f \"$HOME/" + GSTACK_DIR + "/SKILL.md\" ] && v=\"gstack $(head -n 1 \"$HOME/" + GSTACK_DIR + "/VERSION\" 2>/dev/null)\";;\n" +
         "    tmux) v=$(tmux -V 2>/dev/null);;\n" +
         "    *) v=$($t --version 2>/dev/null);;\n" +
@@ -427,6 +430,23 @@ public final class TerminowToolInstaller {
         "    stage verifying\n" +
         "    command -v hermes >/dev/null 2>&1 || fail verify 30\n" +
         "    v=$(hermes --version 2>/dev/null | head -n1); [ -n \"$v\" ] || v=hermes\n" +
+        "    echo \"TERMINOW_VERSION=$(first \"$v\")\"\n" +
+        "    ;;\n" +
+        // Google Antigravity CLI (agy), from its official install script. Experimental: not verified on proot.
+        "  antigravity)\n" +
+        "    if command -v agy >/dev/null 2>&1; then\n" +
+        "      echo TERMINOW_ALREADY=1; persist_path; stage verifying\n" +
+        "      v=$(agy --version 2>/dev/null | head -n1); [ -n \"$v\" ] || v=agy; echo \"TERMINOW_VERSION=$(first \"$v\")\"; exit 0\n" +
+        "    fi\n" +
+        "    native_arch\n" +
+        "    stage dependencies\n" +
+        "    apt_install curl ca-certificates\n" +
+        "    stage installing\n" +
+        "    run_installer https://antigravity.google/cli/install.sh\n" +
+        "    persist_path\n" +
+        "    stage verifying\n" +
+        "    command -v agy >/dev/null 2>&1 || fail verify 30\n" +
+        "    v=$(agy --version 2>/dev/null | head -n1); [ -n \"$v\" ] || v=agy\n" +
         "    echo \"TERMINOW_VERSION=$(first \"$v\")\"\n" +
         "    ;;\n" +
         "  gstack)\n" +
@@ -791,7 +811,7 @@ public final class TerminowToolInstaller {
     /** Experimental tools: added with official installers but not yet verified on an Ubuntu proot. */
     public static boolean experimental(@NonNull Tool tool) {
         switch (tool) {
-            case CODEX: case GEMINI: case GROK: case OPENCODE: case AIDER: case HERMES: return true;
+            case CODEX: case GEMINI: case GROK: case OPENCODE: case AIDER: case HERMES: case ANTIGRAVITY: return true;
             default: return false;
         }
     }

@@ -598,6 +598,7 @@ public class TerminowLauncher {
             case OPENCODE: return "OpenCode";
             case AIDER: return "Aider";
             case HERMES: return "Hermes";
+            case ANTIGRAVITY: return "Antigravity";
             default: return tool.id;
         }
     }
@@ -662,6 +663,14 @@ public class TerminowLauncher {
             mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), shellNameOf(environment)), true, "bash");
         if (useTmux) TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.TMUX, 0, open);
         else open.run();
+    }
+
+    /** A new shell tab of an environment that runs a command at its start, to launch a CLI tool like Antigravity's agy. */
+    void openTerminalRunning(@NonNull Environment environment, @NonNull String command) {
+        String user = getUser(environment);
+        launchPlan("quick|" + environment.key + "|" + System.nanoTime(), environment, user, getFolder(environment),
+            TerminowLaunchPlan.TOOL_SHELL, command, TerminowLaunchPlan.TMUX_OFF, "",
+            mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), shellNameOf(environment)), true, "bash");
     }
 
     /**

@@ -148,6 +148,7 @@ final class TerminowAiAgentsPicker {
             case OPENCODE: return R.drawable.ic_terminow_tool_opencode;
             case AIDER: return R.drawable.ic_terminow_tool_aider;
             case HERMES: return R.drawable.ic_terminow_tool_hermes;
+            case ANTIGRAVITY: return R.drawable.ic_terminow_tool_antigravity;
             default: return R.drawable.ic_terminow_agent;
         }
     }

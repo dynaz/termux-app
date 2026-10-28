@@ -79,6 +79,7 @@
     <string name="terminow_install_opencode_description">Open-source AI coding agent for the terminal</string>
     <string name="terminow_install_aider_description">AI pair programming in your terminal (Aider)</string>
     <string name="terminow_install_hermes_description">AI assistant with memory, skills &amp; MCP</string>
+    <string name="terminow_install_antigravity_description">Google\'s Antigravity agentic coding CLI (agy). The Antigravity IDE is a separate desktop app.</string>
     <string name="terminow_install_gstack">gstack</string>
     <string name="terminow_install_gstack_description">Skills for Claude Code by Garry Tan: review, QA, ship and more. Adds Bun. Needs Claude Code.</string>
     <string name="terminow_install_fail_needs_claude">Claude Code is not installed. Install it first.</string>
