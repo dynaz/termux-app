@@ -172,6 +172,40 @@ public final class TerminowInstallPlan {
     }
 
     /**
+     * A /bin/sh script that runs this plan in the distro: each step is echoed and run in order, stopping
+     * at the first failure, then the verify command must exit 0. It reports the same {@code TERMINOW_*}
+     * lines as the built-in installer, so {@link TerminowToolInstaller} shows its stages and result. The
+     * commands are the plan's own, shown to the user before Install; this only arranges and sequences
+     * them — it does not transform or hide them.
+     */
+    @NonNull
+    public String toScript() {
+        StringBuilder s = new StringBuilder();
+        s.append("stage() { echo \"TERMINOW_STAGE=$1\"; }\n");
+        s.append("fail() { echo \"TERMINOW_FAILED=$1\"; exit \"${2:-1}\"; }\n");
+        s.append("stage installing\n");
+        int n = 0;
+        for (Step step : steps) {
+            n++;
+            s.append("echo \"TermiNow: ").append(shellEcho(step.label)).append("\"\n");
+            s.append(step.command).append("\n");
+            s.append("[ $? -eq 0 ] || fail step ").append(n).append("\n");
+        }
+        s.append("stage verifying\n");
+        if (!verifyCommand.isEmpty()) {
+            s.append("v=$(").append(verifyCommand).append(" 2>&1) || { echo \"$v\"; fail verify 30; }\n");
+        }
+        s.append("echo \"TERMINOW_VERSION=").append(shellEcho(toolName)).append("\"\n");
+        return s.toString();
+    }
+
+    /** Make a value safe to place inside a double-quoted echo (no command substitution or break-out). */
+    @NonNull
+    static String shellEcho(@NonNull String s) {
+        return s.replace("\\", "\\\\").replace("\"", "'").replace("$", "\\$").replace("`", "'").replace("\n", " ");
+    }
+
+    /**
      * The messages for the analyse request: a system instruction to return only a JSON plan with the
      * required fields, and a user message with the real target environment and the repository read.
      * The repository text is quoted as untrusted reference the model must not obey as instructions.

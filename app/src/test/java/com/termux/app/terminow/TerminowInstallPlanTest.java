@@ -75,6 +75,24 @@ public class TerminowInstallPlanTest {
         }
     }
 
+    @Test public void toScriptSequencesStepsAndVerify() throws Exception {
+        TerminowInstallPlan p = TerminowInstallPlan.parse(READY);
+        String sh = p.toScript();
+        assertTrue(sh.contains("stage installing"));
+        assertTrue(sh.contains("make"));
+        assertTrue(sh.contains("|| fail step 1") || sh.contains("fail step 1"));
+        assertTrue(sh.contains("stage verifying"));
+        assertTrue(sh.contains("demo --version"));
+        assertTrue(sh.contains("TERMINOW_VERSION=demo"));
+    }
+
+    @Test public void shellEchoNeutralizesSubstitution() {
+        String out = TerminowInstallPlan.shellEcho("a`id`$(whoami)\"x\"");
+        assertFalse(out.contains("`"));          // backticks removed
+        assertFalse(out.contains("\""));         // no double-quote break-out
+        assertTrue(out.contains("\\$"));         // every $ is backslash-escaped, so no live substitution
+    }
+
     @Test public void analyzeMessagesHasSystemAndUserWithRepo() throws Exception {
         TerminowGithubRepo.Repo repo = new TerminowGithubRepo.Repo("owner", "repo", "main", "abc1234def",
             "a tool", "https://github.com/owner/repo", "readme body", false,

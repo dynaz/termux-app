@@ -44,7 +44,9 @@ public final class TerminowToolInstaller {
         /** Fish, the interactive shell with suggestions from its history, from apt. */
         FISH("fish"),
         /** Plugins of the official marketplace, the names given to {@link #install}. */
-        PLUGINS("plugins");
+        PLUGINS("plugins"),
+        /** A plan the built-in AI produced for a GitHub repository, run by {@link #installPlan}. */
+        GITHUB("github");
 
         public final String id;
 
@@ -94,6 +96,9 @@ public final class TerminowToolInstaller {
         public final Tool tool;
         /** The plugins of a {@link Tool#PLUGINS} job, empty for the others. */
         public final List<String> args;
+        /** For a {@link Tool#GITHUB} job: the exact script to run, and a display name. Null otherwise. */
+        @Nullable final String planScript;
+        @Nullable public final String planLabel;
         private volatile Stage mStage = Stage.CHECKING;
         private volatile State mState = State.RUNNING;
         @Nullable private volatile Failure mFailure;
@@ -109,6 +114,17 @@ public final class TerminowToolInstaller {
             this.user = user;
             this.tool = tool;
             this.args = java.util.Collections.unmodifiableList(Arrays.asList(args));
+            this.planScript = null;
+            this.planLabel = null;
+        }
+
+        Job(@NonNull String alias, @NonNull String user, @NonNull String planLabel, @NonNull String planScript) {
+            this.alias = alias;
+            this.user = user;
+            this.tool = Tool.GITHUB;
+            this.args = java.util.Collections.emptyList();
+            this.planScript = planScript;
+            this.planLabel = planLabel;
         }
 
         @NonNull public Stage getStage() { return mStage; }
@@ -628,13 +644,43 @@ public final class TerminowToolInstaller {
         return job;
     }
 
+    /**
+     * Run an AI-produced install plan as a job in the environment, as its user. Like {@link #install},
+     * it starts on a thread and reports {@code TERMINOW_*} lines; it refuses to start while another
+     * install runs in the same environment (returns {@code null}). The caller shows the plan and the
+     * user presses Install before this is called — plans are never run automatically.
+     */
+    @Nullable
+    public static Job installPlan(@NonNull Runner runner, @NonNull String alias, @NonNull String user,
+                                  @NonNull String planLabel, @NonNull String planScript) {
+        Job job;
+        synchronized (TerminowToolInstaller.class) {
+            if (runningIn(alias) != null) return null;
+            job = new Job(alias, user, planLabel, planScript);
+            sJobs.put(keyOf(alias, user, Tool.GITHUB), job);
+        }
+        Job started = job;
+        Thread thread = new Thread(() -> run(runner, started), "TermiNow plan " + planLabel);
+        thread.setDaemon(true);
+        thread.start();
+        changed();
+        return job;
+    }
+
     private static void run(@NonNull Runner runner, @NonNull Job job) {
         Process process;
         try {
             List<String> args = new ArrayList<>();
-            args.add(job.tool.id);
-            args.addAll(job.args);
-            process = runner.start(job.alias, job.user, INSTALL_SCRIPT, args.toArray(new String[0]));
+            String script;
+            if (job.planScript != null) {
+                // A GitHub plan runs its own script; no tool id argument.
+                script = job.planScript;
+            } else {
+                script = INSTALL_SCRIPT;
+                args.add(job.tool.id);
+                args.addAll(job.args);
+            }
+            process = runner.start(job.alias, job.user, script, args.toArray(new String[0]));
         } catch (IOException | RuntimeException e) {
             job.onStartFailed("TermiNow: the install did not start: " + e.getMessage());
             changed();
