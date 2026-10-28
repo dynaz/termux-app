@@ -45,7 +45,9 @@ Returns an authorize URL the app opens in a browser.
 - Response: `{"authorizeUrl":"https://github.com/login/oauth/authorize?client_id=...&redirect_uri=...&scope=...&state=..."}`
 - `redirect_uri` = `https://cp.accmove.com/terminow/devops/callback/github` (must match the GitHub app config exactly).
 
-### `GET /devops/callback/github?code=...&state=...`  (NO Firebase header)
+### `GET /terminow/devops_callback.php?code=...&state=...`  (NO Firebase header)
+> Implemented as the real file `devops_callback.php` (no URL rewrite). Set the OAuth App's callback URL
+> to `https://cp.accmove.com/terminow/devops_callback.php`.
 Hit by GitHub's redirect.
 1. Look up `state`; reject if unknown, expired, or already used (single-use → delete/mark immediately).
 2. Recover the `uid` bound to that `state`.

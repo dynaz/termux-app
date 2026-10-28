@@ -24,8 +24,10 @@ try {
         try { return (bool)(terminow_whmcs_premium($db, $email)['premium'] ?? false); }
         catch (\Throwable $e) { return false; }   // fail closed
     };
-    $target = \TermiNow\DevOps\handle_callback($db, $_GET, $premiumByEmail, time());
-    header('Location: ' . $target);
+    \TermiNow\DevOps\handle_callback($db, $_GET, $premiumByEmail, time());
+    header('Content-Type: text/html; charset=utf-8');
+    echo '<!doctype html><meta charset="utf-8"><title>TermiNow DevOps</title>'
+       . '<p>GitHub is connected. You can return to the TermiNow app.</p>';
 } catch (\TermiNow\DevOps\Failure $e) {
     // A simple, safe error page — no code/state/token echoed.
     http_response_code($e->status);

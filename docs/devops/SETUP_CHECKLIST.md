@@ -14,11 +14,16 @@ Android repo). I am **not** asking for any secret value in chat — only for acc
 2. **Deploy path / method** for adding `terminow/devops/*` to that host (how `ai.php` was deployed).
 
 ## What you need to create (I can't, and don't send me the secret values)
-3. A **GitHub App** (preferred) or OAuth App:
-   - Callback/redirect URL: `https://cp.accmove.com/terminow/devops/callback/github`
-   - Permissions (read-only, least privilege): GitHub App → `Metadata: read`, `Contents: read`,
-     `Actions: read`. OAuth App → `read:user` + (`public_repo` or `repo`). **No `workflow`.**
-   - Put the client id/secret in the host's existing secret store (not the DB, not the repo, not chat).
+3. A GitHub **OAuth App** (the implemented flow — do not mix with GitHub-App installations):
+   - Create at GitHub → Settings → Developer settings → **OAuth Apps** → New OAuth App.
+   - Non-secret values to set:
+     - Application name: e.g. "TermiNow DevOps"
+     - Homepage URL: `https://terminow.online` (or your site)
+     - **Authorization callback URL** (must match exactly): `https://cp.accmove.com/terminow/devops_callback.php`
+   - Scopes are requested by the code at authorize time (`read:user repo`, or `public_repo` for public
+     only) — **no `workflow`**, read-only for the MVP.
+   - Put the generated **Client ID** and a **Client secret** into `devops_config.php` on the server
+     (not the DB, not the repo, not chat).
 4. An **encryption key** for provider tokens at rest, stored **separately from the database** (reuse the
    host's existing secret mechanism). Don't send it to me.
 5. Confirm the **app deep-link scheme** (if the OAuth success page should bounce back into the app).

@@ -13,8 +13,9 @@ return [
     'github_client_id'     => 'REPLACE_ME',
     'github_client_secret' => 'REPLACE_ME',
 
-    // Must match the GitHub app's Authorization callback URL exactly.
-    'redirect_uri'         => 'https://cp.accmove.com/terminow/devops/callback/github',
+    // Must match the GitHub app's Authorization callback URL exactly. This is the real file path, so no
+    // URL rewriting is needed (devops_callback.php is served directly, like devops.php / premium.php).
+    'redirect_uri'         => 'https://cp.accmove.com/terminow/devops_callback.php',
 
     // 32 raw bytes for AES-256-GCM, base64-encoded. Generate once and keep secret, e.g.:
     //   php -r "echo base64_encode(random_bytes(32)), PHP_EOL;"

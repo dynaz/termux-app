@@ -116,11 +116,15 @@ function state_consume(\PDO $db, string $state, int $now): array
     $db->prepare('DELETE FROM mod_terminow_devops_state WHERE expires_at < ?')->execute([$now]);
     $db->beginTransaction();
     try {
-        $stmt = $db->prepare('SELECT uid, email, expires_at, used FROM mod_terminow_devops_state WHERE state = ?');
+        $stmt = $db->prepare('SELECT uid, email, expires_at FROM mod_terminow_devops_state WHERE state = ?');
         $stmt->execute([$state]);
         $row = $stmt->fetch(\PDO::FETCH_ASSOC);
-        if (!$row || (int)$row['used'] === 1 || (int)$row['expires_at'] < $now) throw new Failure(400, 'bad_state');
-        $db->prepare('DELETE FROM mod_terminow_devops_state WHERE state = ?')->execute([$state]);
+        if (!$row || (int)$row['expires_at'] < $now) throw new Failure(400, 'bad_state');
+        // The DELETE is the single-use gate: exactly one concurrent consumer can remove the row, so a
+        // second (racing) callback with the same state deletes 0 rows and is rejected.
+        $del = $db->prepare('DELETE FROM mod_terminow_devops_state WHERE state = ?');
+        $del->execute([$state]);
+        if ($del->rowCount() !== 1) throw new Failure(400, 'bad_state');
         $db->commit();
         return [(string)$row['uid'], (string)$row['email']];
     } catch (\Throwable $e) {
@@ -357,7 +361,7 @@ function handle(\PDO $db, array $claims, string $request, callable $isPremiumNow
  * entitlement is re-checked by email before the connection is saved. Returns a redirect target URL.
  * $premiumByEmail is a closure(email)->bool using the existing WHMCS entitlement.
  */
-function handle_callback(\PDO $db, array $query, callable $premiumByEmail, int $now): string
+function handle_callback(\PDO $db, array $query, callable $premiumByEmail, int $now): void
 {
     $code = (string)($query['code'] ?? '');
     $state = (string)($query['state'] ?? '');
@@ -367,5 +371,6 @@ function handle_callback(\PDO $db, array $query, callable $premiumByEmail, int $
     $config = config();
     $token = exchange_code($config, $code);
     save_connection($db, $uid, $email, $token, $config['token_key'], $now);
-    return rtrim(dirname($config['redirect_uri']), '/') . '/connected.html';
+    // No redirect to a separate page (which would need a rewrite + an extra file); the endpoint prints
+    // a success page itself. The token never leaves the server and is never put in the URL.
 }
