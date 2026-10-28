@@ -184,9 +184,36 @@ public class TerminowQuickLaunch {
     private void render() {
         if (!mShown) return;
         mContent.removeAllViews();
+        // Header: the sidebar toggle (same widget/icon/callback as the Hosts search bar) left of the
+        // title, so the left menu can be opened from Quick Launch too. The Hosts toggle lives in a header
+        // that is hidden on this page, which is why it was missing here.
+        LinearLayout header = new LinearLayout(mActivity);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        TerminowHome home = mActivity.getTerminowHome();
+        if (home != null) {
+            ImageView toggle = new ImageView(mActivity);
+            boolean visible = home.isSidebarVisible();
+            toggle.setImageResource(visible ? R.drawable.ic_terminow_panel_left_close : R.drawable.ic_terminow_panel_left_open);
+            toggle.setBackgroundResource(R.drawable.terminow_field);
+            toggle.setPadding(dp(8), dp(8), dp(8), dp(8));
+            toggle.setImageTintList(android.content.res.ColorStateList.valueOf(color(R.color.terminow_text)));
+            toggle.setContentDescription(mActivity.getString(visible ? R.string.terminow_sidebar_hide : R.string.terminow_sidebar_show));
+            toggle.setOnClickListener(v -> {
+                // Toggle the existing sidebar; update only this button's icon, never rebuild Quick Launch.
+                home.toggleSidebar();
+                boolean now = home.isSidebarVisible();
+                toggle.setImageResource(now ? R.drawable.ic_terminow_panel_left_close : R.drawable.ic_terminow_panel_left_open);
+                toggle.setContentDescription(mActivity.getString(now ? R.string.terminow_sidebar_hide : R.string.terminow_sidebar_show));
+            });
+            LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(dp(40), dp(40));
+            tp.rightMargin = dp(8);
+            header.addView(toggle, tp);
+        }
         TextView title = text(mActivity.getString(R.string.terminow_quick_title), 26, R.color.terminow_text);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        mContent.addView(title);
+        header.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        mContent.addView(header);
         TextView subtitle = text(mActivity.getString(R.string.terminow_quick_subtitle), 15, R.color.terminow_text_secondary);
         subtitle.setPadding(0, dp(2), 0, dp(6));
         mContent.addView(subtitle);

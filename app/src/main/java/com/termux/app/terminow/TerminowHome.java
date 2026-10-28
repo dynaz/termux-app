@@ -709,11 +709,17 @@ public class TerminowHome {
         mSidebarToggle.setContentDescription(mActivity.getString(visible ? R.string.terminow_sidebar_hide : R.string.terminow_sidebar_show));
     }
 
-    private void toggleSidebar() {
+    /** Toggle the sidebar — same behaviour as the Hosts search-bar button; also usable from other pages. */
+    public void toggleSidebar() {
         String cls = sidebarClass();
         boolean next = !sidebarVisible();
         mSidebarPrefs.edit().putBoolean("visible_" + cls, next).apply();
         applySidebar();
+    }
+
+    /** Whether the sidebar is currently shown, for pages that draw their own toggle (e.g. Quick Launch). */
+    public boolean isSidebarVisible() {
+        return sidebarVisible();
     }
 
     /** Recompute the sidebar when the width class may have changed (rotation, fold, resize). */
