@@ -63,7 +63,7 @@ public final class TerminowToolInstaller {
      * without reporting a result and with no real exit code — a dropped SSH channel is the usual
      * cause — so the outcome is genuinely not known and is re-checked on the next look, not a failure.
      */
-    public enum State { RUNNING, SUCCEEDED, FAILED, UNKNOWN }
+    public enum State { QUEUED, RUNNING, SUCCEEDED, FAILED, UNKNOWN }
 
     /** Why an install failed, from its TERMINOW_FAILED line, or how the process ended. */
     public enum Failure {
@@ -108,6 +108,12 @@ public final class TerminowToolInstaller {
         private final StringBuilder mLog = new StringBuilder();
         @Nullable private volatile Process mProcess;
         private volatile boolean mCancelled;
+        /** For a queued job: the runner to start it with, and its FIFO order within the environment. */
+        @Nullable volatile Runner mRunner;
+        volatile long mSeq;
+
+        /** Whether this job is waiting in the queue behind another install in the same environment. */
+        public boolean isQueued() { return mState == State.QUEUED; }
 
         Job(@NonNull String alias, @NonNull String user, @NonNull Tool tool, @NonNull String... args) {
             this.alias = alias;
@@ -200,9 +206,15 @@ public final class TerminowToolInstaller {
             mState = State.FAILED;
         }
 
-        /** Stop the install; it ends as failed and can be retried. */
+        /** Stop the install; it ends as failed and can be retried. A still-queued job just leaves the queue. */
         public void cancel() {
             mCancelled = true;
+            if (mState == State.QUEUED) {
+                mState = State.FAILED;
+                mFailure = Failure.CANCELLED;
+                changed();
+                return;
+            }
             Process process = mProcess;
             if (process != null) process.destroy();
         }
@@ -581,6 +593,8 @@ public final class TerminowToolInstaller {
 
     private static final Map<String, Job> sJobs = new HashMap<>();
     private static final List<Runnable> sListeners = new CopyOnWriteArrayList<>();
+    /** Monotonic order for the per-environment install queue. */
+    private static long sSeq;
 
     private TerminowToolInstaller() {}
 
@@ -607,6 +621,25 @@ public final class TerminowToolInstaller {
     public static synchronized List<Job> runningJobs() {
         List<Job> out = new ArrayList<>();
         for (Job job : sJobs.values()) if (job.mState == State.RUNNING) out.add(job);
+        return out;
+    }
+
+    /** How many installs are waiting in a queue across environments, for the progress card's count. */
+    public static synchronized int queuedCount() {
+        int n = 0;
+        for (Job job : sJobs.values()) if (job.mState == State.QUEUED) n++;
+        return n;
+    }
+
+    /** Running then queued jobs, for the jobs overview; queued in FIFO order after the running ones. */
+    @NonNull
+    public static synchronized List<Job> activeJobs() {
+        List<Job> out = new ArrayList<>();
+        for (Job job : sJobs.values()) if (job.mState == State.RUNNING) out.add(job);
+        List<Job> queued = new ArrayList<>();
+        for (Job job : sJobs.values()) if (job.mState == State.QUEUED) queued.add(job);
+        java.util.Collections.sort(queued, (a, b) -> Long.compare(a.mSeq, b.mSeq));
+        out.addAll(queued);
         return out;
     }
 
@@ -647,17 +680,42 @@ public final class TerminowToolInstaller {
         Job job;
         synchronized (TerminowToolInstaller.class) {
             Job same = sJobs.get(keyOf(alias, user, tool));
-            if (same != null && same.mState == State.RUNNING) return same;
-            if (runningIn(alias) != null) return null;
+            // Already running or waiting: return it, never enqueue a duplicate.
+            if (same != null && (same.mState == State.RUNNING || same.mState == State.QUEUED)) return same;
+            boolean busy = runningIn(alias) != null;
             job = new Job(alias, user, tool, args);
+            job.mRunner = runner;
+            job.mSeq = ++sSeq;
+            job.mState = busy ? State.QUEUED : State.RUNNING;
             sJobs.put(keyOf(alias, user, tool), job);
         }
-        Job started = job;
-        Thread thread = new Thread(() -> run(runner, started), "TermiNow install " + tool.id);
-        thread.setDaemon(true);
-        thread.start();
+        if (job.mState == State.RUNNING) startThread(job);
         changed();
         return job;
+    }
+
+    /** Start a job's run on a daemon thread with its own runner. */
+    private static void startThread(@NonNull Job job) {
+        Runner runner = job.mRunner;
+        if (runner == null) return;
+        Thread thread = new Thread(() -> run(runner, job),
+            "TermiNow install " + (job.planLabel != null ? job.planLabel : job.tool.id));
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    /** When an install ends (done, failed or cancelled), start the next queued one for that environment. */
+    private static void startNextQueued(@NonNull String alias) {
+        Job next = null;
+        synchronized (TerminowToolInstaller.class) {
+            if (runningIn(alias) != null) return;
+            for (Job j : sJobs.values())
+                if (j.alias.equals(alias) && j.mState == State.QUEUED && (next == null || j.mSeq < next.mSeq)) next = j;
+            if (next == null) return;
+            next.mState = State.RUNNING;
+        }
+        startThread(next);
+        changed();
     }
 
     /**
@@ -671,14 +729,16 @@ public final class TerminowToolInstaller {
                                   @NonNull String planLabel, @NonNull String planScript) {
         Job job;
         synchronized (TerminowToolInstaller.class) {
-            if (runningIn(alias) != null) return null;
+            Job same = sJobs.get(keyOf(alias, user, Tool.GITHUB));
+            if (same != null && (same.mState == State.RUNNING || same.mState == State.QUEUED)) return same;
+            boolean busy = runningIn(alias) != null;
             job = new Job(alias, user, planLabel, planScript);
+            job.mRunner = runner;
+            job.mSeq = ++sSeq;
+            job.mState = busy ? State.QUEUED : State.RUNNING;
             sJobs.put(keyOf(alias, user, Tool.GITHUB), job);
         }
-        Job started = job;
-        Thread thread = new Thread(() -> run(runner, started), "TermiNow plan " + planLabel);
-        thread.setDaemon(true);
-        thread.start();
+        if (job.mState == State.RUNNING) startThread(job);
         changed();
         return job;
     }
@@ -700,6 +760,7 @@ public final class TerminowToolInstaller {
         } catch (IOException | RuntimeException e) {
             job.onStartFailed("TermiNow: the install did not start: " + e.getMessage());
             changed();
+            startNextQueued(job.alias);
             return;
         }
         job.mProcess = process;
@@ -724,6 +785,7 @@ public final class TerminowToolInstaller {
         job.mProcess = null;
         job.onExit(exitCode);
         changed();
+        startNextQueued(job.alias);
     }
 
     private interface LineSink {

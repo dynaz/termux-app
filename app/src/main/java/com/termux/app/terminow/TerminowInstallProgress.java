@@ -70,7 +70,7 @@ public final class TerminowInstallProgress {
         mHidden = false;
         TerminowToolInstaller.Job job = running.get(0);
         String label = mActivity.getString(R.string.terminow_tools_github_installing, TerminowToolInstaller.jobLabel(job));
-        int queued = running.size() - 1;
+        int queued = (running.size() - 1) + TerminowToolInstaller.queuedCount();
         if (queued > 0) label = label + mActivity.getString(R.string.terminow_tools_progress_queued, queued);
         showCard();
         if (mText != null) mText.setText(label);
