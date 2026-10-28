@@ -95,6 +95,9 @@ final class TerminowMcpBridgeUi {
         enableTitle.setTypeface(Typeface.DEFAULT_BOLD);
         enableTexts.addView(enableTitle);
         enableRow.addView(enableTexts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        // Documentation (ⓘ): the official Model Context Protocol docs, for connecting an external client.
+        enableRow.addView(docButton(mActivity.getString(R.string.terminow_mcp_bridge_title), MCP_DOCS_URL),
+            new LinearLayout.LayoutParams(dp(48), dp(48)));
         android.widget.Switch toggle = new android.widget.Switch(mActivity);
         toggle.setChecked(enabled);
         toggle.setOnClickListener(v -> {
@@ -990,5 +993,29 @@ final class TerminowMcpBridgeUi {
 
     private int dp(float value) {
         return Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value, mActivity.getResources().getDisplayMetrics()));
+    }
+
+    /** The official Model Context Protocol documentation, for connecting an external MCP client. */
+    private static final String MCP_DOCS_URL = "https://modelcontextprotocol.io";
+
+    /**
+     * A documentation (ⓘ) button: a 20dp icon in a 48dp touch target that opens {@code url} in the
+     * in-app documentation browser, separate from the bridge controls and available to everyone.
+     */
+    @NonNull
+    private View docButton(@NonNull String name, @NonNull String url) {
+        ImageView info = new ImageView(mActivity);
+        info.setImageResource(R.drawable.ic_terminow_info);
+        info.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        info.setPadding(dp(14), dp(14), dp(14), dp(14));
+        info.setColorFilter(color(R.color.terminow_text_secondary));
+        info.setContentDescription(mActivity.getString(R.string.terminow_doc_view, name));
+        TypedValue ripple = new TypedValue();
+        mActivity.getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true);
+        if (ripple.resourceId != 0) info.setBackgroundResource(ripple.resourceId);
+        info.setClickable(true);
+        info.setFocusable(true);
+        info.setOnClickListener(v -> TerminowDocView.open(mActivity, name, url));
+        return info;
     }
 }
