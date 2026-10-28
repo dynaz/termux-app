@@ -106,8 +106,21 @@
     <string name="terminow_quick_end_tmux_title">จบ %1$s หรือไม่</string>
     <string name="terminow_quick_end_tmux_message">เซสชัน tmux และสิ่งที่ทำงานอยู่ในนั้นจะจบ</string>
     <string name="terminow_quick_new_terminal">เทอร์มินัลใหม่</string>
-    <string name="terminow_quick_ubuntu_local">Ubuntu (ในเครื่อง)</string>
-    <string name="terminow_quick_ubuntu_local_summary">เปิด Ubuntu บนอุปกรณ์นี้</string>
+    <string name="terminow_quick_ubuntu_local">Linux ในเครื่อง</string>
+    <!-- Local Linux picker -->
+    <string name="terminow_local_linux_title">Linux ในเครื่อง</string>
+    <string name="terminow_local_linux_none">ยังไม่ได้ติดตั้งลินุกซ์ดิสโทรใด</string>
+    <string name="terminow_local_linux_install">ติดตั้งดิสโทร</string>
+    <string name="terminow_local_linux_install_summary">เพิ่ม Ubuntu, Debian, Alpine หรือดิสโทรอื่น</string>
+    <string name="terminow_local_linux_new_session">+ เซสชันใหม่</string>
+    <string name="terminow_local_linux_more">ตัวเลือกเพิ่มเติม</string>
+    <string name="terminow_local_linux_sessions">เซสชันที่เปิดอยู่</string>
+    <string name="terminow_local_linux_no_sessions">ยังไม่มีเซสชันที่เปิดอยู่ในดิสโทรนี้</string>
+    <string name="terminow_local_linux_manage">ดิสโทร</string>
+    <string name="terminow_local_linux_choose_distro">เลือกดิสโทร ตอนนี้คือ %1$s</string>
+    <string name="terminow_local_linux_current">ปัจจุบัน</string>
+    <string name="terminow_local_linux_session_menu">ตัวเลือกเพิ่มเติมสำหรับ %1$s</string>
+    <string name="terminow_quick_ubuntu_local_summary">เปิดดิสโทรหรือกลับไปยังเซสชัน</string>
     <string name="terminow_quick_add_ssh_host">เพิ่มโฮสต์ SSH</string>
     <string name="terminow_quick_import">นำเข้า</string>
     <string name="terminow_quick_import_hosts">นำเข้าโฮสต์ (SSH config, CSV, Termius)</string>

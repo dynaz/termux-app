@@ -79,6 +79,240 @@ class TerminowSessionPicker {
     }
 
     /**
+     * The Local Linux picker: choose an installed distribution, see its live sessions (focus one without
+     * starting a process), and start a new session. Defaults to the last-used distribution; the choice of
+     * distribution is remembered, but the sheet never remembers an action, so existing and new sessions
+     * stay one tap apart. When nothing is installed it offers to install a distribution.
+     */
+    void showLocalLinux() {
+        List<TerminowLauncher.Environment> distros = mLauncher.installedDistros();
+        if (distros.isEmpty()) {
+            Sheet empty = new Sheet(mActivity.getString(R.string.terminow_local_linux_title));
+            empty.note(mActivity.getString(R.string.terminow_local_linux_none));
+            empty.option(R.drawable.ic_terminow_add, mActivity.getString(R.string.terminow_local_linux_install),
+                mActivity.getString(R.string.terminow_local_linux_install_summary), mLauncher::browseLinux);
+            empty.show();
+            return;
+        }
+        TerminowLauncher.Environment selected = null;
+        String last = mStore.getLastLocalEnvironment();
+        for (TerminowLauncher.Environment e : distros) if (e.key.equals(last)) selected = e;
+        if (selected == null) selected = distros.get(0);
+        mStore.setLastLocalEnvironment(selected.key);
+        final TerminowLauncher.Environment env = selected;
+
+        Sheet sheet = new Sheet(mActivity.getString(R.string.terminow_local_linux_title));
+        sheet.content.addView(distroSelector(sheet, env, distros));
+
+        // The default action is a new session; Open in current tab is tucked into an overflow beside it.
+        LinearLayout actions = new LinearLayout(mActivity);
+        actions.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams actionsParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        actionsParams.topMargin = dp(12);
+        TextView newSession = primaryButton(mActivity.getString(R.string.terminow_local_linux_new_session), () -> {
+            sheet.dialog.dismiss();
+            mLauncher.openInNewTab(env);
+        });
+        actions.addView(newSession, new LinearLayout.LayoutParams(0, dp(48), 1f));
+        ImageView more = overflowButton(mActivity.getString(R.string.terminow_local_linux_more), () -> {
+            new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setItems(new CharSequence[]{mActivity.getString(R.string.terminow_launch_use_current)}, (d, w) -> {
+                    sheet.dialog.dismiss();
+                    mLauncher.openInCurrentTab(env);
+                })
+                .show();
+        });
+        LinearLayout.LayoutParams moreParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+        moreParams.leftMargin = dp(6);
+        actions.addView(more, moreParams);
+        sheet.content.addView(actions, actionsParams);
+
+        // Live sessions of this distribution, the current one first, then most recently used.
+        List<TerminalSession> sessions = mLauncher.sessionsOf(env);
+        TerminalSession current = mActivity.getCurrentSession();
+        sessions.sort((a, b) -> {
+            if (a == current) return -1;
+            if (b == current) return 1;
+            return 0;
+        });
+        if (sessions.isEmpty()) {
+            sheet.note(mActivity.getString(R.string.terminow_local_linux_no_sessions));
+        } else {
+            sheet.section(R.string.terminow_local_linux_sessions);
+            for (TerminalSession session : sessions)
+                sheet.content.addView(localSessionRow(sheet, session, session == current));
+        }
+
+        sheet.section(R.string.terminow_local_linux_manage);
+        sheet.option(R.drawable.ic_terminow_add, mActivity.getString(R.string.terminow_local_linux_install),
+            mActivity.getString(R.string.terminow_local_linux_install_summary), mLauncher::browseLinux);
+        sheet.show();
+    }
+
+    /** The distribution selector: its icon, name and version, and a chevron to pick another installed one. */
+    @NonNull
+    private View distroSelector(@NonNull Sheet sheet, @NonNull TerminowLauncher.Environment env,
+                                @NonNull List<TerminowLauncher.Environment> distros) {
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(14), dp(12), dp(12), dp(12));
+        row.setMinimumHeight(dp(56));
+        GradientDrawable shape = new GradientDrawable();
+        shape.setColor(color(R.color.terminow_quick_card));
+        shape.setCornerRadius(dp(14));
+        shape.setStroke(Math.max(1, dp(1)), color(R.color.terminow_quick_border));
+        row.setBackground(shape);
+
+        ImageView icon = new ImageView(mActivity);
+        icon.setImageResource(distroIcon(mLauncher.environmentDistroId(env)));
+        icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        row.addView(icon, new LinearLayout.LayoutParams(dp(28), dp(28)));
+
+        LinearLayout texts = new LinearLayout(mActivity);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        texts.setPadding(dp(14), 0, dp(8), 0);
+        TextView name = text(env.label, 16, R.color.terminow_text);
+        name.setTypeface(Typeface.DEFAULT_BOLD);
+        texts.addView(name);
+        String version = mLauncher.environmentVersion(env);
+        texts.addView(text(version.isEmpty() ? env.shortName() : env.shortName() + " " + version, 13, R.color.terminow_text_secondary));
+        row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+        // Only a chevron when there is more than one distribution to choose between.
+        if (distros.size() > 1) {
+            TextView chevron = text("▾", 16, R.color.terminow_text_secondary);
+            chevron.setPadding(dp(8), 0, dp(8), 0);
+            row.addView(chevron);
+            row.setContentDescription(mActivity.getString(R.string.terminow_local_linux_choose_distro, env.label));
+            row.setOnClickListener(v -> {
+                sheet.dialog.dismiss();
+                pickDistro(distros);
+            });
+            row.setMinimumHeight(dp(48));
+        } else {
+            row.setContentDescription(env.label);
+        }
+        return row;
+    }
+
+    /** Pick another installed distribution, then re-open the picker on it. */
+    private void pickDistro(@NonNull List<TerminowLauncher.Environment> distros) {
+        CharSequence[] labels = new CharSequence[distros.size()];
+        for (int i = 0; i < distros.size(); i++) {
+            TerminowLauncher.Environment e = distros.get(i);
+            String version = mLauncher.environmentVersion(e);
+            labels[i] = version.isEmpty() ? e.label : e.label + " · " + e.shortName() + " " + version;
+        }
+        new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_local_linux_title)
+            .setItems(labels, (d, w) -> {
+                mStore.setLastLocalEnvironment(distros.get(w).key);
+                showLocalLinux();
+            })
+            .show();
+    }
+
+    /** A live-session row: its name, folder and state; a tap focuses it; an overflow renames it. */
+    @NonNull
+    private View localSessionRow(@NonNull Sheet sheet, @NonNull TerminalSession session, boolean current) {
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(14), dp(10), dp(6), dp(10));
+        row.setMinimumHeight(dp(56));
+        GradientDrawable shape = new GradientDrawable();
+        shape.setColor(color(R.color.terminow_quick_card));
+        shape.setCornerRadius(dp(12));
+        shape.setStroke(Math.max(1, dp(1)), color(R.color.terminow_quick_border));
+        row.setBackground(shape);
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        rowParams.topMargin = dp(8);
+        row.setLayoutParams(rowParams);
+
+        ImageView icon = new ImageView(mActivity);
+        icon.setImageResource(R.drawable.ic_terminow_terminal);
+        icon.setColorFilter(color(R.color.terminow_text));
+        icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        row.addView(icon, new LinearLayout.LayoutParams(dp(24), dp(24)));
+
+        LinearLayout texts = new LinearLayout(mActivity);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        texts.setPadding(dp(14), 0, dp(4), 0);
+        String name = nameOf(session);
+        TextView nameView = text(name, 15, R.color.terminow_text);
+        nameView.setTypeface(Typeface.DEFAULT_BOLD);
+        texts.addView(nameView);
+        TerminowLauncher.SessionInfo info = mLauncher.infoOf(session);
+        String folder = info != null && !info.folder.isEmpty() ? info.folder : "";
+        String state = mActivity.getString(current ? R.string.terminow_local_linux_current
+            : mLauncher.isStarting(session) ? R.string.terminow_picker_state_starting : R.string.terminow_picker_state_running);
+        String sub = folder.isEmpty() ? state : folder + " · " + state;
+        texts.addView(text(sub, 13, current ? R.color.terminow_quick_ready : R.color.terminow_text_secondary));
+        row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+        row.setContentDescription(name + ". " + sub);
+        row.setOnClickListener(v -> {
+            sheet.dialog.dismiss();
+            mLauncher.showRunning(session);
+        });
+
+        ImageView overflow = overflowButton(mActivity.getString(R.string.terminow_local_linux_session_menu, name), () ->
+            new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setItems(new CharSequence[]{mActivity.getString(R.string.terminow_quick_rename_tab)}, (d, w) -> {
+                    sheet.dialog.dismiss();
+                    mActivity.getTermuxTerminalSessionClient().renameSession(session);
+                })
+                .show());
+        row.addView(overflow, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        return row;
+    }
+
+    /** A filled primary button, at least 48dp tall, no uppercase. */
+    @NonNull
+    private TextView primaryButton(@NonNull String label, @NonNull Runnable action) {
+        TextView button = text(label, 15, R.color.terminow_bar_home);
+        button.setAllCaps(false);
+        button.setTypeface(Typeface.DEFAULT_BOLD);
+        button.setGravity(Gravity.CENTER);
+        button.setMinHeight(dp(48));
+        GradientDrawable shape = new GradientDrawable();
+        shape.setColor(color(R.color.terminow_panel_accent));
+        shape.setCornerRadius(dp(12));
+        button.setBackground(shape);
+        button.setClickable(true);
+        button.setFocusable(true);
+        button.setOnClickListener(v -> action.run());
+        return button;
+    }
+
+    /** A ⋮ overflow icon with a 48dp touch target and an accessible label. */
+    @NonNull
+    private ImageView overflowButton(@NonNull String description, @NonNull Runnable action) {
+        ImageView view = new ImageView(mActivity);
+        view.setImageResource(R.drawable.ic_terminow_more);
+        view.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        view.setColorFilter(color(R.color.terminow_text_secondary));
+        view.setPadding(dp(14), dp(14), dp(14), dp(14));
+        view.setContentDescription(description);
+        TypedValue ripple = new TypedValue();
+        mActivity.getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true);
+        if (ripple.resourceId != 0) view.setBackgroundResource(ripple.resourceId);
+        view.setClickable(true);
+        view.setFocusable(true);
+        view.setOnClickListener(v -> action.run());
+        return view;
+    }
+
+    private int distroIcon(@NonNull String distroId) {
+        switch (distroId) {
+            case "ubuntu": return R.drawable.ic_terminow_os_ubuntu;
+            case "debian": return R.drawable.ic_terminow_os_debian;
+            case "alpine": return R.drawable.ic_terminow_os_alpine;
+            case "local": return R.drawable.ic_terminow_os_local;
+            default: return R.drawable.ic_terminow_os_linux;
+        }
+    }
+
+    /**
      * The picker for Open Claude. Going back to a tab only shows it; a conversation is Claude
      * Code started in a new tab with the flag that its --help lists, never typed into a tab.
      */

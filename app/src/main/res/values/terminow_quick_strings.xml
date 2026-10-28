@@ -107,8 +107,21 @@
     <string name="terminow_quick_end_tmux_title">End %1$s?</string>
     <string name="terminow_quick_end_tmux_message">The tmux session and what runs in it end.</string>
     <string name="terminow_quick_new_terminal">New terminal</string>
-    <string name="terminow_quick_ubuntu_local">Ubuntu (Local)</string>
-    <string name="terminow_quick_ubuntu_local_summary">Open Ubuntu on this device</string>
+    <string name="terminow_quick_ubuntu_local">Local Linux</string>
+    <string name="terminow_quick_ubuntu_local_summary">Open a distribution or return to a session</string>
+    <!-- Local Linux picker -->
+    <string name="terminow_local_linux_title">Local Linux</string>
+    <string name="terminow_local_linux_none">No Linux distribution is installed yet.</string>
+    <string name="terminow_local_linux_install">Install distribution</string>
+    <string name="terminow_local_linux_install_summary">Add Ubuntu, Debian, Alpine or another distribution.</string>
+    <string name="terminow_local_linux_new_session">+ New session</string>
+    <string name="terminow_local_linux_more">More options</string>
+    <string name="terminow_local_linux_sessions">Open sessions</string>
+    <string name="terminow_local_linux_no_sessions">No open sessions in this distribution.</string>
+    <string name="terminow_local_linux_manage">Distributions</string>
+    <string name="terminow_local_linux_choose_distro">Choose a distribution, currently %1$s</string>
+    <string name="terminow_local_linux_current">Current</string>
+    <string name="terminow_local_linux_session_menu">More options for %1$s</string>
     <string name="terminow_quick_add_ssh_host">Add SSH host</string>
     <string name="terminow_quick_import">Import</string>
     <string name="terminow_quick_import_hosts">Import hosts (SSH config, CSV, Termius)</string>

@@ -1613,9 +1613,9 @@ public class TerminowHome {
         popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
 
         // Compact: environments and profiles are one tap away in Quick Launch, exporting files is in the File Manager
-        addMenuItem(menu, popup, R.drawable.ic_terminow_os_ubuntu,
+        addMenuItem(menu, popup, R.drawable.ic_terminow_os_linux,
             mActivity.getString(R.string.terminow_quick_ubuntu_local), mActivity.getString(R.string.terminow_quick_ubuntu_local_summary),
-            mLauncher::launchLocalUbuntu);
+            mLauncher::showLocalLinux);
         addMenuItem(menu, popup, R.drawable.ic_terminow_launch, R.string.terminow_quick_title, this::showQuickLaunch);
         addMenuItem(menu, popup, R.drawable.ic_terminow_add, R.string.terminow_quick_add_environment, () -> mQuickLaunch.showAddEnvironment());
         addMenuItem(menu, popup, R.drawable.ic_terminow_hosts, R.string.terminow_quick_add_ssh_host, () -> {

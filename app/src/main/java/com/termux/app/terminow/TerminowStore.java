@@ -1666,6 +1666,18 @@ public class TerminowStore {
         mPreferences.edit().putString(KEY_UBUNTU_LAUNCH, behavior).apply();
     }
 
+    private static final String KEY_LAST_LOCAL_ENV = "last_local_environment";
+
+    /** The key of the local Linux environment chosen last, so the picker defaults to it. "" if none. */
+    @NonNull
+    public String getLastLocalEnvironment() {
+        return mPreferences.getString(KEY_LAST_LOCAL_ENV, "");
+    }
+
+    public void setLastLocalEnvironment(@NonNull String environmentKey) {
+        mPreferences.edit().putString(KEY_LAST_LOCAL_ENV, environmentKey).apply();
+    }
+
     /** What Open Claude does, remembered apart from Open Ubuntu: ask, go back to its tab, a new one, or the last conversation. */
     @NonNull
     public String getClaudeLaunchBehavior() {

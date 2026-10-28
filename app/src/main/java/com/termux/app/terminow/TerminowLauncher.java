@@ -1214,6 +1214,27 @@ public class TerminowLauncher {
         else confirmUbuntuSetup();
     }
 
+    /**
+     * Open the Local Linux picker: a distro-aware session picker that lists installed distributions, the
+     * live sessions of the selected one, and a New session action. When no distribution is installed yet
+     * it offers to install one. See {@link TerminowSessionPicker#showLocalLinux()}.
+     */
+    public void showLocalLinux() {
+        long now = android.os.SystemClock.uptimeMillis();
+        if (TerminowLaunchChoice.isRepeatTap(mLastUbuntuTap, now)) return;
+        mLastUbuntuTap = now;
+        mPicker.showLocalLinux();
+    }
+
+    /** The installed local Linux distributions (every environment that is a container). */
+    @NonNull
+    List<Environment> installedDistros() {
+        List<Environment> list = new ArrayList<>();
+        for (Environment environment : environments())
+            if (environment.container != null) list.add(environment);
+        return list;
+    }
+
     /** The installed local Ubuntu environment, or {@code null} when Ubuntu is not installed yet. */
     @Nullable
     private Environment installedUbuntu() {
@@ -2391,6 +2412,43 @@ public class TerminowLauncher {
         }
         Collections.sort(sessions, (a, b) -> Long.compare(TerminowQuickLaunch.lastShown(b), TerminowQuickLaunch.lastShown(a)));
         return sessions;
+    }
+
+    /** Every live session of an environment, whatever it runs, most recently shown first. */
+    @NonNull
+    List<TerminalSession> sessionsOf(@NonNull Environment environment) {
+        List<TerminalSession> sessions = new ArrayList<>();
+        for (Map.Entry<TerminalSession, SessionInfo> entry : mInfo.entrySet()) {
+            TerminalSession session = entry.getKey();
+            SessionInfo info = entry.getValue();
+            if (session == null || !session.isRunning() || info == null) continue;
+            if (environment.key.equals(info.environmentKey)) sessions.add(session);
+        }
+        Collections.sort(sessions, (a, b) -> Long.compare(TerminowQuickLaunch.lastShown(b), TerminowQuickLaunch.lastShown(a)));
+        return sessions;
+    }
+
+    /** The installed version of an environment, like "24.04", or "" when not known. */
+    @NonNull
+    String environmentVersion(@NonNull Environment environment) {
+        if (environment.container == null || mLinux == null) return "";
+        TerminowLinuxEnv env = mLinux.getRegistry().get(environment.container.name);
+        return env != null ? env.version : "";
+    }
+
+    /** The distro id of an environment ("ubuntu", "debian", …), "local" for the Termux environment. */
+    @NonNull
+    String environmentDistroId(@NonNull Environment environment) {
+        if (environment.isLocal()) return "local";
+        if (environment.container == null || mLinux == null) return "";
+        TerminowLinuxEnv env = mLinux.getRegistry().get(environment.container.name);
+        return env != null ? env.distroId : "";
+    }
+
+    /** Open the Browse / Install Linux view, to install another distribution. */
+    void browseLinux() {
+        dismiss();
+        if (mLinux != null) mLinux.showBrowse(true);
     }
 
     /** What the tab runs, {@code null} for one TermiNow did not start. */
