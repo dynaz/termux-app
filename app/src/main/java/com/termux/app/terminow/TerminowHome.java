@@ -188,6 +188,7 @@ public class TerminowHome {
     private final View mRailScroll;
     private final android.widget.ImageView mSidebarToggle;
     @Nullable private View mRailScrim;
+    /** A floating sidebar toggle shown only on pages that hide the header's toggle; see {@link #setPage}. */
     @Nullable private android.widget.ImageView mRailMenu;
     @Nullable private View mContentPanel;
     /** Per-layout-class sidebar visibility preference ("compact"/"large"/"tablet"/"desktop"). */
@@ -1050,6 +1051,12 @@ public class TerminowHome {
         if (mPage == PAGE_FILES && page != PAGE_FILES) mExplorer.onHidden();
         if (mPage == PAGE_LAUNCH && page != PAGE_LAUNCH && mQuickLaunch != null) mQuickLaunch.hide();
         mPage = page;
+        // The floating toggle is the sidebar's only reach on pages that hide the header (and its toggle):
+        // Launch, Files, AI, MCP Bridge and Settings. Elsewhere the header toggle serves, so hide it there
+        // rather than show two toggles at once.
+        boolean headerless = page == PAGE_LAUNCH || page == PAGE_FILES || page == PAGE_AI
+            || page == PAGE_MCP_BRIDGE || page == PAGE_SETTINGS;
+        if (mRailMenu != null) mRailMenu.setVisibility(headerless ? View.VISIBLE : View.GONE);
         updateSectionHelp();
         setRailItemSelected(mRailLaunch, page == PAGE_LAUNCH);
         if (page == PAGE_LAUNCH) {

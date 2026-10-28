@@ -707,7 +707,8 @@
             android:focusable="true"
             android:visibility="gone" />
 
-        <!-- Persistent menu toggle, always reachable so the sidebar can be opened from any page. -->
+        <!-- Menu toggle shown only on full-screen pages that hide the header's toggle (Files, AI, MCP
+             Bridge, Settings), so the sidebar stays reachable there without duplicating the header one. -->
         <ImageView
             android:id="@+id/terminow_rail_menu"
             android:layout_width="40dp"
@@ -720,6 +721,7 @@
             android:padding="8dp"
             android:src="@drawable/ic_terminow_panel_left_open"
             android:tint="@color/terminow_text"
+            android:visibility="gone"
             tools:ignore="UseAppTint" />
 
     </FrameLayout>
