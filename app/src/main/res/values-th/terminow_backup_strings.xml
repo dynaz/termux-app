@@ -9,7 +9,7 @@
     <string name="terminow_backup_folders">โฟลเดอร์ เช่น /root /home</string>
     <string name="terminow_backup_install_rsync">ติดตั้ง rsync ใน %1$s หากยังไม่มี (apt-get install rsync)</string>
     <string name="terminow_backup_note_folders">เซิร์ฟเวอร์ต้องมี rsync ด้วย โฟลเดอร์จะคงพาธเดิม เช่น root/… และ home/… และไม่มีการลบสิ่งใดบนเซิร์ฟเวอร์ TermiNow ลงชื่อเข้าใช้ด้วยคีย์ รหัสผ่านคีย์ และโฮสต์กระโดดของเซิร์ฟเวอร์</string>
-    <string name="terminow_backup_note_system">%1$s ทั้งหมดจะอยู่ในไฟล์ .tar.gz เดียวบนเซิร์ฟเวอร์ ตั้งชื่อตามวันที่ หากต้องการกู้คืน ให้คัดลอกมาที่โทรศัพท์แล้วใช้ เพิ่มสภาพแวดล้อม → นำเข้า ปิดแท็บอื่นของ %1$s ก่อน เพื่อไม่ให้ไฟล์เปลี่ยนระหว่างอ่าน</string>
+    <string name="terminow_backup_note_system">%1$s ทั้งหมดจะอยู่ในไฟล์ .tar.gz เดียวบนเซิร์ฟเวอร์ ตั้งชื่อตามวันที่ หากต้องการกู้คืน ให้คัดลอกมาที่โทรศัพท์แล้วใช้ เพิ่มพื้นที่ทำงาน → นำเข้า ปิดแท็บอื่นของ %1$s ก่อน เพื่อไม่ให้ไฟล์เปลี่ยนระหว่างอ่าน</string>
     <string name="terminow_backup_run">สำรองข้อมูล</string>
     <string name="terminow_backup_tab">สำรอง · %1$s → %2$s</string>
     <string name="terminow_backup_no_hosts">เพิ่มเซิร์ฟเวอร์ที่จะสำรองข้อมูลเป็นโฮสต์ SSH ก่อน พร้อมคีย์หรือรหัสผ่าน</string>

@@ -42,7 +42,7 @@
     <string name="terminow_ai_agents_premium_what">AI agents ใน Ubuntu</string>
     <string name="terminow_quick_files">ไฟล์</string>
     <string name="terminow_quick_manage">จัดการสภาพแวดล้อม</string>
-    <string name="terminow_quick_add_environment">เพิ่มสภาพแวดล้อม</string>
+    <string name="terminow_quick_add_environment">เพิ่มพื้นที่ทำงาน</string>
     <string name="terminow_quick_add_environment_summary">ติดตั้ง Linux หรือเพิ่มโปรไฟล์กำหนดเอง</string>
     <string name="terminow_quick_default">ค่าเริ่มต้น</string>
     <string name="terminow_quick_rename">เปลี่ยนชื่อ</string>

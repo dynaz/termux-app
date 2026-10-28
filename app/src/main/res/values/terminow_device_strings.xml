@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="terminow_add_environment">Add Environment</string>
+    <string name="terminow_add_environment">Add workspace</string>
     <string name="terminow_env_tab_local">Local Linux</string>
     <string name="terminow_env_tab_remote">Remote Devices</string>
     <string name="terminow_env_tab_labs">Virtual Labs</string>

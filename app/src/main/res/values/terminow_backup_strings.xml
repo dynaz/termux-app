@@ -9,7 +9,7 @@
     <string name="terminow_backup_folders">Folders, like /root /home</string>
     <string name="terminow_backup_install_rsync">Install rsync in %1$s if it is missing (apt-get install rsync)</string>
     <string name="terminow_backup_note_folders">rsync must also be on the server. The folders keep their paths there, like root/… and home/…, and nothing on the server is deleted. TermiNow logs in with the key, passphrase and jump host of the server.</string>
-    <string name="terminow_backup_note_system">All of %1$s goes into one .tar.gz on the server, named with the date. To restore it, copy it to the phone and use Add environment → Import. Close other tabs of %1$s first, so files do not change while they are read.</string>
+    <string name="terminow_backup_note_system">All of %1$s goes into one .tar.gz on the server, named with the date. To restore it, copy it to the phone and use Add workspace → Import. Close other tabs of %1$s first, so files do not change while they are read.</string>
     <string name="terminow_backup_run">Back up</string>
     <string name="terminow_backup_tab">Backup · %1$s → %2$s</string>
     <string name="terminow_backup_no_hosts">Add the server you back up to as an SSH host first, with its key or password.</string>

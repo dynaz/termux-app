@@ -42,7 +42,7 @@
     <string name="terminow_ai_agents_premium_what">AI agents in Ubuntu</string>
     <string name="terminow_quick_files">Files</string>
     <string name="terminow_quick_manage">Manage environment</string>
-    <string name="terminow_quick_add_environment">Add environment</string>
+    <string name="terminow_quick_add_environment">Add workspace</string>
     <string name="terminow_quick_add_environment_summary">Install Linux or add a custom profile.</string>
     <string name="terminow_quick_default">Default</string>
     <string name="terminow_quick_rename">Rename</string>
