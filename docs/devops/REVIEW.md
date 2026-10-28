@@ -31,8 +31,12 @@ checks. Two issues were found and fixed in this pass; the rest hold.
   responses carry only repo/run/job metadata, `status`, or an `authorizeUrl`. Error bodies carry only
   machine codes (`premium_required`, `no_access`, `provider_error`, …); the catch-all returns a generic
   503 without the exception message.
-- **Scopes.** Read-only: `read:user repo` (drop to `public_repo` for public-only). The `workflow` scope
-  (write) is **not** requested — confirmed against GitHub's official scope docs.
+- **Scopes (corrected).** The app only reads, but an OAuth App has **no read-only-private scope**: `repo`
+  grants read **and write** to private repos, so it is **not** read-only. The default is now `read:user`
+  (public repos only, token has **no** write), config-overridable to `read:user repo` for private repos
+  **with** the write trade-off made explicit. `workflow` is never requested. For truly read-only private
+  access, migrate to a **GitHub App** (Contents:read + Actions:read + Metadata:read) — noted as a hardening
+  follow-up.
 
 ## Tests
 `php whmcs/tests/test_devops.php` (SQLite, no network) — PASS: encryption round-trip + fresh IV +

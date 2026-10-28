@@ -63,8 +63,12 @@ $config = ['github_client_id' => 'cid', 'github_client_secret' => 'x', 'redirect
 $url = authorize_url($config, $state);
 check(strpos($url, 'https://github.com/login/oauth/authorize?') === 0, 'authorize url base');
 check(strpos($url, 'client_id=cid') !== false, 'authorize url has client id');
-check(strpos($url, rawurlencode('read:user repo')) !== false || strpos($url, 'read%3Auser+repo') !== false || strpos($url, 'scope=read%3Auser') !== false, 'authorize url has read-only scope');
+check(strpos($url, 'scope=read%3Auser') !== false, 'authorize url default scope is read:user (public-only, no write)');
+check(strpos($url, 'repo') === false, 'default scope does NOT include repo (no private/write)');
 check(strpos($url, 'workflow') === false, 'authorize url does NOT request the workflow scope');
+// Deployment opt-in to private repos via config (with the write trade-off).
+$url2 = authorize_url(['github_client_id' => 'cid', 'redirect_uri' => 'https://x/cb', 'scopes' => 'read:user repo'], $state);
+check(strpos($url2, 'repo') !== false, 'config can widen scope to include repo');
 
 echo $failures === 0 ? "\nALL PASS\n" : "\n$failures FAILED\n";
 exit($failures === 0 ? 0 : 1);

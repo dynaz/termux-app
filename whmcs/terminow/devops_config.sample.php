@@ -20,4 +20,10 @@ return [
     // 32 raw bytes for AES-256-GCM, base64-encoded. Generate once and keep secret, e.g.:
     //   php -r "echo base64_encode(random_bytes(32)), PHP_EOL;"
     'token_key_b64'        => 'REPLACE_WITH_BASE64_OF_32_RANDOM_BYTES',
+
+    // OAuth scopes. Default (unset) = 'read:user' → PUBLIC repos only, and the token has NO write access.
+    // An OAuth App has no read-only-private scope: setting 'read:user repo' includes PRIVATE repos but the
+    // token then also has WRITE access to them (not read-only). For truly read-only private access, use a
+    // GitHub App instead. Leave unset for the safe public-only default.
+    // 'scopes' => 'read:user repo',
 ];

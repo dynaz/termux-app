@@ -57,14 +57,17 @@ Hit by GitHub's redirect.
 5. Encrypt the token and store it (see Token storage); never log the token or the code.
 6. Redirect to a simple success page (or an app deep link **[VERIFY]** the app's deep-link scheme).
 
-### Scopes / permissions (from official GitHub docs — minimal, read-only)
-Reading repositories + Actions workflow runs + logs does **not** need the `workflow` scope (that scope is
-only for *adding/updating workflow files*). Use the least that works:
-- **OAuth App:** `read:user` (profile) + for repos/Actions: `public_repo` (public only) or `repo` (if
-  private repos must be listed). **Do not add `workflow`.**
-- **GitHub App (preferred):** fine-grained repository permissions `Metadata: read`, `Contents: read`,
-  `Actions: read`. No workflow write permission.
-- Ref: https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps
+### Scopes / permissions (honest about read vs write)
+Reading repos + Actions runs/logs does **not** need `workflow` (that is for *writing* workflow files).
+But an **OAuth App has no read-only-private scope**:
+- **Default `read:user`** — public repos only via the user's token; **no write** granted. Private repos
+  are not visible. This is the safe default.
+- **`read:user repo`** (set `scopes` in `devops_config.php`) — includes **private** repos, but `repo`
+  grants **read AND write** to them. The app only reads, yet the token can write — so this is **not**
+  read-only. Choose this only knowingly.
+- **GitHub App (for true read-only private access)** — fine-grained `Metadata: read`, `Contents: read`,
+  `Actions: read`. Recommended hardening; requires switching the flow from OAuth App to App installs.
+- `workflow` is never requested. Ref: https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps
 
 ## Data endpoints (Firebase auth + entitlement + per-resource access)
 All responses JSON. The server calls the GitHub API with the stored token; the token never leaves the server.

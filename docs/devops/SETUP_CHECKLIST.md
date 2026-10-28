@@ -20,8 +20,10 @@ Android repo). I am **not** asking for any secret value in chat — only for acc
      - Application name: e.g. "TermiNow DevOps"
      - Homepage URL: `https://terminow.online` (or your site)
      - **Authorization callback URL** (must match exactly): `https://cp.accmove.com/terminow/devops_callback.php`
-   - Scopes are requested by the code at authorize time (`read:user repo`, or `public_repo` for public
-     only) — **no `workflow`**, read-only for the MVP.
+   - Scopes requested at authorize time: default **`read:user`** (public repos only, token has **no**
+     write). To include **private** repos set `scopes => 'read:user repo'` in `devops_config.php` —
+     but `repo` grants read **and write** (NOT read-only). `workflow` is never requested. For truly
+     read-only private access, use a GitHub App (hardening follow-up).
    - Put the generated **Client ID** and a **Client secret** into `devops_config.php` on the server
      (not the DB, not the repo, not chat).
 4. An **encryption key** for provider tokens at rest, stored **separately from the database** (reuse the

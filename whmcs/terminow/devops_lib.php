@@ -16,9 +16,15 @@ namespace TermiNow\DevOps;
 const GITHUB_AUTHORIZE = 'https://github.com/login/oauth/authorize';
 const GITHUB_TOKEN     = 'https://github.com/login/oauth/access_token';
 const GITHUB_API       = 'https://api.github.com';
-// Read-only. Reading repos + Actions runs/logs does NOT need the `workflow` scope (that is for writing
-// workflow files). `repo` covers private repos; drop to `public_repo` if private repos are not needed.
-const GITHUB_SCOPES    = 'read:user repo';
+// The app only READS repos + Actions runs/logs, and never requests the `workflow` scope (that is for
+// writing workflow files). HONEST SCOPE NOTE: an OAuth App has no read-only-private scope — `repo`
+// grants read AND WRITE to private repos, and `public_repo` grants write to public repos. So this token
+// is NOT read-only even though the app only reads. For truly least-privilege read-only access (incl.
+// private repos: Contents:read + Actions:read + Metadata:read) use a GitHub App instead. The scope is
+// configurable so the deployment can choose: default here is public-only + profile (no private, no repo
+// write granted); set 'scopes' in devops_config.php to 'read:user repo' to include private repos
+// (accepting that the token then also has write access).
+const GITHUB_SCOPES    = 'read:user';
 const STATE_TTL        = 600;   // 10 minutes
 const CONFIG_FILE      = __DIR__ . '/devops_config.php';
 
@@ -141,7 +147,8 @@ function authorize_url(array $config, string $state): string
     return GITHUB_AUTHORIZE . '?' . http_build_query([
         'client_id'    => $config['github_client_id'],
         'redirect_uri' => $config['redirect_uri'],
-        'scope'        => GITHUB_SCOPES,
+        // Deployment may widen this (e.g. to include private repos) via config, knowing the trade-off.
+        'scope'        => (string)($config['scopes'] ?? GITHUB_SCOPES),
         'state'        => $state,
         'allow_signup' => 'false',
     ]);
