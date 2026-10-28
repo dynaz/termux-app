@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_devops_rail">DevOps</string>
+    <string name="terminow_devops_premium_what">ระบบอัตโนมัติ DevOps</string>
+    <string name="terminow_devops_title">DevOps</string>
+    <string name="terminow_devops_subtitle">เชื่อมต่อ provider เพื่อรัน pipeline และ deployment ให้โฮสต์ของคุณ</string>
+    <string name="terminow_devops_providers">เชื่อมต่อ provider</string>
+    <string name="terminow_devops_connect">เชื่อมต่อ %1$s</string>
+    <string name="terminow_devops_pipelines">Pipeline</string>
+    <string name="terminow_devops_deployments">Deployment</string>
+    <string name="terminow_devops_logs">บันทึก</string>
+    <string name="terminow_devops_coming">จะแสดงที่นี่เมื่อเชื่อมต่อ provider แล้ว</string>
+    <string name="terminow_devops_backend_required">การเชื่อมต่อ provider ต้องใช้บริการ DevOps ของ TermiNow ซึ่งยังไม่พร้อมใช้งาน การยืนยันตัวตนและสิทธิ์ตรวจสอบที่ฝั่งเซิร์ฟเวอร์ แอปจึงยังไม่เชื่อมต่อให้</string>
+    <string name="terminow_devops_expired">DevOps เป็นฟีเจอร์ Premium สิทธิ์ Premium ของคุณหมดอายุ — ต่ออายุเพื่อใช้ DevOps อีกครั้ง การเชื่อมต่อและการตั้งค่าของคุณยังอยู่</string>
+</resources>

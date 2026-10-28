@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- DevOps (Premium). The provider/pipeline/deploy operations need the TermiNow DevOps backend
+         service, which is not built yet, so they are not performed from the app. -->
+    <string name="terminow_devops_rail">DevOps</string>
+    <string name="terminow_devops_premium_what">DevOps automation</string>
+    <string name="terminow_devops_title">DevOps</string>
+    <string name="terminow_devops_subtitle">Connect a provider to run pipelines and deployments for your hosts.</string>
+    <string name="terminow_devops_providers">Connect a provider</string>
+    <string name="terminow_devops_connect">Connect %1$s</string>
+    <string name="terminow_devops_pipelines">Pipelines</string>
+    <string name="terminow_devops_deployments">Deployments</string>
+    <string name="terminow_devops_logs">Logs</string>
+    <string name="terminow_devops_coming">Shown here once a provider is connected.</string>
+    <!-- Honest: no backend yet, and the app must never connect a provider directly (OAuth and
+         entitlement are verified server-side), so nothing is connected from the client. -->
+    <string name="terminow_devops_backend_required">Connecting a provider needs the TermiNow DevOps service, which is not available yet. Sign-in and access are verified on the server, so nothing is connected from the app.</string>
+    <string name="terminow_devops_expired">DevOps is a Premium feature. Your Premium has expired — renew to use DevOps again. Your connections and configuration are kept.</string>
+</resources>

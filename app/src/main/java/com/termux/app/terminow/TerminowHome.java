@@ -173,6 +173,7 @@ public class TerminowHome {
     private final View mNotificationsBadge;
     private final LinearLayout mTabsView;
     private final View mRailHosts;
+    @Nullable private View mRailDevops;
     private final View mRailSnippets;
     private final View mRailSettings;
     private final View mRailKeychain;
@@ -461,6 +462,8 @@ public class TerminowHome {
         mRailLaunch = activity.findViewById(R.id.terminow_rail_launch);
         mRailLaunch.setOnClickListener(v -> setPage(PAGE_LAUNCH));
         mRailHosts.setOnClickListener(v -> setPage(PAGE_HOSTS));
+        mRailDevops = activity.findViewById(R.id.terminow_rail_devops);
+        if (mRailDevops != null) mRailDevops.setOnClickListener(v -> showDevOps());
         mRailSnippets.setOnClickListener(v -> setPage(PAGE_SNIPPETS));
         mRailKeychain = activity.findViewById(R.id.terminow_rail_keychain);
         mRailKeychain.setOnClickListener(v -> setPage(PAGE_KEYCHAIN));
@@ -1133,6 +1136,18 @@ public class TerminowHome {
         button.setClickable(true);
         button.setFocusable(true);
         return button;
+    }
+
+    /**
+     * DevOps (Premium): a free user sees the existing upgrade flow; a Premium user opens the DevOps MVP.
+     * The sidebar overlay (on a phone) closes first so the entry does not stay under the opened screen.
+     * Entitlement is re-checked here and again in {@link TerminowDevOpsUi} and at every action inside it,
+     * so navigation, deep links and provider actions cannot reach DevOps without Premium.
+     */
+    void showDevOps() {
+        if (sidebarIsOverlayOpen()) hideSidebarOverlay();
+        TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.DEVOPS, 0,
+            () -> new TerminowDevOpsUi(mActivity, mStore).open());
     }
 
     /**
