@@ -1,6 +1,8 @@
 package com.termux.app.terminow;
 
 import android.app.AlertDialog;
+import android.os.Handler;
+import android.os.Looper;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.util.TypedValue;
@@ -23,6 +25,8 @@ import com.termux.R;
 import com.termux.app.TermuxActivity;
 
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * The AI Integration page in the left rail (a Premium feature, after MCP Servers): turn the Local
@@ -37,6 +41,9 @@ final class TerminowAiSettings {
     private final TerminowStore mStore;
     private final LinearLayout mContent;
     private final TerminowAccountUi mAccountUi;
+    // Connect & Test and Diagnose open a socket to the bridge, so they must run off the main thread.
+    private final ExecutorService mExecutor = Executors.newSingleThreadExecutor();
+    private final Handler mHandler = new Handler(Looper.getMainLooper());
     private List<TerminowStore.Host> mHosts;
 
     TerminowAiSettings(@NonNull TermuxActivity activity, @NonNull TerminowAiBridgeManager manager, @NonNull TerminowStore store,
@@ -361,24 +368,43 @@ final class TerminowAiSettings {
 
     /** Connect Claude Code for an environment and immediately self-test the bridge end to end. */
     private void connectAndTest(@NonNull String environmentKey, @NonNull String user) {
-        TerminowAiBridgeManager.SetupResult result = mManager.connectClaude(environmentKey, user);
-        if (!result.ok) {
-            mActivity.showToast(result.message, true);
-            return;
-        }
-        TerminowAiBridgeProbe.Result probe = mManager.selfTest(environmentKey, null);
-        if (probe.ok()) {
-            mActivity.showToast(mActivity.getString(R.string.terminow_ai_connect_tested, probe.hostCount), false);
-        } else {
-            mActivity.showToast(mActivity.getString(R.string.terminow_ai_connect_test_failed,
-                probe.error != null ? probe.error : "failed"), true);
-        }
+        // Connecting installs the helper and the self-test opens a socket — both off the main thread.
+        mActivity.showToast(mActivity.getString(R.string.terminow_bridge_working), false);
+        mExecutor.execute(() -> {
+            boolean ok;
+            String message;
+            TerminowAiBridgeManager.SetupResult result = mManager.connectClaude(environmentKey, user);
+            if (!result.ok) {
+                ok = false;
+                message = result.message;
+            } else {
+                TerminowAiBridgeProbe.Result probe = mManager.selfTest(environmentKey, null);
+                ok = probe.ok();
+                message = ok ? mActivity.getString(R.string.terminow_ai_connect_tested, probe.hostCount)
+                             : mActivity.getString(R.string.terminow_ai_connect_test_failed,
+                                 probe.error != null ? probe.error : "failed");
+            }
+            final boolean fok = ok;
+            final String fmessage = message;
+            mHandler.post(() -> {
+                mActivity.showToast(fmessage, !fok);
+                render();
+            });
+        });
     }
 
     /** Run the layered diagnostics for an environment and show the sanitized report with Copy. */
     private void showDiagnostics(@NonNull String environmentKey, @NonNull String user) {
-        TerminowAiBridgeManager.Diagnostics diag = mManager.diagnose(environmentKey, user);
-        String report = diag.toText();
+        // diagnose() runs the self-test (a socket connect), so it must not run on the main thread.
+        mActivity.showToast(mActivity.getString(R.string.terminow_bridge_working), false);
+        mExecutor.execute(() -> {
+            TerminowAiBridgeManager.Diagnostics diag = mManager.diagnose(environmentKey, user);
+            String report = diag.toText();
+            mHandler.post(() -> showDiagnosticsReport(report));
+        });
+    }
+
+    private void showDiagnosticsReport(@NonNull String report) {
         new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
             .setTitle(R.string.terminow_ai_diagnose)
             .setMessage(report)
