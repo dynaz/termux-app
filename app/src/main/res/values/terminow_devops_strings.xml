@@ -16,4 +16,23 @@
          entitlement are verified server-side), so nothing is connected from the client. -->
     <string name="terminow_devops_backend_required">Connecting a provider needs the TermiNow DevOps service, which is not available yet. Sign-in and access are verified on the server, so nothing is connected from the app.</string>
     <string name="terminow_devops_expired">DevOps is a Premium feature. Your Premium has expired — renew to use DevOps again. Your connections and configuration are kept.</string>
+    <string name="terminow_devops_connect_opened">Opening GitHub sign-in in your browser…</string>
+    <string name="terminow_devops_connect_note">After you authorize on GitHub, come back to the app.</string>
+    <string name="terminow_devops_coming_soon">Coming soon</string>
+    <string name="terminow_devops_connected_as">Connected: %1$s</string>
+    <string name="terminow_devops_projects_title">Projects</string>
+    <string name="terminow_devops_no_projects">No projects yet. Create one from a repository.</string>
+    <string name="terminow_devops_new_project">+ New project</string>
+    <string name="terminow_devops_disconnect">Disconnect GitHub</string>
+    <string name="terminow_devops_disconnect_confirm">Remove the GitHub connection? Your projects are kept and you can reconnect later.</string>
+    <string name="terminow_devops_linked_host">Terminal: %1$s</string>
+    <string name="terminow_devops_not_linked">No host linked</string>
+    <string name="terminow_devops_pipeline">Pipeline</string>
+    <string name="terminow_devops_link_host">Link host</string>
+    <string name="terminow_devops_select_repo">Select a repository</string>
+    <string name="terminow_devops_no_repos">No repositories found.</string>
+    <string name="terminow_devops_no_runs">Nothing to show yet.</string>
+    <string name="terminow_devops_not_connected_msg">GitHub is not connected.</string>
+    <string name="terminow_devops_no_access">You don\'t have access to that repository.</string>
+    <string name="terminow_devops_error">Something went wrong. Please try again.</string>
 </resources>

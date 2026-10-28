@@ -23,12 +23,15 @@ Android repo). I am **not** asking for any secret value in chat — only for acc
    host's existing secret mechanism). Don't send it to me.
 5. Confirm the **app deep-link scheme** (if the OAuth success page should bounce back into the app).
 
-## What I can prepare now without backend access (in progress)
-- `API_CONTRACT.md` — endpoints, auth, entitlement, OAuth state flow, scopes, token handling, errors. ✅
-- Reference server stubs under `reference/` showing the required checks (Firebase verify → entitlement →
-  single-use state → entitlement re-check → encrypt → never log/return token). These are **reference only**,
-  marked `[VERIFY]`, to be reconciled with the real backend source — **not** to be deployed as-is.
-- The Android-side DevOps client calls (on `devops-mvp`) once the contract is agreed.
+## What is implemented (in this repo, matching the real backend patterns)
+- Backend: `whmcs/terminow/devops_lib.php` (Firebase verify via `lib.php`, entitlement via `whmcs_glue.php`,
+  `mod_terminow_devops_*` tables, AES-256-GCM token encryption with the key from `devops_config.php`,
+  single-use short-lived uid-bound OAuth state with an entitlement re-check in the callback, GitHub read
+  endpoints, disconnect/revoke), `devops.php`, `devops_callback.php`, `devops_config.sample.php`.
+- Backend test: `whmcs/tests/test_devops.php` — **passes** (`php whmcs/tests/test_devops.php`).
+- App: `TerminowDevOps` client + `TerminowDevOpsUi` flow + `TerminowStore` project store, Premium-gated.
+- Still required before it works end to end: deploy these files to cp.accmove.com, create
+  `devops_config.php` (items 3–4 below), route `…/devops/callback/github` to `devops_callback.php`.
 
 ## Security invariants (must hold in the final backend)
 - App never holds the GitHub client secret or access token; no client-side OAuth.

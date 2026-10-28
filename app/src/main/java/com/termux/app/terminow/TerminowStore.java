@@ -910,6 +910,76 @@ public class TerminowStore {
         writeGithubTools(list);
     }
 
+    private static final String KEY_DEVOPS_PROJECTS = "devops_projects";
+
+    /** A DevOps project: a provider repository linked to a saved SSH host. Config, not a secret. */
+    public static final class DevOpsProject {
+        public String provider = "github";
+        public String repo = "";       // owner/name
+        public String hostKey = "";    // the linked Host.getKey(), may be empty until linked
+    }
+
+    /** DevOps projects, kept per vault; survive restart and are NOT removed when Premium lapses. */
+    @NonNull
+    public List<DevOpsProject> getDevOpsProjects() {
+        List<DevOpsProject> list = new ArrayList<>();
+        try {
+            JSONArray array = new JSONArray(mPreferences.getString(ns(KEY_DEVOPS_PROJECTS), "[]"));
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject o = array.optJSONObject(i);
+                if (o == null) continue;
+                DevOpsProject p = new DevOpsProject();
+                p.provider = o.optString("provider", "github");
+                p.repo = o.optString("repo");
+                p.hostKey = o.optString("hostKey");
+                if (!p.repo.isEmpty()) list.add(p);
+            }
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to load DevOps projects", e);
+        }
+        return list;
+    }
+
+    /** Add or update a project, keyed by provider + repo (so linking a host updates in place). */
+    public void addDevOpsProject(@NonNull DevOpsProject project) {
+        if (project.repo.isEmpty()) return;
+        List<DevOpsProject> list = getDevOpsProjects();
+        boolean replaced = false;
+        for (int i = 0; i < list.size(); i++) {
+            if (list.get(i).provider.equals(project.provider) && list.get(i).repo.equals(project.repo)) {
+                list.set(i, project);
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced) list.add(project);
+        writeDevOpsProjects(list);
+    }
+
+    public void removeDevOpsProject(@NonNull String provider, @NonNull String repo) {
+        List<DevOpsProject> list = getDevOpsProjects();
+        for (int i = 0; i < list.size(); i++)
+            if (list.get(i).provider.equals(provider) && list.get(i).repo.equals(repo)) { list.remove(i); break; }
+        writeDevOpsProjects(list);
+    }
+
+    private void writeDevOpsProjects(@NonNull List<DevOpsProject> list) {
+        JSONArray array = new JSONArray();
+        try {
+            for (DevOpsProject p : list) {
+                JSONObject o = new JSONObject();
+                o.put("provider", p.provider);
+                o.put("repo", p.repo);
+                o.put("hostKey", p.hostKey);
+                array.put(o);
+            }
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to save DevOps projects", e);
+            return;
+        }
+        putVaultList(KEY_DEVOPS_PROJECTS, array.toString());
+    }
+
     private static final String KEY_FAVORITE_HOSTS = "favorite_hosts";
 
     /** The keys of the hosts marked as favorites, in the current vault. */

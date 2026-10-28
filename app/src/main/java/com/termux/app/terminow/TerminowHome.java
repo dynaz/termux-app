@@ -1146,8 +1146,31 @@ public class TerminowHome {
      */
     void showDevOps() {
         if (sidebarIsOverlayOpen()) hideSidebarOverlay();
-        TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.DEVOPS, 0,
-            () -> new TerminowDevOpsUi(mActivity, mStore).open());
+        TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.DEVOPS, 0, this::openDevOps);
+    }
+
+    /** Build the DevOps client (Firebase ID token) and the app callbacks, then open the DevOps flow. */
+    private void openDevOps() {
+        TerminowAccount account = new TerminowAccount(com.termux.BuildConfig.TERMINOW_FIREBASE_API_KEY, mActivity.getPackageName());
+        TerminowAiService.Tokens tokens = () -> {
+            TerminowAccount.Session session = mStore.getAccount();
+            if (session == null) throw new java.io.IOException(mActivity.getString(R.string.terminow_tools_github_need_signin));
+            try {
+                String token = account.getIdToken(session);
+                mStore.setAccount(session);
+                return token;
+            } catch (TerminowAccount.AccountException e) {
+                throw new java.io.IOException(String.valueOf(e.getMessage()));
+            }
+        };
+        TerminowDevOpsUi.Host host = new TerminowDevOpsUi.Host() {
+            @NonNull @Override public java.util.List<TerminowStore.Host> sshHosts() { return mStore.getHosts(); }
+            @Override public void openHost(@NonNull TerminowStore.Host h) { connect(h); }
+            @Override public void openUpgrade() {
+                TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.DEVOPS, 0, TerminowHome.this::openDevOps);
+            }
+        };
+        new TerminowDevOpsUi(mActivity, mStore, new TerminowDevOps(tokens), host).open();
     }
 
     /**

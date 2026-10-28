@@ -12,4 +12,23 @@
     <string name="terminow_devops_coming">จะแสดงที่นี่เมื่อเชื่อมต่อ provider แล้ว</string>
     <string name="terminow_devops_backend_required">การเชื่อมต่อ provider ต้องใช้บริการ DevOps ของ TermiNow ซึ่งยังไม่พร้อมใช้งาน การยืนยันตัวตนและสิทธิ์ตรวจสอบที่ฝั่งเซิร์ฟเวอร์ แอปจึงยังไม่เชื่อมต่อให้</string>
     <string name="terminow_devops_expired">DevOps เป็นฟีเจอร์ Premium สิทธิ์ Premium ของคุณหมดอายุ — ต่ออายุเพื่อใช้ DevOps อีกครั้ง การเชื่อมต่อและการตั้งค่าของคุณยังอยู่</string>
+    <string name="terminow_devops_connect_opened">กำลังเปิดการลงชื่อเข้า GitHub ในเบราว์เซอร์…</string>
+    <string name="terminow_devops_connect_note">หลังอนุญาตบน GitHub แล้ว กลับมาที่แอป</string>
+    <string name="terminow_devops_coming_soon">เร็ว ๆ นี้</string>
+    <string name="terminow_devops_connected_as">เชื่อมต่อแล้ว: %1$s</string>
+    <string name="terminow_devops_projects_title">โปรเจกต์</string>
+    <string name="terminow_devops_no_projects">ยังไม่มีโปรเจกต์ สร้างจาก repository ได้</string>
+    <string name="terminow_devops_new_project">+ โปรเจกต์ใหม่</string>
+    <string name="terminow_devops_disconnect">ยกเลิกการเชื่อมต่อ GitHub</string>
+    <string name="terminow_devops_disconnect_confirm">นำการเชื่อมต่อ GitHub ออกหรือไม่ โปรเจกต์ของคุณยังอยู่และเชื่อมต่อใหม่ได้ภายหลัง</string>
+    <string name="terminow_devops_linked_host">เทอร์มินัล: %1$s</string>
+    <string name="terminow_devops_not_linked">ยังไม่ได้ผูกโฮสต์</string>
+    <string name="terminow_devops_pipeline">Pipeline</string>
+    <string name="terminow_devops_link_host">ผูกโฮสต์</string>
+    <string name="terminow_devops_select_repo">เลือก repository</string>
+    <string name="terminow_devops_no_repos">ไม่พบ repository</string>
+    <string name="terminow_devops_no_runs">ยังไม่มีข้อมูลให้แสดง</string>
+    <string name="terminow_devops_not_connected_msg">ยังไม่ได้เชื่อมต่อ GitHub</string>
+    <string name="terminow_devops_no_access">คุณไม่มีสิทธิ์เข้าถึง repository นั้น</string>
+    <string name="terminow_devops_error">เกิดข้อผิดพลาด โปรดลองใหม่</string>
 </resources>

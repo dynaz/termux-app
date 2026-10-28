@@ -1,6 +1,11 @@
-# TermiNow DevOps backend — API contract (DRAFT for review)
+# TermiNow DevOps backend — API contract
 
-Status: **draft / not deployed.** This describes the server endpoints the DevOps MVP (GitHub first)
+Status: **implemented, not deployed.** The real server code is in `whmcs/terminow/`:
+`devops_lib.php` (logic + tests), `devops.php` (bearer POST actions), `devops_callback.php` (GitHub OAuth
+callback), `devops_config.sample.php` (config template). Unit test: `whmcs/tests/test_devops.php`
+(SQLite, no network) — run with `php whmcs/tests/test_devops.php`. It reuses the existing `lib.php`
+(Firebase verify) and `whmcs_glue.php` (entitlement). It is **not deployed** and needs config +
+deployment (see SETUP_CHECKLIST.md). This document describes the endpoints the MVP (GitHub first)
 needs. It reuses TermiNow's existing Firebase auth and entitlement — it does **not** add a second
 account or Premium system. Items marked **[VERIFY]** must be confirmed against the real backend source
 on `cp.accmove.com` (the `terminow/ai.php` + `terminow/premium.php` code and its DB/Firestore layer)
