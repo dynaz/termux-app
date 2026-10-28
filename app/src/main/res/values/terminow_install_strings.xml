@@ -137,6 +137,10 @@
     <string name="terminow_tools_github_busy">Another install is running in this environment</string>
     <string name="terminow_tools_github_installing">Installing %1$s</string>
     <string name="terminow_tools_github_done">Installed %1$s</string>
+    <string name="terminow_tools_github_remove">Remove</string>
+    <string name="terminow_tools_github_checking">Checking…</string>
+    <string name="terminow_tools_github_present">Installed</string>
+    <string name="terminow_tools_github_removed">Removed outside the app</string>
     <string name="terminow_tools_github_install_failed">Install failed:
 %1$s</string>
     <string name="terminow_tools_progress_queued"> · %1$d more queued</string>

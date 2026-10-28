@@ -135,6 +135,10 @@
     <string name="terminow_tools_github_busy">มีการติดตั้งอื่นกำลังทำงานในสภาพแวดล้อมนี้</string>
     <string name="terminow_tools_github_installing">กำลังติดตั้ง %1$s</string>
     <string name="terminow_tools_github_done">ติดตั้ง %1$s แล้ว</string>
+    <string name="terminow_tools_github_remove">ลบ</string>
+    <string name="terminow_tools_github_checking">กำลังตรวจสอบ…</string>
+    <string name="terminow_tools_github_present">ติดตั้งแล้ว</string>
+    <string name="terminow_tools_github_removed">ถูกลบนอกแอป</string>
     <string name="terminow_tools_github_install_failed">ติดตั้งล้มเหลว:
 %1$s</string>
     <string name="terminow_tools_progress_queued"> · อีก %1$d รายการในคิว</string>

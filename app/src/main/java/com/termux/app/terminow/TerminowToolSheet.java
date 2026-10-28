@@ -675,12 +675,12 @@ final class TerminowToolSheet {
             .setView(scroll)
             .setNegativeButton(android.R.string.cancel, null);
         if (plan.installable())
-            b.setPositiveButton(R.string.terminow_install_install, (d, w) -> runPlan(target, plan));
+            b.setPositiveButton(R.string.terminow_install_install, (d, w) -> runPlan(target, repo, plan));
         b.show();
     }
 
     /** Install a validated plan through the install manager, polling its real state for the result. */
-    private void runPlan(@NonNull Target target, @NonNull TerminowInstallPlan plan) {
+    private void runPlan(@NonNull Target target, @NonNull TerminowGithubRepo.Repo repo, @NonNull TerminowInstallPlan plan) {
         TerminowToolInstaller.Job job = TerminowToolInstaller.installPlan(target.runner, target.key, target.user, plan.toolName, plan.toScript());
         if (job == null) {
             mActivity.showToast(mActivity.getString(R.string.terminow_tools_github_busy), true);
@@ -698,17 +698,113 @@ final class TerminowToolSheet {
                 return;
             }
             if (progress.isShowing()) progress.dismiss();
-            if (job.getState() == TerminowToolInstaller.State.SUCCEEDED)
+            if (job.getState() == TerminowToolInstaller.State.SUCCEEDED) {
+                // The install verified (verify exited 0); remember it under My tools for this environment,
+                // with the pinned repo revision and the verified launch/verify commands, so it survives a
+                // restart and its real presence can be re-checked later.
+                if (!target.ssh && target.environment != null) persistGithubTool(target, repo, plan);
                 mActivity.showToast(mActivity.getString(R.string.terminow_tools_github_done, plan.toolName), false);
-            else
+                render();
+            } else
                 new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
                     .setTitle(plan.toolName)
                     .setMessage(mActivity.getString(R.string.terminow_tools_github_install_failed, job.getLogTail(10)))
                     .setPositiveButton(android.R.string.ok, null)
-                    .setNeutralButton(R.string.terminow_install_retry, (d, w) -> runPlan(target, plan))
+                    .setNeutralButton(R.string.terminow_install_retry, (d, w) -> runPlan(target, repo, plan))
                     .show();
         };
         mHandler.postDelayed(poll[0], 1000);
+    }
+
+    /** Record a verified GitHub install into My tools for this local environment. */
+    private void persistGithubTool(@NonNull Target target, @NonNull TerminowGithubRepo.Repo repo,
+                                   @NonNull TerminowInstallPlan plan) {
+        if (target.environment == null) return;
+        TerminowStore.GithubTool t = new TerminowStore.GithubTool();
+        t.toolName = plan.toolName;
+        t.environmentKey = target.environment.key;
+        t.repo = repo.owner + "/" + repo.repo;
+        t.revision = repo.revision();
+        t.launchCommand = plan.launchCommand;
+        t.verifyCommand = plan.verifyCommand;
+        try {
+            new TerminowStore(mActivity).addGithubTool(t);
+        } catch (Exception e) {
+            // Persistence is best-effort; the install already succeeded regardless.
+        }
+    }
+
+    /** Run a persisted tool's verify command off-thread and show whether it is still present or removed. */
+    private void checkPresence(@NonNull Target target, @NonNull TerminowStore.GithubTool tool, @NonNull TextView status) {
+        new Thread(() -> {
+            boolean present = false;
+            try {
+                Process p = target.runner.start(target.key, target.user, tool.verifyCommand);
+                // Drain output so the process never blocks on a full pipe, then read its exit code.
+                java.io.InputStream in = p.getInputStream();
+                byte[] buf = new byte[4096];
+                while (in.read(buf) >= 0) { /* discard */ }
+                present = p.waitFor() == 0;
+            } catch (Exception e) {
+                present = false;
+            }
+            final boolean ok = present;
+            mHandler.post(() -> {
+                status.setText(mActivity.getString(ok
+                    ? R.string.terminow_tools_github_present : R.string.terminow_tools_github_removed));
+                status.setTextColor(color(ok ? R.color.terminow_accent : R.color.terminow_text_secondary));
+            });
+        }, "gh-presence").start();
+    }
+
+    /** A My-tools row for a tool installed from GitHub: its repo/revision, Open and Remove. */
+    private void githubToolRow(@NonNull LinearLayout parent, @NonNull Target target,
+                               @NonNull TerminowStore.GithubTool tool) {
+        LinearLayout card = new LinearLayout(mActivity);
+        card.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(dp(12));
+        bg.setColor(color(R.color.terminow_field));
+        card.setBackground(bg);
+        card.setPadding(dp(14), dp(12), dp(14), dp(12));
+
+        TextView name = text(tool.toolName, 15, R.color.terminow_text);
+        name.setTypeface(Typeface.DEFAULT_BOLD);
+        card.addView(name);
+        String sub = tool.revision.isEmpty() ? tool.repo : tool.revision;
+        card.addView(text(sub, 12, R.color.terminow_text_secondary));
+
+        // Re-run the verified verify command to confirm the program is still really present; if it was
+        // removed outside the app, the status flips to "removed" rather than silently claiming it is there.
+        final TextView status = text(mActivity.getString(R.string.terminow_tools_github_checking), 12, R.color.terminow_text_secondary);
+        card.addView(status);
+        if (!tool.verifyCommand.isEmpty()) checkPresence(target, tool, status);
+        else status.setVisibility(View.GONE);
+
+        LinearLayout actions = new LinearLayout(mActivity);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams ap = matchWrap();
+        ap.topMargin = dp(10);
+        if (!tool.launchCommand.isEmpty()) {
+            View open = button(mActivity.getString(R.string.terminow_install_open), true, true, () -> {
+                dismiss();
+                if (!target.ssh && target.environment != null)
+                    mLauncher.openTerminalRunning(target.environment, tool.launchCommand);
+            });
+            LinearLayout.LayoutParams op = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            op.rightMargin = dp(8);
+            actions.addView(open, op);
+        }
+        View remove = button(mActivity.getString(R.string.terminow_tools_github_remove), false, true, () -> {
+            new TerminowStore(mActivity).removeGithubTool(tool.environmentKey, tool.toolName);
+            render();
+        });
+        actions.addView(remove, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        card.addView(actions, ap);
+
+        LinearLayout.LayoutParams lp = matchWrap();
+        lp.bottomMargin = dp(8);
+        parent.addView(card, lp);
     }
 
     /** Fill the list with the tools that pass the filters; a useful empty state when none do. */
@@ -734,6 +830,15 @@ final class TerminowToolSheet {
             if (!matchesFilters(tool)) continue;
             toolRow(nextColumn(list, two), target, tool, running);
             shown++;
+        }
+        // Tools installed from GitHub are remembered per environment; list them under My tools.
+        if (mTab == TAB_MY_TOOLS && !target.ssh && target.environment != null) {
+            for (TerminowStore.GithubTool gt : new TerminowStore(mActivity).getGithubTools()) {
+                if (!gt.environmentKey.equals(target.environment.key)) continue;
+                if (!matchesSearch(gt.toolName, gt.repo)) continue;
+                githubToolRow(nextColumn(list, two), target, gt);
+                shown++;
+            }
         }
         if (mTab == TAB_DISCOVER && (mCategory == CAT_ALL || mCategory == CAT_PLUGINS)
                 && matchesSearch(mActivity.getString(R.string.terminow_install_plugins),

@@ -777,6 +777,17 @@ public class TerminowStore {
     // Proxmox VE connections: host/port/token id/fingerprint in clear, the token secret encrypted like
     // a host password (Android keystore). The secret is never written in clear or logged.
     private static final String KEY_PROXMOX = "proxmox";
+    private static final String KEY_GITHUB_TOOLS = "github_tools";
+
+    /** A tool installed from a GitHub repository, to list under My tools and reopen with its launch command. */
+    public static final class GithubTool {
+        public String toolName = "";
+        public String environmentKey = "";
+        public String repo = "";
+        public String revision = "";
+        public String launchCommand = "";
+        public String verifyCommand = "";
+    }
 
     @NonNull
     public List<TerminowProxmox.Connection> getProxmoxConnections() {
@@ -847,6 +858,76 @@ public class TerminowStore {
             return;
         }
         putVaultList(KEY_PROXMOX, array.toString());
+    }
+
+    /** Tools installed from GitHub, persisted so My tools keeps them across app restarts. */
+    @NonNull
+    public List<GithubTool> getGithubTools() {
+        List<GithubTool> list = new ArrayList<>();
+        try {
+            JSONArray array = new JSONArray(mPreferences.getString(ns(KEY_GITHUB_TOOLS), "[]"));
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject o = array.optJSONObject(i);
+                if (o == null) continue;
+                GithubTool t = new GithubTool();
+                t.toolName = o.optString("toolName");
+                t.environmentKey = o.optString("environmentKey");
+                t.repo = o.optString("repo");
+                t.revision = o.optString("revision");
+                t.launchCommand = o.optString("launchCommand");
+                t.verifyCommand = o.optString("verifyCommand");
+                list.add(t);
+            }
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to load GitHub tools", e);
+        }
+        return list;
+    }
+
+    /** Record (or update) a GitHub-installed tool, keyed by environment + tool name. */
+    public void addGithubTool(@NonNull GithubTool tool) {
+        List<GithubTool> list = getGithubTools();
+        boolean replaced = false;
+        for (int i = 0; i < list.size(); i++) {
+            if (list.get(i).environmentKey.equals(tool.environmentKey) && list.get(i).toolName.equals(tool.toolName)) {
+                list.set(i, tool);
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced) list.add(tool);
+        writeGithubTools(list);
+    }
+
+    public void removeGithubTool(@NonNull String environmentKey, @NonNull String toolName) {
+        List<GithubTool> list = getGithubTools();
+        for (int i = 0; i < list.size(); i++) {
+            if (list.get(i).environmentKey.equals(environmentKey) && list.get(i).toolName.equals(toolName)) {
+                list.remove(i);
+                break;
+            }
+        }
+        writeGithubTools(list);
+    }
+
+    private void writeGithubTools(@NonNull List<GithubTool> list) {
+        JSONArray array = new JSONArray();
+        try {
+            for (GithubTool t : list) {
+                JSONObject o = new JSONObject();
+                o.put("toolName", t.toolName);
+                o.put("environmentKey", t.environmentKey);
+                o.put("repo", t.repo);
+                o.put("revision", t.revision);
+                o.put("launchCommand", t.launchCommand);
+                o.put("verifyCommand", t.verifyCommand);
+                array.put(o);
+            }
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to save GitHub tools", e);
+            return;
+        }
+        putVaultList(KEY_GITHUB_TOOLS, array.toString());
     }
 
     /** The hosts of a vault, which may not be the one that is shown. "" is the personal vault. */
