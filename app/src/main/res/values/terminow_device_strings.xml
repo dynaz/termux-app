@@ -69,5 +69,6 @@
     <string name="terminow_docker_has_compose">Docker Compose projects are present on this host.</string>
     <string name="terminow_docker_restart">Restart</string>
     <string name="terminow_docker_stop">Stop</string>
+    <string name="terminow_docker_shell">Shell (exec)</string>
     <string name="terminow_docker_logs">Logs</string>
 </resources>

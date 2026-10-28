@@ -2022,7 +2022,17 @@ public class TerminowHome {
             if (sftpReady || shellReady || (!waitingAtPrompt && check >= CONNECTION_MADE_AFTER_CHECKS)) {
                 mStore.addRecentConnection(host, sftp);
                 // Never typed into a tmux session that is attached to again: it may run a program
-                TerminowStore.Snippet snippet = sftp || (again && host.remoteTmux) ? null : mStore.getSnippet(host.startupSnippet);
+                // A pending `docker exec` command (from connectDockerExec) runs instead of the host snippet,
+                // giving a real interactive PTY inside the container over the SSH session.
+                String pendingExec = mPendingExecCommand;
+                mPendingExecCommand = null;
+                TerminowStore.Snippet snippet;
+                if (pendingExec != null && !sftp) {
+                    snippet = new TerminowStore.Snippet();
+                    snippet.command = pendingExec;
+                } else {
+                    snippet = sftp || (again && host.remoteTmux) ? null : mStore.getSnippet(host.startupSnippet);
+                }
                 // Type the snippet only once the shell is idle at its prompt — not while a login banner
                 // or a login script is still printing — so it is not swallowed (why a snippet sometimes
                 // did not run). Completion itself does not wait, so a noisy prompt never hangs the tab.
@@ -2534,6 +2544,20 @@ public class TerminowHome {
             " else tmux new-session -s " + tmuxSessionName + " -c " + folder + showFolderKeys + "; fi; fi";
     }
 
+    /** Set by {@link #connectDockerExec} so the next SSH session to this host runs a docker exec PTY. */
+    @Nullable private String mPendingExecCommand;
+
+    /**
+     * Open an SSH terminal to the host and, once its shell is ready, run {@code docker exec -it} on the
+     * container for a real interactive PTY. Tries /bin/bash, then falls back to /bin/sh. The container
+     * reference is single-quote escaped, so a name with metacharacters cannot inject anything.
+     */
+    public void connectDockerExec(@NonNull TerminowStore.Host host, @NonNull String containerRef) {
+        String ref = TerminowDocker.sqEscape(containerRef);
+        mPendingExecCommand = "docker exec -it " + ref + " /bin/bash || docker exec -it " + ref + " /bin/sh";
+        connect(host);
+    }
+
     private void connect(@NonNull TerminowStore.Host host) {
         if (host.isRdp()) {
             openRdp(host);
@@ -2942,11 +2966,11 @@ public class TerminowHome {
                 }
                 if (t.type == TerminowDeviceProfile.Type.DOCKER) {
                     // Docker is managed over the host's own SSH connection.
-                    new TerminowDockerUi(mActivity, mStore, this::connect).openCard(() -> {
+                    new TerminowDockerUi(mActivity, mStore, this::connect, this::connectDockerExec).openCard(() -> {
                         mHosts = mStore.getHosts();
                         mGroups = mStore.getGroups();
                         showHostDialog(null, TerminowRemoteDevices.prefill(t),
-                            saved -> new TerminowDockerUi(mActivity, mStore, this::connect).openView(saved));
+                            saved -> new TerminowDockerUi(mActivity, mStore, this::connect, this::connectDockerExec).openView(saved));
                     });
                     return;
                 }

@@ -38,17 +38,21 @@ final class TerminowDockerUi {
 
     private final TermuxActivity mActivity;
     private final TerminowStore mStore;
-    /** Opens an SSH terminal to the host (for docker exec, which needs a PTY). */
+    /** Opens an SSH terminal to the host (for the Terminal button). */
     @Nullable private final Consumer<TerminowStore.Host> mOpenTerminal;
+    /** Opens an interactive {@code docker exec} PTY for (host, container reference). */
+    @Nullable private final java.util.function.BiConsumer<TerminowStore.Host, String> mOpenExec;
     private final TerminowRemoteTools mRemote;
     private final ExecutorService mExecutor = Executors.newSingleThreadExecutor();
     private final Handler mHandler = new Handler(Looper.getMainLooper());
 
     TerminowDockerUi(@NonNull TermuxActivity activity, @NonNull TerminowStore store,
-                     @Nullable Consumer<TerminowStore.Host> openTerminal) {
+                     @Nullable Consumer<TerminowStore.Host> openTerminal,
+                     @Nullable java.util.function.BiConsumer<TerminowStore.Host, String> openExec) {
         mActivity = activity;
         mStore = store;
         mOpenTerminal = openTerminal;
+        mOpenExec = openExec;
         mRemote = new TerminowRemoteTools(activity, store);
     }
 
@@ -192,6 +196,9 @@ final class TerminowDockerUi {
             labels.add(mActivity.getString(R.string.terminow_docker_restart)); actions.add("restart");
             labels.add(mActivity.getString(R.string.terminow_docker_stop)); actions.add("stop");
         }
+        if (running && mOpenExec != null) {
+            labels.add(mActivity.getString(R.string.terminow_docker_shell)); actions.add("shell");
+        }
         labels.add(mActivity.getString(R.string.terminow_docker_logs)); actions.add("logs");
         new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
             .setTitle(ct.name)
@@ -199,6 +206,8 @@ final class TerminowDockerUi {
                 String action = actions.get(which);
                 if (action.equals("logs")) {
                     showLogs(host, ct);
+                } else if (action.equals("shell")) {
+                    if (mOpenExec != null) mOpenExec.accept(host, ct.id.isEmpty() ? ct.name : ct.id);
                 } else if (action.equals("start")) {
                     doAction(host, ct, action, list, status);
                 } else {
