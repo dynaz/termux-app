@@ -1716,6 +1716,67 @@ public class TerminowStore {
         mPreferences.edit().putString(KEY_LAST_LOCAL_ENV, environmentKey).apply();
     }
 
+    private static final String KEY_RECENT_SESSIONS = "recent_local_sessions";
+    private static final int MAX_RECENT_SESSIONS = 12;
+
+    /** A session that was open and then closed, remembered so a new shell can be opened in its place. */
+    public static final class RecentSession {
+        public String environmentKey = "";
+        public String name = "";
+        public String directory = "";
+    }
+
+    /** The recently closed local sessions, newest first. */
+    @NonNull
+    public List<RecentSession> getRecentSessions() {
+        List<RecentSession> list = new ArrayList<>();
+        try {
+            JSONArray array = new JSONArray(mPreferences.getString(KEY_RECENT_SESSIONS, "[]"));
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject o = array.optJSONObject(i);
+                if (o == null) continue;
+                RecentSession s = new RecentSession();
+                s.environmentKey = o.optString("environmentKey");
+                s.name = o.optString("name");
+                s.directory = o.optString("directory");
+                list.add(s);
+            }
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to load recent sessions", e);
+        }
+        return list;
+    }
+
+    /** Remember a closed session at the front, de-duplicated by environment + name + directory, capped. */
+    public void addRecentSession(@NonNull String environmentKey, @NonNull String name, @NonNull String directory) {
+        if (environmentKey.isEmpty()) return;
+        List<RecentSession> list = getRecentSessions();
+        for (int i = list.size() - 1; i >= 0; i--) {
+            RecentSession s = list.get(i);
+            if (s.environmentKey.equals(environmentKey) && s.name.equals(name) && s.directory.equals(directory)) list.remove(i);
+        }
+        RecentSession s = new RecentSession();
+        s.environmentKey = environmentKey;
+        s.name = name;
+        s.directory = directory;
+        list.add(0, s);
+        while (list.size() > MAX_RECENT_SESSIONS) list.remove(list.size() - 1);
+        JSONArray array = new JSONArray();
+        try {
+            for (RecentSession r : list) {
+                JSONObject o = new JSONObject();
+                o.put("environmentKey", r.environmentKey);
+                o.put("name", r.name);
+                o.put("directory", r.directory);
+                array.put(o);
+            }
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to save recent sessions", e);
+            return;
+        }
+        mPreferences.edit().putString(KEY_RECENT_SESSIONS, array.toString()).apply();
+    }
+
     /** What Open Claude does, remembered apart from Open Ubuntu: ask, go back to its tab, a new one, or the last conversation. */
     @NonNull
     public String getClaudeLaunchBehavior() {

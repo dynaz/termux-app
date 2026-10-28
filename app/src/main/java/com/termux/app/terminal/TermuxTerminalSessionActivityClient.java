@@ -160,6 +160,10 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         // Claude Code, or what else ran, ended: the keys of a terminal for that tab
         mActivity.getTerminowKeyBar().refresh();
 
+        // Remember a closed local Linux session so the Local Linux picker can reopen a shell in its place.
+        if (mActivity.getTerminowHome() != null)
+            mActivity.getTerminowHome().noteSessionClosed(finishedSession);
+
         // An SSH/remote tab is dedicated to its connection: ssh runs as the session's main process, so
         // when it ends for any reason (logout, timeout, auth failure, remote exit, network drop) the tab
         // is closed rather than falling back to a local Termux shell. Identified by explicit tab metadata.

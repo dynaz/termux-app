@@ -6515,6 +6515,11 @@ public class TerminowHome {
         return mLauncher;
     }
 
+    /** A session is closing: let the launcher remember it if it was a local Linux session. */
+    public void noteSessionClosed(@NonNull TerminalSession session) {
+        mLauncher.noteClosed(session);
+    }
+
     /** Whether TermiNow started Claude Code as the program of the tab. */
     public boolean isClaudeTab(@NonNull TerminalSession session) {
         return mLauncher.isClaudeTab(session);

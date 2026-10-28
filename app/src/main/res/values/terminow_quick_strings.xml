@@ -122,6 +122,8 @@
     <string name="terminow_local_linux_choose_distro">Choose a distribution, currently %1$s</string>
     <string name="terminow_local_linux_current">Current</string>
     <string name="terminow_local_linux_session_menu">More options for %1$s</string>
+    <string name="terminow_local_linux_recent">Recently closed</string>
+    <string name="terminow_local_linux_recent_note">Opens a new shell. Previous processes are not restored.</string>
     <!-- SSH host picker (Connect) -->
     <string name="terminow_connect_menu">Connect to a host</string>
     <string name="terminow_connect_menu_summary">Open an SSH host or a new connection</string>

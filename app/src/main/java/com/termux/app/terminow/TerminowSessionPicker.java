@@ -144,10 +144,69 @@ class TerminowSessionPicker {
                 sheet.content.addView(localSessionRow(sheet, session, session == current));
         }
 
+        // Recently closed sessions of this distribution, in a compact collapsible list.
+        List<TerminowStore.RecentSession> recent = new java.util.ArrayList<>();
+        for (TerminowStore.RecentSession s : mStore.getRecentSessions())
+            if (s.environmentKey.equals(env.key)) recent.add(s);
+        if (!recent.isEmpty()) recentlyClosed(sheet, env, recent);
+
         sheet.section(R.string.terminow_local_linux_manage);
         sheet.option(R.drawable.ic_terminow_add, mActivity.getString(R.string.terminow_local_linux_install),
             mActivity.getString(R.string.terminow_local_linux_install_summary), mLauncher::browseLinux);
         sheet.show();
+    }
+
+    /** A collapsible "Recently closed" list; tapping a row opens a NEW shell (no process is resumed). */
+    private void recentlyClosed(@NonNull Sheet sheet, @NonNull TerminowLauncher.Environment env,
+                                @NonNull List<TerminowStore.RecentSession> recent) {
+        LinearLayout body = new LinearLayout(mActivity);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setVisibility(View.GONE);
+
+        TextView header = text("▸  " + mActivity.getString(R.string.terminow_local_linux_recent), 13, R.color.terminow_text_secondary);
+        header.setTypeface(Typeface.DEFAULT_BOLD);
+        header.setPadding(0, dp(16), 0, dp(4));
+        header.setMinHeight(dp(48));
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setClickable(true);
+        header.setFocusable(true);
+        header.setContentDescription(mActivity.getString(R.string.terminow_local_linux_recent));
+        header.setOnClickListener(v -> {
+            boolean show = body.getVisibility() != View.VISIBLE;
+            body.setVisibility(show ? View.VISIBLE : View.GONE);
+            header.setText((show ? "▾  " : "▸  ") + mActivity.getString(R.string.terminow_local_linux_recent));
+        });
+        sheet.content.addView(header);
+
+        body.addView(text(mActivity.getString(R.string.terminow_local_linux_recent_note), 12, R.color.terminow_text_secondary));
+        for (TerminowStore.RecentSession s : recent) {
+            String sub = s.directory.isEmpty() ? "" : s.directory;
+            LinearLayout row = new LinearLayout(mActivity);
+            row.setOrientation(LinearLayout.VERTICAL);
+            row.setPadding(dp(14), dp(10), dp(14), dp(10));
+            row.setMinimumHeight(dp(48));
+            row.setClickable(true);
+            row.setFocusable(true);
+            GradientDrawable shape = new GradientDrawable();
+            shape.setColor(color(R.color.terminow_quick_card));
+            shape.setCornerRadius(dp(12));
+            shape.setStroke(Math.max(1, dp(1)), color(R.color.terminow_quick_border));
+            row.setBackground(shape);
+            TextView name = text(s.name.isEmpty() ? env.shortName() : s.name, 15, R.color.terminow_text);
+            name.setTypeface(Typeface.DEFAULT_BOLD);
+            row.addView(name);
+            if (!sub.isEmpty()) row.addView(text(sub, 12, R.color.terminow_text_secondary));
+            row.setContentDescription((s.name.isEmpty() ? env.shortName() : s.name) + ". " + mActivity.getString(R.string.terminow_local_linux_recent_note));
+            final String dir = s.directory;
+            row.setOnClickListener(v -> {
+                sheet.dialog.dismiss();
+                mLauncher.openNewTerminalAt(env, dir);
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.topMargin = dp(8);
+            body.addView(row, lp);
+        }
+        sheet.content.addView(body);
     }
 
     /** The distribution selector: its icon, name and version, and a chevron to pick another installed one. */

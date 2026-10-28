@@ -666,6 +666,26 @@ public class TerminowLauncher {
         else open.run();
     }
 
+    /**
+     * Open a new shell in an environment at a specific folder — used to reopen a recently closed session
+     * in its previous directory. A new shell, never a resumed process; the folder falls back to the
+     * environment's default when it is empty or no longer exists.
+     */
+    void openNewTerminalAt(@NonNull Environment environment, @NonNull String folder) {
+        if (distroLocked(environment)) { promptDistroUpgrade(() -> openNewTerminalAt(environment, folder)); return; }
+        String user = getUser(environment);
+        String dir = folder;
+        if (dir.isEmpty() || resolve(environment, dir) == null) dir = getFolder(environment);
+        final String workDir = dir;
+        String tmux = tmuxPreferenceOf(environment);
+        boolean useTmux = TerminowLaunchPlan.TMUX_ATTACH.equals(tmux);
+        Runnable open = () -> launchPlan("quick|" + environment.key + "|" + System.nanoTime(), environment, user, workDir,
+            TerminowLaunchPlan.TOOL_SHELL, "", tmux, newTabTmuxName(environment),
+            mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), shellNameOf(environment)), true, "bash");
+        if (useTmux) TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.TMUX, 0, open);
+        else open.run();
+    }
+
     /** A new shell tab of an environment that runs a command at its start, to launch a CLI tool like Antigravity's agy. */
     void openTerminalRunning(@NonNull Environment environment, @NonNull String command) {
         String user = getUser(environment);
@@ -2446,6 +2466,19 @@ public class TerminowLauncher {
         if (environment.container == null || mLinux == null) return "";
         TerminowLinuxEnv env = mLinux.getRegistry().get(environment.container.name);
         return env != null ? env.distroId : "";
+    }
+
+    /**
+     * Remember a local Linux session that is closing, so the Local Linux picker can offer to open a new
+     * shell in its place. Only container environments are recorded (not the bare TermiNow shell or SSH).
+     */
+    public void noteClosed(@NonNull TerminalSession session) {
+        SessionInfo info = mInfo.get(session);
+        if (info == null || info.environmentKey == null) return;
+        Environment environment = environmentFor(info.environmentKey);
+        if (environment == null || environment.container == null) return;
+        String name = session.mSessionName != null && !session.mSessionName.isEmpty() ? session.mSessionName : environment.shortName();
+        mStore.addRecentSession(info.environmentKey, name, info.folder);
     }
 
     /** Open the Browse / Install Linux view, to install another distribution. */

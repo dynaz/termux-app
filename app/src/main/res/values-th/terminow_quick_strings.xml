@@ -120,6 +120,8 @@
     <string name="terminow_local_linux_choose_distro">เลือกดิสโทร ตอนนี้คือ %1$s</string>
     <string name="terminow_local_linux_current">ปัจจุบัน</string>
     <string name="terminow_local_linux_session_menu">ตัวเลือกเพิ่มเติมสำหรับ %1$s</string>
+    <string name="terminow_local_linux_recent">ปิดไปล่าสุด</string>
+    <string name="terminow_local_linux_recent_note">เปิดเชลล์ใหม่ ไม่กู้คืนโปรเซสเดิม</string>
     <!-- SSH host picker (Connect) -->
     <string name="terminow_connect_menu">เชื่อมต่อโฮสต์</string>
     <string name="terminow_connect_menu_summary">เปิดโฮสต์ SSH หรือการเชื่อมต่อใหม่</string>
