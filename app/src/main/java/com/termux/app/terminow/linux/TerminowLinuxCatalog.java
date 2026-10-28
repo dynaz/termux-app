@@ -92,6 +92,18 @@ public final class TerminowLinuxCatalog {
         return null;
     }
 
+    /** The stable distribution id that is free; everything else is Premium. */
+    public static final String FREE_DISTRO_ID = "ubuntu";
+
+    /**
+     * Whether a distribution needs Premium to install or launch, by its stable distro id. Ubuntu is
+     * free; every other distribution (Debian, Alpine, Kali, and any added later) needs Premium. Keyed on
+     * the id, never a display name or version, so renaming or versioning a distro cannot change its tier.
+     */
+    public static boolean requiresPremium(@NonNull String distroId) {
+        return !FREE_DISTRO_ID.equals(distroId);
+    }
+
     /** The architecture of this device in the words of proot-distro, from the first ABI of Android. */
     @NonNull
     public static String archOfAbi(@NonNull String abi) {

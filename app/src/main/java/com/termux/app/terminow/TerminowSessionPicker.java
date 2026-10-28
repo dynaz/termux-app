@@ -24,6 +24,7 @@ import androidx.core.view.ViewCompat;
 
 import com.termux.R;
 import com.termux.app.TermuxActivity;
+import com.termux.app.terminow.linux.TerminowLinuxCatalog;
 import com.termux.terminal.TerminalSession;
 
 import java.util.List;
@@ -177,6 +178,7 @@ class TerminowSessionPicker {
         String version = mLauncher.environmentVersion(env);
         texts.addView(text(version.isEmpty() ? env.shortName() : env.shortName() + " " + version, 13, R.color.terminow_text_secondary));
         row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        row.addView(tierChip(mLauncher.environmentDistroId(env)));
 
         // Only a chevron when there is more than one distribution to choose between.
         if (distros.size() > 1) {
@@ -310,6 +312,22 @@ class TerminowSessionPicker {
             case "local": return R.drawable.ic_terminow_os_local;
             default: return R.drawable.ic_terminow_os_linux;
         }
+    }
+
+    /** A "Free" or crown "Premium" chip for a distribution, by its stable id. */
+    @NonNull
+    private TextView tierChip(@NonNull String distroId) {
+        boolean premium = TerminowLinuxCatalog.requiresPremium(distroId);
+        String label = mActivity.getString(premium ? R.string.terminow_distro_badge_premium : R.string.terminow_distro_badge_free);
+        TextView chip = text(premium ? "👑 " + label : label, 11, premium ? R.color.terminow_panel_accent : R.color.terminow_text_secondary);
+        chip.setTypeface(Typeface.DEFAULT_BOLD);
+        chip.setPadding(dp(10), dp(4), dp(10), dp(4));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(dp(12));
+        bg.setColor(color(R.color.terminow_field));
+        chip.setBackground(bg);
+        chip.setContentDescription(label);
+        return chip;
     }
 
     /**

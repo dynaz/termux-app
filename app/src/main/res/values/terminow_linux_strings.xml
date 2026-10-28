@@ -83,6 +83,9 @@
     <string name="terminow_linux_premium_files">The Linux file explorer</string>
     <string name="terminow_linux_premium_multiple">Installing more than one Linux environment</string>
     <string name="terminow_linux_premium_tmux">Managing tmux sessions</string>
+    <string name="terminow_linux_premium_distro">Linux distributions other than Ubuntu</string>
+    <string name="terminow_distro_badge_free">Free</string>
+    <string name="terminow_distro_badge_premium">Premium</string>
 
     <string name="terminow_tools_tmux_summary_user">The tmux sessions of %2$s in %1$s</string>
     <string name="terminow_tools_tmux_premium">Listing, opening, renaming and ending tmux sessions is part of TermiNow Premium.</string>

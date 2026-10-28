@@ -142,6 +142,11 @@ public class TerminowLinuxUi {
 
     /** Install a distribution of the catalog, like from Browse Linux: confirmed, with its progress. */
     public void installEntry(@NonNull TerminowLinuxCatalog.Entry entry) {
+        // Every distribution except Ubuntu needs Premium to download and install; Ubuntu is free.
+        if (TerminowLinuxCatalog.requiresPremium(entry.distroId) && !TerminowAccountUi.isPremium(mStore)) {
+            TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.LINUX_DISTRO, 0, () -> confirmInstall(entry, null));
+            return;
+        }
         confirmInstall(entry, null);
     }
 
@@ -1137,8 +1142,28 @@ public class TerminowLinuxUi {
         texts.addView(titleView);
         texts.addView(text(subtitle, 12, R.color.terminow_text_secondary), matchWrap());
         head.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        if (!distroId.isEmpty()) head.addView(tierChip(distroId));
         card.addView(head, matchWrap());
         return card;
+    }
+
+    /** A "Free" or crown "Premium" chip shown on every distribution, installed or not. */
+    @NonNull
+    private TextView tierChip(@NonNull String distroId) {
+        boolean premium = TerminowLinuxCatalog.requiresPremium(distroId);
+        TextView chip = new TextView(mActivity);
+        String label = mActivity.getString(premium ? R.string.terminow_distro_badge_premium : R.string.terminow_distro_badge_free);
+        chip.setText(premium ? "👑 " + label : label);
+        chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        chip.setTypeface(Typeface.DEFAULT_BOLD);
+        chip.setTextColor(premium ? color(R.color.terminow_panel_accent) : color(R.color.terminow_text_secondary));
+        chip.setPadding(dp(10), dp(4), dp(10), dp(4));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(dp(12));
+        bg.setColor(color(R.color.terminow_field));
+        chip.setBackground(bg);
+        chip.setContentDescription(label);
+        return chip;
     }
 
     /** The first letter of the distribution on its color, as its icon. */

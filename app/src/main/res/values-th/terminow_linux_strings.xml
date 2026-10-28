@@ -82,6 +82,9 @@
     <string name="terminow_linux_premium_files">ตัวสำรวจไฟล์ Linux</string>
     <string name="terminow_linux_premium_multiple">การติดตั้งสภาพแวดล้อม Linux มากกว่าหนึ่ง</string>
     <string name="terminow_linux_premium_tmux">การจัดการเซสชัน tmux</string>
+    <string name="terminow_linux_premium_distro">ลินุกซ์ดิสโทรอื่นนอกจาก Ubuntu</string>
+    <string name="terminow_distro_badge_free">ฟรี</string>
+    <string name="terminow_distro_badge_premium">พรีเมียม</string>
 
     <string name="terminow_tools_tmux_summary_user">เซสชัน tmux ของ %2$s ใน %1$s</string>
     <string name="terminow_tools_tmux_premium">การดู เปิด เปลี่ยนชื่อ และปิดเซสชัน tmux เป็นส่วนหนึ่งของ TermiNow Premium</string>

@@ -655,6 +655,7 @@ public class TerminowLauncher {
 
     /** A new shell tab of an environment, in its folder, also when one is open already. */
     void openNewTerminal(@NonNull Environment environment) {
+        if (distroLocked(environment)) { promptDistroUpgrade(() -> openNewTerminal(environment)); return; }
         String user = getUser(environment);
         String tmux = tmuxPreferenceOf(environment);
         boolean useTmux = TerminowLaunchPlan.TMUX_ATTACH.equals(tmux);
@@ -1356,6 +1357,7 @@ public class TerminowLauncher {
 
     private void launchUbuntu(@NonNull Environment environment) {
         if (environment.container == null) return;
+        if (distroLocked(environment)) { promptDistroUpgrade(() -> launchUbuntu(environment)); return; }
         String folder = getFolder(environment);
         String[] args = ubuntuLoginArgs(environment.container.name, getUser(environment), folder, bindsOf(environment),
             shellOf(environment)).toArray(new String[0]);
@@ -1941,6 +1943,7 @@ public class TerminowLauncher {
     /** Type the start of the environment at the prompt of the idle TermiNow shell of the tab; exit gives the shell back. */
     private void enterInTab(@NonNull Environment environment, @NonNull TerminalSession session, int shellPid) {
         if (environment.container == null) return;
+        if (distroLocked(environment)) { promptDistroUpgrade(() -> enterInTab(environment, session, shellPid)); return; }
         String target = "tab|" + session.mHandle;
         TerminowLaunchState.Launch starting = LAUNCHES.starting(target);
         if (starting != null) {
@@ -2449,6 +2452,22 @@ public class TerminowLauncher {
     void browseLinux() {
         dismiss();
         if (mLinux != null) mLinux.showBrowse(true);
+    }
+
+    /**
+     * Whether this environment's distribution needs Premium that the user does not have. The bare
+     * TermiNow local shell (no container) and Ubuntu are always allowed; every other distribution needs
+     * Premium. An already-installed distro is not exempt — the check is on the stable distro id.
+     */
+    private boolean distroLocked(@NonNull Environment environment) {
+        return environment.container != null
+            && com.termux.app.terminow.linux.TerminowLinuxCatalog.requiresPremium(environmentDistroId(environment))
+            && !TerminowAccountUi.isPremium(mStore);
+    }
+
+    /** Open the Premium upgrade flow for a locked distribution; {@code retry} runs if/when Premium is active. */
+    private void promptDistroUpgrade(@NonNull Runnable retry) {
+        TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.LINUX_DISTRO, 0, retry);
     }
 
     /** What the tab runs, {@code null} for one TermiNow did not start. */
