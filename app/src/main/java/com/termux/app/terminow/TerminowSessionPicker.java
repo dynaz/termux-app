@@ -309,6 +309,7 @@ class TerminowSessionPicker {
             case "ubuntu": return R.drawable.ic_terminow_os_ubuntu;
             case "debian": return R.drawable.ic_terminow_os_debian;
             case "alpine": return R.drawable.ic_terminow_os_alpine;
+            case "kali": return R.drawable.ic_terminow_os_kali;
             case "local": return R.drawable.ic_terminow_os_local;
             default: return R.drawable.ic_terminow_os_linux;
         }
