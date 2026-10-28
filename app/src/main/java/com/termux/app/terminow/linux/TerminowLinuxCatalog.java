@@ -15,7 +15,10 @@ import java.util.List;
  *
  * The checksums are the ones the distributions publish: Ubuntu's SHA256SUMS of the release,
  * Alpine's latest-releases.yaml, and the layer digest of Debian's official image in the commit
- * of debuerreotype's artifacts that the URL is pinned to. They were also checked by downloading.
+ * of debuerreotype's artifacts that the URL is pinned to, and Kali's SHA256SUMS of the pinned
+     * NetHunter rootfs snapshot (kali.download/nethunter-images/kali-2026.3). They were also checked
+     * by downloading. Kali's rootfs is a .tar.xz wrapped in one top-level directory; proot-distro of
+     * the runtime unpacks it with its own path checks and strips that leading directory.
  */
 public final class TerminowLinuxCatalog {
 
@@ -75,8 +78,10 @@ public final class TerminowLinuxCatalog {
         new Entry("alpine", "Alpine Linux", "3.24.2", "Small and simple, with musl and BusyBox, and apk for packages.",
             "aarch64", "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/aarch64/alpine-minirootfs-3.24.2-aarch64.tar.gz",
             "9bf70a7f18ea44094cbb5f70c58f9af129c8214745743db0e68e5502cc2ce773", 4028030L, 9L * 1024 * 1024, false),
-        new Entry("kali", "Kali Linux", "rolling", "Security testing distribution. Experimental: its installation has not been verified with TermiNow yet.",
-            "aarch64", "", "", 0, 0, true)
+        new Entry("kali", "Kali Linux", "rolling (2026.3)",
+            "Security testing distribution, the official NetHunter minimal rootfs. Runs through PRoot: Wi-Fi monitor mode, packet injection and kernel modules are not available.",
+            "aarch64", "https://kali.download/nethunter-images/kali-2026.3/rootfs/kali-nethunter-rootfs-minimal-arm64.tar.xz",
+            "96aeced81a857a987715a14417af05c2934e3e19052d6151c398a1c215448b60", 125846088L, 850L * 1024 * 1024, false)
     ));
 
     private TerminowLinuxCatalog() {}
