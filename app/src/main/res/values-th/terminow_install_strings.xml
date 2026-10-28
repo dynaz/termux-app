@@ -79,6 +79,9 @@
     <string name="terminow_install_aider_description">AI pair programming ในเทอร์มินัลของคุณ (Aider)</string>
     <string name="terminow_install_hermes_description">ผู้ช่วย AI พร้อมหน่วยความจำ, สกิล และ MCP</string>
     <string name="terminow_install_antigravity_description">เอเจนต์โค้ด CLI ของ Google Antigravity (agy) ส่วน Antigravity IDE เป็นแอปเดสก์ท็อปแยกต่างหาก</string>
+    <string name="terminow_antigravity_signin">เข้าสู่ระบบ</string>
+    <string name="terminow_antigravity_signin_open">เปิด agy เพื่อเข้าสู่ระบบ</string>
+    <string name="terminow_antigravity_signin_steps">Antigravity เข้าสู่ระบบผ่านเบราว์เซอร์ และ CLI เก็บเซสชันไว้ใน system keyring (TermiNow ไม่เห็นและไม่เก็บ token)\n\n1. แตะ “เปิด agy เพื่อเข้าสู่ระบบ” เพื่อรัน agy ในสภาพแวดล้อมที่เลือก\n2. เลือก “Google OAuth”\n3. agy จะพิมพ์ลิงก์เข้าสู่ระบบ Google — แตะลิงก์ในเทอร์มินัลเพื่อเปิดเบราว์เซอร์ ผ่าน SSH agy จะพิมพ์ลิงก์ให้ล็อกอินในเครื่อง และวาง code กลับหากถูกถาม\n4. อนุมัติสิทธิ์ แล้วกลับมาที่เทอร์มินัล\n\nไม่สามารถตรวจสถานะการเข้าสู่ระบบจากภายนอก CLI ได้ TermiNow จึงแสดงเป็น “ไม่ทราบ”\n\nการแก้ปัญหา: บน proot หรือ headless Ubuntu ที่ไม่มี desktop keyring (หรือเมื่อมีตัวแปร SSH_*) agy อาจถามเข้าสู่ระบบซ้ำหรือแจ้ง “keyring is locked” ลองติดตั้งและเริ่ม gnome-keyring/D-Bus หรือใช้ Gemini API key ดูคู่มือ troubleshooting ทางการ</string>
     <string name="terminow_install_gstack_description">สกิลสำหรับ Claude Code โดย Garry Tan: รีวิว ทดสอบ ส่งงาน และอื่น ๆ พร้อม Bun ต้องมี Claude Code</string>
     <string name="terminow_install_fail_needs_claude">ยังไม่ได้ติดตั้ง Claude Code ติดตั้งก่อน</string>
     <string name="terminow_install_plugins">ปลั๊กอิน Claude Code</string>

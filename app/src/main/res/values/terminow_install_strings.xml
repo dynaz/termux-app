@@ -80,6 +80,9 @@
     <string name="terminow_install_aider_description">AI pair programming in your terminal (Aider)</string>
     <string name="terminow_install_hermes_description">AI assistant with memory, skills &amp; MCP</string>
     <string name="terminow_install_antigravity_description">Google\'s Antigravity agentic coding CLI (agy). The Antigravity IDE is a separate desktop app.</string>
+    <string name="terminow_antigravity_signin">Sign in</string>
+    <string name="terminow_antigravity_signin_open">Open agy to sign in</string>
+    <string name="terminow_antigravity_signin_steps">Antigravity signs in through your browser; the CLI stores the session in your system keyring (TermiNow never sees or stores the token).\n\n1. Tap “Open agy to sign in” to run agy in the selected environment.\n2. Choose “Google OAuth”.\n3. agy prints a Google sign-in link — tap it in the terminal to open your browser. Over SSH, agy prints a link to sign in locally; paste back any code it asks for.\n4. Approve access, then return to the terminal.\n\nSign-in status can’t be read from outside the CLI, so TermiNow shows it as unknown.\n\nTroubleshooting: in a proot or headless Ubuntu without a desktop keyring (or when SSH_* variables are set), agy may keep asking to sign in or report “keyring is locked”. Installing and starting gnome-keyring/D-Bus, or using a Gemini API key, can help — see the official CLI troubleshooting guide.</string>
     <string name="terminow_install_gstack">gstack</string>
     <string name="terminow_install_gstack_description">Skills for Claude Code by Garry Tan: review, QA, ship and more. Adds Bun. Needs Claude Code.</string>
     <string name="terminow_install_fail_needs_claude">Claude Code is not installed. Install it first.</string>

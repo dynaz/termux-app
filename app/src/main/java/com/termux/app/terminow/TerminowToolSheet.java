@@ -712,6 +712,9 @@ final class TerminowToolSheet {
             }
             boolean claude = tool == TerminowToolInstaller.Tool.CLAUDE || tool == TerminowToolInstaller.Tool.GSTACK;
             String open = claude ? mActivity.getString(R.string.terminow_install_open_claude) : mActivity.getString(R.string.terminow_install_open);
+            // Antigravity signs in through the CLI itself; offer a Sign in helper beside Open.
+            if (tool == TerminowToolInstaller.Tool.ANTIGRAVITY)
+                row.addView(button(mActivity.getString(R.string.terminow_antigravity_signin), false, true, () -> antigravitySignIn(target)));
             row.addView(button(open, tool == TerminowToolInstaller.Tool.CLAUDE, true, () -> openTool(target, tool)));
             return;
         }
@@ -896,6 +899,27 @@ final class TerminowToolSheet {
         }
         mActivity.getTermuxTerminalSessionClient().setCurrentSession(session);
         if (command != null) session.write(command + "\r");
+    }
+
+    /**
+     * The Antigravity sign-in helper. Antigravity has no {@code login} subcommand: signing in means
+     * running {@code agy}, which opens a browser OAuth flow and stores the session in the system
+     * keyring (TermiNow never sees or stores the token). This explains the steps, flags the proot/SSH
+     * keyring caveat, and opens agy in the chosen environment. Sign-in state can't be read from outside
+     * the CLI, so it is shown as unknown.
+     */
+    private void antigravitySignIn(@NonNull Target target) {
+        TextView body = text(mActivity.getString(R.string.terminow_antigravity_signin_steps), 13, R.color.terminow_text_secondary);
+        body.setPadding(dp(20), dp(12), dp(20), dp(12));
+        ScrollView scroll = new ScrollView(mActivity);
+        scroll.addView(body);
+        new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_antigravity_signin)
+            .setView(scroll)
+            .setPositiveButton(R.string.terminow_antigravity_signin_open, (d, w) -> openTool(target, TerminowToolInstaller.Tool.ANTIGRAVITY))
+            .setNeutralButton(R.string.terminow_install_detail_docs, (d, w) -> openUrl("https://antigravity.google/docs/cli/troubleshooting/"))
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
     }
 
     /**
