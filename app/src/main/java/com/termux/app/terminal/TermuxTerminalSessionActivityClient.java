@@ -22,6 +22,7 @@ import com.termux.shared.interact.ShareUtils;
 import com.termux.shared.termux.shell.command.runner.terminal.TermuxSession;
 import com.termux.shared.termux.interact.TextInputDialogUtils;
 import com.termux.app.TermuxActivity;
+import com.termux.app.terminow.TerminowWorkspace;
 import com.termux.shared.termux.terminal.TermuxTerminalSessionClientBase;
 import com.termux.shared.termux.TermuxConstants;
 import com.termux.app.TermuxService;
@@ -55,6 +56,12 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
 
     /** The sessions being closed by {@link #closeSession(TerminalSession)} whose processes have not exited yet. */
     private final Set<TerminalSession> mSessionsToRemoveOnFinish = new HashSet<>();
+
+    /**
+     * Session handles in most-recently-shown order (front = most recent). When a tab closes, the next tab
+     * to focus is the most recently used one still open, rather than the one next to it in the list.
+     */
+    private final java.util.LinkedList<String> mRecentHandles = new java.util.LinkedList<>();
 
     public TermuxTerminalSessionActivityClient(TermuxActivity activity) {
         this.mActivity = activity;
@@ -152,6 +159,16 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
 
         // Claude Code, or what else ran, ended: the keys of a terminal for that tab
         mActivity.getTerminowKeyBar().refresh();
+
+        // An SSH/remote tab is dedicated to its connection: ssh runs as the session's main process, so
+        // when it ends for any reason (logout, timeout, auth failure, remote exit, network drop) the tab
+        // is closed rather than falling back to a local Termux shell. Identified by explicit tab metadata.
+        TerminowWorkspace.Tab finishedTab = TerminowWorkspace.tabOf(finishedSession);
+        if (finishedTab != null && TerminowWorkspace.KIND_HOST.equals(finishedTab.kind) && !finishedTab.sftp) {
+            mSessionsToRemoveOnFinish.remove(finishedSession);
+            removeFinishedSession(finishedSession);
+            return;
+        }
 
         // For plugin commands that expect the result back, we should immediately close the session
         // and send the result back instead of waiting fo the user to press enter.
@@ -304,6 +321,12 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     /** Try switching to session. */
     public void setCurrentSession(TerminalSession session) {
         if (session == null) return;
+
+        // Remember the focus order so a closing tab returns to the most recently used tab, not the adjacent one.
+        if (session.mHandle != null) {
+            mRecentHandles.remove(session.mHandle);
+            mRecentHandles.addFirst(session.mHandle);
+        }
 
         if (mActivity.getTerminalView().attachSession(session)) {
             // notify about switched session if not already displaying the session
@@ -473,22 +496,35 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         if (service == null) return;
 
         int index = service.removeTermuxSession(finishedSession);
+        if (finishedSession.mHandle != null) mRecentHandles.remove(finishedSession.mHandle);
 
         int size = service.getTermuxSessionsSize();
         if (size == 0) {
-            // There are no sessions to show, so go back to the home screen.
+            // There are no sessions to show, so go back to the home screen (Vaults).
             if (mActivity.getTerminowHome() != null)
                 mActivity.getTerminowHome().show();
             else
                 mActivity.finishActivityIfNotFinishing();
         } else {
-            if (index >= size) {
-                index = size - 1;
+            // Focus the most recently used tab that is still open; fall back to the adjacent one.
+            TerminalSession next = mostRecentOpenSession(service);
+            if (next == null) {
+                if (index >= size) index = size - 1;
+                TermuxSession termuxSession = service.getTermuxSession(index);
+                if (termuxSession != null) next = termuxSession.getTerminalSession();
             }
-            TermuxSession termuxSession = service.getTermuxSession(index);
-            if (termuxSession != null)
-                setCurrentSession(termuxSession.getTerminalSession());
+            if (next != null) setCurrentSession(next);
         }
+    }
+
+    /** The most recently shown session that is still open, by the focus order; {@code null} if none known. */
+    @Nullable
+    private TerminalSession mostRecentOpenSession(@NonNull TermuxService service) {
+        for (String handle : mRecentHandles) {
+            TerminalSession session = service.getTerminalSessionForHandle(handle);
+            if (session != null) return session;
+        }
+        return null;
     }
 
     public void termuxSessionListNotifyUpdated() {

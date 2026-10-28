@@ -2709,7 +2709,10 @@ public class TerminowHome {
         String command = route.login.getCommand(route.jump, route.proxyConnector, mStore.getKeepAliveInterval(), mStore.getKeepAliveCountMax(),
             host.remoteTmux ? tab.remoteTmuxName() : "");
         mStore.addLog(host.getTitle(), command);
-        writeWhenStarted(session, command + "\r", 0);
+        // Run the connection as the session's main process with exec, so the tab is dedicated to it: when
+        // ssh/mosh/telnet exits (logout, timeout, auth failure, remote exit, network drop) the session ends
+        // and the tab auto-closes, instead of dropping back to a local Termux shell prompt.
+        writeWhenStarted(session, "exec " + command + "\r", 0);
         writePasswordsWhenAsked(session, getLoginPrompts(route.login, route.jump), 0);
         watchConnection(session, host, false, host.getTitle(), 0, tab, again);
         if (host.remoteTmux && !host.telnet) watchRemoteTmux(session, host, tab, 0);
