@@ -187,6 +187,9 @@ public class TerminowHome {
     private final View mRailAgent;
     private final View mRailScroll;
     private final android.widget.ImageView mSidebarToggle;
+    @Nullable private View mRailScrim;
+    @Nullable private android.widget.ImageView mRailMenu;
+    @Nullable private View mContentPanel;
     /** Per-layout-class sidebar visibility preference ("compact"/"large"/"tablet"/"desktop"). */
     private final android.content.SharedPreferences mSidebarPrefs;
     private final View mAiScrollView;
@@ -475,6 +478,11 @@ public class TerminowHome {
         mRailAgent.setOnClickListener(v -> showAgent());
         mRailScroll = activity.findViewById(R.id.terminow_rail_scroll);
         mSidebarToggle = activity.findViewById(R.id.terminow_sidebar_toggle);
+        mRailScrim = activity.findViewById(R.id.terminow_rail_scrim);
+        mRailMenu = activity.findViewById(R.id.terminow_rail_menu);
+        mContentPanel = activity.findViewById(R.id.terminow_content_panel);
+        if (mRailScrim != null) mRailScrim.setOnClickListener(v -> hideSidebarOverlay());
+        if (mRailMenu != null) mRailMenu.setOnClickListener(v -> toggleSidebar());
         mSidebarPrefs = activity.getSharedPreferences("terminow_sidebar", android.content.Context.MODE_PRIVATE);
         mSidebarToggle.setOnClickListener(v -> toggleSidebar());
         applySidebar();
@@ -720,20 +728,46 @@ public class TerminowHome {
         if (mRailScroll == null) return;
         String cls = sidebarClass();
         String state = sidebarState();
+        boolean phone = isPhoneWidth(cls);
+        boolean hidden = SB_HIDDEN.equals(state);
         float density = mActivity.getResources().getDisplayMetrics().density;
-        if (SB_HIDDEN.equals(state)) {
+        int railW = 0;
+        if (hidden) {
             mRailScroll.setVisibility(View.GONE);
         } else {
             boolean compact = SB_COMPACT.equals(state);
+            railW = Math.round((compact ? 56 : sidebarExpandedWidthDp(cls)) * density);
             ViewGroup.LayoutParams lp = mRailScroll.getLayoutParams();
-            lp.width = Math.round((compact ? 56 : sidebarExpandedWidthDp(cls)) * density);
+            lp.width = railW;
             mRailScroll.setLayoutParams(lp);
             mRailScroll.setVisibility(View.VISIBLE);
             setRailLabelsVisible(!compact);
         }
-        boolean visible = !SB_HIDDEN.equals(state);
-        mSidebarToggle.setImageResource(visible ? R.drawable.ic_terminow_panel_left_close : R.drawable.ic_terminow_panel_left_open);
-        mSidebarToggle.setContentDescription(mActivity.getString(visible ? R.string.terminow_sidebar_hide : R.string.terminow_sidebar_show));
+        // Wide screen: the rail is inline, so the content is inset by its width. Phone: the rail is an
+        // overlay drawer, so the content keeps the full width and a scrim sits behind the rail.
+        if (mContentPanel != null)
+            mContentPanel.setPaddingRelative((!phone && !hidden) ? railW : 0, mContentPanel.getPaddingTop(),
+                dp(12), mContentPanel.getPaddingBottom());
+        if (mRailScrim != null) mRailScrim.setVisibility(phone && !hidden ? View.VISIBLE : View.GONE);
+        int icon = !hidden ? R.drawable.ic_terminow_panel_left_close : R.drawable.ic_terminow_panel_left_open;
+        String desc = mActivity.getString(!hidden ? R.string.terminow_sidebar_hide : R.string.terminow_sidebar_show);
+        mSidebarToggle.setImageResource(icon);
+        mSidebarToggle.setContentDescription(desc);
+        if (mRailMenu != null) {
+            mRailMenu.setImageResource(icon);
+            mRailMenu.setContentDescription(desc);
+        }
+    }
+
+    /** Whether the sidebar is an open overlay drawer now (phone width and not hidden). */
+    private boolean sidebarIsOverlayOpen() {
+        return isPhoneWidth(sidebarClass()) && !SB_HIDDEN.equals(sidebarState());
+    }
+
+    /** Close the overlay drawer (scrim tap, Back, or after choosing a page), remembering it hidden. */
+    private void hideSidebarOverlay() {
+        mSidebarPrefs.edit().putString("state_" + sidebarClass(), SB_HIDDEN).apply();
+        applySidebar();
     }
 
     /** Show or hide the rail item labels, so COMPACT is an icon-only rail without touching the layout. */
@@ -1007,6 +1041,8 @@ public class TerminowHome {
     }
 
     private void setPage(int page) {
+        // Choosing a page from the overlay drawer closes it, like a navigation drawer.
+        if (sidebarIsOverlayOpen()) hideSidebarOverlay();
         if (page == PAGE_FILES) TerminowWhatsNew.seen(mActivity, TerminowWhatsNew.Feature.FILES);
         if (mPage == PAGE_FILES && page != PAGE_FILES) mExplorer.onHidden();
         if (mPage == PAGE_LAUNCH && page != PAGE_LAUNCH && mQuickLaunch != null) mQuickLaunch.hide();
@@ -1116,9 +1152,9 @@ public class TerminowHome {
     /** Go back to all hosts from a group. Returns {@code false} if there was nothing to go back from. */
     public boolean onBackPressed() {
         if (!isVisible() && mSftpBrowser != null && mSftpBrowser.onBackPressed()) return true;
-        // On a compact phone the sidebar acts like a drawer: Back closes it first.
-        if (isVisible() && sidebarClass().equals("compact") && mRailScroll != null && mRailScroll.getVisibility() == View.VISIBLE) {
-            toggleSidebar();
+        // On a phone the sidebar is an overlay drawer: Back closes it first.
+        if (isVisible() && sidebarIsOverlayOpen()) {
+            hideSidebarOverlay();
             return true;
         }
         if (isVisible() && mPage == PAGE_FILES) return mExplorer.onBackPressed();

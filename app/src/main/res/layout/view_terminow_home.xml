@@ -10,16 +10,18 @@
     android:orientation="horizontal"
     android:visibility="gone">
 
-    <LinearLayout
+    <FrameLayout
+        android:id="@+id/terminow_home_panel"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="@drawable/terminow_home_panel"
-        android:orientation="horizontal">
+        android:background="@drawable/terminow_home_panel">
 
     <ScrollView
         android:id="@+id/terminow_rail_scroll"
         android:layout_width="84dp"
         android:layout_height="match_parent"
+        android:background="@color/terminow_bar_home"
+        android:elevation="16dp"
         android:overScrollMode="never"
         android:scrollbars="none">
 
@@ -431,9 +433,9 @@
     </ScrollView>
 
     <RelativeLayout
-        android:layout_width="0dp"
+        android:id="@+id/terminow_content_panel"
+        android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_weight="1"
         android:paddingEnd="12dp"
         tools:ignore="RtlSymmetry">
 
@@ -694,5 +696,31 @@
             android:src="@drawable/ic_terminow_add" />
     </RelativeLayout>
 
-    </LinearLayout>
+        <!-- Scrim behind the sidebar when it is an overlay (narrow screens); a tap closes the drawer. -->
+        <View
+            android:id="@+id/terminow_rail_scrim"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#99000000"
+            android:clickable="true"
+            android:elevation="8dp"
+            android:focusable="true"
+            android:visibility="gone" />
+
+        <!-- Persistent menu toggle, always reachable so the sidebar can be opened from any page. -->
+        <ImageView
+            android:id="@+id/terminow_rail_menu"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_gravity="top|start"
+            android:layout_margin="10dp"
+            android:background="@drawable/terminow_field"
+            android:contentDescription="@string/terminow_sidebar_show"
+            android:elevation="20dp"
+            android:padding="8dp"
+            android:src="@drawable/ic_terminow_panel_left_open"
+            android:tint="@color/terminow_text"
+            tools:ignore="UseAppTint" />
+
+    </FrameLayout>
 </LinearLayout>
