@@ -377,39 +377,40 @@ final class TerminowToolSheet {
         boolean noLinux = local && target.environment != null && target.environment.isLocal();
         TerminowLinuxEnv linux = local && !noLinux && target.environment != null ? mLauncher.linuxEnvOf(target.environment) : null;
 
-        // The target, big: tools always go into exactly this one, as this user
-        LinearLayout envCard = card(content);
-        LinearLayout envRow = new LinearLayout(mActivity);
-        envRow.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout envTexts = new LinearLayout(mActivity);
-        envTexts.setOrientation(LinearLayout.VERTICAL);
-        TextView envName = text(targetName(target, noLinux), 15, R.color.terminow_text);
-        envName.setTypeface(Typeface.DEFAULT_BOLD);
-        envTexts.addView(envName);
+        // Compact header: a small environment chip (name · arch) and, for a local Linux, a settings
+        // action to switch which environment tools go into. No big box taking a third of the sheet.
         if (!noLinux) {
+            LinearLayout header = new LinearLayout(mActivity);
+            header.setGravity(Gravity.CENTER_VERTICAL);
             String detail = targetDetail(target, linux);
-            if (!detail.isEmpty()) envTexts.addView(text(detail, 13, R.color.terminow_text_secondary));
+            View envChip = chip(detail.isEmpty() ? targetName(target, false) : targetName(target, false) + " · " + detail, true, () -> {});
+            header.addView(envChip);
+            if (local) {
+                List<TerminowLauncher.Environment> linuxEnvironments = new ArrayList<>();
+                for (TerminowLauncher.Environment other : mLauncher.environments()) if (!other.isLocal()) linuxEnvironments.add(other);
+                if (linuxEnvironments.size() > 1) {
+                    header.addView(new android.widget.Space(mActivity), new LinearLayout.LayoutParams(0, 0, 1f));
+                    header.addView(button(mActivity.getString(R.string.terminow_install_change), false, true, () -> {
+                        CharSequence[] names = new CharSequence[linuxEnvironments.size()];
+                        for (int i = 0; i < names.length; i++) names[i] = linuxEnvironments.get(i).label;
+                        new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                            .setTitle(R.string.terminow_launcher_environment)
+                            .setItems(names, (d, which) -> {
+                                TerminowLauncher.Environment picked = linuxEnvironments.get(which);
+                                select(Target.local(picked, mLauncher.getUser(picked), mLocalRunner));
+                                detect();
+                                render();
+                            })
+                            .show();
+                    }));
+                }
+            }
+            content.addView(header, matchWrap());
         }
-        envRow.addView(envTexts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        // Changing the environment is only among the local Linux ones; an SSH tab is fixed to its host
-        if (local) {
-            List<TerminowLauncher.Environment> linuxEnvironments = new ArrayList<>();
-            for (TerminowLauncher.Environment other : mLauncher.environments()) if (!other.isLocal()) linuxEnvironments.add(other);
-            if (linuxEnvironments.size() > 1) envRow.addView(button(mActivity.getString(R.string.terminow_install_change), false, true, () -> {
-                CharSequence[] names = new CharSequence[linuxEnvironments.size()];
-                for (int i = 0; i < names.length; i++) names[i] = linuxEnvironments.get(i).label;
-                new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
-                    .setTitle(R.string.terminow_launcher_environment)
-                    .setItems(names, (d, which) -> {
-                        TerminowLauncher.Environment picked = linuxEnvironments.get(which);
-                        select(Target.local(picked, mLauncher.getUser(picked), mLocalRunner));
-                        detect();
-                        render();
-                    })
-                    .show();
-            }));
-        }
-        envCard.addView(envRow, matchWrap());
+        // A light container the guards below (no-Linux, unsupported, check failed) add their notes to.
+        LinearLayout envCard = new LinearLayout(mActivity);
+        envCard.setOrientation(LinearLayout.VERTICAL);
+        content.addView(envCard, matchWrap());
 
         if (noLinux) {
             // No Linux environment at all: tools of Ubuntu are not installed into TermiNow itself
