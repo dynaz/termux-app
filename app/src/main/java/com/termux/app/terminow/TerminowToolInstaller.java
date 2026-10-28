@@ -319,9 +319,52 @@ public final class TerminowToolInstaller {
         "  s=$?\n" +
         "  if [ \"$s\" -ne 0 ]; then case \"$s\" in " + NETWORK_EXIT_CODES + ") fail network \"$s\";; *) fail installer \"$s\";; esac; fi\n" +
         "}\n" +
-        // Install a global npm package into ~/.local (no sudo), Node from apt if it is missing
+        // A Node.js >= 20 runtime for the npm tools. Ubuntu's apt node is 18, too old for current
+        // Gemini CLI / Codex; prefer a usable node already present, else install a TermiNow-managed
+        // Node 22 LTS into ~/.terminow/node, verified by SHA-256, without touching the system node
+        // other tools may use. Sets NODE_HOME (empty means a suitable node is already on the PATH).
+        "NODE_VER=v22.23.4\n" +
+        "ensure_node() {\n" +
+        "  case \"$(uname -m)\" in\n" +
+        "    aarch64|arm64) narch=arm64; nsha=f7a1e486dbc8b286847815b477d4fb5e9fb963ed4489c3e1588853d685f589f9;;\n" +
+        "    x86_64|amd64) narch=x64; nsha=b8492284c76a54baf58d61668dd0e41ee0fc98adabf9503d30f05d08f55b4406;;\n" +
+        "    *) fail unsupported-arch 15;;\n" +
+        "  esac\n" +
+        "  md=\"$HOME/.terminow/node/node-$NODE_VER-linux-$narch\"\n" +
+        "  if [ -x \"$md/bin/node\" ] && [ \"$(\"$md/bin/node\" --version 2>/dev/null)\" = \"$NODE_VER\" ]; then NODE_HOME=\"$md\"; return 0; fi\n" +
+        "  if command -v node >/dev/null 2>&1; then\n" +
+        "    m=$(node -e 'process.stdout.write(String(process.versions.node.split(\".\")[0]))' 2>/dev/null)\n" +
+        "    case \"$m\" in ''|*[!0-9]*) m=0;; esac\n" +
+        "    if [ \"$m\" -ge 20 ]; then NODE_HOME=; return 0; fi\n" +
+        "  fi\n" +
+        "  echo \"TermiNow: preparing Node.js $NODE_VER ($narch)\"\n" +
+        "  apt_install curl ca-certificates\n" +
+        "  mkdir -p \"$HOME/.terminow/node\" || fail path 31\n" +
+        "  dl=\"$HOME/.terminow/node/.node.$$.tar.gz\"\n" +
+        "  url=\"https://nodejs.org/dist/$NODE_VER/node-$NODE_VER-linux-$narch.tar.gz\"\n" +
+        "  bash -o pipefail -c \"curl -fsSL '$url' -o '$dl'\" || { s=$?; rm -f \"$dl\"; case \"$s\" in " + NETWORK_EXIT_CODES + ") fail network \"$s\";; *) fail installer \"$s\";; esac; }\n" +
+        "  echo \"$nsha  $dl\" | sha256sum -c - >/dev/null 2>&1 || { rm -f \"$dl\"; fail verify 30; }\n" +
+        "  rm -rf \"$md\"; mkdir -p \"$md\"\n" +
+        "  tar -xzf \"$dl\" -C \"$md\" --strip-components=1 || { rm -f \"$dl\"; rm -rf \"$md\"; fail installer 32; }\n" +
+        "  rm -f \"$dl\"\n" +
+        "  [ -x \"$md/bin/node\" ] || fail installer 32\n" +
+        "  NODE_HOME=\"$md\"\n" +
+        "}\n" +
+        // Pin an installed npm bin's launcher to the managed Node, so opening the tool later does not
+        // fall back to the system node on the PATH. A no-op when a suitable system node is used.
+        "bind_node_bin() {\n" +
+        "  [ -n \"$NODE_HOME\" ] || return 0\n" +
+        "  b=\"$HOME/.local/bin/$1\"\n" +
+        "  [ -e \"$b\" ] || return 0\n" +
+        "  real=$(readlink -f \"$b\" 2>/dev/null) || real=\"$b\"\n" +
+        "  if [ \"$real\" = \"$b\" ]; then mv \"$b\" \"$b.real\" || fail path 31; real=\"$b.real\"; fi\n" +
+        "  { printf '#!/bin/sh\\n'; printf 'exec \"%s/bin/node\" \"%s\" \"$@\"\\n' \"$NODE_HOME\" \"$real\"; } > \"$b\" || fail path 31\n" +
+        "  chmod +x \"$b\" || fail path 31\n" +
+        "}\n" +
+        // Install a global npm package into ~/.local (no sudo), using a Node >= 20 runtime (managed if needed)
         "npm_install() {\n" +
-        "  command -v npm >/dev/null 2>&1 || apt_install nodejs npm\n" +
+        "  ensure_node\n" +
+        "  if [ -n \"$NODE_HOME\" ]; then PATH=\"$NODE_HOME/bin:$PATH\"; export PATH; fi\n" +
         "  command -v npm >/dev/null 2>&1 || fail installer 17\n" +
         "  mkdir -p \"$HOME/.local/bin\" \"$HOME/.local/lib\" 2>/dev/null || true\n" +
         "  npm config set prefix \"$HOME/.local\" >/dev/null 2>&1 || true\n" +
@@ -373,8 +416,10 @@ public final class TerminowToolInstaller {
         "    fi\n" +
         "    native_arch\n" +
         "    stage dependencies\n" +
+        "    ensure_node\n" +
         "    stage installing\n" +
         "    npm_install \"$pkg\"\n" +
+        "    bind_node_bin \"$bin\"\n" +
         "    persist_path\n" +
         "    stage verifying\n" +
         "    v=$(\"$bin\" --version 2>&1) || { echo \"$v\"; fail verify 30; }\n" +
