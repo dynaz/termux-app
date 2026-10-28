@@ -774,6 +774,81 @@ public class TerminowStore {
         putVaultList(KEY_HOSTS, array.toString());
     }
 
+    // Proxmox VE connections: host/port/token id/fingerprint in clear, the token secret encrypted like
+    // a host password (Android keystore). The secret is never written in clear or logged.
+    private static final String KEY_PROXMOX = "proxmox";
+
+    @NonNull
+    public List<TerminowProxmox.Connection> getProxmoxConnections() {
+        List<TerminowProxmox.Connection> list = new ArrayList<>();
+        try {
+            JSONArray array = new JSONArray(mPreferences.getString(ns(KEY_PROXMOX), "[]"));
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject o = array.optJSONObject(i);
+                if (o == null) continue;
+                TerminowProxmox.Connection c = new TerminowProxmox.Connection();
+                c.id = o.optString("id");
+                c.name = o.optString("name");
+                c.host = o.optString("host");
+                c.port = o.optInt("port", TerminowProxmox.DEFAULT_PORT);
+                c.tokenId = o.optString("tokenId");
+                c.tokenSecret = decryptPassword(o.optString("tokenSecret"));
+                c.fingerprint = o.optString("fingerprint");
+                list.add(c);
+            }
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to load Proxmox connections", e);
+        }
+        return list;
+    }
+
+    public void saveProxmoxConnection(@NonNull TerminowProxmox.Connection conn) {
+        if (conn.id.isEmpty()) conn.id = newHostId();
+        List<TerminowProxmox.Connection> list = getProxmoxConnections();
+        boolean replaced = false;
+        for (int i = 0; i < list.size(); i++) {
+            if (list.get(i).id.equals(conn.id)) {
+                list.set(i, conn);
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced) list.add(conn);
+        writeProxmox(list);
+    }
+
+    public void deleteProxmoxConnection(@NonNull String id) {
+        List<TerminowProxmox.Connection> list = getProxmoxConnections();
+        for (int i = 0; i < list.size(); i++) {
+            if (list.get(i).id.equals(id)) {
+                list.remove(i);
+                break;
+            }
+        }
+        writeProxmox(list);
+    }
+
+    private void writeProxmox(@NonNull List<TerminowProxmox.Connection> list) {
+        JSONArray array = new JSONArray();
+        try {
+            for (TerminowProxmox.Connection c : list) {
+                JSONObject o = new JSONObject();
+                o.put("id", c.id);
+                o.put("name", c.name);
+                o.put("host", c.host);
+                o.put("port", c.port);
+                o.put("tokenId", c.tokenId);
+                o.put("tokenSecret", encryptPassword(c.tokenSecret));
+                o.put("fingerprint", c.fingerprint);
+                array.put(o);
+            }
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to save Proxmox connections", e);
+            return;
+        }
+        putVaultList(KEY_PROXMOX, array.toString());
+    }
+
     /** The hosts of a vault, which may not be the one that is shown. "" is the personal vault. */
     @NonNull
     public List<Host> getHostsIn(@NonNull String scope) {

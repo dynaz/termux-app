@@ -26,4 +26,25 @@
     <string name="terminow_lab_proxmox_help">เซิร์ฟเวอร์ Proxmox VE ผ่าน SSH จัดการ VM และคอนเทนเนอร์ด้วย qm และ pct จากเชลล์ของโหนด ตรวจสอบ SSH host key และเก็บข้อมูลเข้าสู่ระบบใน keychain</string>
     <string name="terminow_lab_docker">Docker</string>
     <string name="terminow_lab_docker_help">โฮสต์ Docker ผ่าน SSH รันคำสั่ง docker บนโฮสต์ ตรวจสอบ SSH host key และเก็บข้อมูลเข้าสู่ระบบใน keychain</string>
+
+    <string name="terminow_proxmox_title">Proxmox VE</string>
+    <string name="terminow_proxmox_name">ชื่อที่แสดง</string>
+    <string name="terminow_proxmox_host">โฮสต์ / IP</string>
+    <string name="terminow_proxmox_port">พอร์ต</string>
+    <string name="terminow_proxmox_token_id">API token ID (user@realm!name)</string>
+    <string name="terminow_proxmox_token_secret">API token secret</string>
+    <string name="terminow_proxmox_test">ทดสอบการเชื่อมต่อ</string>
+    <string name="terminow_proxmox_save">บันทึก</string>
+    <string name="terminow_proxmox_testing">กำลังทดสอบ…</string>
+    <string name="terminow_proxmox_ok">เชื่อมต่อแล้ว · Proxmox VE %1$s</string>
+    <string name="terminow_proxmox_auth_failed">Token ไม่ถูกยอมรับ ตรวจสอบ token ID และ secret</string>
+    <string name="terminow_proxmox_unreachable">เข้าถึงเซิร์ฟเวอร์ไม่ได้ ตรวจสอบโฮสต์และพอร์ต</string>
+    <string name="terminow_proxmox_cert_mismatch">ใบรับรองเปลี่ยนไป — ไม่น่าเชื่อถือ ไม่ตรงกับ fingerprint ที่ปักหมุดไว้</string>
+    <string name="terminow_proxmox_error">เชื่อมต่อไม่สำเร็จ: %1$s</string>
+    <string name="terminow_proxmox_need_fields">ต้องกรอกโฮสต์, token ID และ token secret</string>
+    <string name="terminow_proxmox_saved">บันทึก %1$s แล้ว</string>
+    <string name="terminow_proxmox_cert_title">เชื่อถือใบรับรองนี้ไหม?</string>
+    <string name="terminow_proxmox_cert_message">เซิร์ฟเวอร์ใช้ใบรับรองแบบ self-signed\n\nSHA-256 fingerprint:\n%1$s\n\nเชื่อถือเฉพาะเมื่อตรงกับเซิร์ฟเวอร์ Proxmox ของคุณ</string>
+    <string name="terminow_proxmox_cert_trust">เชื่อถือ</string>
+    <string name="terminow_proxmox_cert_declined">ไม่เชื่อถือใบรับรอง ยังไม่ได้ยืนยันการเชื่อมต่อ</string>
 </resources>

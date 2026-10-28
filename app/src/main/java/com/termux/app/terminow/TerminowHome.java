@@ -2935,6 +2935,11 @@ public class TerminowHome {
             final TerminowRemoteDevices.Template t = templates.get(i);
             View card = deviceCard(t, () -> {
                 dialog.dismiss();
+                if (t.type == TerminowDeviceProfile.Type.PROXMOX_VE) {
+                    // Proxmox VE uses its REST API (token + TLS), not the plain SSH host form.
+                    new TerminowProxmoxUi(mActivity, mStore).open(null, null);
+                    return;
+                }
                 mHosts = mStore.getHosts();
                 mGroups = mStore.getGroups();
                 showHostDialog(null, TerminowRemoteDevices.prefill(t), null);

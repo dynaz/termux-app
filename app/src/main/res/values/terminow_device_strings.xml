@@ -26,4 +26,25 @@
     <string name="terminow_lab_proxmox_help">A Proxmox VE server over SSH. Manage VMs and containers with qm and pct from the node shell. The SSH host key is verified; credentials stay in the keychain.</string>
     <string name="terminow_lab_docker">Docker</string>
     <string name="terminow_lab_docker_help">A Docker host over SSH. Run docker commands on the host. The SSH host key is verified; credentials stay in the keychain.</string>
+
+    <string name="terminow_proxmox_title">Proxmox VE</string>
+    <string name="terminow_proxmox_name">Display name</string>
+    <string name="terminow_proxmox_host">Host / IP</string>
+    <string name="terminow_proxmox_port">Port</string>
+    <string name="terminow_proxmox_token_id">API token ID (user@realm!name)</string>
+    <string name="terminow_proxmox_token_secret">API token secret</string>
+    <string name="terminow_proxmox_test">Test connection</string>
+    <string name="terminow_proxmox_save">Save</string>
+    <string name="terminow_proxmox_testing">Testing…</string>
+    <string name="terminow_proxmox_ok">Connected · Proxmox VE %1$s</string>
+    <string name="terminow_proxmox_auth_failed">Token not accepted. Check the token ID and secret.</string>
+    <string name="terminow_proxmox_unreachable">Could not reach the server. Check the host and port.</string>
+    <string name="terminow_proxmox_cert_mismatch">Certificate changed — not trusted. It no longer matches the pinned fingerprint.</string>
+    <string name="terminow_proxmox_error">Connection failed: %1$s</string>
+    <string name="terminow_proxmox_need_fields">Host, token ID and token secret are required.</string>
+    <string name="terminow_proxmox_saved">Saved %1$s</string>
+    <string name="terminow_proxmox_cert_title">Trust this certificate?</string>
+    <string name="terminow_proxmox_cert_message">The server uses a self-signed certificate.\n\nSHA-256 fingerprint:\n%1$s\n\nTrust it only if it matches your Proxmox server.</string>
+    <string name="terminow_proxmox_cert_trust">Trust</string>
+    <string name="terminow_proxmox_cert_declined">Certificate not trusted. Connection not verified.</string>
 </resources>
