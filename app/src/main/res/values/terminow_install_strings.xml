@@ -125,4 +125,18 @@
     <string name="terminow_tools_github_read_failed">Could not read the repository: %1$s</string>
     <string name="terminow_tools_github_read_ok">Read from the repository (treated as untrusted reference):</string>
     <string name="terminow_tools_github_plan_pending">The install plan from the built-in AI is not available in this build yet, so there is nothing to install from here.</string>
+    <string name="terminow_tools_github_analyze_ai">Analyze with AI</string>
+    <string name="terminow_tools_github_need_signin">Sign in to TermiNow to use the built-in AI</string>
+    <string name="terminow_tools_github_analyzing">Analyzing the repository…</string>
+    <string name="terminow_tools_github_ai_off">The built-in AI is not available on this account</string>
+    <string name="terminow_tools_github_analyze_failed">Could not analyze: %1$s</string>
+    <string name="terminow_tools_github_by_ai">Plan proposed by the built-in AI — review the commands before installing</string>
+    <string name="terminow_tools_plan_ready">Ready to install</string>
+    <string name="terminow_tools_plan_attention">Needs attention</string>
+    <string name="terminow_tools_plan_unsupported">Unsupported</string>
+    <string name="terminow_tools_github_busy">Another install is running in this environment</string>
+    <string name="terminow_tools_github_installing">Installing %1$s</string>
+    <string name="terminow_tools_github_done">Installed %1$s</string>
+    <string name="terminow_tools_github_install_failed">Install failed:
+%1$s</string>
 </resources>

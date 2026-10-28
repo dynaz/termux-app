@@ -123,4 +123,18 @@
     <string name="terminow_tools_github_read_failed">อ่าน repository ไม่ได้: %1$s</string>
     <string name="terminow_tools_github_read_ok">อ่านจาก repository (ถือเป็นข้อมูลอ้างอิงที่ไม่น่าเชื่อถือ):</string>
     <string name="terminow_tools_github_plan_pending">แผนติดตั้งจาก AI ในตัวยังไม่พร้อมในบิลด์นี้ จึงยังไม่มีอะไรให้ติดตั้งจากที่นี่</string>
+    <string name="terminow_tools_github_analyze_ai">วิเคราะห์ด้วย AI</string>
+    <string name="terminow_tools_github_need_signin">เข้าสู่ระบบ TermiNow เพื่อใช้ AI ในตัว</string>
+    <string name="terminow_tools_github_analyzing">กำลังวิเคราะห์ repository…</string>
+    <string name="terminow_tools_github_ai_off">บัญชีนี้ยังไม่มี AI ในตัว</string>
+    <string name="terminow_tools_github_analyze_failed">วิเคราะห์ไม่ได้: %1$s</string>
+    <string name="terminow_tools_github_by_ai">แผนเสนอโดย AI ในตัว — ตรวจคำสั่งก่อนติดตั้ง</string>
+    <string name="terminow_tools_plan_ready">พร้อมติดตั้ง</string>
+    <string name="terminow_tools_plan_attention">ต้องตรวจสอบเพิ่มเติม</string>
+    <string name="terminow_tools_plan_unsupported">ไม่รองรับ</string>
+    <string name="terminow_tools_github_busy">มีการติดตั้งอื่นกำลังทำงานในสภาพแวดล้อมนี้</string>
+    <string name="terminow_tools_github_installing">กำลังติดตั้ง %1$s</string>
+    <string name="terminow_tools_github_done">ติดตั้ง %1$s แล้ว</string>
+    <string name="terminow_tools_github_install_failed">ติดตั้งล้มเหลว:
+%1$s</string>
 </resources>

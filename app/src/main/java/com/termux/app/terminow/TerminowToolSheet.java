@@ -27,12 +27,14 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 
+import com.termux.BuildConfig;
 import com.termux.R;
 import com.termux.app.TermuxActivity;
 import com.termux.app.terminow.linux.TerminowLinuxEnv;
 import com.termux.terminal.TerminalSession;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -575,18 +577,138 @@ final class TerminowToolSheet {
         TextView s = text(sum.toString().trim(), 13, R.color.terminow_text_secondary);
         s.setPadding(0, dp(8), 0, 0);
         box.addView(s);
-        // The AI analysis + plan is the next phase; keep the install off until a real supported plan exists.
-        TextView pending = text(mActivity.getString(R.string.terminow_tools_github_plan_pending), 12, R.color.terminow_mcp_warn);
-        pending.setPadding(0, dp(10), 0, 0);
-        box.addView(pending);
         ScrollView scroll = new ScrollView(mActivity);
         scroll.addView(box);
         new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
             .setTitle(repo.owner + "/" + repo.repo)
             .setView(scroll)
             .setNeutralButton(R.string.terminow_install_detail_docs, (d, w) -> openUrl(repo.htmlUrl))
-            .setPositiveButton(android.R.string.ok, null)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(R.string.terminow_tools_github_analyze_ai, (d, w) -> analyzeWithAi(repo))
             .show();
+    }
+
+    /** The account's Firebase ID token for the built-in AI backend; throws if not signed in. */
+    @NonNull
+    private String githubIdToken(@NonNull TerminowStore store, @NonNull TerminowAccount account) throws IOException {
+        TerminowAccount.Session session = store.getAccount();
+        if (session == null) throw new IOException(mActivity.getString(R.string.terminow_tools_github_need_signin));
+        try {
+            String token = account.getIdToken(session);
+            store.setAccount(session);
+            return token;
+        } catch (TerminowAccount.AccountException e) {
+            throw new IOException(String.valueOf(e.getMessage()));
+        }
+    }
+
+    /**
+     * Ask the built-in AI to turn the repository into an install plan. Runs off the main thread, goes
+     * through TerminowAiService (the backend holds the provider key; the device holds none), needs the
+     * user signed in with AI enabled, and validates the reply as a plan. Nothing is installed here.
+     */
+    private void analyzeWithAi(@NonNull TerminowGithubRepo.Repo repo) {
+        Target target = mTarget;
+        if (target == null) return;
+        String arch = mDetection != null ? mDetection.arch : "";
+        String os = mDetection != null ? mDetection.os : "";
+        String pkgs = mDetection != null && mDetection.hasApt ? "apt" : "unknown";
+        String osArch = (os.isEmpty() ? "Linux" : os) + " " + (arch.isEmpty() ? "" : arch);
+        android.app.ProgressDialog progress = new android.app.ProgressDialog(mActivity);
+        progress.setMessage(mActivity.getString(R.string.terminow_tools_github_analyzing));
+        progress.setCancelable(true);
+        progress.show();
+        new Thread(() -> {
+            String error = null;
+            TerminowInstallPlan plan = null;
+            try {
+                TerminowStore store = new TerminowStore(mActivity);
+                TerminowAccount account = new TerminowAccount(BuildConfig.TERMINOW_FIREBASE_API_KEY, mActivity.getPackageName());
+                TerminowAiService service = new TerminowAiService(() -> githubIdToken(store, account));
+                TerminowAiService.Config config = service.config();
+                if (!config.enabled)
+                    throw new IOException(config.message.isEmpty() ? mActivity.getString(R.string.terminow_tools_github_ai_off) : config.message);
+                TerminowAiService.Reply reply = service.chat(
+                    TerminowInstallPlan.analyzeMessages(osArch, target.user, pkgs, repo), false);
+                plan = TerminowInstallPlan.parse(reply.content);
+            } catch (IOException | org.json.JSONException | TerminowInstallPlan.PlanException e) {
+                error = e.getMessage();
+            }
+            final String err = error;
+            final TerminowInstallPlan result = plan;
+            mActivity.runOnUiThread(() -> {
+                if (progress.isShowing()) progress.dismiss();
+                if (result != null) showPlan(target, repo, result);
+                else mActivity.showToast(mActivity.getString(R.string.terminow_tools_github_analyze_failed, err == null ? "?" : err), true);
+            });
+        }, "TermiNow analyze " + repo.repo).start();
+    }
+
+    /** Show the validated plan and its exact commands; Install is enabled only for an installable plan. */
+    private void showPlan(@NonNull Target target, @NonNull TerminowGithubRepo.Repo repo, @NonNull TerminowInstallPlan plan) {
+        LinearLayout box = new LinearLayout(mActivity);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(12), dp(20), dp(8));
+        box.addView(text(plan.toolName, 16, R.color.terminow_text));
+        box.addView(text(mActivity.getString(R.string.terminow_tools_github_by_ai), 11, R.color.terminow_text_secondary));
+        if (!plan.description.isEmpty()) box.addView(text(plan.description, 13, R.color.terminow_text_secondary));
+        int statusStr = plan.compatibility == TerminowInstallPlan.Compatibility.READY ? R.string.terminow_tools_plan_ready
+            : plan.compatibility == TerminowInstallPlan.Compatibility.NEEDS_ATTENTION ? R.string.terminow_tools_plan_attention
+            : R.string.terminow_tools_plan_unsupported;
+        int statusColor = plan.installable() ? R.color.terminow_quick_ready : R.color.terminow_mcp_warn;
+        TextView status = text(mActivity.getString(statusStr) + (plan.compatibilityReason.isEmpty() ? "" : " · " + plan.compatibilityReason), 13, statusColor);
+        status.setPadding(0, dp(8), 0, 0);
+        box.addView(status);
+        StringBuilder cmds = new StringBuilder();
+        if (!plan.dependencies.isEmpty()) cmds.append("deps: ").append(android.text.TextUtils.join(", ", plan.dependencies)).append("\n\n");
+        for (TerminowInstallPlan.Step st : plan.steps) cmds.append("# ").append(st.label).append("\n").append(st.command).append("\n\n");
+        if (!plan.verifyCommand.isEmpty()) cmds.append("# verify\n").append(plan.verifyCommand).append("\n");
+        for (String lim : plan.limitations) cmds.append("\n! ").append(lim);
+        TextView commands = text(cmds.toString().trim(), 12, R.color.terminow_text_secondary);
+        commands.setTypeface(Typeface.MONOSPACE);
+        commands.setPadding(0, dp(10), 0, 0);
+        box.addView(commands);
+        ScrollView scroll = new ScrollView(mActivity);
+        scroll.addView(box);
+        android.app.AlertDialog.Builder b = new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(repo.revision())
+            .setView(scroll)
+            .setNegativeButton(android.R.string.cancel, null);
+        if (plan.installable())
+            b.setPositiveButton(R.string.terminow_install_install, (d, w) -> runPlan(target, plan));
+        b.show();
+    }
+
+    /** Install a validated plan through the install manager, polling its real state for the result. */
+    private void runPlan(@NonNull Target target, @NonNull TerminowInstallPlan plan) {
+        TerminowToolInstaller.Job job = TerminowToolInstaller.installPlan(target.runner, target.key, target.user, plan.toolName, plan.toScript());
+        if (job == null) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_tools_github_busy), true);
+            return;
+        }
+        android.app.ProgressDialog progress = new android.app.ProgressDialog(mActivity);
+        progress.setMessage(mActivity.getString(R.string.terminow_tools_github_installing, plan.toolName));
+        progress.setCancelable(false);
+        progress.show();
+        final Runnable[] poll = new Runnable[1];
+        poll[0] = () -> {
+            if (job.getState() == TerminowToolInstaller.State.RUNNING) {
+                progress.setMessage(mActivity.getString(R.string.terminow_tools_github_installing, plan.toolName) + " · " + stageName(job.getStage()));
+                mHandler.postDelayed(poll[0], 1000);
+                return;
+            }
+            if (progress.isShowing()) progress.dismiss();
+            if (job.getState() == TerminowToolInstaller.State.SUCCEEDED)
+                mActivity.showToast(mActivity.getString(R.string.terminow_tools_github_done, plan.toolName), false);
+            else
+                new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                    .setTitle(plan.toolName)
+                    .setMessage(mActivity.getString(R.string.terminow_tools_github_install_failed, job.getLogTail(10)))
+                    .setPositiveButton(android.R.string.ok, null)
+                    .setNeutralButton(R.string.terminow_install_retry, (d, w) -> runPlan(target, plan))
+                    .show();
+        };
+        mHandler.postDelayed(poll[0], 1000);
     }
 
     /** Fill the list with the tools that pass the filters; a useful empty state when none do. */
