@@ -16,6 +16,8 @@
     <color name="terminow_text_secondary">#8D93A8</color>
     <color name="terminow_accent">#2196F3</color>
     <color name="terminow_host_ssh">#F2585B</color>
+    <!-- Muted red for a destructive action (e.g. Close session). -->
+    <color name="terminow_destructive">#A8453F</color>
     <color name="terminow_host_mosh">#0D5C91</color>
     <color name="terminow_host_local">#2E7D5B</color>
     <color name="terminow_host_group">#4A5073</color>

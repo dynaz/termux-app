@@ -95,6 +95,13 @@
     <string name="terminow_quick_rename_tab">Rename tab</string>
     <string name="terminow_quick_close_tab">Close tab</string>
     <string name="terminow_quick_close_tab_confirm">Close %1$s? What runs in it ends.</string>
+    <!-- Session-close confirmation (bottom sheet on phones, centered dialog on tablets) -->
+    <string name="terminow_close_title">Close %1$s?</string>
+    <string name="terminow_close_desc_ssh">This will disconnect your SSH session.</string>
+    <string name="terminow_close_desc_local">This will end what is running in it.</string>
+    <string name="terminow_close_keep">Keep open</string>
+    <string name="terminow_close_confirm">Close session</string>
+    <string name="terminow_close_named">Close %1$s</string>
     <string name="terminow_quick_detach">Detach</string>
     <string name="terminow_quick_end_tmux">End session</string>
     <string name="terminow_quick_end_tmux_title">End %1$s?</string>

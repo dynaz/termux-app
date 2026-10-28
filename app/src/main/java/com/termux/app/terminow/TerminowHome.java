@@ -910,12 +910,33 @@ public class TerminowHome {
             tab.addView(titleView);
 
             if (selected) {
+                // A clean 20dp × with an 8dp inset (36dp box), expanded to a 48dp touch target below so
+                // the close target is separate from the tab-selection target and easy to hit.
                 ImageView closeView = new ImageView(mActivity);
                 closeView.setImageResource(R.drawable.ic_terminow_close);
+                closeView.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
                 closeView.setPadding(dp(8), dp(8), dp(8), dp(8));
-                closeView.setContentDescription(mActivity.getString(R.string.terminow_close_session));
-                closeView.setOnClickListener(v -> closeSession(session));
+                closeView.setContentDescription(mActivity.getString(R.string.terminow_close_named, getSessionTitle(session, i)));
+                android.util.TypedValue ripple = new android.util.TypedValue();
+                mActivity.getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true);
+                if (ripple.resourceId != 0) closeView.setBackgroundResource(ripple.resourceId);
+                closeView.setClickable(true);
+                closeView.setFocusable(true);
+                closeView.setOnClickListener(v -> {
+                    v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
+                    closeSession(session);
+                });
                 tab.addView(closeView, new LinearLayout.LayoutParams(dp(36), dp(36)));
+                final LinearLayout tabRef = tab;
+                // Expand the touchable area of the × to at least 48dp without enlarging the icon.
+                tab.post(() -> {
+                    android.graphics.Rect rect = new android.graphics.Rect();
+                    closeView.getHitRect(rect);
+                    int padV = Math.max(0, (dp(48) - rect.height()) / 2);
+                    int padH = Math.max(0, (dp(48) - rect.width()) / 2);
+                    rect.top -= padV; rect.bottom += padV; rect.left -= padH; rect.right += padH;
+                    tabRef.setTouchDelegate(new android.view.TouchDelegate(rect, closeView));
+                });
                 selectedTab = tab;
             }
 
@@ -990,19 +1011,128 @@ public class TerminowHome {
         return getSessionTitle(session, index);
     }
 
+    /** Handles being closed now, so a second tap on the × during the close animation does nothing. */
+    private final java.util.Set<String> mClosing = new java.util.HashSet<>();
+
     private void closeSession(@NonNull TerminalSession session) {
-        mConnectionUi.onCloseSession(session);
+        // Guard against duplicate close actions while a close is in flight.
+        if (session.mHandle != null && !mClosing.add(session.mHandle)) return;
+        // An already-ended session has nothing running to lose, so close it at once, no confirmation.
         if (!session.isRunning()) {
-            mActivity.getTermuxTerminalSessionClient().closeSession(session);
+            performClose(session);
             return;
         }
+        confirmCloseSession(session);
+    }
 
-        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
-            .setMessage(R.string.terminow_close_session)
-            .setPositiveButton(android.R.string.ok, (dialog, which) ->
-                mActivity.getTermuxTerminalSessionClient().closeSession(session))
-            .setNegativeButton(android.R.string.cancel, null)
-            .show();
+    /** Actually close a session: clear its connection panel and remove the tab. */
+    private void performClose(@NonNull TerminalSession session) {
+        mConnectionUi.onCloseSession(session);
+        mActivity.getTermuxTerminalSessionClient().closeSession(session);
+    }
+
+    private void releaseClosing(@NonNull TerminalSession session) {
+        if (session.mHandle != null) mClosing.remove(session.mHandle);
+    }
+
+    /**
+     * The premium close confirmation: a bottom sheet on phones, a centered dialog (max 420dp) on tablets.
+     * Charcoal surface, subtle border, 24dp corners. Back or a tap outside dismisses without closing.
+     */
+    private void confirmCloseSession(@NonNull TerminalSession session) {
+        boolean phone = mActivity.getResources().getConfiguration().screenWidthDp < 600;
+        TerminowWorkspace.Tab tab = TerminowWorkspace.tabOf(session);
+        boolean ssh = tab != null && TerminowWorkspace.KIND_HOST.equals(tab.kind) && !tab.sftp;
+        String name = sessionDisplayName(session);
+
+        Dialog dialog = new Dialog(mActivity, R.style.TerminowAlertDialog);
+        final boolean[] closing = {false};
+
+        LinearLayout root = new LinearLayout(mActivity);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(24), dp(24), dp(24), dp(20));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(ContextCompat.getColor(mActivity, R.color.terminow_bar_home));
+        bg.setStroke(dp(1), ContextCompat.getColor(mActivity, R.color.terminow_quick_border));
+        float r = dp(24);
+        bg.setCornerRadii(phone ? new float[]{r, r, r, r, 0, 0, 0, 0} : new float[]{r, r, r, r, r, r, r, r});
+        root.setBackground(bg);
+
+        TextView title = new TextView(mActivity);
+        title.setText(mActivity.getString(R.string.terminow_close_title, name));
+        title.setTextSize(19);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
+        root.addView(title);
+
+        TextView desc = new TextView(mActivity);
+        desc.setText(mActivity.getString(ssh ? R.string.terminow_close_desc_ssh : R.string.terminow_close_desc_local));
+        desc.setTextSize(14);
+        desc.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+        LinearLayout.LayoutParams descLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        descLp.topMargin = dp(8);
+        root.addView(desc, descLp);
+
+        LinearLayout buttons = new LinearLayout(mActivity);
+        buttons.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        rowLp.topMargin = dp(24);
+        root.addView(buttons, rowLp);
+
+        TextView keep = closeDialogButton(mActivity.getString(R.string.terminow_close_keep),
+            R.color.terminow_panel_button, R.color.terminow_text);
+        keep.setOnClickListener(v -> dialog.dismiss());
+        LinearLayout.LayoutParams keepLp = new LinearLayout.LayoutParams(0, dp(48), 1f);
+        keepLp.rightMargin = dp(6);
+        buttons.addView(keep, keepLp);
+
+        TextView confirm = closeDialogButton(mActivity.getString(R.string.terminow_close_confirm),
+            R.color.terminow_destructive, R.color.terminow_text);
+        confirm.setOnClickListener(v -> {
+            closing[0] = true;
+            dialog.dismiss();
+            performClose(session);
+        });
+        LinearLayout.LayoutParams confirmLp = new LinearLayout.LayoutParams(0, dp(48), 1f);
+        confirmLp.leftMargin = dp(6);
+        buttons.addView(confirm, confirmLp);
+
+        dialog.setContentView(root);
+        dialog.setCanceledOnTouchOutside(true);
+        // Back or tapping outside dismisses without closing the session.
+        dialog.setOnDismissListener(d -> { if (!closing[0]) releaseClosing(session); });
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            int screen = mActivity.getResources().getDisplayMetrics().widthPixels;
+            if (phone) {
+                window.setGravity(Gravity.BOTTOM);
+                window.setLayout(screen, ViewGroup.LayoutParams.WRAP_CONTENT);
+            } else {
+                window.setLayout(Math.min(screen - dp(32), dp(420)), ViewGroup.LayoutParams.WRAP_CONTENT);
+            }
+        }
+        dialog.show();
+    }
+
+    /** A large (min 48dp) rounded dialog button with a filled background and no uppercase. */
+    @NonNull
+    private TextView closeDialogButton(@NonNull String label, int fillColor, int textColor) {
+        TextView button = new TextView(mActivity);
+        button.setText(label);
+        button.setAllCaps(false);
+        button.setTextSize(15);
+        button.setTypeface(Typeface.DEFAULT_BOLD);
+        button.setGravity(Gravity.CENTER);
+        button.setMinHeight(dp(48));
+        button.setTextColor(ContextCompat.getColor(mActivity, textColor));
+        GradientDrawable shape = new GradientDrawable();
+        shape.setColor(ContextCompat.getColor(mActivity, fillColor));
+        shape.setCornerRadius(dp(12));
+        button.setBackground(shape);
+        button.setClickable(true);
+        button.setFocusable(true);
+        return button;
     }
 
 

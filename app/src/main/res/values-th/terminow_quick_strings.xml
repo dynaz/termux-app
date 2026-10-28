@@ -95,6 +95,12 @@
     <string name="terminow_quick_rename_tab">เปลี่ยนชื่อแท็บ</string>
     <string name="terminow_quick_close_tab">ปิดแท็บ</string>
     <string name="terminow_quick_close_tab_confirm">ปิด %1$s หรือไม่ สิ่งที่ทำงานในแท็บจะจบ</string>
+    <string name="terminow_close_title">ปิด %1$s หรือไม่</string>
+    <string name="terminow_close_desc_ssh">การทำเช่นนี้จะตัดการเชื่อมต่อ SSH ของคุณ</string>
+    <string name="terminow_close_desc_local">การทำเช่นนี้จะจบสิ่งที่กำลังทำงานอยู่</string>
+    <string name="terminow_close_keep">เปิดไว้</string>
+    <string name="terminow_close_confirm">ปิดเซสชัน</string>
+    <string name="terminow_close_named">ปิด %1$s</string>
     <string name="terminow_quick_detach">แยกออก</string>
     <string name="terminow_quick_end_tmux">จบเซสชัน</string>
     <string name="terminow_quick_end_tmux_title">จบ %1$s หรือไม่</string>
