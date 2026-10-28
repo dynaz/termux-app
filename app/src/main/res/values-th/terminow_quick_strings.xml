@@ -120,6 +120,24 @@
     <string name="terminow_local_linux_choose_distro">เลือกดิสโทร ตอนนี้คือ %1$s</string>
     <string name="terminow_local_linux_current">ปัจจุบัน</string>
     <string name="terminow_local_linux_session_menu">ตัวเลือกเพิ่มเติมสำหรับ %1$s</string>
+    <!-- SSH host picker (Connect) -->
+    <string name="terminow_connect_menu">เชื่อมต่อโฮสต์</string>
+    <string name="terminow_connect_menu_summary">เปิดโฮสต์ SSH หรือการเชื่อมต่อใหม่</string>
+    <string name="terminow_connect_title">เชื่อมต่อ</string>
+    <string name="terminow_connect_search">ค้นหาโฮสต์</string>
+    <string name="terminow_connect_quick">เชื่อมต่อด่วน</string>
+    <string name="terminow_connect_add_host">เพิ่มโฮสต์</string>
+    <string name="terminow_connect_empty">ยังไม่มีโฮสต์ SSH</string>
+    <string name="terminow_connect_no_match">ไม่พบโฮสต์ที่ตรงกับการค้นหา</string>
+    <string name="terminow_connect_favorites">รายการโปรด</string>
+    <string name="terminow_connect_all_hosts">โฮสต์ทั้งหมด</string>
+    <string name="terminow_connect_favorite">เพิ่มในรายการโปรด</string>
+    <string name="terminow_connect_unfavorite">นำออกจากรายการโปรด</string>
+    <string name="terminow_connect_new">การเชื่อมต่อใหม่</string>
+    <string name="terminow_connect_user">ผู้ใช้ (ไม่บังคับ)</string>
+    <string name="terminow_connect_hostname">ชื่อโฮสต์</string>
+    <string name="terminow_connect_port">พอร์ต</string>
+    <string name="terminow_connect_connect">เชื่อมต่อ</string>
     <string name="terminow_quick_ubuntu_local_summary">เปิดดิสโทรหรือกลับไปยังเซสชัน</string>
     <string name="terminow_quick_add_ssh_host">เพิ่มโฮสต์ SSH</string>
     <string name="terminow_quick_import">นำเข้า</string>

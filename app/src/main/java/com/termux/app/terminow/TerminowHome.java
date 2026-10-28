@@ -1135,6 +1135,286 @@ public class TerminowHome {
         return button;
     }
 
+    /**
+     * The SSH host picker ("Connect"): a bottom sheet on phones, a centered dialog on tablets. Lists the
+     * saved hosts, favorites first, with search, Quick connect and Add host, and a per-row overflow (Edit
+     * host, Favorite/Unfavorite, New connection). A tap on a host starts a separate SSH session with the
+     * host's saved authentication, port and settings; repeated taps are de-duplicated by the connect guard.
+     * Host search only filters the list - it never runs anything.
+     */
+    void showConnectPicker() {
+        boolean phone = mActivity.getResources().getConfiguration().screenWidthDp < 600;
+        mHosts = mStore.getHosts();
+        mGroups = mStore.getGroups();
+
+        Dialog dialog = new Dialog(mActivity, R.style.TerminowAlertDialog);
+        LinearLayout root = new LinearLayout(mActivity);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(20), dp(16), dp(20), dp(16));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(ContextCompat.getColor(mActivity, R.color.terminow_bar_home));
+        bg.setStroke(dp(1), ContextCompat.getColor(mActivity, R.color.terminow_quick_border));
+        float r = dp(24);
+        bg.setCornerRadii(phone ? new float[]{r, r, r, r, 0, 0, 0, 0} : new float[]{r, r, r, r, r, r, r, r});
+        root.setBackground(bg);
+
+        LinearLayout head = new LinearLayout(mActivity);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = new TextView(mActivity);
+        title.setText(R.string.terminow_connect_title);
+        title.setTextSize(19);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
+        androidx.core.view.ViewCompat.setAccessibilityHeading(title, true);
+        head.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        ImageView closeBtn = new ImageView(mActivity);
+        closeBtn.setImageResource(R.drawable.ic_terminow_close);
+        closeBtn.setColorFilter(ContextCompat.getColor(mActivity, R.color.terminow_text));
+        closeBtn.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        closeBtn.setContentDescription(mActivity.getString(android.R.string.cancel));
+        closeBtn.setOnClickListener(v -> dialog.dismiss());
+        head.addView(closeBtn, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        root.addView(head, matchWrapHome());
+
+        EditText search = new EditText(mActivity);
+        search.setHint(R.string.terminow_connect_search);
+        search.setSingleLine(true);
+        search.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
+        search.setHintTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+        search.setBackground(fieldBackground());
+        search.setPadding(dp(16), dp(12), dp(16), dp(12));
+        search.setImeOptions(android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+        search.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
+        LinearLayout.LayoutParams searchParams = matchWrapHome();
+        searchParams.topMargin = dp(8);
+        root.addView(search, searchParams);
+
+        LinearLayout actions = new LinearLayout(mActivity);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams actionsParams = matchWrapHome();
+        actionsParams.topMargin = dp(10);
+        TextView quick = closeDialogButton(mActivity.getString(R.string.terminow_connect_quick), R.color.terminow_panel_button, R.color.terminow_text);
+        quick.setOnClickListener(v -> { dialog.dismiss(); showQuickConnectForm(); });
+        LinearLayout.LayoutParams quickParams = new LinearLayout.LayoutParams(0, dp(48), 1f);
+        quickParams.rightMargin = dp(6);
+        actions.addView(quick, quickParams);
+        TextView add = closeDialogButton(mActivity.getString(R.string.terminow_connect_add_host), R.color.terminow_panel_button, R.color.terminow_text);
+        add.setOnClickListener(v -> { dialog.dismiss(); showHostDialog(null); });
+        LinearLayout.LayoutParams addParams = new LinearLayout.LayoutParams(0, dp(48), 1f);
+        addParams.leftMargin = dp(6);
+        actions.addView(add, addParams);
+        root.addView(actions, actionsParams);
+
+        ScrollView scroll = new ScrollView(mActivity);
+        LinearLayout list = new LinearLayout(mActivity);
+        list.setOrientation(LinearLayout.VERTICAL);
+        scroll.addView(list);
+        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+        scrollParams.topMargin = dp(8);
+        root.addView(scroll, scrollParams);
+
+        Runnable[] rebuild = new Runnable[1];
+        rebuild[0] = () -> rebuildConnectList(list, search.getText().toString(), dialog, rebuild[0]);
+        search.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void afterTextChanged(android.text.Editable s) { rebuild[0].run(); }
+        });
+        rebuild[0].run();
+
+        dialog.setContentView(root);
+        dialog.setCanceledOnTouchOutside(true);
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            int screen = mActivity.getResources().getDisplayMetrics().widthPixels;
+            int screenH = mActivity.getResources().getDisplayMetrics().heightPixels;
+            root.setMinimumHeight(Math.min(screenH, dp(420)));
+            if (phone) {
+                window.setGravity(Gravity.BOTTOM);
+                window.setLayout(screen, ViewGroup.LayoutParams.WRAP_CONTENT);
+            } else {
+                window.setLayout(Math.min(screen - dp(32), dp(520)), ViewGroup.LayoutParams.WRAP_CONTENT);
+            }
+        }
+        dialog.show();
+    }
+
+    /** Fill the host picker's list from the saved hosts, favorites first, filtered by the search text. */
+    private void rebuildConnectList(@NonNull LinearLayout list, @NonNull String query, @NonNull Dialog dialog, @NonNull Runnable rebuild) {
+        list.removeAllViews();
+        java.util.Set<String> favorites = mStore.getFavoriteHostKeys();
+        List<TerminowStore.Host> favs = new ArrayList<>();
+        List<TerminowStore.Host> rest = new ArrayList<>();
+        for (TerminowStore.Host host : mHosts) {
+            if (!host.isTerminal()) continue;        // SSH/telnet hosts only, not RDP/WinRM
+            if (!connectHostMatches(host, query)) continue;
+            if (favorites.contains(host.getKey())) favs.add(host); else rest.add(host);
+        }
+        if (favs.isEmpty() && rest.isEmpty()) {
+            TextView empty = new TextView(mActivity);
+            empty.setText(query.trim().isEmpty() ? R.string.terminow_connect_empty : R.string.terminow_connect_no_match);
+            empty.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+            empty.setPadding(0, dp(24), 0, dp(24));
+            empty.setGravity(Gravity.CENTER);
+            list.addView(empty, matchWrapHome());
+            return;
+        }
+        if (!favs.isEmpty()) {
+            list.addView(connectSection(mActivity.getString(R.string.terminow_connect_favorites)));
+            for (TerminowStore.Host host : favs) list.addView(connectHostRow(host, true, dialog, rebuild));
+        }
+        if (!rest.isEmpty()) {
+            if (!favs.isEmpty()) list.addView(connectSection(mActivity.getString(R.string.terminow_connect_all_hosts)));
+            for (TerminowStore.Host host : rest) list.addView(connectHostRow(host, false, dialog, rebuild));
+        }
+    }
+
+    private boolean connectHostMatches(@NonNull TerminowStore.Host host, @NonNull String query) {
+        String q = query.trim().toLowerCase(java.util.Locale.ROOT);
+        if (q.isEmpty()) return true;
+        if (host.getTitle().toLowerCase(java.util.Locale.ROOT).contains(q)) return true;
+        if (host.getKey().toLowerCase(java.util.Locale.ROOT).contains(q)) return true;
+        if (!host.group.isEmpty() && host.group.toLowerCase(java.util.Locale.ROOT).contains(q)) return true;
+        for (String tag : host.tags) if (tag.toLowerCase(java.util.Locale.ROOT).contains(q)) return true;
+        return false;
+    }
+
+    @NonNull
+    private TextView connectSection(@NonNull String label) {
+        TextView view = new TextView(mActivity);
+        view.setText(label);
+        view.setTextSize(13);
+        view.setTypeface(Typeface.DEFAULT_BOLD);
+        view.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+        view.setPadding(0, dp(14), 0, dp(4));
+        androidx.core.view.ViewCompat.setAccessibilityHeading(view, true);
+        return view;
+    }
+
+    @NonNull
+    private View connectHostRow(@NonNull TerminowStore.Host host, boolean favorite, @NonNull Dialog dialog, @NonNull Runnable rebuild) {
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(14), dp(10), dp(6), dp(10));
+        row.setMinimumHeight(dp(56));
+        GradientDrawable shape = new GradientDrawable();
+        shape.setColor(ContextCompat.getColor(mActivity, R.color.terminow_quick_card));
+        shape.setCornerRadius(dp(12));
+        shape.setStroke(Math.max(1, dp(1)), ContextCompat.getColor(mActivity, R.color.terminow_quick_border));
+        row.setBackground(shape);
+        LinearLayout.LayoutParams rowParams = matchWrapHome();
+        rowParams.topMargin = dp(8);
+        row.setLayoutParams(rowParams);
+
+        LinearLayout texts = new LinearLayout(mActivity);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        texts.setPadding(dp(4), 0, dp(4), 0);
+        TextView name = new TextView(mActivity);
+        name.setText(host.getTitle());
+        name.setTextSize(15);
+        name.setTypeface(Typeface.DEFAULT_BOLD);
+        name.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
+        name.setMaxLines(1);
+        name.setEllipsize(TextUtils.TruncateAt.END);
+        texts.addView(name);
+        TextView sub = new TextView(mActivity);
+        sub.setText(connectionSubtitle(host));
+        sub.setTextSize(13);
+        sub.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+        sub.setMaxLines(1);
+        sub.setEllipsize(TextUtils.TruncateAt.END);
+        texts.addView(sub);
+        row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        row.setContentDescription(host.getTitle() + ". " + connectionSubtitle(host));
+        row.setClickable(true);
+        row.setFocusable(true);
+        row.setOnClickListener(v -> { dialog.dismiss(); connect(host); });
+
+        ImageView overflow = new ImageView(mActivity);
+        overflow.setImageResource(R.drawable.ic_terminow_more);
+        overflow.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        overflow.setColorFilter(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+        overflow.setPadding(dp(14), dp(14), dp(14), dp(14));
+        overflow.setContentDescription(mActivity.getString(R.string.terminow_local_linux_session_menu, host.getTitle()));
+        android.util.TypedValue ripple = new android.util.TypedValue();
+        mActivity.getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true);
+        if (ripple.resourceId != 0) overflow.setBackgroundResource(ripple.resourceId);
+        overflow.setClickable(true);
+        overflow.setFocusable(true);
+        overflow.setOnClickListener(v -> {
+            CharSequence[] items = {
+                mActivity.getString(R.string.terminow_edit),
+                mActivity.getString(favorite ? R.string.terminow_connect_unfavorite : R.string.terminow_connect_favorite),
+                mActivity.getString(R.string.terminow_connect_new)
+            };
+            new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog).setItems(items, (d, w) -> {
+                if (w == 0) { dialog.dismiss(); showHostDialog(host); }
+                else if (w == 1) { mStore.toggleFavoriteHost(host.getKey()); rebuild.run(); }
+                else { dialog.dismiss(); connect(host); }
+            }).show();
+        });
+        row.addView(overflow, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        return row;
+    }
+
+    /** Quick connect: a small form for user, hostname and port, then connect (saving nothing). */
+    private void showQuickConnectForm() {
+        LinearLayout form = new LinearLayout(mActivity);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(dp(20), dp(8), dp(20), 0);
+        EditText user = quickField(R.string.terminow_connect_user, android.text.InputType.TYPE_CLASS_TEXT);
+        EditText hostname = quickField(R.string.terminow_connect_hostname, android.text.InputType.TYPE_CLASS_TEXT);
+        EditText port = quickField(R.string.terminow_connect_port, android.text.InputType.TYPE_CLASS_NUMBER);
+        port.setText("22");
+        form.addView(user);
+        form.addView(hostname);
+        form.addView(port);
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_connect_quick)
+            .setView(form)
+            .setPositiveButton(R.string.terminow_connect_connect, (d, w) -> {
+                String host = hostname.getText().toString().trim();
+                if (host.isEmpty()) { mActivity.showToast(mActivity.getString(R.string.terminow_connect_hostname), true); return; }
+                String text = (user.getText().toString().trim().isEmpty() ? "" : user.getText().toString().trim() + "@")
+                    + host + (port.getText().toString().trim().isEmpty() ? "" : ":" + port.getText().toString().trim());
+                TerminowQuickConnect.Result result = TerminowQuickConnect.parse(text);
+                if (result.host == null) { mActivity.showToast(result.error != null ? result.error : "", true); return; }
+                if (result.isComplete()) connect(result.host);
+                else showHostDialog(null, result.host, this::connect);
+            })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    @NonNull
+    private EditText quickField(int hintRes, int inputType) {
+        EditText field = new EditText(mActivity);
+        field.setHint(hintRes);
+        field.setSingleLine(true);
+        field.setInputType(inputType);
+        field.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
+        field.setHintTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+        LinearLayout.LayoutParams params = matchWrapHome();
+        params.topMargin = dp(6);
+        field.setLayoutParams(params);
+        field.setMinHeight(dp(48));
+        return field;
+    }
+
+    @NonNull
+    private GradientDrawable fieldBackground() {
+        GradientDrawable shape = new GradientDrawable();
+        shape.setColor(ContextCompat.getColor(mActivity, R.color.terminow_field));
+        shape.setCornerRadius(dp(12));
+        return shape;
+    }
+
+    @NonNull
+    private LinearLayout.LayoutParams matchWrapHome() {
+        return new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    }
 
 
     /** Show Quick Launch over the terminals, which keep running as they are. */
@@ -1618,11 +1898,9 @@ public class TerminowHome {
             mLauncher::showLocalLinux);
         addMenuItem(menu, popup, R.drawable.ic_terminow_launch, R.string.terminow_quick_title, this::showQuickLaunch);
         addMenuItem(menu, popup, R.drawable.ic_terminow_add, R.string.terminow_quick_add_environment, () -> mQuickLaunch.showAddEnvironment());
-        addMenuItem(menu, popup, R.drawable.ic_terminow_hosts, R.string.terminow_quick_add_ssh_host, () -> {
-            mHosts = mStore.getHosts();
-            mGroups = mStore.getGroups();
-            showHostDialog(null);
-        });
+        addMenuItem(menu, popup, R.drawable.ic_terminow_hosts,
+            mActivity.getString(R.string.terminow_connect_menu), mActivity.getString(R.string.terminow_connect_menu_summary),
+            this::showConnectPicker);
         addMenuItem(menu, popup, R.drawable.ic_terminow_import, R.string.terminow_quick_import, this::showImportChooser);
         addMenuItem(menu, popup, R.drawable.ic_terminow_import, R.string.terminow_qimport_menu, this::showQuickImport);
         addMenuItem(menu, popup, R.drawable.ic_terminow_hosts, R.string.terminow_discovery_menu, this::showNetworkDiscovery);

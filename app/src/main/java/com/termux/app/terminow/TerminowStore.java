@@ -910,6 +910,44 @@ public class TerminowStore {
         writeGithubTools(list);
     }
 
+    private static final String KEY_FAVORITE_HOSTS = "favorite_hosts";
+
+    /** The keys of the hosts marked as favorites, in the current vault. */
+    @NonNull
+    public java.util.Set<String> getFavoriteHostKeys() {
+        java.util.Set<String> set = new java.util.LinkedHashSet<>();
+        try {
+            JSONArray array = new JSONArray(mPreferences.getString(ns(KEY_FAVORITE_HOSTS), "[]"));
+            for (int i = 0; i < array.length(); i++) {
+                String key = array.optString(i);
+                if (!key.isEmpty()) set.add(key);
+            }
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to load favorite hosts", e);
+        }
+        return set;
+    }
+
+    public boolean isFavoriteHost(@NonNull String hostKey) {
+        return getFavoriteHostKeys().contains(hostKey);
+    }
+
+    /** Add or remove a host from the favorites; returns whether it is a favorite afterwards. */
+    public boolean toggleFavoriteHost(@NonNull String hostKey) {
+        java.util.Set<String> set = getFavoriteHostKeys();
+        boolean nowFavorite;
+        if (set.remove(hostKey)) {
+            nowFavorite = false;
+        } else {
+            set.add(hostKey);
+            nowFavorite = true;
+        }
+        JSONArray array = new JSONArray();
+        for (String key : set) array.put(key);
+        putVaultList(KEY_FAVORITE_HOSTS, array.toString());
+        return nowFavorite;
+    }
+
     private void writeGithubTools(@NonNull List<GithubTool> list) {
         JSONArray array = new JSONArray();
         try {

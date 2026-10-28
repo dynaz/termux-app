@@ -122,6 +122,24 @@
     <string name="terminow_local_linux_choose_distro">Choose a distribution, currently %1$s</string>
     <string name="terminow_local_linux_current">Current</string>
     <string name="terminow_local_linux_session_menu">More options for %1$s</string>
+    <!-- SSH host picker (Connect) -->
+    <string name="terminow_connect_menu">Connect to a host</string>
+    <string name="terminow_connect_menu_summary">Open an SSH host or a new connection</string>
+    <string name="terminow_connect_title">Connect</string>
+    <string name="terminow_connect_search">Search hosts</string>
+    <string name="terminow_connect_quick">Quick connect</string>
+    <string name="terminow_connect_add_host">Add host</string>
+    <string name="terminow_connect_empty">No SSH hosts yet</string>
+    <string name="terminow_connect_no_match">No host matches your search</string>
+    <string name="terminow_connect_favorites">Favorites</string>
+    <string name="terminow_connect_all_hosts">All hosts</string>
+    <string name="terminow_connect_favorite">Add to favorites</string>
+    <string name="terminow_connect_unfavorite">Remove from favorites</string>
+    <string name="terminow_connect_new">New connection</string>
+    <string name="terminow_connect_user">User (optional)</string>
+    <string name="terminow_connect_hostname">Hostname</string>
+    <string name="terminow_connect_port">Port</string>
+    <string name="terminow_connect_connect">Connect</string>
     <string name="terminow_quick_add_ssh_host">Add SSH host</string>
     <string name="terminow_quick_import">Import</string>
     <string name="terminow_quick_import_hosts">Import hosts (SSH config, CSV, Termius)</string>
