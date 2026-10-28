@@ -47,4 +47,17 @@
     <string name="terminow_proxmox_cert_message">เซิร์ฟเวอร์ใช้ใบรับรองแบบ self-signed\n\nSHA-256 fingerprint:\n%1$s\n\nเชื่อถือเฉพาะเมื่อตรงกับเซิร์ฟเวอร์ Proxmox ของคุณ</string>
     <string name="terminow_proxmox_cert_trust">เชื่อถือ</string>
     <string name="terminow_proxmox_cert_declined">ไม่เชื่อถือใบรับรอง ยังไม่ได้ยืนยันการเชื่อมต่อ</string>
+    <string name="terminow_proxmox_add">เพิ่มการเชื่อมต่อ…</string>
+    <string name="terminow_proxmox_web_ui">Web UI</string>
+    <string name="terminow_proxmox_loading">กำลังโหลด nodes และ guests…</string>
+    <string name="terminow_proxmox_empty">ไม่พบ VM หรือคอนเทนเนอร์</string>
+    <string name="terminow_proxmox_guest_sub">#%1$d · %2$s · %3$s</string>
+    <string name="terminow_proxmox_start">เริ่ม</string>
+    <string name="terminow_proxmox_shutdown">ปิดเครื่อง</string>
+    <string name="terminow_proxmox_reboot">รีบูต</string>
+    <string name="terminow_proxmox_stop">หยุด (บังคับ)</string>
+    <string name="terminow_proxmox_confirm">%1$s %2$s?</string>
+    <string name="terminow_proxmox_working">กำลังทำงาน…</string>
+    <string name="terminow_proxmox_action_ok">งานเสร็จ: %1$s</string>
+    <string name="terminow_proxmox_action_failed">การสั่งงานล้มเหลว: %1$s</string>
 </resources>

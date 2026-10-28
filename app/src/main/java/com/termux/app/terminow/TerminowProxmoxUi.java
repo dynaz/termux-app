@@ -96,9 +96,200 @@ final class TerminowProxmoxUi {
                 mActivity.showToast(mActivity.getString(R.string.terminow_proxmox_saved, conn.name), false);
                 dialog.dismiss();
                 if (onSaved != null) onSaved.onSaved(conn);
+                else openView(conn);   // configure -> test -> save -> view the nodes/guests
             });
         });
         dialog.show();
+    }
+
+    /** Entry from the Proxmox card: pick a saved connection to view, or add a new one. */
+    void openCard() {
+        java.util.List<TerminowProxmox.Connection> saved = mStore.getProxmoxConnections();
+        if (saved.isEmpty()) {
+            open(null, null);
+            return;
+        }
+        CharSequence[] items = new CharSequence[saved.size() + 1];
+        for (int i = 0; i < saved.size(); i++) {
+            TerminowProxmox.Connection c = saved.get(i);
+            items[i] = c.name.isEmpty() ? c.host : c.name;
+        }
+        items[saved.size()] = mActivity.getString(R.string.terminow_proxmox_add);
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_proxmox_title)
+            .setItems(items, (d, which) -> {
+                if (which < saved.size()) openView(saved.get(which));
+                else open(null, null);
+            })
+            .setNegativeButton(R.string.terminow_close_dialog, null)
+            .show();
+    }
+
+    /** Show the nodes and their VMs/LXC with status, loaded live from the server — never placeholder data. */
+    void openView(@NonNull TerminowProxmox.Connection conn) {
+        LinearLayout root = new LinearLayout(mActivity);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(16), dp(8), dp(16), 0);
+        TextView status = new TextView(mActivity);
+        status.setTextSize(14);
+        status.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary));
+        status.setPadding(0, dp(6), 0, dp(10));
+        root.addView(status);
+        LinearLayout list = new LinearLayout(mActivity);
+        list.setOrientation(LinearLayout.VERTICAL);
+        ScrollView scroll = new ScrollView(mActivity);
+        scroll.addView(list);
+        root.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(conn.name.isEmpty() ? conn.host : conn.name)
+            .setView(root)
+            .setNeutralButton(R.string.terminow_proxmox_web_ui, (d, w) -> openWeb(conn))
+            .setNegativeButton(R.string.terminow_close_dialog, null)
+            .show();
+        loadView(conn, list, status);
+    }
+
+    private void loadView(@NonNull TerminowProxmox.Connection conn, @NonNull LinearLayout list, @NonNull TextView status) {
+        status.setVisibility(android.view.View.VISIBLE);
+        status.setText(mActivity.getString(R.string.terminow_proxmox_loading));
+        list.removeAllViews();
+        mExecutor.execute(() -> {
+            TerminowProxmox.Result nr = TerminowProxmox.get(conn, "/nodes");
+            if (nr.status != TerminowProxmox.Status.OK || nr.body == null) {
+                mHandler.post(() -> setStatus(status, loadError(nr), true));
+                return;
+            }
+            java.util.List<TerminowProxmox.PveNode> nodes = TerminowProxmox.parseNodes(nr.body);
+            java.util.List<TerminowProxmox.PveGuest> guests = new java.util.ArrayList<>();
+            for (TerminowProxmox.PveNode n : nodes) {
+                TerminowProxmox.Result q = TerminowProxmox.get(conn, "/nodes/" + n.name + "/qemu");
+                if (q.status == TerminowProxmox.Status.OK && q.body != null)
+                    guests.addAll(TerminowProxmox.parseGuests(q.body, "qemu", n.name));
+                TerminowProxmox.Result l = TerminowProxmox.get(conn, "/nodes/" + n.name + "/lxc");
+                if (l.status == TerminowProxmox.Status.OK && l.body != null)
+                    guests.addAll(TerminowProxmox.parseGuests(l.body, "lxc", n.name));
+            }
+            mHandler.post(() -> renderGuests(conn, guests, list, status));
+        });
+    }
+
+    private void renderGuests(@NonNull TerminowProxmox.Connection conn, @NonNull java.util.List<TerminowProxmox.PveGuest> guests,
+                              @NonNull LinearLayout list, @NonNull TextView status) {
+        list.removeAllViews();
+        if (guests.isEmpty()) {
+            setStatus(status, mActivity.getString(R.string.terminow_proxmox_empty), false);
+            return;
+        }
+        status.setVisibility(android.view.View.GONE);
+        for (TerminowProxmox.PveGuest g : guests) {
+            LinearLayout row = new LinearLayout(mActivity);
+            row.setOrientation(LinearLayout.VERTICAL);
+            row.setPadding(dp(6), dp(12), dp(6), dp(12));
+            row.setClickable(true);
+            android.util.TypedValue tv = new android.util.TypedValue();
+            mActivity.getTheme().resolveAttribute(android.R.attr.selectableItemBackground, tv, true);
+            row.setBackgroundResource(tv.resourceId);
+            final TerminowProxmox.PveGuest guest = g;
+            row.setOnClickListener(v -> showActions(conn, guest, list, status));
+            TextView name = new TextView(mActivity);
+            name.setText(g.name);
+            name.setTextSize(16);
+            name.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
+            row.addView(name);
+            TextView sub = new TextView(mActivity);
+            sub.setText(mActivity.getString(R.string.terminow_proxmox_guest_sub, g.vmid,
+                g.type.toUpperCase(java.util.Locale.ROOT), g.status));
+            sub.setTextSize(12);
+            sub.setTextColor(ContextCompat.getColor(mActivity,
+                "running".equals(g.status) ? R.color.terminow_quick_ready : R.color.terminow_text_secondary));
+            row.addView(sub);
+            list.addView(row);
+        }
+    }
+
+    private void showActions(@NonNull TerminowProxmox.Connection conn, @NonNull TerminowProxmox.PveGuest g,
+                             @NonNull LinearLayout list, @NonNull TextView status) {
+        boolean running = "running".equals(g.status);
+        java.util.List<String> labels = new java.util.ArrayList<>();
+        java.util.List<String> actions = new java.util.ArrayList<>();
+        if (!running) {
+            labels.add(mActivity.getString(R.string.terminow_proxmox_start)); actions.add("start");
+        } else {
+            labels.add(mActivity.getString(R.string.terminow_proxmox_shutdown)); actions.add("shutdown");
+            labels.add(mActivity.getString(R.string.terminow_proxmox_reboot)); actions.add("reboot");
+            labels.add(mActivity.getString(R.string.terminow_proxmox_stop)); actions.add("stop");
+        }
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(g.name)
+            .setItems(labels.toArray(new CharSequence[0]), (d, which) -> {
+                String action = actions.get(which);
+                if (action.equals("start")) {
+                    doAction(conn, g, action, list, status);
+                } else {
+                    // Shutdown / Reboot / Stop change a running guest, so confirm first.
+                    new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                        .setTitle(labels.get(which))
+                        .setMessage(mActivity.getString(R.string.terminow_proxmox_confirm, labels.get(which), g.name))
+                        .setPositiveButton(labels.get(which), (d2, w2) -> doAction(conn, g, action, list, status))
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show();
+                }
+            })
+            .setNegativeButton(R.string.terminow_close_dialog, null)
+            .show();
+    }
+
+    private void doAction(@NonNull TerminowProxmox.Connection conn, @NonNull TerminowProxmox.PveGuest g,
+                          @NonNull String action, @NonNull LinearLayout list, @NonNull TextView status) {
+        mActivity.showToast(mActivity.getString(R.string.terminow_proxmox_working), false);
+        mExecutor.execute(() -> {
+            TerminowProxmox.Result r = TerminowProxmox.post(conn, TerminowProxmox.guestActionPath(g, action));
+            String exit = null;
+            if (r.status == TerminowProxmox.Status.OK && r.body != null) {
+                String upid = TerminowProxmox.parseUpid(r.body);
+                for (int i = 0; i < 30 && !upid.isEmpty(); i++) {
+                    TerminowProxmox.Result ts = TerminowProxmox.get(conn, TerminowProxmox.taskStatusPath(g.node, upid));
+                    if (ts.status == TerminowProxmox.Status.OK && ts.body != null) {
+                        TerminowProxmox.TaskStatus t = TerminowProxmox.parseTaskStatus(ts.body);
+                        if (!t.running) { exit = t.exitStatus; break; }
+                    }
+                    try { Thread.sleep(1000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
+                }
+            }
+            final boolean ok = r.status == TerminowProxmox.Status.OK;
+            final String fexit = exit;
+            mHandler.post(() -> {
+                if (ok) {
+                    mActivity.showToast(mActivity.getString(R.string.terminow_proxmox_action_ok,
+                        fexit != null && !fexit.isEmpty() ? fexit : "OK"), !"OK".equals(fexit) && fexit != null && !fexit.isEmpty());
+                } else {
+                    mActivity.showToast(mActivity.getString(R.string.terminow_proxmox_action_failed,
+                        r.error != null ? r.error : ""), true);
+                }
+                loadView(conn, list, status);
+            });
+        });
+    }
+
+    private void openWeb(@NonNull TerminowProxmox.Connection conn) {
+        try {
+            mActivity.startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW,
+                android.net.Uri.parse(TerminowProxmox.webUrl(conn))));
+        } catch (RuntimeException e) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_proxmox_error, "no browser"), true);
+        }
+    }
+
+    @NonNull
+    private String loadError(@NonNull TerminowProxmox.Result r) {
+        switch (r.status) {
+            case AUTH_FAILED: return mActivity.getString(R.string.terminow_proxmox_auth_failed);
+            case UNREACHABLE: return mActivity.getString(R.string.terminow_proxmox_unreachable);
+            case CERT_UNTRUSTED:
+            case CERT_MISMATCH: return mActivity.getString(R.string.terminow_proxmox_cert_mismatch);
+            default: return mActivity.getString(R.string.terminow_proxmox_error, r.error != null ? r.error : "");
+        }
     }
 
     /** Read the fields into the connection; show an error and return false if a required one is missing. */

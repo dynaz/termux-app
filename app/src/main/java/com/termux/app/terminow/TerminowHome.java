@@ -2937,7 +2937,7 @@ public class TerminowHome {
                 dialog.dismiss();
                 if (t.type == TerminowDeviceProfile.Type.PROXMOX_VE) {
                     // Proxmox VE uses its REST API (token + TLS), not the plain SSH host form.
-                    new TerminowProxmoxUi(mActivity, mStore).open(null, null);
+                    new TerminowProxmoxUi(mActivity, mStore).openCard();
                     return;
                 }
                 mHosts = mStore.getHosts();

@@ -47,4 +47,17 @@
     <string name="terminow_proxmox_cert_message">The server uses a self-signed certificate.\n\nSHA-256 fingerprint:\n%1$s\n\nTrust it only if it matches your Proxmox server.</string>
     <string name="terminow_proxmox_cert_trust">Trust</string>
     <string name="terminow_proxmox_cert_declined">Certificate not trusted. Connection not verified.</string>
+    <string name="terminow_proxmox_add">Add connection…</string>
+    <string name="terminow_proxmox_web_ui">Web UI</string>
+    <string name="terminow_proxmox_loading">Loading nodes and guests…</string>
+    <string name="terminow_proxmox_empty">No VMs or containers found.</string>
+    <string name="terminow_proxmox_guest_sub">#%1$d · %2$s · %3$s</string>
+    <string name="terminow_proxmox_start">Start</string>
+    <string name="terminow_proxmox_shutdown">Shutdown</string>
+    <string name="terminow_proxmox_reboot">Reboot</string>
+    <string name="terminow_proxmox_stop">Stop (force)</string>
+    <string name="terminow_proxmox_confirm">%1$s %2$s?</string>
+    <string name="terminow_proxmox_working">Working…</string>
+    <string name="terminow_proxmox_action_ok">Task finished: %1$s</string>
+    <string name="terminow_proxmox_action_failed">Action failed: %1$s</string>
 </resources>
