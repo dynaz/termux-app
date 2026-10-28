@@ -114,4 +114,8 @@
     <string name="terminow_install_ssh_start_fish">Start Fish in this terminal</string>
     <string name="terminow_install_ssh_tab_gone">The terminal of this host has closed</string>
     <string name="terminow_install_ssh_unresolved">“%1$s” is not a saved SSH host any more, so its tools can not be managed</string>
+    <string name="terminow_tools_tab_mine">My tools</string>
+    <string name="terminow_tools_tab_discover">Discover</string>
+    <string name="terminow_tools_from_github">+ From GitHub</string>
+    <string name="terminow_tools_github_soon">Installing from a GitHub repository is being set up and isn\'t available in this build yet.</string>
 </resources>

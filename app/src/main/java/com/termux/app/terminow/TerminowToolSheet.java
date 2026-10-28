@@ -133,6 +133,9 @@ final class TerminowToolSheet {
     private String mSearch = "";
     private int mCategory = 0;
     private boolean mInstalledOnly;
+    /** The two tabs: My tools (installed) and Discover (tools to add). */
+    static final int TAB_MY_TOOLS = 0, TAB_DISCOVER = 1;
+    private int mTab = TAB_DISCOVER;
     /** The category chips, in order. CAT_ALL is index 0. */
     private static final int CAT_ALL = 0, CAT_AI = 1, CAT_TERMINAL = 2, CAT_DEVELOPER = 3, CAT_PLUGINS = 4;
 
@@ -158,8 +161,13 @@ final class TerminowToolSheet {
     }
 
     private boolean matchesFilters(@NonNull TerminowToolInstaller.Tool tool) {
-        if (mCategory != CAT_ALL && categoryOf(tool) != mCategory) return false;
-        if (mInstalledOnly && (mDetection == null || mDetection.versions.get(tool) == null)) return false;
+        boolean installed = mDetection != null && mDetection.versions.get(tool) != null;
+        // My tools: only what is installed. Discover: what can still be added, with the category chips.
+        if (mTab == TAB_MY_TOOLS && !installed) return false;
+        if (mTab == TAB_DISCOVER) {
+            if (installed) return false;
+            if (mCategory != CAT_ALL && categoryOf(tool) != mCategory) return false;
+        }
         return matchesSearch(nameOf(tool), descriptionOf(tool));
     }
 
@@ -438,8 +446,16 @@ final class TerminowToolSheet {
         content.addView(footer, matchWrap());
     }
 
-    /** Sticky search, category chips and the installed-only toggle; chips/toggle re-render, search re-lists. */
+    /** The My tools / Discover tabs, the search box, and — in Discover — the category chips and From GitHub. */
     private void addFiltersBar(@NonNull LinearLayout content, @NonNull Target target) {
+        LinearLayout tabs = new LinearLayout(mActivity);
+        tabs.setOrientation(LinearLayout.HORIZONTAL);
+        tabs.addView(chip(mActivity.getString(R.string.terminow_tools_tab_mine), mTab == TAB_MY_TOOLS, () -> { mTab = TAB_MY_TOOLS; render(); }));
+        tabs.addView(chip(mActivity.getString(R.string.terminow_tools_tab_discover), mTab == TAB_DISCOVER, () -> { mTab = TAB_DISCOVER; render(); }));
+        LinearLayout.LayoutParams tabParams = matchWrap();
+        tabParams.topMargin = dp(8);
+        content.addView(tabs, tabParams);
+
         EditText search = new EditText(mActivity);
         search.setSingleLine(true);
         search.setHint(R.string.terminow_install_search_hint);
@@ -456,8 +472,11 @@ final class TerminowToolSheet {
             @Override public void afterTextChanged(Editable s) { mSearch = s.toString(); populateList(target); }
         });
         LinearLayout.LayoutParams searchParams = matchWrap();
-        searchParams.topMargin = dp(12);
+        searchParams.topMargin = dp(10);
         content.addView(search, searchParams);
+
+        // My tools has no category filter or From GitHub — those are for finding things to add.
+        if (mTab != TAB_DISCOVER) return;
 
         HorizontalScrollView chipScroll = new HorizontalScrollView(mActivity);
         chipScroll.setHorizontalScrollBarEnabled(false);
@@ -475,15 +494,23 @@ final class TerminowToolSheet {
         chipParams.topMargin = dp(10);
         content.addView(chipScroll, chipParams);
 
-        CheckBox installedOnly = new CheckBox(mActivity);
-        installedOnly.setText(R.string.terminow_install_installed_only);
-        installedOnly.setTextSize(13);
-        installedOnly.setTextColor(color(R.color.terminow_text_secondary));
-        installedOnly.setChecked(mInstalledOnly);
-        installedOnly.setOnCheckedChangeListener((b, checked) -> { mInstalledOnly = checked; render(); });
-        LinearLayout.LayoutParams toggleParams = matchWrap();
-        toggleParams.topMargin = dp(4);
-        content.addView(installedOnly, toggleParams);
+        View github = button(mActivity.getString(R.string.terminow_tools_from_github), false, true, this::fromGithub);
+        LinearLayout.LayoutParams ghParams = matchWrap();
+        ghParams.topMargin = dp(8);
+        content.addView(github, ghParams);
+    }
+
+    /**
+     * From GitHub: analyse a public repository and install what it describes. The analysis backend
+     * (DeepSeek + repository reading) lands in a later phase; until it is wired up this states that
+     * plainly rather than pretending it can install — the button reflects the real capability.
+     */
+    private void fromGithub() {
+        new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_tools_from_github)
+            .setMessage(R.string.terminow_tools_github_soon)
+            .setPositiveButton(android.R.string.ok, null)
+            .show();
     }
 
     /** Fill the list with the tools that pass the filters; a useful empty state when none do. */
@@ -499,7 +526,7 @@ final class TerminowToolSheet {
         int shown = 0;
         // The Local AI Bridge for this environment: the same sheet the toolbar opens, reusing the same
         // services (no second helper per tab). Only for a local environment, under All / AI.
-        if (!target.ssh && target.environment != null && (mCategory == CAT_ALL || mCategory == CAT_AI) && !mInstalledOnly
+        if (!target.ssh && target.environment != null && mTab == TAB_DISCOVER && (mCategory == CAT_ALL || mCategory == CAT_AI)
                 && matchesSearch(mActivity.getString(R.string.terminow_bridge_tool_name),
                     mActivity.getString(R.string.terminow_bridge_tool_desc))) {
             bridgeRow(nextColumn(list, two), target);
@@ -510,7 +537,7 @@ final class TerminowToolSheet {
             toolRow(nextColumn(list, two), target, tool, running);
             shown++;
         }
-        if ((mCategory == CAT_ALL || mCategory == CAT_PLUGINS) && !mInstalledOnly
+        if (mTab == TAB_DISCOVER && (mCategory == CAT_ALL || mCategory == CAT_PLUGINS)
                 && matchesSearch(mActivity.getString(R.string.terminow_install_plugins),
                     mActivity.getString(R.string.terminow_install_plugins_description))) {
             pluginsRow(nextColumn(list, two), target, running);

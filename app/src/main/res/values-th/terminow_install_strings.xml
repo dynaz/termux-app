@@ -112,4 +112,8 @@
     <string name="terminow_install_ssh_start_fish">เริ่ม Fish ในเทอร์มินัลนี้</string>
     <string name="terminow_install_ssh_tab_gone">เทอร์มินัลของโฮสต์นี้ถูกปิดไปแล้ว</string>
     <string name="terminow_install_ssh_unresolved">“%1$s” ไม่ใช่โฮสต์ SSH ที่บันทึกไว้แล้ว จึงจัดการเครื่องมือไม่ได้</string>
+    <string name="terminow_tools_tab_mine">เครื่องมือของฉัน</string>
+    <string name="terminow_tools_tab_discover">ค้นหาเพิ่ม</string>
+    <string name="terminow_tools_from_github">+ จาก GitHub</string>
+    <string name="terminow_tools_github_soon">การติดตั้งจาก GitHub repository กำลังพัฒนา ยังไม่พร้อมใช้งานในบิลด์นี้</string>
 </resources>
