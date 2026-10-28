@@ -796,6 +796,176 @@ public final class TerminowSftpBrowser {
         }
     }
 
+    // ---------------------------------------------------------------------------------------
+    // In-app text editor over SFTP: open a text file, edit, and save it back.
+    // ---------------------------------------------------------------------------------------
+
+    private static final long MAX_EDIT_BYTES = 2L * 1024 * 1024;
+    /** Unsaved edits kept per host + path, so switching page or closing the editor never loses them. */
+    private final Map<String, String> mDrafts = new java.util.HashMap<>();
+
+    /** Download a text file, show it in the editor, and let the user save it back over SFTP. */
+    private void editFile(@NonNull Tab tab, @NonNull TerminowFs.Node file) {
+        TerminowFs.Node folder = tab.folder();
+        if (folder == null) return;
+        if (tab.transfer != null) { toast(mActivity.getString(R.string.terminow_sftp_busy)); return; }
+        if (file.size > MAX_EDIT_BYTES) { toast(mActivity.getString(R.string.terminow_sftp_edit_too_big)); return; }
+        final String draftKey = tab.host.uuid + "@" + tab.host.address + "\u0000" + file.id;
+        final TerminowFs.Cancel cancel = startTransfer(tab, mActivity.getString(R.string.terminow_sftp_opening, file.name));
+        mExecutor.execute(() -> {
+            String text = null, error = null;
+            boolean binary = false, bom = false, crlf = false;
+            try {
+                java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
+                try (InputStream in = tab.fs.openInput(file)) {
+                    byte[] b = new byte[16384];
+                    int n;
+                    long total = 0;
+                    while ((n = in.read(b)) > 0) {
+                        cancel.check();
+                        total += n;
+                        if (total > MAX_EDIT_BYTES) throw new IOException("too-big");
+                        buf.write(b, 0, n);
+                    }
+                }
+                byte[] bytes = buf.toByteArray();
+                int scan = Math.min(bytes.length, 8000);
+                for (int i = 0; i < scan; i++) if (bytes[i] == 0) { binary = true; break; }
+                if (!binary) {
+                    int off = 0;
+                    if (bytes.length >= 3 && (bytes[0] & 0xFF) == 0xEF && (bytes[1] & 0xFF) == 0xBB && (bytes[2] & 0xFF) == 0xBF) {
+                        bom = true;
+                        off = 3;
+                    }
+                    String s = new String(bytes, off, bytes.length - off, java.nio.charset.StandardCharsets.UTF_8);
+                    crlf = s.contains("\r\n");
+                    text = s.replace("\r\n", "\n").replace("\r", "\n");   // one line ending while editing
+                }
+            } catch (TerminowFs.CancelledException e) {
+                text = null;
+            } catch (IOException e) {
+                error = "too-big".equals(e.getMessage())
+                    ? mActivity.getString(R.string.terminow_sftp_edit_too_big) : String.valueOf(e.getMessage());
+            }
+            final String ftext = text, ferror = error;
+            final boolean fbin = binary, fbom = bom, fcrlf = crlf;
+            final long snapSize = file.size, snapMod = file.modified;
+            mHandler.post(() -> {
+                finishTransfer(tab);
+                if (fbin) { toast(mActivity.getString(R.string.terminow_sftp_edit_binary)); return; }
+                if (ftext == null) {
+                    if (ferror != null) toast(mActivity.getString(R.string.terminow_sftp_edit_open_failed, ferror));
+                    return;
+                }
+                showEditor(tab, folder, file, draftKey, ftext, fbom, fcrlf, snapSize, snapMod);
+            });
+        });
+    }
+
+    private void showEditor(@NonNull Tab tab, @NonNull TerminowFs.Node folder, @NonNull TerminowFs.Node file,
+                            @NonNull String draftKey, @NonNull String original, boolean bom, boolean crlf,
+                            long snapSize, long snapMod) {
+        String draft = mDrafts.get(draftKey);
+        final boolean hasDraft = draft != null && !draft.equals(original);
+        EditText editor = new EditText(mActivity);
+        editor.setText(hasDraft ? draft : original);
+        editor.setTypeface(Typeface.MONOSPACE);
+        editor.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        editor.setGravity(Gravity.TOP | Gravity.START);
+        editor.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS | InputType.TYPE_TEXT_FLAG_IME_MULTI_LINE);
+        editor.setMinLines(10);
+        editor.setPadding(dp(14), dp(10), dp(14), dp(10));
+        editor.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_text));
+        editor.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) { }
+            @Override public void afterTextChanged(Editable e) { mDrafts.put(draftKey, e.toString()); }
+        });
+        android.widget.ScrollView scroll = new android.widget.ScrollView(mActivity);
+        scroll.addView(editor);
+
+        AlertDialog d = dialog()
+            .setTitle(file.name)
+            .setView(scroll)
+            .setPositiveButton(R.string.terminow_sftp_edit_save, null)
+            .setNegativeButton(R.string.terminow_close_dialog, null)
+            .create();
+        if (d.getWindow() != null)
+            d.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        d.setOnShowListener(x -> {
+            if (hasDraft) toast(mActivity.getString(R.string.terminow_sftp_edit_draft));
+            d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v ->
+                saveFile(tab, folder, file, draftKey, editor.getText().toString(), bom, crlf, snapSize, snapMod, d));
+        });
+        d.show();
+    }
+
+    private void saveFile(@NonNull Tab tab, @NonNull TerminowFs.Node folder, @NonNull TerminowFs.Node file,
+                          @NonNull String draftKey, @NonNull String content, boolean bom, boolean crlf,
+                          long snapSize, long snapMod, @NonNull AlertDialog editDialog) {
+        if (tab.transfer != null) { toast(mActivity.getString(R.string.terminow_sftp_busy)); return; }
+        mDrafts.put(draftKey, content);   // keep the draft until the save actually succeeds
+        startTransfer(tab, mActivity.getString(R.string.terminow_sftp_saving, file.name));
+        mExecutor.execute(() -> {
+            String error = null;
+            boolean saved = false, cancelled = false;
+            try {
+                TerminowFs.Node current = tab.fs.find(folder, file.name);
+                boolean conflict = current != null && (current.size != snapSize || current.modified != snapMod);
+                if (conflict && !confirmOverwrite(file.name)) {
+                    cancelled = true;
+                }
+                if (!cancelled) {
+                    String out = content.replace("\n", crlf ? "\r\n" : "\n");
+                    byte[] body = out.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                    byte[] full;
+                    if (bom) {
+                        full = new byte[body.length + 3];
+                        full[0] = (byte) 0xEF; full[1] = (byte) 0xBB; full[2] = (byte) 0xBF;
+                        System.arraycopy(body, 0, full, 3, body.length);
+                    } else {
+                        full = body;
+                    }
+                    // openOutput(replace) overwrites the existing file in place, so its permission bits
+                    // (and a symlink, written through to its target) are preserved by the server.
+                    try (OutputStream os = tab.fs.openOutput(folder, file.name, true)) {
+                        os.write(full);
+                    }
+                    saved = true;
+                }
+            } catch (IOException e) {
+                error = String.valueOf(e.getMessage());
+            }
+            final boolean fsaved = saved, fcancelled = cancelled;
+            final String ferror = error;
+            mHandler.post(() -> {
+                finishTransfer(tab);
+                if (fsaved) {
+                    mDrafts.remove(draftKey);
+                    toast(mActivity.getString(R.string.terminow_sftp_edit_saved, file.name));
+                    editDialog.dismiss();
+                    load(tab);
+                } else if (!fcancelled) {
+                    // The draft and the editor are kept, so an offline/permission/disconnect failure loses nothing.
+                    toast(mActivity.getString(R.string.terminow_sftp_edit_save_failed, ferror != null ? ferror : ""));
+                }
+            });
+        });
+    }
+
+    /** Ask from the worker thread whether to overwrite a file that changed on the server since it was opened. */
+    private boolean confirmOverwrite(@NonNull String name) {
+        java.util.concurrent.atomic.AtomicBoolean ok = new java.util.concurrent.atomic.AtomicBoolean(false);
+        waitForUi(latch -> dialog()
+            .setTitle(mActivity.getString(R.string.terminow_sftp_edit_conflict, name))
+            .setCancelable(false)
+            .setPositiveButton(R.string.terminow_sftp_edit_overwrite, (d, w) -> { ok.set(true); latch.countDown(); })
+            .setNegativeButton(android.R.string.cancel, (d, w) -> { ok.set(false); latch.countDown(); })
+            .show());
+        return ok.get();
+    }
+
     private void showMoreMenu(@NonNull View anchor, @NonNull Tab tab) {
         TerminowFs.Node folder = tab.folder();
         boolean ready = folder != null && !tab.connecting && tab.error == null;
@@ -838,6 +1008,7 @@ public final class TerminowSftpBrowser {
         if (node.directory) {
             items.add(new Item(R.drawable.ic_terminow_folder, mActivity.getString(R.string.terminow_sftp_open), () -> openFolder(tab, node), 0, false));
         } else {
+            items.add(new Item(R.drawable.ic_terminow_file, mActivity.getString(R.string.terminow_sftp_edit), () -> editFile(tab, node), 0, false));
             items.add(new Item(R.drawable.ic_terminow_launch, mActivity.getString(R.string.terminow_sftp_open_with), () -> openWith(tab, node, false), 0, false));
             items.add(new Item(R.drawable.ic_terminow_share, mActivity.getString(R.string.terminow_sftp_share), () -> openWith(tab, node, true), 0, false));
         }
