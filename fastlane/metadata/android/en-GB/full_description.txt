@@ -1,0 +1,25 @@
+Manage your servers from your phone. TermiNow connects to remote machines over SSH, RDP and SFTP, and runs a full Linux command line on Android — no root required.
+
+Save your hosts once — with address, port, username and key — then connect with one tap. Import connections from PuTTY, FileZilla, SecureCRT, OpenSSH config or CSV, so you can move from a desktop client without re-entering everything. Scan your local network to find devices, or import instances from DigitalOcean and AWS.
+
+What you can do:
+
+• Connect over SSH or Mosh with saved host profiles and key authentication
+• Open a Windows or Linux desktop with Remote Desktop (RDP)
+• Browse and transfer files with the SFTP browser
+• Run PowerShell on Windows servers over WinRM
+• Use a full Linux terminal with Bash, Zsh and over 1000 installable packages
+• Set up port forwarding — local, remote or dynamic — in a guided wizard
+• Save commands as Snippets, and keep frequently-typed text in QuickCut
+• Connect to serial devices over USB
+• Manage SSH keys, including PuTTY (.ppk) and FIDO2 security keys
+• Install Ubuntu, Debian or Alpine as a Linux environment on the device
+• Run Claude Code in the Linux environment with the AI Bridge
+• Use the AI Assistant to add hosts or connect by chat, in Thai or English
+• Customize the terminal theme and font
+
+Premium adds the File Manager (browse device storage and SFTP hosts with a transfer queue), multiple Linux environments, tmux session management, the MCP Bridge for external AI clients, and Backup & Restore of your Linux environments. A monthly or yearly subscription through Google Play.
+
+Everything else — SSH, RDP, SFTP, the terminal, port forwarding, serial, snippets, keys, the first Linux environment and Claude Code — is free.
+
+At first start a small base system is installed. Over 1000 additional packages are available through the 'pkg' command.

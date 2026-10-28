@@ -1,0 +1,7 @@
+• QuickCut — save and insert frequently-typed text
+• Adaptive AI toolbar — keys follow the active AI CLI per session
+• Swipe left or right on the terminal for the next or previous session
+• More tools to install: Cursor CLI, gstack and Claude Code plugins
+• File Manager now shows all internal storage with All Files access
+• Backup & Restore of Ubuntu and Linux environments (Premium)
+• Bug fixes: tabs that froze after a while are fixed

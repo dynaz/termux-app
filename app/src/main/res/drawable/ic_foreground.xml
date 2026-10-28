@@ -4,17 +4,15 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Monochrome themed icon: the shield with the >_ prompt as negative space, plus a sparkle.
-         Keep in sync with the launcher logo (ic_launcher). The system applies the theme tint. -->
     <path
         android:fillColor="#FFFFFF"
         android:fillType="evenOdd"
-        android:pathData="M30,32 L54,24 L78,32 L78,56 C78,71 67,82 54,88 C41,82 30,71 30,56 Z
-                          M41,40 h5 l10,13 l-10,13 h-5 l10,-13 z
-                          M48,64 h15 v4 h-15 z" />
+        android:pathData="M32.8,36.4 L50.8,30.4 L68.8,36.4 L68.8,54.4 C68.8,65.6 60.6,73.9 50.8,78.4 C41.1,73.9 32.8,65.6 32.8,54.4 Z
+                          M41.1,42.4 h3.8 l7.5,9.8 l-7.5,9.8 h-3.8 l7.5,-9.8 z
+                          M46.3,60.4 h11.3 v3 h-11.3 z" />
 
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M78,23 l2.5,6 l6,2.5 l-6,2.5 l-2.5,6 l-2.5,-6 l-6,-2.5 l6,-2.5 z" />
+        android:pathData="M68.8,29.6 l1.9,4.5 l4.5,1.9 l-4.5,1.9 l-1.9,4.5 l-1.9,-4.5 l-4.5,-1.9 l4.5,-1.9 z" />
 
 </vector>
