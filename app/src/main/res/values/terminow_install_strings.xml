@@ -141,6 +141,11 @@
     <string name="terminow_tools_github_checking">Checking…</string>
     <string name="terminow_tools_github_present">Installed</string>
     <string name="terminow_tools_github_removed">Removed outside the app</string>
+    <!-- Per-item documentation (ⓘ) -->
+    <string name="terminow_doc_view">View documentation for %1$s</string>
+    <string name="terminow_doc_open_in_browser">Open in browser</string>
+    <string name="terminow_doc_unavailable">This documentation page could not be loaded. Try opening it in your browser.</string>
+    <string name="terminow_doc_official">Official documentation</string>
     <string name="terminow_tools_github_install_failed">Install failed:
 %1$s</string>
     <string name="terminow_tools_progress_queued"> · %1$d more queued</string>

@@ -497,10 +497,19 @@ final class TerminowToolSheet {
         chipParams.topMargin = dp(10);
         content.addView(chipScroll, chipParams);
 
+        // From GitHub, with its own documentation (ⓘ) button kept separate from the import action.
+        LinearLayout githubRow = new LinearLayout(mActivity);
+        githubRow.setOrientation(LinearLayout.HORIZONTAL);
+        githubRow.setGravity(Gravity.CENTER_VERTICAL);
         View github = button(mActivity.getString(R.string.terminow_tools_from_github), false, true, this::fromGithub);
+        githubRow.addView(github, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        String githubDoc = docsOf(TerminowToolInstaller.Tool.GITHUB);
+        if (!githubDoc.isEmpty())
+            githubRow.addView(docButton(mActivity.getString(R.string.terminow_tools_from_github), githubDoc),
+                new LinearLayout.LayoutParams(dp(48), dp(48)));
         LinearLayout.LayoutParams ghParams = matchWrap();
         ghParams.topMargin = dp(8);
-        content.addView(github, ghParams);
+        content.addView(githubRow, ghParams);
     }
 
     /**
@@ -989,6 +998,10 @@ final class TerminowToolSheet {
         status.setPadding(0, dp(4), 0, 0);
         texts.addView(status);
         row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        // A documentation (ⓘ) button, separate from the Install/Open action and available to everyone.
+        String docUrl = docsOf(tool);
+        if (!docUrl.isEmpty())
+            row.addView(docButton(nameOf(tool), docUrl), new LinearLayout.LayoutParams(dp(48), dp(48)));
         card.addView(row, matchWrap());
         // Tapping the row opens the tool's details; the trailing button keeps its own action.
         card.setOnClickListener(v -> toolDetailsDialog(target, tool));
@@ -1302,9 +1315,13 @@ final class TerminowToolSheet {
 
         String docs = docsOf(tool);
         if (!docs.isEmpty()) {
-            TextView link = text(mActivity.getString(R.string.terminow_install_detail_docs), 14, R.color.terminow_panel_accent);
-            link.setPadding(0, dp(14), 0, 0);
-            link.setOnClickListener(v -> openUrl(docs));
+            // A clearly labelled official-documentation link inside the in-app guide, opened in-app.
+            TextView link = text(mActivity.getString(R.string.terminow_doc_official), 14, R.color.terminow_panel_accent);
+            link.setPadding(0, dp(14), 0, dp(10));
+            link.setMinHeight(dp(48));
+            link.setGravity(Gravity.CENTER_VERTICAL);
+            link.setContentDescription(mActivity.getString(R.string.terminow_doc_view, nameOf(tool)));
+            link.setOnClickListener(v -> TerminowDocView.open(mActivity, nameOf(tool), docs));
             box.addView(link);
         }
         TerminowToolInstaller.Job job = TerminowToolInstaller.jobOf(target.key, target.user, tool);
@@ -1346,25 +1363,32 @@ final class TerminowToolSheet {
         }
     }
 
+    /** The official documentation URL for a tool, from the shared tool registry. */
     @NonNull
     private static String docsOf(@NonNull TerminowToolInstaller.Tool tool) {
-        switch (tool) {
-            case CLAUDE: return "https://docs.claude.com/en/docs/claude-code/overview";
-            case CURSOR: return "https://docs.cursor.com/en/cli/overview";
-            case CODEX: return "https://github.com/openai/codex";
-            case GEMINI: return "https://github.com/google-gemini/gemini-cli";
-            case GROK: return "https://github.com/superagent-ai/grok-cli";
-            case OPENCODE: return "https://opencode.ai/docs";
-            case AIDER: return "https://aider.chat/docs/install.html";
-            case HERMES: return "https://hermes-agent.nousresearch.com/docs";
-            case ANTIGRAVITY: return "https://antigravity.google/docs/getting-started";
-            case GSTACK: return "https://github.com/garrytan/gstack";
-            case GIT: return "https://git-scm.com/doc";
-            case CURL: return "https://curl.se/docs/";
-            case TMUX: return "https://github.com/tmux/tmux/wiki";
-            case FISH: return "https://fishshell.com/docs/current/";
-            default: return "";
-        }
+        return tool.documentationUrl;
+    }
+
+    /**
+     * A documentation (ⓘ) button: a 20dp icon in a 48dp touch target that opens {@code url} in the
+     * in-app documentation browser. Kept separate from Install/Open/Connect, labelled for screen
+     * readers, and available to everyone (including the docs of locked Premium tools).
+     */
+    @NonNull
+    private View docButton(@NonNull String name, @NonNull String url) {
+        ImageView info = new ImageView(mActivity);
+        info.setImageResource(R.drawable.ic_terminow_info);
+        info.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        info.setPadding(dp(14), dp(14), dp(14), dp(14));
+        info.setColorFilter(color(R.color.terminow_text_secondary));
+        info.setContentDescription(mActivity.getString(R.string.terminow_doc_view, name));
+        android.util.TypedValue ripple = new android.util.TypedValue();
+        mActivity.getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true);
+        if (ripple.resourceId != 0) info.setBackgroundResource(ripple.resourceId);
+        info.setClickable(true);
+        info.setFocusable(true);
+        info.setOnClickListener(v -> TerminowDocView.open(mActivity, name, url));
+        return info;
     }
 
     @NonNull

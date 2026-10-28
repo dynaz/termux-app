@@ -33,25 +33,39 @@ import java.util.concurrent.TimeUnit;
 public final class TerminowToolInstaller {
 
     public enum Tool {
-        CLAUDE("claude"), CURSOR("cursor"),
+        CLAUDE("claude", "https://docs.claude.com/en/docs/claude-code/overview"),
+        CURSOR("cursor", "https://docs.cursor.com/en/cli/overview"),
         // Other AI coding agents, from their official installers. Experimental: not verified on proot.
-        CODEX("codex"), GEMINI("gemini"), GROK("grok"), OPENCODE("opencode"), AIDER("aider"),
+        CODEX("codex", "https://github.com/openai/codex"),
+        GEMINI("gemini", "https://github.com/google-gemini/gemini-cli"),
+        GROK("grok", "https://github.com/superagent-ai/grok-cli"),
+        OPENCODE("opencode", "https://opencode.ai/docs"),
+        AIDER("aider", "https://aider.chat/docs/install.html"),
         /** Hermes Agent by Nous Research, from its official installer; not verified on proot. */
-        HERMES("hermes"),
+        HERMES("hermes", "https://hermes-agent.nousresearch.com/docs"),
         /** Google Antigravity CLI (agy), from its official installer; verified working on an Ubuntu proot (ARM64, glibc). */
-        ANTIGRAVITY("antigravity"),
-        GSTACK("gstack"), GIT("git"), CURL("curl"), TMUX("tmux"),
+        ANTIGRAVITY("antigravity", "https://antigravity.google/docs/getting-started"),
+        GSTACK("gstack", "https://github.com/garrytan/gstack"),
+        GIT("git", "https://git-scm.com/doc"),
+        CURL("curl", "https://curl.se/docs/"),
+        TMUX("tmux", "https://github.com/tmux/tmux/wiki"),
         /** Fish, the interactive shell with suggestions from its history, from apt. */
-        FISH("fish"),
+        FISH("fish", "https://fishshell.com/docs/current/"),
         /** Plugins of the official marketplace, the names given to {@link #install}. */
-        PLUGINS("plugins"),
+        PLUGINS("plugins", "https://github.com/anthropics/claude-plugins-official"),
         /** A plan the built-in AI produced for a GitHub repository, run by {@link #installPlan}. */
-        GITHUB("github");
+        GITHUB("github", "https://docs.github.com/en");
 
         public final String id;
+        /**
+         * The official documentation page or maintained GitHub README for this item, an HTTPS URL. Part
+         * of the shared tool registry so every surface can show the same "View documentation" link.
+         */
+        @NonNull public final String documentationUrl;
 
-        Tool(@NonNull String id) {
+        Tool(@NonNull String id, @NonNull String documentationUrl) {
             this.id = id;
+            this.documentationUrl = documentationUrl;
         }
     }
 

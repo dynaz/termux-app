@@ -139,6 +139,11 @@
     <string name="terminow_tools_github_checking">กำลังตรวจสอบ…</string>
     <string name="terminow_tools_github_present">ติดตั้งแล้ว</string>
     <string name="terminow_tools_github_removed">ถูกลบนอกแอป</string>
+    <!-- Per-item documentation (ⓘ) -->
+    <string name="terminow_doc_view">ดูเอกสารของ %1$s</string>
+    <string name="terminow_doc_open_in_browser">เปิดในเบราว์เซอร์</string>
+    <string name="terminow_doc_unavailable">โหลดหน้าเอกสารนี้ไม่สำเร็จ ลองเปิดในเบราว์เซอร์ของคุณ</string>
+    <string name="terminow_doc_official">เอกสารอย่างเป็นทางการ</string>
     <string name="terminow_tools_github_install_failed">ติดตั้งล้มเหลว:
 %1$s</string>
     <string name="terminow_tools_progress_queued"> · อีก %1$d รายการในคิว</string>
