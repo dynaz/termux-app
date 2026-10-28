@@ -38,7 +38,7 @@ public final class TerminowToolInstaller {
         CODEX("codex"), GEMINI("gemini"), GROK("grok"), OPENCODE("opencode"), AIDER("aider"),
         /** Hermes Agent by Nous Research, from its official installer; not verified on proot. */
         HERMES("hermes"),
-        /** Google Antigravity CLI (agy), from its official installer; not verified on proot. */
+        /** Google Antigravity CLI (agy), from its official installer; verified working on an Ubuntu proot (ARM64, glibc). */
         ANTIGRAVITY("antigravity"),
         GSTACK("gstack"), GIT("git"), CURL("curl"), TMUX("tmux"),
         /** Fish, the interactive shell with suggestions from its history, from apt. */
@@ -811,7 +811,7 @@ public final class TerminowToolInstaller {
     /** Experimental tools: added with official installers but not yet verified on an Ubuntu proot. */
     public static boolean experimental(@NonNull Tool tool) {
         switch (tool) {
-            case CODEX: case GEMINI: case GROK: case OPENCODE: case AIDER: case HERMES: case ANTIGRAVITY: return true;
+            case CODEX: case GEMINI: case GROK: case OPENCODE: case AIDER: case HERMES: return true;
             default: return false;
         }
     }
