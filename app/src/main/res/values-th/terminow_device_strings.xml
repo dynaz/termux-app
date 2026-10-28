@@ -60,4 +60,14 @@
     <string name="terminow_proxmox_working">กำลังทำงาน…</string>
     <string name="terminow_proxmox_action_ok">งานเสร็จ: %1$s</string>
     <string name="terminow_proxmox_action_failed">การสั่งงานล้มเหลว: %1$s</string>
+    <string name="terminow_docker_add">เพิ่ม SSH host…</string>
+    <string name="terminow_docker_terminal">เทอร์มินัล</string>
+    <string name="terminow_docker_connecting">กำลังเชื่อมต่อและตรวจ Docker…</string>
+    <string name="terminow_docker_no_access">ไม่พบ Docker หรือบัญชีนี้ใช้ไม่ได้ ติดตั้ง Docker และเพิ่มผู้ใช้เข้ากลุ่ม docker บนโฮสต์ (TermiNow ไม่แก้ไขโฮสต์ให้)</string>
+    <string name="terminow_docker_unreachable">เข้าถึงโฮสต์ผ่าน SSH ไม่ได้</string>
+    <string name="terminow_docker_empty">ไม่มีคอนเทนเนอร์</string>
+    <string name="terminow_docker_has_compose">พบโปรเจกต์ Docker Compose บนโฮสต์นี้</string>
+    <string name="terminow_docker_restart">รีสตาร์ต</string>
+    <string name="terminow_docker_stop">หยุด</string>
+    <string name="terminow_docker_logs">บันทึก (logs)</string>
 </resources>

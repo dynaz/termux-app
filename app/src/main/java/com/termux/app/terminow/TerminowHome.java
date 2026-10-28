@@ -2940,6 +2940,16 @@ public class TerminowHome {
                     new TerminowProxmoxUi(mActivity, mStore).openCard();
                     return;
                 }
+                if (t.type == TerminowDeviceProfile.Type.DOCKER) {
+                    // Docker is managed over the host's own SSH connection.
+                    new TerminowDockerUi(mActivity, mStore, this::connect).openCard(() -> {
+                        mHosts = mStore.getHosts();
+                        mGroups = mStore.getGroups();
+                        showHostDialog(null, TerminowRemoteDevices.prefill(t),
+                            saved -> new TerminowDockerUi(mActivity, mStore, this::connect).openView(saved));
+                    });
+                    return;
+                }
                 mHosts = mStore.getHosts();
                 mGroups = mStore.getGroups();
                 showHostDialog(null, TerminowRemoteDevices.prefill(t), null);

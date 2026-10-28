@@ -60,4 +60,14 @@
     <string name="terminow_proxmox_working">Working…</string>
     <string name="terminow_proxmox_action_ok">Task finished: %1$s</string>
     <string name="terminow_proxmox_action_failed">Action failed: %1$s</string>
+    <string name="terminow_docker_add">Add SSH host…</string>
+    <string name="terminow_docker_terminal">Terminal</string>
+    <string name="terminow_docker_connecting">Connecting and checking Docker…</string>
+    <string name="terminow_docker_no_access">Docker not found, or this account can\'t use it. Install Docker and add the user to the docker group on the host (TermiNow does not change the host).</string>
+    <string name="terminow_docker_unreachable">Could not reach the host over SSH.</string>
+    <string name="terminow_docker_empty">No containers.</string>
+    <string name="terminow_docker_has_compose">Docker Compose projects are present on this host.</string>
+    <string name="terminow_docker_restart">Restart</string>
+    <string name="terminow_docker_stop">Stop</string>
+    <string name="terminow_docker_logs">Logs</string>
 </resources>
