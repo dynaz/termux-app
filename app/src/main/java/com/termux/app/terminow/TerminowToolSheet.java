@@ -503,6 +503,8 @@ final class TerminowToolSheet {
         githubRow.setGravity(Gravity.CENTER_VERTICAL);
         View github = button(mActivity.getString(R.string.terminow_tools_from_github), false, true, this::fromGithub);
         githubRow.addView(github, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        // From GitHub import is Premium.
+        githubRow.addView(tierChip(true));
         String githubDoc = docsOf(TerminowToolInstaller.Tool.GITHUB);
         if (!githubDoc.isEmpty())
             githubRow.addView(docButton(mActivity.getString(R.string.terminow_tools_from_github), githubDoc),
@@ -519,6 +521,8 @@ final class TerminowToolSheet {
      * built-in AI being available, so nothing is faked and nothing from the repo is run on its own.
      */
     private void fromGithub() {
+        // From GitHub import is Premium (even if the repo contains Claude-related tools).
+        if (premiumToolLocked(TerminowToolInstaller.Tool.GITHUB)) { promptToolUpgrade(this::fromGithub); return; }
         EditText input = new EditText(mActivity);
         input.setSingleLine(true);
         input.setHint("github.com/owner/repo");
@@ -690,6 +694,8 @@ final class TerminowToolSheet {
 
     /** Install a validated plan through the install manager, polling its real state for the result. */
     private void runPlan(@NonNull Target target, @NonNull TerminowGithubRepo.Repo repo, @NonNull TerminowInstallPlan plan) {
+        // Guard the actual install execution too, so a GitHub import cannot run without Premium.
+        if (premiumToolLocked(TerminowToolInstaller.Tool.GITHUB)) { promptToolUpgrade(() -> runPlan(target, repo, plan)); return; }
         TerminowToolInstaller.Job job = TerminowToolInstaller.installPlan(target.runner, target.key, target.user, plan.toolName, plan.toScript());
         if (job == null) {
             mActivity.showToast(mActivity.getString(R.string.terminow_tools_github_busy), true);
@@ -998,6 +1004,8 @@ final class TerminowToolSheet {
         status.setPadding(0, dp(4), 0, 0);
         texts.addView(status);
         row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        // A Free / crown Premium badge on AI agents (Claude Code is Free; the others are Premium).
+        if (categoryOf(tool) == CAT_AI) row.addView(tierChip(TerminowToolInstaller.requiresPremium(tool)));
         // A documentation (ⓘ) button, separate from the Install/Open action and available to everyone.
         String docUrl = docsOf(tool);
         if (!docUrl.isEmpty())
@@ -1207,7 +1215,19 @@ final class TerminowToolSheet {
         row.addView(action);
     }
 
+    /** Whether a Premium-only tool is locked for this user (not Premium). Claude Code and utilities are free. */
+    private boolean premiumToolLocked(@NonNull TerminowToolInstaller.Tool tool) {
+        return TerminowToolInstaller.requiresPremium(tool) && !TerminowAccountUi.isPremium(new TerminowStore(mActivity));
+    }
+
+    /** Open the Premium upgrade flow for a locked tool; {@code retry} runs if/when Premium is active. */
+    private void promptToolUpgrade(@NonNull Runnable retry) {
+        TerminowPremiumGate.require(mActivity, new TerminowStore(mActivity), TerminowPremiumGate.Feature.AI_AGENTS, 0, retry);
+    }
+
     private void install(@NonNull Target target, @NonNull TerminowToolInstaller.Tool tool) {
+        // Every AI agent except Claude Code needs Premium before any install command runs.
+        if (premiumToolLocked(tool)) { promptToolUpgrade(() -> install(target, tool)); return; }
         TerminowToolInstaller.Job job = TerminowToolInstaller.install(target.runner, target.key, target.user, tool);
         if (job == null) {
             TerminowToolInstaller.Job running = TerminowToolInstaller.runningIn(target.key);
@@ -1219,6 +1239,8 @@ final class TerminowToolSheet {
 
     /** Open a tool: a local one in a new tab, a tool of a host in the tab the host is in. */
     private void openTool(@NonNull Target target, @NonNull TerminowToolInstaller.Tool tool) {
+        // An already-installed Premium agent still needs Premium to launch; Claude Code is free.
+        if (premiumToolLocked(tool)) { promptToolUpgrade(() -> openTool(target, tool)); return; }
         dismiss();
         boolean claude = tool == TerminowToolInstaller.Tool.CLAUDE || tool == TerminowToolInstaller.Tool.GSTACK;
         // A CLI with its own launch command typed at the prompt (Antigravity's agy); null just opens a shell.
@@ -1367,6 +1389,21 @@ final class TerminowToolSheet {
     @NonNull
     private static String docsOf(@NonNull TerminowToolInstaller.Tool tool) {
         return tool.documentationUrl;
+    }
+
+    /** A "Free" or crown "Premium" badge. "Free" means TermiNow access, not any external subscription. */
+    @NonNull
+    private View tierChip(boolean premium) {
+        String label = mActivity.getString(premium ? R.string.terminow_distro_badge_premium : R.string.terminow_distro_badge_free);
+        TextView chip = text(premium ? "👑 " + label : label, 11, premium ? R.color.terminow_panel_accent : R.color.terminow_text_secondary);
+        chip.setTypeface(Typeface.DEFAULT_BOLD);
+        chip.setPadding(dp(10), dp(4), dp(10), dp(4));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(dp(12));
+        bg.setColor(color(R.color.terminow_field));
+        chip.setBackground(bg);
+        chip.setContentDescription(label);
+        return chip;
     }
 
     /**

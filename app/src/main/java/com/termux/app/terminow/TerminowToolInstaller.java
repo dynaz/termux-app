@@ -69,6 +69,29 @@ public final class TerminowToolInstaller {
         }
     }
 
+    /**
+     * Whether a tool needs Premium to install, update or launch, keyed on its stable id. Claude Code is
+     * free; every other AI agent (Cursor, Codex, Gemini, Grok, OpenCode, Aider, Hermes, Antigravity) and
+     * the From GitHub import are Premium. Plain developer and terminal utilities (git, curl, tmux, fish)
+     * and Claude Code's own plugins/gstack are unchanged (free). "Free" here means TermiNow access only,
+     * not any Claude account subscription, API usage or third-party service.
+     */
+    public static boolean requiresPremium(@NonNull Tool tool) {
+        if (tool == Tool.CLAUDE) return false;
+        if (tool == Tool.GITHUB) return true;
+        return isAiAgent(tool);
+    }
+
+    /** The standalone AI coding agents other than Claude Code. */
+    private static boolean isAiAgent(@NonNull Tool tool) {
+        switch (tool) {
+            case CURSOR: case CODEX: case GEMINI: case GROK: case OPENCODE: case AIDER: case HERMES: case ANTIGRAVITY:
+                return true;
+            default:
+                return false;
+        }
+    }
+
     /** The stages of an install, in their order. */
     public enum Stage { CHECKING, DEPENDENCIES, INSTALLING, VERIFYING }
 

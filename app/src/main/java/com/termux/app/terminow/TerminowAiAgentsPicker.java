@@ -93,28 +93,31 @@ final class TerminowAiAgentsPicker {
             if (isRemembered)
                 subtitle = (subtitle.isEmpty() ? "" : subtitle + "  ·  ") + mActivity.getString(R.string.terminow_ai_agents_remembered);
             final Tool picked = tool;
-            agentRow(content, iconOf(tool), mLauncher.aiLabel(tool), subtitle, () -> onPick(picked));
+            agentRow(content, iconOf(tool), mLauncher.aiLabel(tool), subtitle,
+                TerminowToolInstaller.requiresPremium(tool), () -> onPick(picked));
         }
     }
 
     private void onPick(@NonNull Tool tool) {
-        // Premium is re-checked here, so a remembered shortcut can never launch for a free user.
+        if (tool == Tool.CLAUDE) {
+            // Claude Code is free; no Premium gate, so a free user can launch it here.
+            mStore.setRememberedAiAgent(mEnv.key, tool.id);
+            TerminowLauncher.ClaudeState state = mLauncher.claudeOf(mEnv);
+            List<Conversation> options = TerminowAiAgentsModel.conversations(tool,
+                state != null && state.supportsContinue, state != null && state.supportsResume);
+            if (options.size() <= 1) {
+                dismiss();
+                mLauncher.launchClaudeConversation(mEnv, Conversation.NEW);
+            } else {
+                showClaudeConversations(options);
+            }
+            return;
+        }
+        // Every other AI agent needs Premium, re-checked here so a remembered shortcut cannot bypass it.
         TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.AI_AGENTS, 1, () -> {
             mStore.setRememberedAiAgent(mEnv.key, tool.id);
-            if (tool == Tool.CLAUDE) {
-                TerminowLauncher.ClaudeState state = mLauncher.claudeOf(mEnv);
-                List<Conversation> options = TerminowAiAgentsModel.conversations(tool,
-                    state != null && state.supportsContinue, state != null && state.supportsResume);
-                if (options.size() <= 1) {
-                    dismiss();
-                    mLauncher.launchClaudeConversation(mEnv, Conversation.NEW);
-                } else {
-                    showClaudeConversations(options);
-                }
-            } else {
-                dismiss();
-                mLauncher.launchAiInNewTab(mEnv, tool, new String[0]);
-            }
+            dismiss();
+            mLauncher.launchAiInNewTab(mEnv, tool, new String[0]);
         });
     }
 
@@ -131,7 +134,7 @@ final class TerminowAiAgentsPicker {
                 default: label = R.string.terminow_launcher_claude_new; break;
             }
             final Conversation chosen = c;
-            agentRow(content, R.drawable.ic_terminow_tool_claude, mActivity.getString(label), "", () -> {
+            agentRow(content, R.drawable.ic_terminow_tool_claude, mActivity.getString(label), "", null, () -> {
                 dismiss();
                 mLauncher.launchClaudeConversation(mEnv, chosen);
             });
@@ -265,7 +268,7 @@ final class TerminowAiAgentsPicker {
     }
 
     private void agentRow(@NonNull LinearLayout content, int iconRes, @NonNull String name,
-                          @NonNull String subtitle, @NonNull Runnable action) {
+                          @NonNull String subtitle, @Nullable Boolean premium, @NonNull Runnable action) {
         LinearLayout row = new LinearLayout(mActivity);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
@@ -300,11 +303,25 @@ final class TerminowAiAgentsPicker {
             texts.addView(sub);
         }
         row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        // A Free (Claude Code) or crown Premium (every other agent) badge, when this is a tiered row.
+        if (premium != null) {
+            String tier = mActivity.getString(premium ? R.string.terminow_distro_badge_premium : R.string.terminow_distro_badge_free);
+            TextView badge = new TextView(mActivity);
+            badge.setText(premium ? "👑 " + tier : tier);
+            badge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+            badge.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            badge.setTextColor(color(premium ? R.color.terminow_panel_accent : R.color.terminow_text_secondary));
+            badge.setPadding(dp(10), dp(4), dp(10), dp(4));
+            badge.setContentDescription(tier);
+            row.addView(badge);
+        }
+
         content.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
     }
 
     private void primaryRow(@NonNull LinearLayout content, int iconRes, @NonNull String name, @NonNull Runnable action) {
-        agentRow(content, iconRes, name, "", action);
+        agentRow(content, iconRes, name, "", null, action);
     }
 
     private int color(int res) {
