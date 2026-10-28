@@ -682,38 +682,92 @@ public class TerminowHome {
         return "desktop";
     }
 
-    /** Larger screens show the sidebar by default; compact phones hide it (hamburger/drawer). */
-    private boolean sidebarDefaultVisible(@NonNull String cls) {
-        return !cls.equals("compact");
+    // The sidebar has three states on wide screens: EXPANDED (icons + labels), COMPACT (icons only)
+    // and HIDDEN (gone, content full width). Phones default to HIDDEN and toggle HIDDEN<->EXPANDED;
+    // tablet/desktop cycle EXPANDED->COMPACT->HIDDEN. The chosen state is remembered per width class so a
+    // config change (fold/rotate/split screen) re-applies it without re-opening the sidebar on its own.
+    static final String SB_EXPANDED = "expanded", SB_COMPACT = "compact", SB_HIDDEN = "hidden";
+
+    private boolean isPhoneWidth(@NonNull String cls) {
+        return cls.equals("compact") || cls.equals("large");
     }
 
-    private int sidebarWidthDp(@NonNull String cls) {
+    @NonNull
+    private String sidebarDefaultState(@NonNull String cls) {
+        if (isPhoneWidth(cls)) return SB_HIDDEN;      // phones: hidden by default, opened on demand
+        if (cls.equals("tablet")) return SB_COMPACT;  // medium: compact icon rail by default
+        return SB_EXPANDED;                           // desktop: expanded by default
+    }
+
+    @NonNull
+    private String sidebarState() {
+        String cls = sidebarClass();
+        String s = mSidebarPrefs.getString("state_" + cls, sidebarDefaultState(cls));
+        return SB_EXPANDED.equals(s) || SB_COMPACT.equals(s) || SB_HIDDEN.equals(s) ? s : sidebarDefaultState(cls);
+    }
+
+    /** The expanded (icons + labels) rail width for a width class. */
+    private int sidebarExpandedWidthDp(@NonNull String cls) {
         return cls.equals("desktop") ? 112 : (cls.equals("tablet") ? 96 : 84);
     }
 
     private boolean sidebarVisible() {
-        String cls = sidebarClass();
-        return mSidebarPrefs.getBoolean("visible_" + cls, sidebarDefaultVisible(cls));
+        return !sidebarState().equals(SB_HIDDEN);
     }
 
     /** Apply the remembered (or default) sidebar state for the current width class. No page rebuild. */
     public void applySidebar() {
         if (mRailScroll == null) return;
         String cls = sidebarClass();
-        boolean visible = sidebarVisible();
-        ViewGroup.LayoutParams lp = mRailScroll.getLayoutParams();
-        lp.width = Math.round(sidebarWidthDp(cls) * mActivity.getResources().getDisplayMetrics().density);
-        mRailScroll.setLayoutParams(lp);
-        mRailScroll.setVisibility(visible ? View.VISIBLE : View.GONE);
+        String state = sidebarState();
+        float density = mActivity.getResources().getDisplayMetrics().density;
+        if (SB_HIDDEN.equals(state)) {
+            mRailScroll.setVisibility(View.GONE);
+        } else {
+            boolean compact = SB_COMPACT.equals(state);
+            ViewGroup.LayoutParams lp = mRailScroll.getLayoutParams();
+            lp.width = Math.round((compact ? 56 : sidebarExpandedWidthDp(cls)) * density);
+            mRailScroll.setLayoutParams(lp);
+            mRailScroll.setVisibility(View.VISIBLE);
+            setRailLabelsVisible(!compact);
+        }
+        boolean visible = !SB_HIDDEN.equals(state);
         mSidebarToggle.setImageResource(visible ? R.drawable.ic_terminow_panel_left_close : R.drawable.ic_terminow_panel_left_open);
         mSidebarToggle.setContentDescription(mActivity.getString(visible ? R.string.terminow_sidebar_hide : R.string.terminow_sidebar_show));
     }
 
-    /** Toggle the sidebar — same behaviour as the Hosts search-bar button; also usable from other pages. */
+    /** Show or hide the rail item labels, so COMPACT is an icon-only rail without touching the layout. */
+    private void setRailLabelsVisible(boolean visible) {
+        if (!(mRailScroll instanceof ViewGroup) || ((ViewGroup) mRailScroll).getChildCount() == 0) return;
+        View first = ((ViewGroup) mRailScroll).getChildAt(0);
+        if (!(first instanceof ViewGroup)) return;
+        ViewGroup items = (ViewGroup) first;
+        for (int i = 0; i < items.getChildCount(); i++) {
+            View item = items.getChildAt(i);
+            if (!(item instanceof ViewGroup)) continue;
+            ViewGroup group = (ViewGroup) item;
+            for (int j = 0; j < group.getChildCount(); j++) {
+                View child = group.getChildAt(j);
+                if (child instanceof TextView) child.setVisibility(visible ? View.VISIBLE : View.GONE);
+            }
+        }
+    }
+
+    /** Cycle the sidebar: phones toggle hidden/expanded; tablet and desktop cycle expanded, compact, hidden. */
     public void toggleSidebar() {
         String cls = sidebarClass();
-        boolean next = !sidebarVisible();
-        mSidebarPrefs.edit().putBoolean("visible_" + cls, next).apply();
+        String cur = sidebarState();
+        String next;
+        if (isPhoneWidth(cls)) {
+            next = SB_HIDDEN.equals(cur) ? SB_EXPANDED : SB_HIDDEN;
+        } else if (SB_EXPANDED.equals(cur)) {
+            next = SB_COMPACT;
+        } else if (SB_COMPACT.equals(cur)) {
+            next = SB_HIDDEN;
+        } else {
+            next = SB_EXPANDED;
+        }
+        mSidebarPrefs.edit().putString("state_" + cls, next).apply();
         applySidebar();
     }
 
