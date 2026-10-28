@@ -95,7 +95,7 @@
     <string name="terminow_keys_add_group">Add group</string>
     <string name="terminow_keys_edit_group">Edit group</string>
     <string name="terminow_keys_move">Move</string>
-    <string name="terminow_keys_group_help">One key a line, up to %1$d. Special keys: ESC TAB S-TAB HOME END PGUP PGDN INS DEL BKSP UP DOWN LEFT RIGHT ENTER SPACE F1–F12, CTRL and ALT. ^C is Ctrl+C. Several on a line are sent one after the other: "^B %" is the tmux prefix and %.</string>
+    <string name="terminow_keys_group_help">One key a line, up to %1$d. Special keys: ESC TAB S-TAB HOME END PGUP PGDN INS DEL BKSP UP DOWN LEFT RIGHT ENTER SPACE F1–F12, CTRL and ALT. ^C is Ctrl+C. Several on a line are sent one after the other: "^B %%" is the tmux prefix and %%.</string>
     <string name="terminow_keys_bad_key">Not a key: %1$s</string>
     <string name="terminow_keys_group_size">Between 1 and %1$d keys</string>
     <string name="terminow_keys_no_session">No running terminal to send to</string>
