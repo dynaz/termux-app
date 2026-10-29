@@ -132,6 +132,79 @@ function add_column_if_missing(\PDO $db, string $table, string $column, string $
     }
 }
 
+/**
+ * Idempotent, data-preserving migration of the connection/state tables from the GitHub-only shape
+ * (PRIMARY KEY (uid)) to multi-provider (PRIMARY KEY (uid, provider), + expires_at on conn, + provider
+ * on state). Pure: takes a PDO so it can run against production (via terminow_db) or a staging MySQL.
+ * MySQL/MariaDB only (uses information_schema + ALTER … DROP PRIMARY KEY). Returns a result array; on a
+ * real run it makes a full backup copy table first and aborts WITHOUT any change if a guard fails.
+ */
+function migrate_multiprovider(\PDO $db, bool $dryRun = false): array
+{
+    $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+    $dbn = $db->query('SELECT DATABASE()')->fetchColumn();
+    $colExists = function (string $t, string $c) use ($db, $dbn): bool {
+        $s = $db->prepare('SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? AND COLUMN_NAME=?');
+        $s->execute([$dbn, $t, $c]);
+        return (int)$s->fetchColumn() > 0;
+    };
+    $pkCols = function (string $t) use ($db, $dbn): array {
+        $s = $db->prepare("SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE
+            WHERE TABLE_SCHEMA=? AND TABLE_NAME=? AND CONSTRAINT_NAME='PRIMARY' ORDER BY ORDINAL_POSITION");
+        $s->execute([$dbn, $t]);
+        return array_map('strval', $s->fetchAll(\PDO::FETCH_COLUMN));
+    };
+
+    $pk = $pkCols('mod_terminow_devops_conn');
+    $r = [
+        'pk' => $pk,
+        'needExpires'   => !$colExists('mod_terminow_devops_conn', 'expires_at'),
+        'needStateProv' => !$colExists('mod_terminow_devops_state', 'provider'),
+        'needPk'        => ($pk === ['uid']),
+        'bad'  => (int)$db->query("SELECT COUNT(*) FROM mod_terminow_devops_conn WHERE provider IS NULL OR provider=''")->fetchColumn(),
+        'dups' => (int)$db->query("SELECT COUNT(*) FROM (SELECT uid,provider,COUNT(*) c FROM mod_terminow_devops_conn GROUP BY uid,provider HAVING c>1) x")->fetchColumn(),
+        'applied' => false, 'backup' => null, 'rollback' => null, 'ok' => false, 'message' => '',
+    ];
+
+    if (!$r['needExpires'] && !$r['needStateProv'] && !$r['needPk']) {
+        $r['ok'] = ($pk === ['uid', 'provider']);
+        $r['message'] = $r['ok'] ? 'already migrated' : ('unexpected PK (' . implode(',', $pk) . '); left unchanged');
+        return $r;
+    }
+    if ($dryRun) {
+        $r['ok'] = ($r['bad'] === 0 && $r['dups'] === 0);
+        $r['message'] = $r['ok'] ? 'guards pass; a real run would be safe' : 'guards FAIL; a real run would abort';
+        return $r;
+    }
+    if ($r['needPk'] && $r['bad'] > 0) { $r['message'] = "abort: {$r['bad']} rows with NULL/empty provider"; return $r; }
+    if ($r['needPk'] && $r['dups'] > 0) { $r['message'] = "abort: {$r['dups']} duplicate (uid,provider) groups"; return $r; }
+
+    // Backup copy (rollback point): full structure + data, nothing destructive. The short random
+    // suffix keeps the name unique even if the migration is applied twice within the same second.
+    $bak = 'mod_terminow_devops_conn_bak_' . date('Ymd_His') . '_' . bin2hex(random_bytes(2));
+    $db->exec("CREATE TABLE `$bak` LIKE mod_terminow_devops_conn");
+    $db->exec("INSERT INTO `$bak` SELECT * FROM mod_terminow_devops_conn");
+    $live = (int)$db->query('SELECT COUNT(*) FROM mod_terminow_devops_conn')->fetchColumn();
+    $copied = (int)$db->query("SELECT COUNT(*) FROM `$bak`")->fetchColumn();
+    $r['backup'] = $bak;
+    if ($copied !== $live) { $r['message'] = 'abort: backup row count mismatch'; return $r; }
+
+    if ($r['needExpires'])   $db->exec("ALTER TABLE mod_terminow_devops_conn ADD COLUMN expires_at INT NOT NULL DEFAULT 0");
+    if ($r['needStateProv']) $db->exec("ALTER TABLE mod_terminow_devops_state ADD COLUMN provider VARCHAR(16) NOT NULL DEFAULT 'github'");
+    if ($r['needPk'])        $db->exec("ALTER TABLE mod_terminow_devops_conn DROP PRIMARY KEY, ADD PRIMARY KEY (uid, provider)");
+
+    $pk2 = $pkCols('mod_terminow_devops_conn');
+    $r['applied'] = true;
+    $r['ok'] = ($pk2 === ['uid', 'provider'])
+        && $colExists('mod_terminow_devops_conn', 'expires_at')
+        && $colExists('mod_terminow_devops_state', 'provider')
+        && ((int)$db->query('SELECT COUNT(*) FROM mod_terminow_devops_conn')->fetchColumn() === $live);
+    $r['pk'] = $pk2;
+    $r['rollback'] = "DROP TABLE mod_terminow_devops_conn; RENAME TABLE `$bak` TO mod_terminow_devops_conn;";
+    $r['message'] = $r['ok'] ? 'migration ok' : 'migration incomplete';
+    return $r;
+}
+
 // ---- Token encryption (server-side, key outside the DB) -----------------------------------------
 
 function encrypt(string $plaintext, string $key): string
