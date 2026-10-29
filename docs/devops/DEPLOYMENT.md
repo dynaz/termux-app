@@ -48,3 +48,40 @@ new files only — it does **not** modify or overwrite `premium.php`, `lib.php`,
 ## Steps that touch the existing backend
 - **None.** New files + two new tables only. The GitHub OAuth App, the `devops_config.php` secret and
   the callback route are all new and isolated.
+
+## Provider rollout (GitLab/Bitbucket) — reviewable manifest
+
+Verified before requesting approval (2026-10-29): production is **MySQL 8.0.46-era semantics**
+(server reports 8.4.8; the migration DDL is identical across 8.0/8.4). Live conn table: PK `(uid)`,
+1 github row, no NULL/empty provider, no duplicate `(uid,provider)`, no foreign keys.
+
+### Action 1 — Deploy backend code (blocked tag: `Production Deploy`)
+- **Files replaced/added** (code only, no secrets):
+  - `terminow/devops_lib.php` (update; provider-aware, GitHub path unchanged)
+  - `terminow/devops_providers.php` (new; GitLab/Bitbucket adapters)
+- **Backup:** `devops_lib.php.bak-<ts>` made by `deploy_devops_backend.sh` before replacing.
+- **Rollback:** `cp devops_lib.php.bak-<ts> devops_lib.php` and delete `devops_providers.php`.
+- **Verify:** php-lint both, unauthenticated POST returns 401 (auth gate only), GitHub status/repos still work.
+
+### Action 2 — Load GitLab/Bitbucket credentials (blocked tag: `Remote Shell Writes`)
+- **File written:** `terminow/devops_config.providers.php` on the server (chmod 600, owner accmovecom),
+  **separate** from `devops_config.php` (GitHub secret untouched).
+- **Input:** client id (visible) + secret (hidden prompt, never in chat). New secret only.
+- **Rollback:** delete `devops_config.providers.php` → provider reverts to "Coming soon".
+
+### Action 3 — DB migration (blocked tag: `Production Deploy` / DB write)
+- **Target tables:** `mod_terminow_devops_conn` (PK → `(uid,provider)`, + `expires_at`),
+  `mod_terminow_devops_state` (+ `provider`).
+- **Logic:** `TermiNow\DevOps\migrate_multiprovider()` — guarded, idempotent, aborts on NULL/empty
+  provider or duplicate `(uid,provider)` with no change.
+- **Backup:** full copy table `mod_terminow_devops_conn_bak_<ts>_<rand>` (rows + encrypted tokens).
+- **Rollback:** `DROP TABLE mod_terminow_devops_conn; RENAME TABLE <bak> TO mod_terminow_devops_conn;`
+  (printed by the script; data preserved).
+- **Tested:** `whmcs/tests/test_devops_migration.php` on real MariaDB 10.11 AND real MySQL 8.0.46 —
+  dry-run, apply, idempotent re-run, guard-abort, data+token preservation, rollback: ALL PASS.
+
+### Order & authorization
+Each action is approved through Claude Code's normal per-action permission prompt (no broad allow
+rule, no bypass). Order: Action 1 → verify GitHub intact → Action 2 (GitLab) → live GitLab connect →
+then repeat Action 2 (Bitbucket) → live Bitbucket. The migration (Action 3) must run before the first
+non-GitHub connection. Premium-only and Deploy/Rollback stay off throughout.
