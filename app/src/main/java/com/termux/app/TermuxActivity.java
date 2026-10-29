@@ -367,6 +367,24 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     }
 
     @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        // The GitHub OAuth success page can deep-link back here (terminow://devops/connected). The activity
+        // is singleTask, so this reuses the existing instance - no new Activity, no new terminal session.
+        // It only re-opens DevOps, which re-queries the backend. No token/code is carried in the link.
+        if (isDevOpsDeepLink(intent) && mTerminowHome != null)
+            mTerminowHome.openDevOpsDeepLink();
+    }
+
+    /** Whether an intent is the DevOps OAuth-return deep link (terminow://devops/...). */
+    private static boolean isDevOpsDeepLink(Intent intent) {
+        if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction())) return false;
+        android.net.Uri data = intent.getData();
+        return data != null && "terminow".equals(data.getScheme()) && "devops".equals(data.getHost());
+    }
+
+    @Override
     protected void onStop() {
         super.onStop();
 
@@ -463,6 +481,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                         else if (!mTerminowHome.restoreWorkspace())
                             mTerminowHome.show();
                         mTerminowHome.startWorkspace();
+                        if (isDevOpsDeepLink(intent)) mTerminowHome.openDevOpsDeepLink();
                     } catch (WindowManager.BadTokenException e) {
                         // Activity finished - ignore.
                     }
@@ -474,6 +493,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         } else {
             // The tabs run already, like after the activity was recreated: they are saved as they change
             mTerminowHome.startWorkspace();
+            if (isDevOpsDeepLink(intent)) mTerminowHome.openDevOpsDeepLink();
             // If termux was started from launcher "New session" shortcut and activity is recreated,
             // then the original intent will be re-delivered, resulting in a new session being re-added
             // each time.

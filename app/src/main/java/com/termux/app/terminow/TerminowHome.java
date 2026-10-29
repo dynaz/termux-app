@@ -1169,8 +1169,18 @@ public class TerminowHome {
             @Override public void openUpgrade() {
                 TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.DEVOPS, 0, TerminowHome.this::openDevOps);
             }
+            @Override public void onConnectLaunched() { mPendingDevOpsRefresh = true; }
         };
         new TerminowDevOpsUi(mActivity, mStore, new TerminowDevOps(tokens), host).open();
+    }
+
+    /** Set while a GitHub connect is in the browser, so returning to the app re-opens DevOps and re-queries. */
+    private boolean mPendingDevOpsRefresh;
+
+    /** Opened from the devops callback deep link (terminow://devops/connected): re-check the backend status. */
+    public void openDevOpsDeepLink() {
+        mPendingDevOpsRefresh = false;
+        showDevOps();
     }
 
     /**
@@ -2977,6 +2987,12 @@ public class TerminowHome {
 
     /** The activity was resumed, for example after a screen of Android settings. */
     public void onResume() {
+        // Returning from the GitHub authorize browser: re-open DevOps and re-query the backend status,
+        // so a completed connection is reflected instead of a stale "Connect GitHub".
+        if (mPendingDevOpsRefresh) {
+            mPendingDevOpsRefresh = false;
+            mHandler.post(this::showDevOps);
+        }
         mExplorer.onResume();
         mVaultsUi.onResume();
         // A purchase whose check failed, or a renewal or expiry that the server found, is picked up

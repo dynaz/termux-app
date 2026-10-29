@@ -48,6 +48,8 @@ public final class TerminowDevOpsUi {
         void openHost(@NonNull TerminowStore.Host host);
         /** Open the Premium upgrade flow (used when the backend reports the entitlement lapsed). */
         void openUpgrade();
+        /** Connect was just launched into the browser: refresh the DevOps status when the app returns. */
+        void onConnectLaunched();
     }
 
     private final TermuxActivity mActivity;
@@ -68,11 +70,34 @@ public final class TerminowDevOpsUi {
         if (!TerminowAccountUi.isPremium(mStore)) { mHost.openUpgrade(); return; }
         Sheet sheet = new Sheet(mActivity.getString(R.string.terminow_devops_title));
         sheet.subtitle(mActivity.getString(R.string.terminow_devops_subtitle));
-        ProgressBar spinner = new ProgressBar(mActivity);
-        sheet.content.addView(spinner);
         sheet.show();
-        // Load connection status off the main thread.
-        run(() -> mDevOps.status(), sheet, status -> renderHome(sheet, status));
+        loadHome(sheet);
+    }
+
+    /** Always re-query the connection from the backend with the current Firebase token (no cached state). */
+    private void loadHome(@NonNull Sheet sheet) {
+        sheet.content.removeAllViews();
+        sheet.content.addView(new ProgressBar(mActivity));
+        new Thread(() -> {
+            try {
+                TerminowDevOps.Status st = mDevOps.status();
+                mHandler.post(() -> renderHome(sheet, st));
+            } catch (TerminowDevOps.DevOpsException e) {
+                mHandler.post(() -> {
+                    if (e.isPremiumRequired()) { sheet.dialog.dismiss(); mHost.openUpgrade(); }
+                    else renderError(sheet, devOpsMessage(e));
+                });
+            } catch (Exception e) {
+                mHandler.post(() -> renderError(sheet, mActivity.getString(R.string.terminow_devops_error)));
+            }
+        }, "devops-status").start();
+    }
+
+    /** A real error state with a Retry that re-queries — never a silent stale "disconnected". */
+    private void renderError(@NonNull Sheet sheet, @NonNull String message) {
+        sheet.content.removeAllViews();
+        sheet.note(message);
+        sheet.action(mActivity.getString(R.string.terminow_install_retry), true, () -> loadHome(sheet));
     }
 
     private void renderHome(@NonNull Sheet sheet, @NonNull TerminowDevOps.Status status) {
@@ -80,7 +105,14 @@ public final class TerminowDevOpsUi {
         if (!status.connected) {
             sheet.section(R.string.terminow_devops_providers);
             sheet.action(mActivity.getString(R.string.terminow_devops_connect, "GitHub"), true, () ->
-                run(mDevOps::connectUrl, sheet, url -> { openUrl(url); mActivity.showToast(mActivity.getString(R.string.terminow_devops_connect_opened), false); }));
+                run(mDevOps::connectUrl, sheet, url -> {
+                    // Mark pending so the app re-checks on return, and dismiss this (now stale) sheet so the
+                    // next open re-queries the backend instead of showing a cached "disconnected" state.
+                    mHost.onConnectLaunched();
+                    sheet.dialog.dismiss();
+                    openUrl(url);
+                    mActivity.showToast(mActivity.getString(R.string.terminow_devops_connect_opened), false);
+                }));
             sheet.note(mActivity.getString(R.string.terminow_devops_connect_note));
             sheet.action("GitLab — " + mActivity.getString(R.string.terminow_devops_coming_soon), false, null);
             sheet.action("Bitbucket — " + mActivity.getString(R.string.terminow_devops_coming_soon), false, null);

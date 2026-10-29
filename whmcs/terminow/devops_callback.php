@@ -26,8 +26,15 @@ try {
     };
     \TermiNow\DevOps\handle_callback($db, $_GET, $premiumByEmail, time());
     header('Content-Type: text/html; charset=utf-8');
-    echo '<!doctype html><meta charset="utf-8"><title>TermiNow DevOps</title>'
-       . '<p>GitHub is connected. You can return to the TermiNow app.</p>';
+    // "Open TermiNow" uses a deep link that carries NO token/code/secret; the app re-checks the
+    // connection with the backend when it opens. A manual fallback is given if the link is blocked.
+    echo '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+       . '<title>TermiNow DevOps</title></head><body style="font-family:system-ui,sans-serif;max-width:28rem;margin:3rem auto;padding:0 1.25rem;text-align:center">'
+       . '<h2>GitHub connected</h2>'
+       . '<p>Your GitHub account is now connected to TermiNow DevOps.</p>'
+       . '<p><a href="terminow://devops/connected" style="display:inline-block;background:#21C17A;color:#fff;text-decoration:none;padding:.75rem 1.5rem;border-radius:.5rem;font-weight:600">Open TermiNow</a></p>'
+       . '<p style="color:#666;font-size:.9rem">If the app does not open automatically, switch back to TermiNow and open DevOps again.</p>'
+       . '</body></html>';
 } catch (\TermiNow\DevOps\Failure $e) {
     // A simple, safe error page — no code/state/token echoed.
     http_response_code($e->status);
