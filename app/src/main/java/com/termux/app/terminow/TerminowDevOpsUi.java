@@ -141,7 +141,19 @@ public final class TerminowDevOpsUi {
         boolean anyConnected = false;
         for (TerminowDevOps.Provider p : providers) {
             String name = providerName(p.id);
-            if (p.connected) {
+            if (p.connected && !p.valid) {
+                // Token expired/revoked: offer Reconnect (saved projects/host mappings are kept). The
+                // final boolean-copies are for the lambdas.
+                anyConnected = true;
+                final String pidX = p.id;
+                TextView expired = sheet.text(mActivity.getString(R.string.terminow_devops_connection_expired, name), 14, R.color.terminow_mcp_warn);
+                expired.setTypeface(Typeface.DEFAULT_BOLD);
+                sheet.content.addView(expired);
+                sheet.action(mActivity.getString(R.string.terminow_devops_reconnect, name), true,
+                    () -> connectProvider(sheet, pidX, name));
+                sheet.action(mActivity.getString(R.string.terminow_devops_disconnect_provider, name), false,
+                    () -> confirmDisconnect(sheet, pidX, name));
+            } else if (p.connected) {
                 anyConnected = true;
                 TextView connected = sheet.text(mActivity.getString(R.string.terminow_devops_connected_as,
                     p.login.isEmpty() ? name : "@" + p.login) + " · " + name, 14, R.color.terminow_quick_ready);

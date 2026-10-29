@@ -52,6 +52,7 @@ public final class TerminowDevOps {
         public String id = "";            // "github" | "gitlab" | "bitbucket"
         public boolean configured;        // the backend has this provider's OAuth app configured
         public boolean connected;
+        public boolean valid = true;      // false when the stored token has expired/been revoked (needs reconnect)
         public String login = "";
     }
 
@@ -101,6 +102,7 @@ public final class TerminowDevOps {
                 pr.id = id;
                 pr.configured = p.optBoolean("configured");
                 pr.connected = p.optBoolean("connected");
+                pr.valid = p.optBoolean("valid", true);   // older backend without this field → treat as valid
                 pr.login = p.optString("login");
                 s.providers.add(pr);
             }

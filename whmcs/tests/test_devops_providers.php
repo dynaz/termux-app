@@ -224,6 +224,19 @@ throws(fn() => handle_callback($db, ['code' => 'THECODE', 'state' => $glState], 
 handle($db, ['sub' => 'uid3', 'email' => 'u3@e.com'], json_encode(['action' => 'disconnect', 'provider' => 'gitlab']), fn() => false, 1000);
 check(load_connection($db, 'uid3', 'gitlab') === null, 'disconnect removes only that provider connection');
 
+// Expired/revoked token: status must report valid=false when the provider /user returns 401.
+save_connection($db, 'uidExp', 'e@e.com', ['access_token' => 'DEAD', 'expires_in' => 7200], $key, 1000, 'gitlab', 'oldlogin');
+$ROUTES = ['/user' => fn() => ['status' => 401, 'body' => '{}']];
+$se = handle($db, ['sub' => 'uidExp', 'email' => 'e@e.com'], json_encode(['action' => 'status', 'provider' => 'gitlab']), $premium, 2000);
+check($se['providers']['gitlab']['connected'] === true, 'expired: still shows connected');
+check($se['providers']['gitlab']['valid'] === false, 'expired: valid=false on 401 (reconnect state)');
+
+// A healthy token (/user 200) reports valid=true and refreshes the displayed login.
+$ROUTES = ['/user' => fn() => json_ok(['username' => 'freshname'])];
+$sv = handle($db, ['sub' => 'uidExp', 'email' => 'e@e.com'], json_encode(['action' => 'status', 'provider' => 'gitlab']), $premium, 2000);
+check($sv['providers']['gitlab']['valid'] === true, 'healthy: valid=true on 200');
+check($sv['providers']['gitlab']['login'] === 'freshname', 'healthy: login refreshed from /user');
+
 set_http_transport(null);
 set_config_override(null);
 

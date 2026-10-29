@@ -493,15 +493,35 @@ function handle(\PDO $db, array $claims, string $request, callable $isPremiumNow
         return ['authorizeUrl' => $url];
     }
     if ($action === 'status') {
-        // Per-provider status for the home screen: configured (Connect vs "Coming soon") and connected.
+        // Per-provider status for the home screen: configured (Connect vs "Coming soon"), connected, and
+        // whether the stored token is still valid. `valid` is false only on a definitive 401 (or an
+        // expiring token with no usable refresh) so a transient network error never shows a false
+        // "expired". A lapsed token surfaces as "Connection expired — reconnect" in the app; the saved
+        // projects/host mappings are kept (they live on the device), and reconnect never touches the
+        // client secret or the token encryption key.
         $conns = list_connections($db, $uid);
         $configured = configured_providers($config);
         $providers = [];
-        foreach (PROVIDERS as $p) $providers[$p] = [
-            'configured' => (bool)$configured[$p],
-            'connected'  => isset($conns[$p]),
-            'login'      => isset($conns[$p]) ? (string)$conns[$p]['login'] : '',
-        ];
+        foreach (PROVIDERS as $p) {
+            $connected = isset($conns[$p]);
+            $login = $connected ? (string)$conns[$p]['login'] : '';
+            $valid = $connected;
+            if ($connected) {
+                try {
+                    $tok = active_token($db, $uid, $p, $config, $now);   // refreshes gitlab/bitbucket if needed
+                    [$st2, $me] = api_get($p, $tok, '/user');
+                    if ($st2 === 401) $valid = false;
+                    elseif ($st2 === 200 && is_array($me)) {
+                        $live = $p === 'github' ? (string)($me['login'] ?? '') : (string)($me['username'] ?? ($me['nickname'] ?? ''));
+                        if ($live !== '') $login = $live;
+                    }
+                    // Any other status (403/5xx) or a network error leaves $valid as-is (no false expiry).
+                } catch (\Throwable $e) {
+                    if ($e instanceof Failure && ($e->status === 401 || $e->status === 409)) $valid = false;
+                }
+            }
+            $providers[$p] = ['configured' => (bool)$configured[$p], 'connected' => $connected, 'login' => $login, 'valid' => $valid];
+        }
         $cur = $conns[$provider] ?? null;
         return [
             'connected' => (bool)$cur,
