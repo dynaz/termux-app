@@ -82,7 +82,7 @@ public final class TerminowDevOpsUi {
         sheet.content.addView(new ProgressBar(mActivity));
         new Thread(() -> {
             try {
-                TerminowDevOps.Status st = mDevOps.status();
+                TerminowDevOps.Status st = mDevOps.status("github");
                 mHandler.post(() -> renderHome(sheet, st));
             } catch (TerminowDevOps.DevOpsException e) {
                 mHandler.post(() -> {
@@ -102,42 +102,80 @@ public final class TerminowDevOpsUi {
         sheet.action(mActivity.getString(R.string.terminow_install_retry), true, () -> loadHome(sheet));
     }
 
+    /** Display name for a provider id. */
+    @NonNull
+    private String providerName(@NonNull String id) {
+        switch (id) {
+            case "github":    return "GitHub";
+            case "gitlab":    return "GitLab";
+            case "bitbucket": return "Bitbucket";
+            default:          return id;
+        }
+    }
+
     private void renderHome(@NonNull Sheet sheet, @NonNull TerminowDevOps.Status status) {
         sheet.content.removeAllViews();
-        if (!status.connected) {
-            sheet.section(R.string.terminow_devops_providers);
-            sheet.action(mActivity.getString(R.string.terminow_devops_connect, "GitHub"), true, () ->
-                run(mDevOps::connectUrl, sheet, url -> {
-                    // Mark pending so the app re-checks on return, and dismiss this (now stale) sheet so the
-                    // next open re-queries the backend instead of showing a cached "disconnected" state.
-                    mHost.onConnectLaunched();
-                    sheet.dialog.dismiss();
-                    openUrl(url);
-                    mActivity.showToast(mActivity.getString(R.string.terminow_devops_connect_opened), false);
-                }));
+
+        // One row per provider: Connected (+ Disconnect), Connect, or — for a provider the backend has no
+        // OAuth app configured for — "Coming soon". This is backend-driven: GitLab/Bitbucket show Connect
+        // only once their config is on the server AND a live connection works.
+        List<TerminowDevOps.Provider> providers = status.providers;
+        if (providers.isEmpty()) {
+            // Backend older than multi-provider status: show GitHub from the flat fields and the other
+            // two as "Coming soon", so the home looks the same before the provider-aware backend ships.
+            providers = new ArrayList<>();
+            TerminowDevOps.Provider g = new TerminowDevOps.Provider();
+            g.id = "github"; g.configured = true; g.connected = status.connected; g.login = status.login;
+            providers.add(g);
+            for (String id : new String[]{"gitlab", "bitbucket"}) {
+                TerminowDevOps.Provider p = new TerminowDevOps.Provider();
+                p.id = id; p.configured = false; p.connected = false;
+                providers.add(p);
+            }
+        }
+        sheet.section(R.string.terminow_devops_providers);
+        boolean anyConnected = false;
+        for (TerminowDevOps.Provider p : providers) {
+            String name = providerName(p.id);
+            if (p.connected) {
+                anyConnected = true;
+                TextView connected = sheet.text(mActivity.getString(R.string.terminow_devops_connected_as,
+                    p.login.isEmpty() ? name : "@" + p.login) + " · " + name, 14, R.color.terminow_quick_ready);
+                connected.setTypeface(Typeface.DEFAULT_BOLD);
+                sheet.content.addView(connected);
+                sheet.action(mActivity.getString(R.string.terminow_devops_disconnect_provider, name), false,
+                    () -> confirmDisconnect(sheet, p.id, name));
+            } else if (p.configured) {
+                sheet.action(mActivity.getString(R.string.terminow_devops_connect, name), true,
+                    () -> run(() -> mDevOps.connectUrl(p.id), sheet, url -> {
+                        // Mark pending so the app re-checks on return; dismiss this (now stale) sheet.
+                        mHost.onConnectLaunched();
+                        sheet.dialog.dismiss();
+                        openUrl(url);
+                        mActivity.showToast(mActivity.getString(R.string.terminow_devops_connect_opened), false);
+                    }));
+            } else {
+                sheet.action(name + " — " + mActivity.getString(R.string.terminow_devops_coming_soon), false, null);
+            }
+        }
+
+        if (!anyConnected) {
             sheet.note(mActivity.getString(R.string.terminow_devops_connect_note));
-            sheet.action("GitLab — " + mActivity.getString(R.string.terminow_devops_coming_soon), false, null);
-            sheet.action("Bitbucket — " + mActivity.getString(R.string.terminow_devops_coming_soon), false, null);
             return;
         }
 
-        TextView connected = sheet.text(mActivity.getString(R.string.terminow_devops_connected_as, status.login.isEmpty() ? "GitHub" : "@" + status.login), 14, R.color.terminow_quick_ready);
-        connected.setTypeface(Typeface.DEFAULT_BOLD);
-        sheet.content.addView(connected);
-
+        final TerminowDevOps.Status fStatus = status;
         sheet.section(R.string.terminow_devops_projects_title);
         List<TerminowStore.DevOpsProject> projects = mStore.getDevOpsProjects();
         if (projects.isEmpty()) sheet.note(mActivity.getString(R.string.terminow_devops_no_projects));
         for (TerminowStore.DevOpsProject p : projects) sheet.content.addView(projectRow(sheet, p));
-
-        sheet.action(mActivity.getString(R.string.terminow_devops_new_project), true, () -> newProject(sheet));
-        sheet.action(mActivity.getString(R.string.terminow_devops_disconnect), false, () -> confirmDisconnect(sheet));
+        sheet.action(mActivity.getString(R.string.terminow_devops_new_project), true, () -> newProject(sheet, fStatus));
     }
 
     @NonNull
     private View projectRow(@NonNull Sheet sheet, @NonNull TerminowStore.DevOpsProject project) {
         LinearLayout card = sheet.card();
-        TextView name = sheet.text(project.repo, 15, R.color.terminow_text);
+        TextView name = sheet.text(providerName(project.provider) + " · " + project.repo, 15, R.color.terminow_text);
         name.setTypeface(Typeface.DEFAULT_BOLD);
         card.addView(name);
         TerminowStore.Host linked = hostFor(project.hostKey);
@@ -148,7 +186,8 @@ public final class TerminowDevOpsUi {
         actions.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout.LayoutParams ap = sheet.wrap();
         ap.topMargin = sheet.dp(10);
-        actions.addView(sheet.smallButton(mActivity.getString(R.string.terminow_devops_pipeline), () -> showRuns(sheet, project.repo)));
+        String repoRef = project.repoId.isEmpty() ? project.repo : project.repoId;
+        actions.addView(sheet.smallButton(mActivity.getString(R.string.terminow_devops_pipeline), () -> showRuns(sheet, project.provider, repoRef)));
         if (linked != null) actions.addView(sheet.smallButton(mActivity.getString(R.string.terminow_install_open),
             () -> { sheet.dialog.dismiss(); mHost.openHost(linked); }));
         else actions.addView(sheet.smallButton(mActivity.getString(R.string.terminow_devops_link_host), () -> linkHost(sheet, project)));
@@ -160,11 +199,30 @@ public final class TerminowDevOpsUi {
         return card;
     }
 
+    /** Choose a provider (when more than one is connected), then select a repository. */
+    private void newProject(@NonNull Sheet parent, @NonNull TerminowDevOps.Status status) {
+        List<String> connected = new java.util.ArrayList<>();
+        for (TerminowDevOps.Provider p : status.providers) if (p.connected) connected.add(p.id);
+        if (connected.isEmpty() && status.connected) connected.add("github");
+        if (connected.size() <= 1) { selectRepo(parent, connected.isEmpty() ? "github" : connected.get(0)); return; }
+        Sheet sheet = new Sheet(mActivity.getString(R.string.terminow_devops_select_provider));
+        for (String id : connected) {
+            LinearLayout card = sheet.card();
+            card.setClickable(true);
+            TextView n = sheet.text(providerName(id), 15, R.color.terminow_text);
+            n.setTypeface(Typeface.DEFAULT_BOLD);
+            card.addView(n);
+            card.setOnClickListener(v -> { sheet.dialog.dismiss(); selectRepo(parent, id); });
+            sheet.content.addView(card);
+        }
+        sheet.show();
+    }
+
     /** Select Repo (searchable) → Create Project. The backend returns every page the connection can
      *  read, so filtering here covers the whole list — not just the first page. Filtering is in-memory,
      *  so there is no per-keystroke backend call to debounce or race. */
-    private void newProject(@NonNull Sheet parent) {
-        run(mDevOps::repos, parent, repos -> {
+    private void selectRepo(@NonNull Sheet parent, @NonNull String provider) {
+        run(() -> mDevOps.repos(provider), parent, repos -> {
             Sheet sheet = new Sheet(mActivity.getString(R.string.terminow_devops_select_repo));
             // true once a repo is tapped, so a second tap during Create Project can't double-select.
             final boolean[] selecting = {false};
@@ -210,8 +268,9 @@ public final class TerminowDevOpsUi {
                 if (selecting[0]) return;   // guard against a double tap during Create Project
                 selecting[0] = true;
                 TerminowStore.DevOpsProject p = new TerminowStore.DevOpsProject();
-                p.provider = "github";
+                p.provider = r.provider;
                 p.repo = r.fullName;
+                p.repoId = r.id;
                 mStore.addDevOpsProject(p);
                 sheet.dialog.dismiss();
                 linkHost(parent, p);   // Create Project → Link Host
@@ -243,9 +302,9 @@ public final class TerminowDevOpsUi {
         sheet.show();
     }
 
-    /** View pipeline (Actions runs) for a repo; tap a run to see its jobs/steps. */
-    private void showRuns(@NonNull Sheet parent, @NonNull String repo) {
-        run(() -> mDevOps.runs(repo), parent, runs -> {
+    /** View pipeline runs for a repo; tap a run to see its jobs/steps. */
+    private void showRuns(@NonNull Sheet parent, @NonNull String provider, @NonNull String repoId) {
+        run(() -> mDevOps.runs(provider, repoId), parent, runs -> {
             Sheet sheet = new Sheet(mActivity.getString(R.string.terminow_devops_pipeline));
             if (runs.isEmpty()) sheet.note(mActivity.getString(R.string.terminow_devops_no_runs));
             for (TerminowDevOps.Run r : runs) {
@@ -256,15 +315,15 @@ public final class TerminowDevOpsUi {
                 card.addView(n);
                 String state = (r.conclusion.isEmpty() ? r.status : r.conclusion) + (r.branch.isEmpty() ? "" : " · " + r.branch);
                 card.addView(sheet.text(state, 12, R.color.terminow_text_secondary));
-                card.setOnClickListener(v -> showLogs(sheet, repo, r.id));
+                card.setOnClickListener(v -> showLogs(sheet, provider, repoId, r.id));
                 sheet.content.addView(card);
             }
             sheet.show();
         });
     }
 
-    private void showLogs(@NonNull Sheet parent, @NonNull String repo, long run) {
-        run(() -> mDevOps.logs(repo, run), parent, jobs -> {
+    private void showLogs(@NonNull Sheet parent, @NonNull String provider, @NonNull String repoId, @NonNull String run) {
+        run(() -> mDevOps.logs(provider, repoId, run), parent, jobs -> {
             Sheet sheet = new Sheet(mActivity.getString(R.string.terminow_devops_logs));
             if (jobs.isEmpty()) sheet.note(mActivity.getString(R.string.terminow_devops_no_runs));
             for (TerminowDevOps.Job j : jobs) {
@@ -276,12 +335,12 @@ public final class TerminowDevOpsUi {
         });
     }
 
-    private void confirmDisconnect(@NonNull Sheet parent) {
+    private void confirmDisconnect(@NonNull Sheet parent, @NonNull String provider, @NonNull String name) {
         new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
-            .setTitle(R.string.terminow_devops_disconnect)
+            .setTitle(mActivity.getString(R.string.terminow_devops_disconnect_provider, name))
             .setMessage(R.string.terminow_devops_disconnect_confirm)
-            .setPositiveButton(R.string.terminow_devops_disconnect, (d, w) ->
-                run(() -> { mDevOps.disconnect(); return Boolean.TRUE; }, parent, ok -> reopen()))
+            .setPositiveButton(mActivity.getString(R.string.terminow_devops_disconnect_provider, name), (d, w) ->
+                run(() -> { mDevOps.disconnect(provider); return Boolean.TRUE; }, parent, ok -> reopen()))
             .setNegativeButton(android.R.string.cancel, null)
             .show();
     }

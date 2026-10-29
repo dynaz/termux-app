@@ -20,6 +20,8 @@
     <string name="terminow_devops_no_projects">ยังไม่มีโปรเจกต์ สร้างจาก repository ได้</string>
     <string name="terminow_devops_new_project">+ โปรเจกต์ใหม่</string>
     <string name="terminow_devops_disconnect">ยกเลิกการเชื่อมต่อ GitHub</string>
+    <string name="terminow_devops_disconnect_provider">ยกเลิกการเชื่อมต่อ %1$s</string>
+    <string name="terminow_devops_select_provider">เลือกผู้ให้บริการ</string>
     <string name="terminow_devops_disconnect_confirm">นำการเชื่อมต่อ GitHub ออกหรือไม่ โปรเจกต์ของคุณยังอยู่และเชื่อมต่อใหม่ได้ภายหลัง</string>
     <string name="terminow_devops_linked_host">เทอร์มินัล: %1$s</string>
     <string name="terminow_devops_not_linked">ยังไม่ได้ผูกโฮสต์</string>

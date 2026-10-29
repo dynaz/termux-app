@@ -47,18 +47,29 @@ public final class TerminowDevOps {
         public boolean isNotConnected() { return "not_connected".equals(code); }
     }
 
-    public static final class Status {
+    /** One provider's state on the home screen. */
+    public static final class Provider {
+        public String id = "";            // "github" | "gitlab" | "bitbucket"
+        public boolean configured;        // the backend has this provider's OAuth app configured
         public boolean connected;
         public String login = "";
     }
 
+    public static final class Status {
+        public boolean connected;         // for the queried provider (back-compat)
+        public String login = "";
+        public final List<Provider> providers = new ArrayList<>();
+    }
+
     public static final class Repo {
+        public String provider = "github";
+        public String id = "";            // the provider repo reference for API calls (owner/name or a numeric id)
         public String fullName = "", defaultBranch = "", pushedAt = "", htmlUrl = "";
         public boolean isPrivate;
     }
 
     public static final class Run {
-        public long id;
+        public String id = "";            // numeric (GitHub/GitLab) or a Bitbucket uuid
         public String name = "", status = "", conclusion = "", branch = "", createdAt = "", htmlUrl = "";
     }
 
@@ -74,51 +85,69 @@ public final class TerminowDevOps {
     // ---- Actions (call off the main thread) -----------------------------------------------------
 
     @NonNull
-    public Status status() throws IOException {
-        JSONObject o = post(req("status"));
+    public Status status(@NonNull String provider) throws IOException {
+        JSONObject o = post(req("status", provider));
         Status s = new Status();
         s.connected = o.optBoolean("connected");
         s.login = o.optString("login");
+        JSONObject provs = o.optJSONObject("providers");
+        if (provs != null) {
+            java.util.Iterator<String> it = provs.keys();
+            while (it.hasNext()) {
+                String id = it.next();
+                JSONObject p = provs.optJSONObject(id);
+                if (p == null) continue;
+                Provider pr = new Provider();
+                pr.id = id;
+                pr.configured = p.optBoolean("configured");
+                pr.connected = p.optBoolean("connected");
+                pr.login = p.optString("login");
+                s.providers.add(pr);
+            }
+        }
         return s;
     }
 
-    /** The GitHub authorize URL to open in a browser; the server created a single-use state. */
+    /** The provider authorize URL to open in a browser; the server created a single-use state. */
     @NonNull
-    public String connectUrl() throws IOException {
-        String url = post(req("connect")).optString("authorizeUrl");
+    public String connectUrl(@NonNull String provider) throws IOException {
+        String url = post(req("connect", provider)).optString("authorizeUrl");
         if (url.isEmpty()) throw new DevOpsException(502, "provider_error", "No authorize URL");
         return url;
     }
 
     @NonNull
-    public List<Repo> repos() throws IOException {
-        JSONArray array = post(req("repos")).optJSONArray("repos");
+    public List<Repo> repos(@NonNull String provider) throws IOException {
+        JSONArray array = post(req("repos", provider)).optJSONArray("repos");
         List<Repo> list = new ArrayList<>();
         if (array != null) for (int i = 0; i < array.length(); i++) {
             JSONObject r = array.optJSONObject(i);
             if (r == null) continue;
             Repo repo = new Repo();
+            repo.provider = r.optString("provider", provider);
+            repo.id = r.optString("id");
             repo.fullName = r.optString("fullName");
             repo.isPrivate = r.optBoolean("private");
             repo.defaultBranch = r.optString("defaultBranch");
             repo.pushedAt = r.optString("pushedAt");
             repo.htmlUrl = r.optString("htmlUrl");
+            if (repo.id.isEmpty()) repo.id = repo.fullName;   // GitHub/Bitbucket use owner/name as the ref
             if (!repo.fullName.isEmpty()) list.add(repo);
         }
         return list;
     }
 
     @NonNull
-    public List<Run> runs(@NonNull String repo) throws IOException {
-        JSONObject body = req("runs");
-        putOpt(body, "repo", repo);
+    public List<Run> runs(@NonNull String provider, @NonNull String repoId) throws IOException {
+        JSONObject body = req("runs", provider);
+        putOpt(body, "repo", repoId);
         JSONArray array = post(body).optJSONArray("runs");
         List<Run> list = new ArrayList<>();
         if (array != null) for (int i = 0; i < array.length(); i++) {
             JSONObject r = array.optJSONObject(i);
             if (r == null) continue;
             Run run = new Run();
-            run.id = r.optLong("id");
+            run.id = r.optString("id");
             run.name = r.optString("name");
             run.status = r.optString("status");
             run.conclusion = r.optString("conclusion");
@@ -131,9 +160,9 @@ public final class TerminowDevOps {
     }
 
     @NonNull
-    public List<Job> logs(@NonNull String repo, long run) throws IOException {
-        JSONObject body = req("logs");
-        putOpt(body, "repo", repo);
+    public List<Job> logs(@NonNull String provider, @NonNull String repoId, @NonNull String run) throws IOException {
+        JSONObject body = req("logs", provider);
+        putOpt(body, "repo", repoId);
         putOpt(body, "run", run);
         JSONArray array = post(body).optJSONArray("jobs");
         List<Job> list = new ArrayList<>();
@@ -160,16 +189,16 @@ public final class TerminowDevOps {
         return list;
     }
 
-    public void disconnect() throws IOException { post(req("disconnect")); }
+    public void disconnect(@NonNull String provider) throws IOException { post(req("disconnect", provider)); }
 
-    public void revoke() throws IOException { post(req("revoke")); }
+    public void revoke(@NonNull String provider) throws IOException { post(req("revoke", provider)); }
 
     // ---- HTTP -----------------------------------------------------------------------------------
 
     @NonNull
-    private static JSONObject req(@NonNull String action) {
+    private static JSONObject req(@NonNull String action, @NonNull String provider) {
         JSONObject o = new JSONObject();
-        try { o.put("action", action); } catch (JSONException ignored) {}
+        try { o.put("action", action); o.put("provider", provider); } catch (JSONException ignored) {}
         return o;
     }
 

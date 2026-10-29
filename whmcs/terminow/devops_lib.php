@@ -28,6 +28,10 @@ const GITHUB_SCOPES    = 'read:user';
 const STATE_TTL        = 600;   // 10 minutes
 const CONFIG_FILE      = __DIR__ . '/devops_config.php';
 
+// Provider adapters (GitHub / GitLab / Bitbucket). GitHub keeps the original code paths below; the
+// other providers go through the registry in this file.
+require_once __DIR__ . '/devops_providers.php';
+
 class Failure extends \Exception
 {
     public int $status;
@@ -46,8 +50,19 @@ class Failure extends \Exception
  * Expected shape: ['github_client_id'=>..., 'github_client_secret'=>..., 'token_key'=>32 raw bytes
  * (or base64 in token_key_b64), 'redirect_uri'=>...].
  */
+/** Tests inject a config here so handle()/handle_callback can run without the real devops_config.php. */
+function set_config_override(?array $config): void
+{
+    $GLOBALS['__terminow_devops_config'] = $config;
+}
+
 function config(): array
 {
+    if (isset($GLOBALS['__terminow_devops_config']) && is_array($GLOBALS['__terminow_devops_config'])) {
+        $c = $GLOBALS['__terminow_devops_config'];
+        if (!empty($c['token_key_b64']) && empty($c['token_key'])) $c['token_key'] = base64_decode((string)$c['token_key_b64'], true);
+        return $c;
+    }
     if (!is_file(CONFIG_FILE)) throw new Failure(503, 'DevOps not configured');
     $config = require CONFIG_FILE;
     if (!is_array($config)) throw new Failure(503, 'DevOps not configured');
@@ -55,30 +70,66 @@ function config(): array
         if (empty($config[$key]) || !is_string($config[$key])) throw new Failure(503, 'DevOps not configured');
     if (!empty($config['token_key_b64'])) $config['token_key'] = base64_decode((string)$config['token_key_b64'], true);
     if (empty($config['token_key']) || strlen((string)$config['token_key']) !== 32) throw new Failure(503, 'DevOps not configured');
+    // Optional, separate file for the extra providers' OAuth apps (GitLab/Bitbucket), so adding them
+    // never touches the working GitHub secret file. Its keys (gitlab_client_id, …) merge in if present.
+    $extra = __DIR__ . '/devops_config.providers.php';
+    if (is_file($extra)) {
+        $more = require $extra;
+        if (is_array($more)) foreach ($more as $k => $v) $config[$k] = $v;
+    }
     return $config;
 }
 
-/** Create the tables if they do not exist. Works with MySQL and SQLite, like vault_lib::migrate(). */
+/**
+ * Create the tables if they do not exist, and add the multi-provider columns on an older table.
+ * Works with MySQL and SQLite. A fresh connection table is keyed by (uid, provider) so one user can
+ * connect several providers. On an existing GitHub-only table (keyed by uid) the CREATE is a no-op and
+ * the key is migrated separately when the extra providers go live (see docs/devops/DEPLOYMENT.md);
+ * the queries here work on both shapes because they always filter by uid AND provider.
+ */
 function migrate(\PDO $db): void
 {
     $db->exec('CREATE TABLE IF NOT EXISTS mod_terminow_devops_conn (
-        uid VARCHAR(128) NOT NULL PRIMARY KEY,
-        email VARCHAR(191) NOT NULL,
+        uid VARCHAR(128) NOT NULL,
         provider VARCHAR(16) NOT NULL,
+        email VARCHAR(191) NOT NULL,
         enc_token TEXT NOT NULL,
         enc_refresh TEXT NULL,
         scopes VARCHAR(255) NOT NULL,
         login VARCHAR(100) NOT NULL,
         status VARCHAR(16) NOT NULL,
+        expires_at INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL)');
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (uid, provider))');
     $db->exec('CREATE TABLE IF NOT EXISTS mod_terminow_devops_state (
         state VARCHAR(64) NOT NULL PRIMARY KEY,
         uid VARCHAR(128) NOT NULL,
         email VARCHAR(191) NOT NULL,
+        provider VARCHAR(16) NOT NULL DEFAULT \'github\',
         created_at INTEGER NOT NULL,
         expires_at INTEGER NOT NULL,
         used INTEGER NOT NULL DEFAULT 0)');
+    // Idempotent column adds for a table created by an earlier version (ignored if already present).
+    add_column_if_missing($db, 'mod_terminow_devops_conn', 'expires_at', "INTEGER NOT NULL DEFAULT 0");
+    add_column_if_missing($db, 'mod_terminow_devops_state', 'provider', "VARCHAR(16) NOT NULL DEFAULT 'github'");
+}
+
+/** Add a column if the table does not already have it (MySQL + SQLite); never throws on "exists". */
+function add_column_if_missing(\PDO $db, string $table, string $column, string $decl): void
+{
+    try {
+        $has = false;
+        foreach ($db->query("PRAGMA table_info($table)") ?: [] as $col)
+            if (($col['name'] ?? '') === $column) { $has = true; break; }
+        // PRAGMA returns nothing on MySQL; fall back to information_schema there.
+        if (!$has) {
+            try { $db->exec("ALTER TABLE $table ADD COLUMN $column $decl"); }
+            catch (\Throwable $e) { /* already exists or unsupported — safe to ignore */ }
+        }
+    } catch (\Throwable $e) {
+        try { $db->exec("ALTER TABLE $table ADD COLUMN $column $decl"); } catch (\Throwable $e2) {}
+    }
 }
 
 // ---- Token encryption (server-side, key outside the DB) -----------------------------------------
@@ -106,23 +157,23 @@ function decrypt(string $stored, string $key): string
 
 // ---- OAuth state (single-use, short-lived, uid-bound) -------------------------------------------
 
-function state_create(\PDO $db, string $uid, string $email, int $now): string
+function state_create(\PDO $db, string $uid, string $email, int $now, string $provider = 'github'): string
 {
     $state = bin2hex(random_bytes(32));
-    $stmt = $db->prepare('INSERT INTO mod_terminow_devops_state (state, uid, email, created_at, expires_at, used)
-        VALUES (?, ?, ?, ?, ?, 0)');
-    $stmt->execute([$state, $uid, $email, $now, $now + STATE_TTL]);
+    $stmt = $db->prepare('INSERT INTO mod_terminow_devops_state (state, uid, email, provider, created_at, expires_at, used)
+        VALUES (?, ?, ?, ?, ?, ?, 0)');
+    $stmt->execute([$state, $uid, $email, $provider, $now, $now + STATE_TTL]);
     return $state;
 }
 
-/** Consume a state exactly once; returns [uid, email] or throws. Also sweeps expired rows. */
+/** Consume a state exactly once; returns [uid, email, provider] or throws. Also sweeps expired rows. */
 function state_consume(\PDO $db, string $state, int $now): array
 {
     if (!preg_match('/^[0-9a-f]{64}$/', $state)) throw new Failure(400, 'bad_state');
     $db->prepare('DELETE FROM mod_terminow_devops_state WHERE expires_at < ?')->execute([$now]);
     $db->beginTransaction();
     try {
-        $stmt = $db->prepare('SELECT uid, email, expires_at FROM mod_terminow_devops_state WHERE state = ?');
+        $stmt = $db->prepare('SELECT uid, email, provider, expires_at FROM mod_terminow_devops_state WHERE state = ?');
         $stmt->execute([$state]);
         $row = $stmt->fetch(\PDO::FETCH_ASSOC);
         if (!$row || (int)$row['expires_at'] < $now) throw new Failure(400, 'bad_state');
@@ -132,7 +183,7 @@ function state_consume(\PDO $db, string $state, int $now): array
         $del->execute([$state]);
         if ($del->rowCount() !== 1) throw new Failure(400, 'bad_state');
         $db->commit();
-        return [(string)$row['uid'], (string)$row['email']];
+        return [(string)$row['uid'], (string)$row['email'], (string)($row['provider'] ?? 'github')];
     } catch (\Throwable $e) {
         $db->rollBack();
         if ($e instanceof Failure) throw $e;
@@ -247,30 +298,69 @@ function revoke_token(array $config, string $token): void
 
 // ---- Storage -----------------------------------------------------------------------------------
 
-function load_connection(\PDO $db, string $uid): ?array
+function load_connection(\PDO $db, string $uid, string $provider = 'github'): ?array
 {
-    $stmt = $db->prepare('SELECT * FROM mod_terminow_devops_conn WHERE uid = ?');
-    $stmt->execute([$uid]);
+    $stmt = $db->prepare('SELECT * FROM mod_terminow_devops_conn WHERE uid = ? AND provider = ?');
+    $stmt->execute([$uid, $provider]);
     $row = $stmt->fetch(\PDO::FETCH_ASSOC);
     return $row ?: null;
 }
 
-function save_connection(\PDO $db, string $uid, string $email, array $token, string $key, int $now): void
+/** Every provider connection for a user, as provider => row (for the home screen's status). */
+function list_connections(\PDO $db, string $uid): array
 {
-    $enc = encrypt((string)$token['access_token'], $key);
-    $encRefresh = empty($token['refresh_token']) ? null : encrypt((string)$token['refresh_token'], $key);
-    $login = '';
-    [$st, $me] = github_get((string)$token['access_token'], '/user');
-    if ($st === 200 && is_array($me)) $login = (string)($me['login'] ?? '');
-    $db->prepare('REPLACE INTO mod_terminow_devops_conn
-        (uid, email, provider, enc_token, enc_refresh, scopes, login, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        ->execute([$uid, $email, 'github', $enc, $encRefresh, (string)($token['scope'] ?? GITHUB_SCOPES), $login, 'connected', $now, $now]);
+    $stmt = $db->prepare('SELECT * FROM mod_terminow_devops_conn WHERE uid = ?');
+    $stmt->execute([$uid]);
+    $out = [];
+    foreach ($stmt->fetchAll(\PDO::FETCH_ASSOC) as $row) $out[(string)$row['provider']] = $row;
+    return $out;
 }
 
-function delete_connection(\PDO $db, string $uid): void
+/**
+ * Save (or replace) a provider connection, computing the token expiry and resolving the account login.
+ * The login is fetched from the provider when not supplied (on refresh we keep the known one).
+ */
+function save_connection(\PDO $db, string $uid, string $email, array $token, string $key, int $now,
+                         string $provider = 'github', ?string $login = null): void
 {
-    $db->prepare('DELETE FROM mod_terminow_devops_conn WHERE uid = ?')->execute([$uid]);
+    $access = (string)$token['access_token'];
+    $enc = encrypt($access, $key);
+    $encRefresh = empty($token['refresh_token']) ? null : encrypt((string)$token['refresh_token'], $key);
+    $expiresAt = !empty($token['expires_in']) ? $now + (int)$token['expires_in'] : 0;
+    if ($login === null) $login = provider_login($provider, $access);
+    $db->prepare('REPLACE INTO mod_terminow_devops_conn
+        (uid, provider, email, enc_token, enc_refresh, scopes, login, status, expires_at, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        ->execute([$uid, $provider, $email, $enc, $encRefresh,
+            (string)($token['scope'] ?? provider_def($provider)['scopes']), (string)$login, 'connected', $expiresAt, $now, $now]);
+}
+
+function delete_connection(\PDO $db, string $uid, string $provider = 'github'): void
+{
+    $db->prepare('DELETE FROM mod_terminow_devops_conn WHERE uid = ? AND provider = ?')->execute([$uid, $provider]);
+}
+
+/**
+ * The access token to use now for (uid, provider): decrypts the stored token and, for a provider whose
+ * tokens expire (GitLab/Bitbucket), refreshes it with the stored refresh token when it is within a
+ * minute of expiry, persisting the new token. Throws not_connected when there is no usable token.
+ */
+function active_token(\PDO $db, string $uid, string $provider, array $config, int $now): string
+{
+    $conn = load_connection($db, $uid, $provider);
+    if (!$conn) throw new Failure(409, 'not_connected');
+    $access = decrypt((string)$conn['enc_token'], $config['token_key']);
+    $expiresAt = (int)($conn['expires_at'] ?? 0);
+    if (provider_def($provider)['token_expires'] && $expiresAt > 0 && $expiresAt <= $now + 60) {
+        if (empty($conn['enc_refresh'])) throw new Failure(409, 'not_connected');
+        $pc = provider_config($config, $provider);
+        if (!$pc) throw new Failure(503, 'provider_not_configured');
+        $new = oauth_refresh($pc, decrypt((string)$conn['enc_refresh'], $config['token_key']));
+        // Keep the known login; a refresh response does not carry it.
+        save_connection($db, $uid, (string)$conn['email'], $new, $config['token_key'], $now, $provider, (string)$conn['login']);
+        return (string)$new['access_token'];
+    }
+    return $access;
 }
 
 /** A repo reference `owner/name`, validated so it cannot be an injection into the API path. */
@@ -296,101 +386,72 @@ function handle(\PDO $db, array $claims, string $request, callable $isPremiumNow
     $uid = (string)($claims['sub'] ?? '');
     $email = (string)($claims['email'] ?? '');
     $action = (string)($req['action'] ?? '');
+    $provider = (string)($req['provider'] ?? 'github');
+    if (!is_provider($provider)) throw new Failure(400, 'bad_provider');
 
-    // Actions allowed regardless of entitlement, so an expired user can still remove the connection.
+    // Actions allowed regardless of entitlement, so an expired user can still remove a connection.
     if ($action === 'disconnect') {
-        delete_connection($db, $uid);
+        delete_connection($db, $uid, $provider);
         return ['status' => 'disconnected'];
     }
     if ($action === 'revoke') {
-        $conn = load_connection($db, $uid);
+        $conn = load_connection($db, $uid, $provider);
         if ($conn) {
-            try { revoke_token(config(), decrypt((string)$conn['enc_token'], config()['token_key'])); }
-            catch (\Throwable $e) { /* best effort; still delete locally */ }
+            try {
+                $pc = provider_config(config(), $provider);
+                if ($pc) oauth_revoke($pc, decrypt((string)$conn['enc_token'], config()['token_key']));
+            } catch (\Throwable $e) { /* best effort; still delete locally */ }
         }
-        delete_connection($db, $uid);
+        delete_connection($db, $uid, $provider);
         return ['status' => 'revoked'];
     }
 
     // Everything else needs Premium now (sync is disabled when it has lapsed).
     if (!$isPremiumNow()) throw new Failure(403, 'premium_required');
 
+    $config = config();
+
     if ($action === 'connect') {
-        return ['authorizeUrl' => authorize_url(config(), state_create($db, $uid, $email, $now))];
+        $pc = provider_config($config, $provider);
+        if (!$pc) throw new Failure(503, 'provider_not_configured');
+        $state = state_create($db, $uid, $email, $now, $provider);
+        // GitHub keeps its original URL builder (unchanged behavior); others use the provider registry.
+        $url = $provider === 'github' ? authorize_url($config, $state) : oauth_authorize_url($pc, $state);
+        return ['authorizeUrl' => $url];
     }
     if ($action === 'status') {
-        $conn = load_connection($db, $uid);
-        return ['connected' => (bool)$conn, 'provider' => 'github', 'login' => $conn['login'] ?? ''];
+        // Per-provider status for the home screen: configured (Connect vs "Coming soon") and connected.
+        $conns = list_connections($db, $uid);
+        $configured = configured_providers($config);
+        $providers = [];
+        foreach (PROVIDERS as $p) $providers[$p] = [
+            'configured' => (bool)$configured[$p],
+            'connected'  => isset($conns[$p]),
+            'login'      => isset($conns[$p]) ? (string)$conns[$p]['login'] : '',
+        ];
+        $cur = $conns[$provider] ?? null;
+        return [
+            'connected' => (bool)$cur,
+            'provider'  => $provider,
+            'login'     => $cur ? (string)$cur['login'] : '',
+            'providers' => $providers,
+        ];
     }
 
-    // Data actions need a stored connection.
-    $conn = load_connection($db, $uid);
-    if (!$conn) throw new Failure(409, 'not_connected');
-    $token = decrypt((string)$conn['enc_token'], config()['token_key']);
+    // Data actions need a stored connection; active_token refreshes an expiring GitLab/Bitbucket token.
+    $token = active_token($db, $uid, $provider, $config, $now);
 
     if ($action === 'repos') {
-        // Every page the connection can read (owner, collaborator and org member), so client-side
-        // search covers the whole list — not just the first page.
-        [$st, $json] = github_get_all($token, '/user/repos?sort=pushed&affiliation=owner,collaborator,organization_member');
-        if ($st !== 200 || !is_array($json)) throw new Failure(502, 'provider_error');
-        $repos = [];
-        $seen = [];
-        foreach ($json as $r) {
-            $full = (string)($r['full_name'] ?? '');
-            if ($full === '' || isset($seen[$full])) continue; // de-dupe across pages
-            $seen[$full] = true;
-            $repos[] = [
-                'fullName'      => $full,
-                'private'       => (bool)($r['private'] ?? false),
-                'defaultBranch' => (string)($r['default_branch'] ?? ''),
-                'pushedAt'      => (string)($r['pushed_at'] ?? ''),
-                'htmlUrl'       => (string)($r['html_url'] ?? ''),
-            ];
-        }
-        return ['repos' => $repos];
+        return ['repos' => list_repos($provider, $token)];
     }
     if ($action === 'runs') {
-        $repo = repo_param($req);
-        [$st, $json] = github_get($token, "/repos/$repo/actions/runs?per_page=30");
-        if ($st === 404 || $st === 403) throw new Failure(403, 'no_access');
-        if ($st !== 200 || !is_array($json)) throw new Failure(502, 'provider_error');
-        $runs = [];
-        foreach (($json['workflow_runs'] ?? []) as $r) $runs[] = [
-            'id'         => (int)($r['id'] ?? 0),
-            'name'       => (string)($r['name'] ?? ($r['display_title'] ?? '')),
-            'status'     => (string)($r['status'] ?? ''),
-            'conclusion' => (string)($r['conclusion'] ?? ''),
-            'branch'     => (string)($r['head_branch'] ?? ''),
-            'createdAt'  => (string)($r['created_at'] ?? ''),
-            'htmlUrl'    => (string)($r['html_url'] ?? ''),
-        ];
-        return ['runs' => $runs];
+        return ['runs' => list_runs($provider, $token, provider_repo_ref($provider, $req))];
     }
     if ($action === 'logs') {
-        // MVP: the jobs of a run with their steps/conclusions (JSON). Full raw log archive is a follow-up.
-        $repo = repo_param($req);
-        $run = (int)($req['run'] ?? 0);
-        if ($run <= 0) throw new Failure(400, 'bad_request');
-        [$st, $json] = github_get($token, "/repos/$repo/actions/runs/$run/jobs");
-        if ($st === 404 || $st === 403) throw new Failure(403, 'no_access');
-        if ($st !== 200 || !is_array($json)) throw new Failure(502, 'provider_error');
-        $jobs = [];
-        foreach (($json['jobs'] ?? []) as $j) {
-            $steps = [];
-            foreach (($j['steps'] ?? []) as $s) $steps[] = [
-                'name'       => (string)($s['name'] ?? ''),
-                'status'     => (string)($s['status'] ?? ''),
-                'conclusion' => (string)($s['conclusion'] ?? ''),
-            ];
-            $jobs[] = [
-                'name'       => (string)($j['name'] ?? ''),
-                'status'     => (string)($j['status'] ?? ''),
-                'conclusion' => (string)($j['conclusion'] ?? ''),
-                'htmlUrl'    => (string)($j['html_url'] ?? ''),
-                'steps'      => $steps,
-            ];
-        }
-        return ['jobs' => $jobs];
+        $run = (string)($req['run'] ?? '');
+        // Numeric run id (GitHub/GitLab) or a Bitbucket pipeline uuid like {….}.
+        if ($run === '' || !preg_match('/^[A-Za-z0-9_.{}-]+$/', $run)) throw new Failure(400, 'bad_request');
+        return ['jobs' => list_logs($provider, $token, provider_repo_ref($provider, $req), $run)];
     }
 
     throw new Failure(400, 'bad_request');
@@ -406,11 +467,20 @@ function handle_callback(\PDO $db, array $query, callable $premiumByEmail, int $
     $code = (string)($query['code'] ?? '');
     $state = (string)($query['state'] ?? '');
     if ($code === '') throw new Failure(400, 'bad_state');
-    [$uid, $email] = state_consume($db, $state, $now);
+    [$uid, $email, $stateProvider] = state_consume($db, $state, $now);
     if (!$premiumByEmail($email)) throw new Failure(403, 'premium_required');
+    // The provider is taken from the state (authoritative), falling back to the query for older states.
+    $provider = $stateProvider !== '' ? $stateProvider : (string)($query['provider'] ?? 'github');
+    if (!is_provider($provider)) throw new Failure(400, 'bad_provider');
     $config = config();
-    $token = exchange_code($config, $code);
-    save_connection($db, $uid, $email, $token, $config['token_key'], $now);
+    if ($provider === 'github') {
+        $token = exchange_code($config, $code);                    // unchanged GitHub path
+    } else {
+        $pc = provider_config($config, $provider);
+        if (!$pc) throw new Failure(503, 'provider_not_configured');
+        $token = oauth_exchange($pc, $code);
+    }
+    save_connection($db, $uid, $email, $token, $config['token_key'], $now, $provider);
     // No redirect to a separate page (which would need a rewrite + an extra file); the endpoint prints
     // a success page itself. The token never leaves the server and is never put in the URL.
 }
