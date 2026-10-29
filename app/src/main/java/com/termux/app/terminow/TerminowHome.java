@@ -592,13 +592,35 @@ public class TerminowHome {
         TerminowSettings.applyScreenshotsBlocked(activity, mStore);
         addUpdateNotification();
 
-        GridView gridView = activity.findViewById(R.id.terminow_grid);
-        gridView.setAdapter(mAdapter);
-        gridView.setOnItemClickListener((parent, view, position, id) -> onItemClick(mItems.get(position)));
-        gridView.setOnItemLongClickListener((parent, view, position, id) -> onItemLongClick(mItems.get(position)));
+        androidx.recyclerview.widget.RecyclerView recycler = activity.findViewById(R.id.terminow_grid);
+        final int colWidthPx = dp(260);
+        final androidx.recyclerview.widget.GridLayoutManager glm =
+            new androidx.recyclerview.widget.GridLayoutManager(activity, 1);
+        glm.setSpanSizeLookup(new androidx.recyclerview.widget.GridLayoutManager.SpanSizeLookup() {
+            @Override public int getSpanSize(int position) {
+                Object item = position >= 0 && position < mItems.size() ? mItems.get(position) : null;
+                // Local Terminal (null), group chips and section headers span the whole width;
+                // host/other cards take a single column.
+                return (item == null || item instanceof Group || item instanceof Section) ? glm.getSpanCount() : 1;
+            }
+        });
+        recycler.setLayoutManager(glm);
+        recycler.setAdapter(mAdapter);
+        recycler.addItemDecoration(new GridSpacingDecoration(dp(5)));
+        // Responsive columns (~260dp per card), from the list's own width — so it adapts to the sidebar
+        // width and orientation, not just the screen size.
+        recycler.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            int w = (r - l) - recycler.getPaddingLeft() - recycler.getPaddingRight();
+            int span = Math.max(1, w / colWidthPx);
+            if (span != glm.getSpanCount()) recycler.post(() -> {
+                glm.setSpanCount(span);
+                glm.getSpanSizeLookup().invalidateSpanIndexCache();
+                glm.requestLayout();
+            });
+        });
 
         mActionsView = activity.findViewById(R.id.terminow_actions);
-        activity.findViewById(R.id.terminow_action_new_host).setOnClickListener(v -> showHostDialog(null));
+        activity.findViewById(R.id.terminow_action_new_host).setOnClickListener(v -> newHostFromFilter());
         activity.findViewById(R.id.terminow_action_new_group).setOnClickListener(v -> showGroupDialog(null));
         activity.findViewById(R.id.terminow_action_import).setOnClickListener(v -> showImportDialog());
         // The title of a group goes back to all hosts
@@ -1659,6 +1681,20 @@ public class TerminowHome {
         // The hosts of a group that does not exist anymore are shown with the hosts without a group
         if (group == null) return host.group.isEmpty() || !mGroups.contains(host.group);
         return group.equals(host.group);
+    }
+
+    /** New Host: preselect the protocol when a SSH/RDP/WinRM filter chip is active (All = default SSH).
+     *  The user can still change the type in the form. */
+    private void newHostFromFilter() {
+        if (mPage == PAGE_HOSTS && (TerminowStore.Host.PROTOCOL_SSH.equals(mProtocolFilter)
+                || TerminowStore.Host.PROTOCOL_RDP.equals(mProtocolFilter)
+                || TerminowStore.Host.PROTOCOL_WINRM.equals(mProtocolFilter))) {
+            TerminowStore.Host prefill = new TerminowStore.Host();
+            prefill.protocol = mProtocolFilter;
+            showHostDialog(null, prefill, null);
+        } else {
+            showHostDialog(null);
+        }
     }
 
     /** Whether a host matches the search: name, hostname/IP, username or tags (never the password). */
@@ -3830,7 +3866,9 @@ public class TerminowHome {
         dialog.findViewById(R.id.terminow_host_tags_button).setOnClickListener(editTags);
 
         // The protocol: SSH (with Mosh and Telnet), the built-in RDP desktop, or WinRM PowerShell
-        String[] protocol = {existingHost != null ? existingHost.protocol : TerminowStore.Host.PROTOCOL_SSH};
+        String[] protocol = {existingHost != null ? existingHost.protocol
+            : prefill != null && !prefill.protocol.isEmpty() ? prefill.protocol   // preselect for a new host
+            : TerminowStore.Host.PROTOCOL_SSH};
         EditText domainView = dialog.findViewById(R.id.terminow_host_domain);
         CheckBox rdpNlaView = dialog.findViewById(R.id.terminow_host_rdp_nla);
         CheckBox rdpClipboardView = dialog.findViewById(R.id.terminow_host_rdp_clipboard);
@@ -7171,33 +7209,58 @@ public class TerminowHome {
 
 
 
-    private class ItemsAdapter extends BaseAdapter {
+    /** Uniform spacing around each grid item (replaces the old GridView horizontal/vertical spacing). */
+    private static class GridSpacingDecoration extends androidx.recyclerview.widget.RecyclerView.ItemDecoration {
+        private final int margin;
+        GridSpacingDecoration(int marginPx) { this.margin = marginPx; }
+        @Override public void getItemOffsets(@NonNull android.graphics.Rect outRect, @NonNull View view,
+                @NonNull androidx.recyclerview.widget.RecyclerView parent,
+                @NonNull androidx.recyclerview.widget.RecyclerView.State state) {
+            outRect.set(margin, margin, margin, margin);
+        }
+    }
+
+    private class ItemsAdapter extends androidx.recyclerview.widget.RecyclerView.Adapter<ItemsAdapter.VH> {
+
+        class VH extends androidx.recyclerview.widget.RecyclerView.ViewHolder {
+            final ImageView iconView;
+            final TextView titleView, subtitleView, countView;
+            VH(@NonNull View v) {
+                super(v);
+                iconView = v.findViewById(R.id.terminow_item_icon);
+                titleView = v.findViewById(R.id.terminow_item_title);
+                subtitleView = v.findViewById(R.id.terminow_item_subtitle);
+                countView = v.findViewById(R.id.terminow_item_count);
+                // Resolve the tapped item at click time, so an adapter update can never connect/open the
+                // wrong row (e.g. after a section is collapsed or the filter changes).
+                v.setOnClickListener(x -> {
+                    int p = getBindingAdapterPosition();
+                    if (p != androidx.recyclerview.widget.RecyclerView.NO_POSITION) onItemClick(mItems.get(p));
+                });
+                v.setOnLongClickListener(x -> {
+                    int p = getBindingAdapterPosition();
+                    return p != androidx.recyclerview.widget.RecyclerView.NO_POSITION && onItemLongClick(mItems.get(p));
+                });
+            }
+        }
 
         @Override
-        public int getCount() {
+        public int getItemCount() {
             return mItems.size();
         }
 
+        @NonNull
         @Override
-        public Object getItem(int position) {
-            return mItems.get(position);
+        public VH onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            return new VH(mActivity.getLayoutInflater().inflate(R.layout.item_terminow_host, parent, false));
         }
 
         @Override
-        public long getItemId(int position) {
-            return position;
-        }
-
-        @Override
-        public View getView(int position, View convertView, ViewGroup parent) {
-            View view = convertView;
-            if (view == null)
-                view = mActivity.getLayoutInflater().inflate(R.layout.item_terminow_host, parent, false);
-
-            ImageView iconView = view.findViewById(R.id.terminow_item_icon);
-            TextView titleView = view.findViewById(R.id.terminow_item_title);
-            TextView subtitleView = view.findViewById(R.id.terminow_item_subtitle);
-            TextView countView = view.findViewById(R.id.terminow_item_count);
+        public void onBindViewHolder(@NonNull VH holder, int position) {
+            ImageView iconView = holder.iconView;
+            TextView titleView = holder.titleView;
+            TextView subtitleView = holder.subtitleView;
+            TextView countView = holder.countView;
 
             Object item = mItems.get(position);
             int iconRes;
@@ -7301,7 +7364,6 @@ public class TerminowHome {
             int iconColorValue = hostColor != null ? hostColor : ContextCompat.getColor(mActivity, iconColorRes);
             iconView.getBackground().mutate().setColorFilter(iconColorValue, PorterDuff.Mode.SRC_IN);
             countView.setText(countText != null ? countText : (sessionCount > 0 ? String.valueOf(sessionCount) : ""));
-            return view;
         }
 
     }
