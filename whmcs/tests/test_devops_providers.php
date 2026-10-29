@@ -15,6 +15,8 @@ use function TermiNow\DevOps\list_runs;
 use function TermiNow\DevOps\list_logs;
 use function TermiNow\DevOps\set_http_transport;
 use function TermiNow\DevOps\handle;
+use function TermiNow\DevOps\handle_callback;
+use function TermiNow\DevOps\state_create;
 use function TermiNow\DevOps\save_connection;
 use function TermiNow\DevOps\load_connection;
 use function TermiNow\DevOps\set_config_override;
@@ -202,6 +204,24 @@ check($refreshed === true, 'expired token triggered a refresh');
 check(is_array($rr['repos']), 'refreshed token used for the data call');
 $conn2 = load_connection($db, 'uid2', 'gitlab');
 check((int)$conn2['expires_at'] === 5000 + 7200, 'refreshed expiry persisted');
+
+// OAuth callback (return flow) for GitLab: state → exchange code → save connection, authenticated by
+// the single-use state (no Firebase header), entitlement re-checked by email.
+$glState = state_create($db, 'uid3', 'u3@e.com', 1000, 'gitlab');
+$ROUTES = [
+    '/oauth/token' => fn() => json_ok(['access_token' => 'CBTOK', 'refresh_token' => 'CBREF', 'expires_in' => 7200]),
+    '/user'        => fn() => json_ok(['username' => 'glcb']),
+];
+handle_callback($db, ['code' => 'THECODE', 'state' => $glState], fn($email) => $email === 'u3@e.com', 1000);
+$cbConn = load_connection($db, 'uid3', 'gitlab');
+check($cbConn !== null && $cbConn['login'] === 'glcb', 'callback saved gitlab connection as @glcb');
+check((int)$cbConn['expires_at'] === 1000 + 7200, 'callback stored token expiry');
+// A replayed state is rejected (single-use).
+throws(fn() => handle_callback($db, ['code' => 'THECODE', 'state' => $glState], fn() => true, 1000), 400, 'callback: replayed state rejected');
+
+// disconnect + revoke are per-provider and allowed even without Premium.
+handle($db, ['sub' => 'uid3', 'email' => 'u3@e.com'], json_encode(['action' => 'disconnect', 'provider' => 'gitlab']), fn() => false, 1000);
+check(load_connection($db, 'uid3', 'gitlab') === null, 'disconnect removes only that provider connection');
 
 set_http_transport(null);
 set_config_override(null);
