@@ -86,6 +86,16 @@
     <string name="terminow_linux_premium_distro">Linux distributions other than Ubuntu</string>
     <string name="terminow_distro_badge_free">Free</string>
     <string name="terminow_distro_badge_premium">Premium</string>
+    <string name="terminow_linux_environments_title">Linux Environments</string>
+    <string name="terminow_linux_environments_intro">Ubuntu is free. Unlock additional Linux environments with Premium.</string>
+    <!-- Installed, but the distribution needs Premium which the user no longer has. Data is kept. -->
+    <string name="terminow_linux_installed_locked">Installed · Premium required</string>
+    <string name="terminow_linux_unlock">Unlock with Premium</string>
+    <!-- Short, one-line descriptions shown on each distribution card, by stable distro id. -->
+    <string name="terminow_distro_desc_ubuntu">Everyday development &amp; AI tools</string>
+    <string name="terminow_distro_desc_debian">Stable development &amp; server tools</string>
+    <string name="terminow_distro_desc_alpine">Lightweight Linux environment</string>
+    <string name="terminow_distro_desc_kali">Security testing tools</string>
 
     <string name="terminow_tools_tmux_summary_user">The tmux sessions of %2$s in %1$s</string>
     <string name="terminow_tools_tmux_premium">Listing, opening, renaming and ending tmux sessions is part of TermiNow Premium.</string>

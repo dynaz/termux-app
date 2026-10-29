@@ -85,6 +85,14 @@
     <string name="terminow_linux_premium_distro">ลินุกซ์ดิสโทรอื่นนอกจาก Ubuntu</string>
     <string name="terminow_distro_badge_free">ฟรี</string>
     <string name="terminow_distro_badge_premium">พรีเมียม</string>
+    <string name="terminow_linux_environments_title">Linux Environments</string>
+    <string name="terminow_linux_environments_intro">Ubuntu ใช้งานได้ฟรี ปลดล็อก Linux environment เพิ่มเติมด้วย Premium</string>
+    <string name="terminow_linux_installed_locked">ติดตั้งแล้ว · ต้องใช้ Premium</string>
+    <string name="terminow_linux_unlock">ปลดล็อกด้วย Premium</string>
+    <string name="terminow_distro_desc_ubuntu">เครื่องมือพัฒนาและ AI สำหรับใช้งานทุกวัน</string>
+    <string name="terminow_distro_desc_debian">เครื่องมือพัฒนาและเซิร์ฟเวอร์ที่เสถียร</string>
+    <string name="terminow_distro_desc_alpine">Linux environment ขนาดเล็ก</string>
+    <string name="terminow_distro_desc_kali">เครื่องมือทดสอบความปลอดภัย</string>
 
     <string name="terminow_tools_tmux_summary_user">เซสชัน tmux ของ %2$s ใน %1$s</string>
     <string name="terminow_tools_tmux_premium">การดู เปิด เปลี่ยนชื่อ และปิดเซสชัน tmux เป็นส่วนหนึ่งของ TermiNow Premium</string>

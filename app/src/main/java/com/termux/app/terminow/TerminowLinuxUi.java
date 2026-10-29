@@ -142,12 +142,44 @@ public class TerminowLinuxUi {
 
     /** Install a distribution of the catalog, like from Browse Linux: confirmed, with its progress. */
     public void installEntry(@NonNull TerminowLinuxCatalog.Entry entry) {
-        // Every distribution except Ubuntu needs Premium to download and install; Ubuntu is free.
+        startInstall(entry, null);
+    }
+
+    /**
+     * Premium-gate the install by the stable distro id (Ubuntu is free, every other distribution is
+     * Premium), then confirm. A Free user on a Premium distribution gets the Upgrade flow BEFORE any
+     * download or process is started; a Premium user retries the install. This is the single place the
+     * distro tier is enforced for installs, so the catalog list cannot bypass it.
+     */
+    private void startInstall(@NonNull TerminowLinuxCatalog.Entry entry, @Nullable Dialog browse) {
         if (TerminowLinuxCatalog.requiresPremium(entry.distroId) && !TerminowAccountUi.isPremium(mStore)) {
-            TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.LINUX_DISTRO, 0, () -> confirmInstall(entry, null));
+            promptDistroUpgrade(() -> confirmInstall(entry, browse));
             return;
         }
-        confirmInstall(entry, null);
+        confirmInstall(entry, browse);
+    }
+
+    /** Open the Premium upgrade flow for a locked distribution; {@code retry} runs if Premium becomes active. */
+    private void promptDistroUpgrade(@Nullable Runnable retry) {
+        TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.LINUX_DISTRO, 0,
+            retry != null ? retry : () -> {});
+    }
+
+    /** Whether this installed distribution needs Premium the user does not have (keyed on stable id). */
+    private boolean distroLocked(@NonNull String distroId) {
+        return TerminowLinuxCatalog.requiresPremium(distroId) && !TerminowAccountUi.isPremium(mStore);
+    }
+
+    /** The short, localized one-line description for a distribution's card (falls back to the catalog text). */
+    @NonNull
+    private String shortDescription(@NonNull TerminowLinuxCatalog.Entry entry) {
+        switch (entry.distroId) {
+            case "ubuntu": return mActivity.getString(R.string.terminow_distro_desc_ubuntu);
+            case "debian": return mActivity.getString(R.string.terminow_distro_desc_debian);
+            case "alpine": return mActivity.getString(R.string.terminow_distro_desc_alpine);
+            case "kali":   return mActivity.getString(R.string.terminow_distro_desc_kali);
+            default:       return entry.description;
+        }
     }
 
     public TerminowLinuxUi(@NonNull TermuxActivity activity, @NonNull TerminowStore store, @NonNull Host host) {
@@ -371,15 +403,23 @@ public class TerminowLinuxUi {
         root.setPadding(dp(18), dp(14), dp(18), dp(18));
         LinearLayout head = new LinearLayout(mActivity);
         head.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = text(mActivity.getString(R.string.terminow_linux_browse), 20, R.color.terminow_text);
+        TextView title = text(mActivity.getString(R.string.terminow_linux_environments_title), 20, R.color.terminow_text);
         title.setTypeface(Typeface.DEFAULT_BOLD);
+        androidx.core.view.ViewCompat.setAccessibilityHeading(title, true);
         head.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         TextView close = text("✕", 20, R.color.terminow_text_secondary);
         close.setPadding(dp(12), dp(4), dp(4), dp(4));
+        close.setMinWidth(dp(48));
+        close.setMinHeight(dp(48));
+        close.setGravity(Gravity.CENTER);
         close.setContentDescription(mActivity.getString(R.string.terminow_profiles_close));
         close.setOnClickListener(v -> dialog.dismiss());
         head.addView(close);
         root.addView(head, matchWrap());
+
+        TextView intro = text(mActivity.getString(R.string.terminow_linux_environments_intro), 13, R.color.terminow_text_secondary);
+        intro.setPadding(0, dp(2), 0, 0);
+        root.addView(intro, matchWrap());
 
         LinearLayout tabs = new LinearLayout(mActivity);
         tabs.setPadding(0, dp(10), 0, dp(10));
@@ -429,11 +469,20 @@ public class TerminowLinuxUi {
             return;
         }
         for (TerminowLinuxEnv env : envs) {
-            LinearLayout card = card(env.distroId, env.getTitle(), statusText(env) + " · " + (env.arch.isEmpty() ? "?" : env.arch) +
+            // A Premium distro that is installed while Premium has lapsed: the install and its data are
+            // kept, but it is marked "Installed · Premium required" and new sessions are locked. Ubuntu is
+            // never locked. Details (export, uninstall) stays reachable.
+            boolean locked = env.isInstalled() && distroLocked(env.distroId);
+            String status = locked ? mActivity.getString(R.string.terminow_linux_installed_locked) : statusText(env);
+            LinearLayout card = card(env.distroId, env.getTitle(), status + " · " + (env.arch.isEmpty() ? "?" : env.arch) +
                 " · " + mActivity.getString(R.string.terminow_linux_alias, env.alias));
             if (env.isInstalled()) {
                 card.addView(text(usageText(env), 12, R.color.terminow_text_secondary), matchWrap());
-                addButtons(card, button(R.string.terminow_linux_files, false, () -> {
+                if (locked) {
+                    addButtons(card, button(R.string.terminow_linux_unlock, true,
+                        () -> promptDistroUpgrade(() -> { dialog.dismiss(); showBrowse(false); })),
+                        button(R.string.terminow_linux_details, false, () -> showDetails(env)));
+                } else addButtons(card, button(R.string.terminow_linux_files, false, () -> {
                     dialog.dismiss();
                     openFiles(env, env.defaultUser, env.startFolder(env.defaultUser));
                 }), button(R.string.terminow_linux_terminal, true, () -> {
@@ -456,7 +505,7 @@ public class TerminowLinuxUi {
             String size = entry.downloadBytes > 0 ? mActivity.getString(R.string.terminow_linux_download_size,
                 android.text.format.Formatter.formatShortFileSize(mActivity, entry.downloadBytes)) : "";
             LinearLayout card = card(entry.distroId, entry.name + " " + entry.version, entry.arch + (size.isEmpty() ? "" : " · " + size));
-            card.addView(text(entry.description, 13, R.color.terminow_text_secondary), matchWrap());
+            card.addView(text(shortDescription(entry), 13, R.color.terminow_text_secondary), matchWrap());
             String state;
             int stateColor = R.color.terminow_text_secondary;
             boolean already = false;
@@ -478,8 +527,10 @@ public class TerminowLinuxUi {
             TextView stateView = text(state, 12, stateColor);
             stateView.setPadding(0, dp(6), 0, 0);
             card.addView(stateView, matchWrap());
+            // Route through startInstall so a Free user on a Premium distro gets Upgrade before any
+            // download — the row stays fully tappable (not dimmed) so it never looks disabled.
             TextView install = button(R.string.terminow_linux_install, support == TerminowLinuxCatalog.Support.AVAILABLE,
-                () -> confirmInstall(entry, dialog));
+                () -> startInstall(entry, dialog));
             boolean enabled = support == TerminowLinuxCatalog.Support.AVAILABLE && mInstaller == null;
             install.setEnabled(enabled);
             install.setAlpha(enabled ? 1f : 0.4f);
@@ -886,14 +937,20 @@ public class TerminowLinuxUi {
         LinearLayout buttons = new LinearLayout(mActivity);
         buttons.setPadding(0, dp(12), 0, dp(4));
         if (env.isInstalled()) {
-            buttons.addView(button(R.string.terminow_linux_files, false, () -> {
-                dialog[0].dismiss();
-                openFiles(env, env.defaultUser, env.startFolder(env.defaultUser));
-            }), buttonParams());
-            buttons.addView(button(R.string.terminow_linux_terminal, true, () -> {
-                dialog[0].dismiss();
-                mHost.openTerminal(env, env.defaultUser, env.startFolder(env.defaultUser));
-            }), buttonParams());
+            if (distroLocked(env.distroId)) {
+                // Premium lapsed: no new interactive session; offer Upgrade. Uninstall stays below.
+                buttons.addView(button(R.string.terminow_linux_unlock, true,
+                    () -> { dialog[0].dismiss(); promptDistroUpgrade(() -> showDetails(env)); }), buttonParams());
+            } else {
+                buttons.addView(button(R.string.terminow_linux_files, false, () -> {
+                    dialog[0].dismiss();
+                    openFiles(env, env.defaultUser, env.startFolder(env.defaultUser));
+                }), buttonParams());
+                buttons.addView(button(R.string.terminow_linux_terminal, true, () -> {
+                    dialog[0].dismiss();
+                    mHost.openTerminal(env, env.defaultUser, env.startFolder(env.defaultUser));
+                }), buttonParams());
+            }
         }
         box.addView(buttons, matchWrap());
         // Destructive, away from the ordinary buttons

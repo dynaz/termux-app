@@ -2214,6 +2214,11 @@ public class TerminowLauncher {
                                        @NonNull String folder, @NonNull String tool, @NonNull String command,
                                        @NonNull String tmuxMode, @NonNull String tmuxName, @NonNull String tabName,
                                        boolean alwaysNew, @NonNull String toolLabel, @Nullable TerminowLaunchProfile profile) {
+        // Central gate for every session start that does not go through openNewTerminal/launchUbuntu:
+        // "Open in terminal", shared sessions, launch profiles/shortcuts, the default launch and tab
+        // restore. A Premium distro whose Premium has lapsed is locked before any process is created;
+        // the local shell and Ubuntu are never locked. Running tabs are never touched by this.
+        if (distroLocked(environment)) { promptDistroUpgrade(() -> {}); return null; }
         TerminowLaunchPlan plan;
         try {
             plan = TerminowLaunchPlan.build(mTargets.getPrefixDir().getPath(), environment.isLocal() ? "" : environment.key, user,

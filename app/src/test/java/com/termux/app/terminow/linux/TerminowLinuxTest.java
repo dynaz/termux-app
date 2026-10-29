@@ -837,4 +837,28 @@ public class TerminowLinuxTest {
         assertEquals("etc/os-release", TerminowLinuxInstaller.normalizeEntry("./etc/os-release/"));
     }
 
+    /**
+     * The entitlement policy: Ubuntu (the one free distro id) is free; Debian, Alpine, Kali and any
+     * other id — including one not in the catalog (a distro added later) — are Premium by default.
+     * The decision is on the stable distro id, never a display name or version.
+     */
+    @Test
+    public void onlyUbuntuIsFreeEveryOtherDistroIsPremium() {
+        assertEquals("ubuntu", TerminowLinuxCatalog.FREE_DISTRO_ID);
+        assertFalse(TerminowLinuxCatalog.requiresPremium("ubuntu"));
+        assertTrue(TerminowLinuxCatalog.requiresPremium("debian"));
+        assertTrue(TerminowLinuxCatalog.requiresPremium("alpine"));
+        assertTrue(TerminowLinuxCatalog.requiresPremium("kali"));
+        // A future distro id that no one has whitelisted is Premium by default.
+        assertTrue(TerminowLinuxCatalog.requiresPremium("archlinux"));
+        assertTrue(TerminowLinuxCatalog.requiresPremium("fedora"));
+        assertTrue(TerminowLinuxCatalog.requiresPremium(""));
+        // A display name / version string is NOT the id, so it must not read as free.
+        assertTrue(TerminowLinuxCatalog.requiresPremium("Ubuntu"));
+        assertTrue(TerminowLinuxCatalog.requiresPremium("ubuntu 24.04"));
+        // Every catalog entry agrees with the policy: exactly Ubuntu is free.
+        for (TerminowLinuxCatalog.Entry e : TerminowLinuxCatalog.ENTRIES)
+            assertEquals("ubuntu".equals(e.distroId), !TerminowLinuxCatalog.requiresPremium(e.distroId));
+    }
+
 }
