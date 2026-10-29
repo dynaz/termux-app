@@ -31,6 +31,12 @@
     <string name="terminow_devops_filter_all">ทั้งหมด</string>
     <string name="terminow_devops_filter_public">สาธารณะ</string>
     <string name="terminow_devops_filter_private">ส่วนตัว</string>
+    <string name="terminow_devops_connect_short">เชื่อมต่อ</string>
+    <string name="terminow_devops_disconnect_short">ยกเลิก</string>
+    <string name="terminow_devops_not_connected_short">ยังไม่เชื่อมต่อ</string>
+    <string name="terminow_devops_private_title">Repository ส่วนตัว</string>
+    <string name="terminow_devops_private_subtitle">ผ่าน GitHub App</string>
+    <string name="terminow_devops_private_remove_short">นำออก</string>
     <string name="terminow_devops_bad_authorize_url">เริ่มการเข้าสู่ระบบไม่ได้: เซิร์ฟเวอร์ส่งที่อยู่ที่ไม่คาดคิดกลับมา โปรดลองอีกครั้ง</string>
     <string name="terminow_devops_no_browser_connect">ไม่มีเบราว์เซอร์สำหรับเปิดหน้าเข้าสู่ระบบ</string>
     <string name="terminow_devops_disconnect_confirm">นำการเชื่อมต่อ GitHub ออกหรือไม่ โปรเจกต์ของคุณยังอยู่และเชื่อมต่อใหม่ได้ภายหลัง</string>

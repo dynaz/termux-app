@@ -35,6 +35,12 @@
     <string name="terminow_devops_filter_all">All</string>
     <string name="terminow_devops_filter_public">Public</string>
     <string name="terminow_devops_filter_private">Private</string>
+    <string name="terminow_devops_connect_short">Connect</string>
+    <string name="terminow_devops_disconnect_short">Disconnect</string>
+    <string name="terminow_devops_not_connected_short">Not connected</string>
+    <string name="terminow_devops_private_title">Private repositories</string>
+    <string name="terminow_devops_private_subtitle">via GitHub App</string>
+    <string name="terminow_devops_private_remove_short">Remove</string>
     <string name="terminow_devops_bad_authorize_url">Could not start sign-in: the server returned an unexpected address. Please try again.</string>
     <string name="terminow_devops_no_browser_connect">No browser is available to open the sign-in page.</string>
     <string name="terminow_devops_disconnect_confirm">Remove the GitHub connection? Your projects are kept and you can reconnect later.</string>

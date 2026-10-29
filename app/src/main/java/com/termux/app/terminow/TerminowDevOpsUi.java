@@ -13,6 +13,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
@@ -117,6 +118,87 @@ public final class TerminowDevOpsUi {
         }
     }
 
+    /** The official provider mark drawable, or 0 for an unknown provider. */
+    private int providerIconRes(@NonNull String id) {
+        switch (id) {
+            case "github":    return R.drawable.ic_provider_github;
+            case "gitlab":    return R.drawable.ic_provider_gitlab;
+            case "bitbucket": return R.drawable.ic_provider_bitbucket;
+            default:          return 0;
+        }
+    }
+
+    /** A provider logo at {@code sizeDp}, labelled for accessibility, with a right margin. */
+    @NonNull
+    private ImageView providerLogo(@NonNull String id, int sizeDp) {
+        ImageView iv = new ImageView(mActivity);
+        int res = providerIconRes(id);
+        if (res != 0) iv.setImageResource(res);
+        iv.setContentDescription(providerName(id));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp));
+        lp.rightMargin = dp(10);
+        lp.gravity = Gravity.CENTER_VERTICAL;
+        iv.setLayoutParams(lp);
+        return iv;
+    }
+
+    /** A small right-aligned action pill with a ≥48dp touch target and an accessibility label. */
+    private static final class RowAction {
+        final String label; final boolean primary; final Runnable onClick;
+        RowAction(@NonNull String label, boolean primary, @NonNull Runnable onClick) { this.label = label; this.primary = primary; this.onClick = onClick; }
+    }
+
+    @NonNull
+    private View actionPill(@NonNull Sheet sheet, @NonNull RowAction a) {
+        TextView b = sheet.text(a.label, 13, a.primary ? R.color.terminow_bar_home : R.color.terminow_text);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+        b.setGravity(Gravity.CENTER);
+        b.setMinHeight(dp(48));
+        b.setMinWidth(dp(72));
+        b.setPadding(dp(14), dp(6), dp(14), dp(6));
+        GradientDrawable shape = new GradientDrawable();
+        shape.setColor(color(a.primary ? R.color.terminow_panel_accent : R.color.terminow_field));
+        shape.setCornerRadius(dp(10));
+        b.setBackground(shape);
+        b.setClickable(true);
+        b.setContentDescription(a.label);
+        b.setOnClickListener(v -> a.onClick.run());
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.leftMargin = dp(8);
+        lp.gravity = Gravity.CENTER_VERTICAL;
+        b.setLayoutParams(lp);
+        return b;
+    }
+
+    /** One compact provider row: [logo] [title / subtitle] [action pills]. Keeps rows tight and scrollable. */
+    private void providerRow(@NonNull Sheet sheet, @NonNull String id, @NonNull String title, int titleColor,
+                             @Nullable String subtitle, int subtitleColor, boolean dim, @NonNull RowAction... actions) {
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        ImageView logo = providerLogo(id, 26);
+        if (dim) logo.setAlpha(0.45f);
+        row.addView(logo);
+        LinearLayout texts = new LinearLayout(mActivity);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        TextView t = sheet.text(title, 15, titleColor);
+        t.setTypeface(Typeface.DEFAULT_BOLD);
+        t.setSingleLine(true);
+        t.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        texts.addView(t);
+        if (subtitle != null && !subtitle.isEmpty()) {
+            TextView s = sheet.text(subtitle, 12, subtitleColor);
+            s.setSingleLine(true);
+            s.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            texts.addView(s);
+        }
+        row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        for (RowAction a : actions) if (a != null) row.addView(actionPill(sheet, a));
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        rlp.topMargin = dp(10);
+        sheet.content.addView(row, rlp);
+    }
+
     private void renderHome(@NonNull Sheet sheet, @NonNull TerminowDevOps.Status status) {
         sheet.content.removeAllViews();
 
@@ -140,45 +222,41 @@ public final class TerminowDevOpsUi {
         sheet.section(R.string.terminow_devops_providers);
         boolean anyConnected = false;
         for (TerminowDevOps.Provider p : providers) {
-            String name = providerName(p.id);
+            final String name = providerName(p.id);
+            final String pid = p.id;
             if (p.connected && !p.valid) {
-                // Token expired/revoked: offer Reconnect (saved projects/host mappings are kept). The
-                // final boolean-copies are for the lambdas.
+                // Token expired/revoked: Reconnect (saved projects/host mappings kept) + small Disconnect.
                 anyConnected = true;
-                final String pidX = p.id;
-                TextView expired = sheet.text(mActivity.getString(R.string.terminow_devops_connection_expired, name), 14, R.color.terminow_mcp_warn);
-                expired.setTypeface(Typeface.DEFAULT_BOLD);
-                sheet.content.addView(expired);
-                sheet.action(mActivity.getString(R.string.terminow_devops_reconnect, name), true,
-                    () -> connectProvider(sheet, pidX, name));
-                sheet.action(mActivity.getString(R.string.terminow_devops_disconnect_provider, name), false,
-                    () -> confirmDisconnect(sheet, pidX, name));
+                providerRow(sheet, pid, name, R.color.terminow_text,
+                    mActivity.getString(R.string.terminow_devops_connection_expired, name), R.color.terminow_mcp_warn, false,
+                    new RowAction(mActivity.getString(R.string.terminow_install_retry), true, () -> connectProvider(sheet, pid, name)),
+                    new RowAction(mActivity.getString(R.string.terminow_devops_disconnect_short), false, () -> confirmDisconnect(sheet, pid, name)));
             } else if (p.connected) {
                 anyConnected = true;
-                TextView connected = sheet.text(mActivity.getString(R.string.terminow_devops_connected_as,
-                    p.login.isEmpty() ? name : "@" + p.login) + " · " + name, 14, R.color.terminow_quick_ready);
-                connected.setTypeface(Typeface.DEFAULT_BOLD);
-                sheet.content.addView(connected);
-                sheet.action(mActivity.getString(R.string.terminow_devops_disconnect_provider, name), false,
-                    () -> confirmDisconnect(sheet, p.id, name));
+                providerRow(sheet, pid, name, R.color.terminow_text,
+                    mActivity.getString(R.string.terminow_devops_connected_as, p.login.isEmpty() ? name : "@" + p.login),
+                    R.color.terminow_quick_ready, false,
+                    new RowAction(mActivity.getString(R.string.terminow_devops_disconnect_short), false, () -> confirmDisconnect(sheet, pid, name)));
                 // GitHub only: private repositories via the GitHub App (if the backend has one configured).
-                if ("github".equals(p.id) && p.privateAvailable) {
+                if ("github".equals(pid) && p.privateAvailable) {
                     if (p.privateInstalled) {
-                        sheet.note(mActivity.getString(R.string.terminow_devops_private_installed,
-                            p.privateAccount.isEmpty() ? "" : "@" + p.privateAccount));
-                        sheet.action(mActivity.getString(R.string.terminow_devops_private_remove), false,
-                            () -> run(() -> { mDevOps.githubAppDisconnect(); return Boolean.TRUE; }, sheet, ok -> reopen()));
+                        providerRow(sheet, pid, mActivity.getString(R.string.terminow_devops_private_title), R.color.terminow_text,
+                            p.privateAccount.isEmpty() ? "" : "@" + p.privateAccount, R.color.terminow_text_secondary, true,
+                            new RowAction(mActivity.getString(R.string.terminow_devops_private_remove_short), false,
+                                () -> run(() -> { mDevOps.githubAppDisconnect(); return Boolean.TRUE; }, sheet, ok -> reopen())));
                     } else {
-                        sheet.action(mActivity.getString(R.string.terminow_devops_private_connect), false,
-                            () -> connectGithubApp(sheet));
+                        providerRow(sheet, pid, mActivity.getString(R.string.terminow_devops_private_title), R.color.terminow_text,
+                            mActivity.getString(R.string.terminow_devops_private_subtitle), R.color.terminow_text_secondary, true,
+                            new RowAction(mActivity.getString(R.string.terminow_devops_connect_short), true, () -> connectGithubApp(sheet)));
                     }
                 }
             } else if (p.configured) {
-                final String pid = p.id;
-                sheet.action(mActivity.getString(R.string.terminow_devops_connect, name), true,
-                    () -> connectProvider(sheet, pid, name));
+                providerRow(sheet, pid, name, R.color.terminow_text,
+                    mActivity.getString(R.string.terminow_devops_not_connected_short), R.color.terminow_text_secondary, false,
+                    new RowAction(mActivity.getString(R.string.terminow_devops_connect_short), true, () -> connectProvider(sheet, pid, name)));
             } else {
-                sheet.action(name + " — " + mActivity.getString(R.string.terminow_devops_coming_soon), false, null);
+                providerRow(sheet, pid, name, R.color.terminow_text_secondary,
+                    mActivity.getString(R.string.terminow_devops_coming_soon), R.color.terminow_text_secondary, true);
             }
         }
 
@@ -327,12 +405,23 @@ public final class TerminowDevOpsUi {
     @NonNull
     private View projectRow(@NonNull Sheet sheet, @NonNull TerminowStore.DevOpsProject project) {
         LinearLayout card = sheet.card();
-        TextView name = sheet.text(providerName(project.provider) + " · " + project.repo, 15, R.color.terminow_text);
+        // Header: provider logo + repo name (the logo conveys the provider, so no text prefix).
+        LinearLayout head = new LinearLayout(mActivity);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        head.addView(providerLogo(project.provider, 22));
+        LinearLayout headTexts = new LinearLayout(mActivity);
+        headTexts.setOrientation(LinearLayout.VERTICAL);
+        TextView name = sheet.text(project.repo, 15, R.color.terminow_text);
         name.setTypeface(Typeface.DEFAULT_BOLD);
-        card.addView(name);
+        name.setSingleLine(true);
+        name.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
+        headTexts.addView(name);
         TerminowStore.Host linked = hostFor(project.hostKey);
-        card.addView(sheet.text(linked != null ? mActivity.getString(R.string.terminow_devops_linked_host, linked.getTitle())
+        headTexts.addView(sheet.text(linked != null ? mActivity.getString(R.string.terminow_devops_linked_host, linked.getTitle())
             : mActivity.getString(R.string.terminow_devops_not_linked), 12, R.color.terminow_text_secondary));
+        head.addView(headTexts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        card.addView(head, sheet.wrap());
 
         LinearLayout actions = new LinearLayout(mActivity);
         actions.setOrientation(LinearLayout.HORIZONTAL);
@@ -361,9 +450,14 @@ public final class TerminowDevOpsUi {
         for (String id : connected) {
             LinearLayout card = sheet.card();
             card.setClickable(true);
+            LinearLayout rowh = new LinearLayout(mActivity);
+            rowh.setOrientation(LinearLayout.HORIZONTAL);
+            rowh.setGravity(Gravity.CENTER_VERTICAL);
+            rowh.addView(providerLogo(id, 24));
             TextView n = sheet.text(providerName(id), 15, R.color.terminow_text);
             n.setTypeface(Typeface.DEFAULT_BOLD);
-            card.addView(n);
+            rowh.addView(n);
+            card.addView(rowh);
             card.setOnClickListener(v -> { sheet.dialog.dismiss(); selectRepo(parent, id); });
             sheet.content.addView(card);
         }
@@ -436,10 +530,20 @@ public final class TerminowDevOpsUi {
         for (TerminowDevOps.Repo r : shown) {
             LinearLayout card = sheet.card();
             card.setClickable(true);
+            LinearLayout rowh = new LinearLayout(mActivity);
+            rowh.setOrientation(LinearLayout.HORIZONTAL);
+            rowh.setGravity(Gravity.CENTER_VERTICAL);
+            rowh.addView(providerLogo(r.provider, 20));
+            LinearLayout texts = new LinearLayout(mActivity);
+            texts.setOrientation(LinearLayout.VERTICAL);
             TextView n = sheet.text(r.fullName, 15, R.color.terminow_text);
             n.setTypeface(Typeface.DEFAULT_BOLD);
-            card.addView(n);
-            card.addView(sheet.text((r.isPrivate ? "private" : "public") + (r.defaultBranch.isEmpty() ? "" : " · " + r.defaultBranch), 12, R.color.terminow_text_secondary));
+            n.setSingleLine(true);
+            n.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
+            texts.addView(n);
+            texts.addView(sheet.text((r.isPrivate ? "private" : "public") + (r.defaultBranch.isEmpty() ? "" : " · " + r.defaultBranch), 12, R.color.terminow_text_secondary));
+            rowh.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            card.addView(rowh);
             card.setOnClickListener(v -> {
                 if (selecting[0]) return;   // guard against a double tap during Create Project
                 selecting[0] = true;
