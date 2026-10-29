@@ -161,6 +161,18 @@ public final class TerminowDevOpsUi {
                 sheet.content.addView(connected);
                 sheet.action(mActivity.getString(R.string.terminow_devops_disconnect_provider, name), false,
                     () -> confirmDisconnect(sheet, p.id, name));
+                // GitHub only: private repositories via the GitHub App (if the backend has one configured).
+                if ("github".equals(p.id) && p.privateAvailable) {
+                    if (p.privateInstalled) {
+                        sheet.note(mActivity.getString(R.string.terminow_devops_private_installed,
+                            p.privateAccount.isEmpty() ? "" : "@" + p.privateAccount));
+                        sheet.action(mActivity.getString(R.string.terminow_devops_private_remove), false,
+                            () -> run(() -> { mDevOps.githubAppDisconnect(); return Boolean.TRUE; }, sheet, ok -> reopen()));
+                    } else {
+                        sheet.action(mActivity.getString(R.string.terminow_devops_private_connect), false,
+                            () -> connectGithubApp(sheet));
+                    }
+                }
             } else if (p.configured) {
                 final String pid = p.id;
                 sheet.action(mActivity.getString(R.string.terminow_devops_connect, name), true,
@@ -238,12 +250,60 @@ public final class TerminowDevOpsUi {
     }
 
     private void showConnectError(@NonNull Sheet home, @NonNull String providerId, @NonNull String name, @NonNull String message) {
+        showConnectRetry(mActivity.getString(R.string.terminow_devops_connect, name), message, () -> connectProvider(home, providerId, name));
+    }
+
+    /** A connect/install error with a Retry (never a silent failure). */
+    private void showConnectRetry(@NonNull String title, @NonNull String message, @NonNull Runnable retry) {
         new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
-            .setTitle(mActivity.getString(R.string.terminow_devops_connect, name))
+            .setTitle(title)
             .setMessage(message)
-            .setPositiveButton(R.string.terminow_install_retry, (d, w) -> connectProvider(home, providerId, name))
+            .setPositiveButton(R.string.terminow_install_retry, (d, w) -> retry.run())
             .setNegativeButton(android.R.string.cancel, null)
             .show();
+    }
+
+    /** Open the GitHub App install page (private repositories). Same never-silent pattern as connect. */
+    private void connectGithubApp(@NonNull Sheet home) {
+        final String reqId = Integer.toHexString((int) (System.nanoTime() & 0xffffffffL));
+        Log.i(TAG, "github app connect start req=" + reqId);
+        ProgressBar spinner = new ProgressBar(mActivity);
+        spinner.setPadding(dp(24), dp(24), dp(24), dp(24));
+        final android.app.AlertDialog progress = new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(mActivity.getString(R.string.terminow_devops_connecting, "GitHub"))
+            .setView(spinner).setCancelable(true).create();
+        progress.show();
+        new Thread(() -> {
+            try {
+                String url = mDevOps.githubAppInstallUrl(reqId);
+                boolean valid = isValidProviderAuthorizeUrl("github", url);   // must be https on github.com
+                Log.i(TAG, "github app install url req=" + reqId + " host=" + safeHost(url) + " ok=" + valid);
+                mHandler.post(() -> {
+                    dismissQuietly(progress);
+                    if (!valid) { showConnectRetry(mActivity.getString(R.string.terminow_devops_private_connect),
+                        mActivity.getString(R.string.terminow_devops_bad_authorize_url), () -> connectGithubApp(home)); return; }
+                    mHost.onConnectLaunched();
+                    home.dialog.dismiss();
+                    boolean opened = openUrl(url);
+                    if (opened) mActivity.showToast(mActivity.getString(R.string.terminow_devops_connect_opened), false);
+                    else mActivity.showToast(mActivity.getString(R.string.terminow_devops_no_browser_connect), true);
+                });
+            } catch (Exception e) {
+                Log.w(TAG, "github app connect error req=" + reqId + " " + e.getClass().getSimpleName());
+                mHandler.post(() -> {
+                    dismissQuietly(progress);
+                    String msg = (e instanceof TerminowDevOps.DevOpsException && ((TerminowDevOps.DevOpsException) e).isPremiumRequired())
+                        ? mActivity.getString(R.string.terminow_devops_error) : devOpsMessageOrGeneric(e);
+                    showConnectRetry(mActivity.getString(R.string.terminow_devops_private_connect), msg, () -> connectGithubApp(home));
+                });
+            }
+        }, "devops-ghapp").start();
+    }
+
+    @NonNull
+    private String devOpsMessageOrGeneric(@NonNull Exception e) {
+        if (e instanceof TerminowDevOps.DevOpsException) return devOpsMessage((TerminowDevOps.DevOpsException) e);
+        return mActivity.getString(R.string.terminow_devops_error);
     }
 
     /** The authorize URL must be HTTPS on the provider's own host, checked before opening a browser. */
@@ -279,7 +339,7 @@ public final class TerminowDevOpsUi {
         LinearLayout.LayoutParams ap = sheet.wrap();
         ap.topMargin = sheet.dp(10);
         String repoRef = project.repoId.isEmpty() ? project.repo : project.repoId;
-        actions.addView(sheet.smallButton(mActivity.getString(R.string.terminow_devops_pipeline), () -> showRuns(sheet, project.provider, repoRef)));
+        actions.addView(sheet.smallButton(mActivity.getString(R.string.terminow_devops_pipeline), () -> showRuns(sheet, project.provider, repoRef, project.source)));
         if (linked != null) actions.addView(sheet.smallButton(mActivity.getString(R.string.terminow_install_open),
             () -> { sheet.dialog.dismiss(); mHost.openHost(linked); }));
         else actions.addView(sheet.smallButton(mActivity.getString(R.string.terminow_devops_link_host), () -> linkHost(sheet, project)));
@@ -318,31 +378,55 @@ public final class TerminowDevOpsUi {
             Sheet sheet = new Sheet(mActivity.getString(R.string.terminow_devops_select_repo));
             // true once a repo is tapped, so a second tap during Create Project can't double-select.
             final boolean[] selecting = {false};
+            final int[] filter = {0};   // 0=all, 1=public, 2=private
             final TextView count = sheet.text("", 12, R.color.terminow_text_secondary);
             android.widget.EditText search = sheet.searchField(mActivity.getString(R.string.terminow_devops_search_repos));
+            // All / Public / Private filter chips (useful once GitHub App private repos are in the list).
+            boolean anyPrivate = false;
+            for (TerminowDevOps.Repo r : repos) if (r.isPrivate) { anyPrivate = true; break; }
+            if (anyPrivate) {
+                LinearLayout chips = new LinearLayout(mActivity);
+                chips.setOrientation(LinearLayout.HORIZONTAL);
+                int[] labels = {R.string.terminow_devops_filter_all, R.string.terminow_devops_filter_public, R.string.terminow_devops_filter_private};
+                TextView[] pills = new TextView[3];
+                for (int i = 0; i < 3; i++) {
+                    final int idx = i;
+                    pills[i] = sheet.smallButtonView(mActivity.getString(labels[i]), () -> {
+                        filter[0] = idx;
+                        for (int k = 0; k < 3; k++) sheet.stylePill(pills[k], k == idx);
+                        renderRepoList(sheet, parent, repos, search.getText().toString(), filter[0], count, selecting);
+                    });
+                    sheet.stylePill(pills[i], i == 0);
+                    chips.addView(pills[i]);
+                }
+                sheet.addPinned(chips);
+            }
             sheet.addPinned(count);
-            renderRepoList(sheet, parent, repos, "", count, selecting);
+            renderRepoList(sheet, parent, repos, "", filter[0], count, selecting);
             search.addTextChangedListener(new android.text.TextWatcher() {
                 @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
                 @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
                 @Override public void afterTextChanged(android.text.Editable e) {
-                    renderRepoList(sheet, parent, repos, e.toString(), count, selecting);
+                    renderRepoList(sheet, parent, repos, e.toString(), filter[0], count, selecting);
                 }
             });
             sheet.show();
         });
     }
 
-    /** Filter {@code all} by {@code query} (case-insensitive substring of owner/repo) and rebuild the list. */
+    /** Filter {@code all} by query (substring of owner/repo) and visibility, and rebuild the list. */
     private void renderRepoList(@NonNull Sheet sheet, @NonNull Sheet parent, @NonNull List<TerminowDevOps.Repo> all,
-                                @NonNull String query, @NonNull TextView count, @NonNull boolean[] selecting) {
+                                @NonNull String query, int filter, @NonNull TextView count, @NonNull boolean[] selecting) {
         sheet.content.removeAllViews();
         String q = query.trim().toLowerCase(Locale.ROOT);
         List<TerminowDevOps.Repo> shown = new ArrayList<>();
-        for (TerminowDevOps.Repo r : all)
+        for (TerminowDevOps.Repo r : all) {
+            if (filter == 1 && r.isPrivate) continue;    // Public only
+            if (filter == 2 && !r.isPrivate) continue;   // Private only
             if (q.isEmpty() || r.fullName.toLowerCase(Locale.ROOT).contains(q)) shown.add(r);
+        }
 
-        count.setText(q.isEmpty()
+        count.setText(q.isEmpty() && filter == 0
             ? mActivity.getString(R.string.terminow_devops_repo_count_all, all.size())
             : mActivity.getString(R.string.terminow_devops_repo_count, shown.size(), all.size()));
 
@@ -361,6 +445,7 @@ public final class TerminowDevOpsUi {
                 selecting[0] = true;
                 TerminowStore.DevOpsProject p = new TerminowStore.DevOpsProject();
                 p.provider = r.provider;
+                p.source = r.source;
                 p.repo = r.fullName;
                 p.repoId = r.id;
                 mStore.addDevOpsProject(p);
@@ -395,8 +480,8 @@ public final class TerminowDevOpsUi {
     }
 
     /** View pipeline runs for a repo; tap a run to see its jobs/steps. */
-    private void showRuns(@NonNull Sheet parent, @NonNull String provider, @NonNull String repoId) {
-        run(() -> mDevOps.runs(provider, repoId), parent, runs -> {
+    private void showRuns(@NonNull Sheet parent, @NonNull String provider, @NonNull String repoId, @NonNull String source) {
+        run(() -> mDevOps.runs(provider, repoId, source), parent, runs -> {
             Sheet sheet = new Sheet(mActivity.getString(R.string.terminow_devops_pipeline));
             if (runs.isEmpty()) sheet.note(mActivity.getString(R.string.terminow_devops_no_runs));
             for (TerminowDevOps.Run r : runs) {
@@ -407,15 +492,15 @@ public final class TerminowDevOpsUi {
                 card.addView(n);
                 String state = (r.conclusion.isEmpty() ? r.status : r.conclusion) + (r.branch.isEmpty() ? "" : " · " + r.branch);
                 card.addView(sheet.text(state, 12, R.color.terminow_text_secondary));
-                card.setOnClickListener(v -> showLogs(sheet, provider, repoId, r.id));
+                card.setOnClickListener(v -> showLogs(sheet, provider, repoId, r.id, source));
                 sheet.content.addView(card);
             }
             sheet.show();
         });
     }
 
-    private void showLogs(@NonNull Sheet parent, @NonNull String provider, @NonNull String repoId, @NonNull String run) {
-        run(() -> mDevOps.logs(provider, repoId, run), parent, jobs -> {
+    private void showLogs(@NonNull Sheet parent, @NonNull String provider, @NonNull String repoId, @NonNull String run, @NonNull String source) {
+        run(() -> mDevOps.logs(provider, repoId, run, source), parent, jobs -> {
             Sheet sheet = new Sheet(mActivity.getString(R.string.terminow_devops_logs));
             if (jobs.isEmpty()) sheet.note(mActivity.getString(R.string.terminow_devops_no_runs));
             for (TerminowDevOps.Job j : jobs) {
@@ -647,6 +732,29 @@ public final class TerminowDevOpsUi {
             lp.rightMargin = dp(6);
             b.setLayoutParams(lp);
             return b;
+        }
+
+        /** A wrap-content pill (filter chip); style with {@link #stylePill}. */
+        @NonNull TextView smallButtonView(@NonNull String label, @NonNull Runnable onClick) {
+            TextView b = text(label, 13, R.color.terminow_text);
+            b.setTypeface(Typeface.DEFAULT_BOLD);
+            b.setGravity(Gravity.CENTER);
+            b.setMinHeight(dp(40));
+            b.setPadding(dp(16), dp(6), dp(16), dp(6));
+            b.setClickable(true);
+            b.setOnClickListener(v -> onClick.run());
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.rightMargin = dp(8);
+            b.setLayoutParams(lp);
+            return b;
+        }
+
+        void stylePill(@NonNull TextView b, boolean selected) {
+            GradientDrawable shape = new GradientDrawable();
+            shape.setColor(color(selected ? R.color.terminow_panel_accent : R.color.terminow_field));
+            shape.setCornerRadius(dp(16));
+            b.setBackground(shape);
+            b.setTextColor(color(selected ? R.color.terminow_bar_home : R.color.terminow_text));
         }
 
         @NonNull LinearLayout card() {

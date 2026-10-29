@@ -915,6 +915,7 @@ public class TerminowStore {
     /** A DevOps project: a provider repository linked to a saved SSH host. Config, not a secret. */
     public static final class DevOpsProject {
         public String provider = "github";
+        public String source = "oauth";  // "oauth" (public) or "app" (GitHub App, private) — selects the token
         public String repo = "";       // display name: owner/name, group/subgroup/project, workspace/repo
         public String repoId = "";     // the provider repo reference for API calls (owner/name, or a GitLab numeric id)
         public String hostKey = "";    // the linked Host.getKey(), may be empty until linked
@@ -931,6 +932,7 @@ public class TerminowStore {
                 if (o == null) continue;
                 DevOpsProject p = new DevOpsProject();
                 p.provider = o.optString("provider", "github");
+                p.source = o.optString("source", "oauth");
                 p.repo = o.optString("repo");
                 p.repoId = o.optString("repoId", o.optString("repo"));   // fall back for projects saved before repoId existed
                 p.hostKey = o.optString("hostKey");
@@ -971,6 +973,7 @@ public class TerminowStore {
             for (DevOpsProject p : list) {
                 JSONObject o = new JSONObject();
                 o.put("provider", p.provider);
+                o.put("source", p.source);
                 o.put("repo", p.repo);
                 o.put("repoId", p.repoId);
                 o.put("hostKey", p.hostKey);

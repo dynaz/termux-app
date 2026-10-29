@@ -54,6 +54,10 @@ public final class TerminowDevOps {
         public boolean connected;
         public boolean valid = true;      // false when the stored token has expired/been revoked (needs reconnect)
         public String login = "";
+        // GitHub App (private repositories) — only meaningful for the "github" provider.
+        public boolean privateAvailable;  // the backend has a GitHub App configured
+        public boolean privateInstalled;  // this user has an App installation bound
+        public String privateAccount = "";
     }
 
     public static final class Status {
@@ -64,6 +68,7 @@ public final class TerminowDevOps {
 
     public static final class Repo {
         public String provider = "github";
+        public String source = "oauth";   // "oauth" (public) or "app" (GitHub App, private-capable)
         public String id = "";            // the provider repo reference for API calls (owner/name or a numeric id)
         public String fullName = "", defaultBranch = "", pushedAt = "", htmlUrl = "";
         public boolean isPrivate;
@@ -104,6 +109,12 @@ public final class TerminowDevOps {
                 pr.connected = p.optBoolean("connected");
                 pr.valid = p.optBoolean("valid", true);   // older backend without this field → treat as valid
                 pr.login = p.optString("login");
+                JSONObject pr2 = p.optJSONObject("privateRepos");
+                if (pr2 != null) {
+                    pr.privateAvailable = pr2.optBoolean("available");
+                    pr.privateInstalled = pr2.optBoolean("installed");
+                    pr.privateAccount = pr2.optString("account");
+                }
                 s.providers.add(pr);
             }
         }
@@ -124,6 +135,17 @@ public final class TerminowDevOps {
         return url;
     }
 
+    /** The GitHub App install URL (private repositories); the server created a single-use state. */
+    @NonNull
+    public String githubAppInstallUrl(@Nullable String requestId) throws IOException {
+        String url = post(req("github_app_connect", "github"), requestId).optString("installUrl");
+        if (url.isEmpty()) throw new DevOpsException(502, "provider_error", "No install URL");
+        return url;
+    }
+
+    /** Remove the GitHub App (private repositories) installation binding. */
+    public void githubAppDisconnect() throws IOException { post(req("github_app_disconnect", "github")); }
+
     @NonNull
     public List<Repo> repos(@NonNull String provider) throws IOException {
         JSONArray array = post(req("repos", provider)).optJSONArray("repos");
@@ -133,6 +155,7 @@ public final class TerminowDevOps {
             if (r == null) continue;
             Repo repo = new Repo();
             repo.provider = r.optString("provider", provider);
+            repo.source = r.optString("source", "oauth");
             repo.id = r.optString("id");
             repo.fullName = r.optString("fullName");
             repo.isPrivate = r.optBoolean("private");
@@ -146,9 +169,10 @@ public final class TerminowDevOps {
     }
 
     @NonNull
-    public List<Run> runs(@NonNull String provider, @NonNull String repoId) throws IOException {
+    public List<Run> runs(@NonNull String provider, @NonNull String repoId, @NonNull String source) throws IOException {
         JSONObject body = req("runs", provider);
         putOpt(body, "repo", repoId);
+        putOpt(body, "source", source);
         JSONArray array = post(body).optJSONArray("runs");
         List<Run> list = new ArrayList<>();
         if (array != null) for (int i = 0; i < array.length(); i++) {
@@ -168,10 +192,11 @@ public final class TerminowDevOps {
     }
 
     @NonNull
-    public List<Job> logs(@NonNull String provider, @NonNull String repoId, @NonNull String run) throws IOException {
+    public List<Job> logs(@NonNull String provider, @NonNull String repoId, @NonNull String run, @NonNull String source) throws IOException {
         JSONObject body = req("logs", provider);
         putOpt(body, "repo", repoId);
         putOpt(body, "run", run);
+        putOpt(body, "source", source);
         JSONArray array = post(body).optJSONArray("jobs");
         List<Job> list = new ArrayList<>();
         if (array != null) for (int i = 0; i < array.length(); i++) {
