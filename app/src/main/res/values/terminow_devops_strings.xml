@@ -26,6 +26,9 @@
     <string name="terminow_devops_disconnect">Disconnect GitHub</string>
     <string name="terminow_devops_disconnect_provider">Disconnect %1$s</string>
     <string name="terminow_devops_select_provider">Choose a provider</string>
+    <string name="terminow_devops_connecting">Connecting to %1$s…</string>
+    <string name="terminow_devops_bad_authorize_url">Could not start sign-in: the server returned an unexpected address. Please try again.</string>
+    <string name="terminow_devops_no_browser_connect">No browser is available to open the sign-in page.</string>
     <string name="terminow_devops_disconnect_confirm">Remove the GitHub connection? Your projects are kept and you can reconnect later.</string>
     <string name="terminow_devops_linked_host">Terminal: %1$s</string>
     <string name="terminow_devops_not_linked">No host linked</string>

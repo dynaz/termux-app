@@ -7,6 +7,7 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -25,7 +26,6 @@ import com.termux.R;
 import com.termux.app.TermuxActivity;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 
@@ -43,6 +43,10 @@ import java.util.Locale;
  * honest message is shown — nothing is simulated.</p>
  */
 public final class TerminowDevOpsUi {
+
+    /** Logcat tag for connect diagnostics. Logs carry a short request id + provider + host only —
+     *  never a token, secret, OAuth code, state or URL query. */
+    private static final String TAG = "TerminowDevOps";
 
     /** What the DevOps UI needs from the app: the SSH hosts to link, and opening a host's terminal. */
     public interface Host {
@@ -146,14 +150,9 @@ public final class TerminowDevOpsUi {
                 sheet.action(mActivity.getString(R.string.terminow_devops_disconnect_provider, name), false,
                     () -> confirmDisconnect(sheet, p.id, name));
             } else if (p.configured) {
+                final String pid = p.id;
                 sheet.action(mActivity.getString(R.string.terminow_devops_connect, name), true,
-                    () -> run(() -> mDevOps.connectUrl(p.id), sheet, url -> {
-                        // Mark pending so the app re-checks on return; dismiss this (now stale) sheet.
-                        mHost.onConnectLaunched();
-                        sheet.dialog.dismiss();
-                        openUrl(url);
-                        mActivity.showToast(mActivity.getString(R.string.terminow_devops_connect_opened), false);
-                    }));
+                    () -> connectProvider(sheet, pid, name));
             } else {
                 sheet.action(name + " — " + mActivity.getString(R.string.terminow_devops_coming_soon), false, null);
             }
@@ -170,6 +169,87 @@ public final class TerminowDevOpsUi {
         if (projects.isEmpty()) sheet.note(mActivity.getString(R.string.terminow_devops_no_projects));
         for (TerminowStore.DevOpsProject p : projects) sheet.content.addView(projectRow(sheet, p));
         sheet.action(mActivity.getString(R.string.terminow_devops_new_project), true, () -> newProject(sheet, fStatus));
+    }
+
+    /**
+     * Start a provider connection: show a loading dialog immediately (so a tap is never silent), fetch
+     * the authorize URL off the main thread, validate it is HTTPS on the provider's expected host, then
+     * open the browser. Every failure path shows an error with Retry. Diagnostics carry a short request
+     * id + provider + host only — never token/secret/code/state/query.
+     */
+    private void connectProvider(@NonNull Sheet home, @NonNull String providerId, @NonNull String name) {
+        final String reqId = Integer.toHexString((int) (System.nanoTime() & 0xffffffffL));
+        Log.i(TAG, "connect start req=" + reqId + " provider=" + providerId);
+        ProgressBar spinner = new ProgressBar(mActivity);
+        spinner.setPadding(dp(24), dp(24), dp(24), dp(24));
+        final android.app.AlertDialog progress = new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(mActivity.getString(R.string.terminow_devops_connecting, name))
+            .setView(spinner)
+            .setCancelable(true)
+            .create();
+        progress.show();
+        new Thread(() -> {
+            try {
+                String url = mDevOps.connectUrl(providerId, reqId);
+                String host = safeHost(url);
+                boolean valid = isValidProviderAuthorizeUrl(providerId, url);
+                Log.i(TAG, "connect url req=" + reqId + " provider=" + providerId + " host=" + host + " https_host_ok=" + valid);
+                mHandler.post(() -> {
+                    dismissQuietly(progress);
+                    if (!valid) { showConnectError(home, providerId, name, mActivity.getString(R.string.terminow_devops_bad_authorize_url)); return; }
+                    mHost.onConnectLaunched();
+                    home.dialog.dismiss();
+                    boolean opened = openUrl(url);
+                    Log.i(TAG, "connect open req=" + reqId + " opened=" + opened);
+                    if (opened) mActivity.showToast(mActivity.getString(R.string.terminow_devops_connect_opened), false);
+                    else mActivity.showToast(mActivity.getString(R.string.terminow_devops_no_browser_connect), true);
+                });
+            } catch (TerminowDevOps.DevOpsException e) {
+                Log.w(TAG, "connect fail req=" + reqId + " provider=" + providerId + " code=" + e.code + " http=" + e.httpCode);
+                mHandler.post(() -> {
+                    dismissQuietly(progress);
+                    if (e.isPremiumRequired()) { home.dialog.dismiss(); mHost.openUpgrade(); }
+                    else showConnectError(home, providerId, name, devOpsMessage(e));
+                });
+            } catch (Exception e) {
+                Log.w(TAG, "connect error req=" + reqId + " provider=" + providerId + " type=" + e.getClass().getSimpleName());
+                mHandler.post(() -> {
+                    dismissQuietly(progress);
+                    showConnectError(home, providerId, name, mActivity.getString(R.string.terminow_devops_error));
+                });
+            }
+        }, "devops-connect").start();
+    }
+
+    private void dismissQuietly(@NonNull android.app.AlertDialog d) {
+        if (!mActivity.isFinishing() && d.isShowing()) d.dismiss();
+    }
+
+    private void showConnectError(@NonNull Sheet home, @NonNull String providerId, @NonNull String name, @NonNull String message) {
+        new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(mActivity.getString(R.string.terminow_devops_connect, name))
+            .setMessage(message)
+            .setPositiveButton(R.string.terminow_install_retry, (d, w) -> connectProvider(home, providerId, name))
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    /** The authorize URL must be HTTPS on the provider's own host, checked before opening a browser. */
+    private boolean isValidProviderAuthorizeUrl(@NonNull String providerId, @Nullable String url) {
+        if (url == null || !url.toLowerCase(Locale.ROOT).startsWith("https://")) return false;
+        String host = safeHost(url);
+        switch (providerId) {
+            case "github":    return host.equals("github.com");
+            case "gitlab":    return host.equals("gitlab.com");
+            case "bitbucket": return host.equals("bitbucket.org");
+            default:          return false;
+        }
+    }
+
+    @NonNull
+    private static String safeHost(@Nullable String url) {
+        try { String h = android.net.Uri.parse(url).getHost(); return h == null ? "" : h.toLowerCase(Locale.ROOT); }
+        catch (Exception e) { return ""; }
     }
 
     @NonNull
@@ -354,8 +434,13 @@ public final class TerminowDevOpsUi {
 
     private void reopen() { open(); }
 
-    private void openUrl(@NonNull String url) {
-        TerminowBrowser.open(mActivity, Collections.singletonList(url));
+    /** Open a single validated web link; returns whether a browser activity actually started. */
+    private boolean openUrl(@NonNull String url) {
+        if (!TerminowBrowser.isWebLink(url)) return false;
+        try { mActivity.startActivity(TerminowBrowser.viewIntent(url, TerminowBrowser.CHROME)); return true; }
+        catch (android.content.ActivityNotFoundException | SecurityException ignored) { /* Chrome missing/off */ }
+        try { mActivity.startActivity(TerminowBrowser.viewIntent(url, null)); return true; }
+        catch (android.content.ActivityNotFoundException | SecurityException ignored) { return false; }
     }
 
     // ---- Async helper ---------------------------------------------------------------------------

@@ -111,7 +111,13 @@ public final class TerminowDevOps {
     /** The provider authorize URL to open in a browser; the server created a single-use state. */
     @NonNull
     public String connectUrl(@NonNull String provider) throws IOException {
-        String url = post(req("connect", provider)).optString("authorizeUrl");
+        return connectUrl(provider, null);
+    }
+
+    /** As {@link #connectUrl(String)}, tagging the request with a diagnostic id (no sensitive data). */
+    @NonNull
+    public String connectUrl(@NonNull String provider, @Nullable String requestId) throws IOException {
+        String url = post(req("connect", provider), requestId).optString("authorizeUrl");
         if (url.isEmpty()) throw new DevOpsException(502, "provider_error", "No authorize URL");
         return url;
     }
@@ -208,9 +214,16 @@ public final class TerminowDevOps {
 
     @NonNull
     private JSONObject post(@NonNull JSONObject request) throws IOException {
+        return post(request, null);
+    }
+
+    @NonNull
+    private JSONObject post(@NonNull JSONObject request, @Nullable String requestId) throws IOException {
         Map<String, String> headers = new HashMap<>();
         headers.put("Content-Type", "application/json");
         headers.put("Authorization", "Bearer " + mTokens.idToken());
+        // Non-sensitive correlation id for app/server diagnostics (no token/secret/code/state).
+        if (requestId != null && !requestId.isEmpty()) headers.put("X-TN-Request-Id", requestId);
         TerminowCloudHttp.Response response = TerminowCloudHttp.request("POST", ENDPOINT, headers, request.toString());
         JSONObject body;
         try {
