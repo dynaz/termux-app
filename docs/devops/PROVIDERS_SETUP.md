@@ -51,17 +51,26 @@ travels over SSH on stdin — never in arguments, history, or this chat.
 
 ## 3. One-time DB migration before the first non-GitHub connection
 
-The live `mod_terminow_devops_conn` table is still keyed by `uid` (GitHub-only era). Multi-provider needs
-the key `(uid, provider)`. Run once on the server (no data is deleted):
+The live `mod_terminow_devops_conn` table is still keyed by `uid` (GitHub-only era); multi-provider needs
+`(uid, provider)`, plus `expires_at` on conn and `provider` on state. Do NOT paste raw `ALTER TABLE` —
+the live DB is **MySQL**, which does not support `ADD COLUMN IF NOT EXISTS`, and the primary-key change
+must be guarded. Use the reviewed, idempotent, data-preserving script instead:
 
-```sql
-ALTER TABLE mod_terminow_devops_conn DROP PRIMARY KEY, ADD PRIMARY KEY (uid, provider);
-ALTER TABLE mod_terminow_devops_conn ADD COLUMN IF NOT EXISTS expires_at BIGINT NOT NULL DEFAULT 0;
-ALTER TABLE mod_terminow_devops_state ADD COLUMN IF NOT EXISTS provider VARCHAR(16) NOT NULL DEFAULT 'github';
+```
+! bash /root/migrate_devops_multiprovider.sh --dry-run   # shows the plan + guards, changes nothing
+! bash /root/migrate_devops_multiprovider.sh             # backs up the table, then applies what is missing
 ```
 
-(`migrate()` already creates fresh tables with the composite key and adds the columns idempotently; the
-`DROP PRIMARY KEY` step is only for the pre-existing GitHub table.)
+What it does (source: `whmcs/terminow/migrate_devops_multiprovider.php`, streamed to the server over SSH,
+never written to the web root):
+- verifies the current schema and the GitHub row (no NULL/empty provider, no duplicate `(uid,provider)`),
+  and aborts without any change if a guard fails;
+- makes a full copy `mod_terminow_devops_conn_bak_<ts>` (rows + encrypted tokens) as the rollback point;
+- adds `expires_at` / `state.provider` and changes the PK to `(uid, provider)` **only if missing** (safe
+  to re-run); nothing is deleted;
+- prints a verify line and the exact rollback command (`DROP TABLE … ; RENAME … _bak_<ts> …`).
+
+Dry-run against the live DB on 2026-10-29 reported: PK `(uid)`, all three changes needed, **guards pass**.
 
 ## 4. Verify live, then rely on it
 
