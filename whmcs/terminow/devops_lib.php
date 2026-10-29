@@ -31,6 +31,8 @@ const CONFIG_FILE      = __DIR__ . '/devops_config.php';
 // Provider adapters (GitHub / GitLab / Bitbucket). GitHub keeps the original code paths below; the
 // other providers go through the registry in this file.
 require_once __DIR__ . '/devops_providers.php';
+// Optional GitHub App support for PRIVATE repositories (kept separate from the public OAuth App).
+require_once __DIR__ . '/devops_github_app.php';
 
 class Failure extends \Exception
 {
@@ -113,6 +115,7 @@ function migrate(\PDO $db): void
     // Idempotent column adds for a table created by an earlier version (ignored if already present).
     add_column_if_missing($db, 'mod_terminow_devops_conn', 'expires_at', "INTEGER NOT NULL DEFAULT 0");
     add_column_if_missing($db, 'mod_terminow_devops_state', 'provider', "VARCHAR(16) NOT NULL DEFAULT 'github'");
+    github_app_migrate($db);   // GitHub App installation bindings (private repositories)
 }
 
 /** Add a column if the table does not already have it (MySQL + SQLite); never throws on "exists". */
@@ -478,6 +481,10 @@ function handle(\PDO $db, array $claims, string $request, callable $isPremiumNow
         delete_connection($db, $uid, $provider);
         return ['status' => 'revoked'];
     }
+    if ($action === 'github_app_disconnect') {   // remove the private-repo (GitHub App) binding; token-free
+        github_app_delete($db, $uid);
+        return ['status' => 'disconnected'];
+    }
 
     // Everything else needs Premium now (sync is disabled when it has lapsed).
     if (!$isPremiumNow()) throw new Failure(403, 'premium_required');
@@ -491,6 +498,13 @@ function handle(\PDO $db, array $claims, string $request, callable $isPremiumNow
         // GitHub keeps its original URL builder (unchanged behavior); others use the provider registry.
         $url = $provider === 'github' ? authorize_url($config, $state) : oauth_authorize_url($pc, $state);
         return ['authorizeUrl' => $url];
+    }
+    if ($action === 'github_app_connect') {
+        // Private repositories via the GitHub App: return the install URL (user picks repos on GitHub).
+        $app = github_app_config($config);
+        if (!$app) throw new Failure(503, 'provider_not_configured');
+        $state = state_create($db, $uid, $email, $now, 'github_app');
+        return ['installUrl' => github_app_install_url($app, $state)];
     }
     if ($action === 'status') {
         // Per-provider status for the home screen: configured (Connect vs "Coming soon"), connected, and
@@ -522,6 +536,16 @@ function handle(\PDO $db, array $claims, string $request, callable $isPremiumNow
             }
             $providers[$p] = ['configured' => (bool)$configured[$p], 'connected' => $connected, 'login' => $login, 'valid' => $valid];
         }
+        // GitHub App (private repos): is it available, and does this user have an installation bound?
+        if (isset($providers['github'])) {
+            $app = github_app_config($config);
+            $bind = $app ? github_app_load($db, $uid) : null;
+            $providers['github']['privateRepos'] = [
+                'available' => $app !== null,
+                'installed' => $bind !== null,
+                'account'   => $bind ? (string)$bind['account_login'] : '',
+            ];
+        }
         $cur = $conns[$provider] ?? null;
         return [
             'connected' => (bool)$cur,
@@ -535,19 +559,57 @@ function handle(\PDO $db, array $claims, string $request, callable $isPremiumNow
     $token = active_token($db, $uid, $provider, $config, $now);
 
     if ($action === 'repos') {
-        return ['repos' => list_repos($provider, $token)];
+        $repos = list_repos($provider, $token);
+        // GitHub: also include the user's GitHub App installation repositories (private-capable), merged
+        // and tagged source=app. If the installation was revoked, this silently keeps the public list and
+        // status() surfaces the reconnect state.
+        if ($provider === 'github') $repos = github_merge_app_repos($db, $uid, $config, $repos, $now);
+        return ['repos' => $repos];
     }
     if ($action === 'runs') {
-        return ['runs' => list_runs($provider, $token, provider_repo_ref($provider, $req))];
+        $repo = provider_repo_ref($provider, $req);
+        return ['runs' => list_runs($provider, github_data_token($db, $uid, $provider, $config, $token, $req, $now), $repo)];
     }
     if ($action === 'logs') {
         $run = (string)($req['run'] ?? '');
         // Numeric run id (GitHub/GitLab) or a Bitbucket pipeline uuid like {….}.
         if ($run === '' || !preg_match('/^[A-Za-z0-9_.{}-]+$/', $run)) throw new Failure(400, 'bad_request');
-        return ['jobs' => list_logs($provider, $token, provider_repo_ref($provider, $req), $run)];
+        return ['jobs' => list_logs($provider, github_data_token($db, $uid, $provider, $config, $token, $req, $now),
+            provider_repo_ref($provider, $req), $run)];
     }
 
     throw new Failure(400, 'bad_request');
+}
+
+/** Merge a user's GitHub App installation repos into the OAuth repo list (app entries win on name). */
+function github_merge_app_repos(\PDO $db, string $uid, array $config, array $oauthRepos, int $now): array
+{
+    $app = github_app_config($config);
+    $bind = $app ? github_app_load($db, $uid) : null;
+    if (!$app || !$bind) return $oauthRepos;
+    try {
+        $inst = github_app_installation_token($app, (string)$bind['installation_id'], $now);
+        $appRepos = github_app_list_repos($inst);
+    } catch (\Throwable $e) {
+        return $oauthRepos;   // installation revoked/expired — public list only; status() shows reconnect
+    }
+    $byName = [];
+    foreach ($oauthRepos as $r) $byName[$r['fullName']] = $r;
+    foreach ($appRepos as $r) $byName[$r['fullName']] = $r;   // App entry (private-capable) wins
+    return array_values($byName);
+}
+
+/**
+ * The token to use for a GitHub data call: the GitHub App installation token when the request names
+ * source=app (private repos), otherwise the OAuth token. Non-GitHub providers always use $oauthToken.
+ */
+function github_data_token(\PDO $db, string $uid, string $provider, array $config, string $oauthToken, array $req, int $now): string
+{
+    if ($provider !== 'github' || (string)($req['source'] ?? '') !== 'app') return $oauthToken;
+    $app = github_app_config($config);
+    $bind = $app ? github_app_load($db, $uid) : null;
+    if (!$app || !$bind) throw new Failure(409, 'not_connected');
+    return github_app_installation_token($app, (string)$bind['installation_id'], $now);
 }
 
 /**
@@ -557,8 +619,22 @@ function handle(\PDO $db, array $claims, string $request, callable $isPremiumNow
  */
 function handle_callback(\PDO $db, array $query, callable $premiumByEmail, int $now): void
 {
-    $code = (string)($query['code'] ?? '');
     $state = (string)($query['state'] ?? '');
+    $installationId = (string)($query['installation_id'] ?? '');
+    // GitHub App "Setup URL" return: binds the chosen installation to this uid (verified against the
+    // user's OAuth GitHub login — the client installation_id is never trusted on its own).
+    if ($installationId !== '') {
+        [$uid, $email, $sp] = state_consume($db, $state, $now);
+        if ($sp !== 'github_app') throw new Failure(400, 'bad_state');
+        if (!$premiumByEmail($email)) throw new Failure(403, 'premium_required');
+        $config = config();
+        $app = github_app_config($config);
+        if (!$app) throw new Failure(503, 'provider_not_configured');
+        $conn = load_connection($db, $uid, 'github');   // identify the user's GitHub login
+        github_app_bind($db, $app, $uid, $installationId, $conn ? (string)$conn['login'] : '', $now);
+        return;
+    }
+    $code = (string)($query['code'] ?? '');
     if ($code === '') throw new Failure(400, 'bad_state');
     [$uid, $email, $stateProvider] = state_consume($db, $state, $now);
     if (!$premiumByEmail($email)) throw new Failure(403, 'premium_required');

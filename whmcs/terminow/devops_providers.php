@@ -303,6 +303,7 @@ function list_repos(string $provider, string $token): array
         if ($st !== 200 || !is_array($json)) throw new Failure(502, 'provider_error');
         return dedupe_repos(array_map(fn($r) => [
             'provider'      => 'github',
+            'source'        => 'oauth',             // public OAuth App repos (vs 'app' for GitHub App installs)
             'id'            => (string)($r['full_name'] ?? ''),
             'fullName'      => (string)($r['full_name'] ?? ''),
             'private'       => (bool)($r['private'] ?? false),
