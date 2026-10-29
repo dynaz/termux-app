@@ -402,7 +402,7 @@ public final class TerminowDevOpsUi {
             LinearLayout.LayoutParams lp = wrap();
             lp.topMargin = dp(8);
             c.setLayoutParams(lp);
-            content.addView(c);
+            // Caller adds it to the container exactly once (returning it already-parented double-adds → crash).
             return c;
         }
 
