@@ -1024,6 +1024,36 @@ public class TerminowStore {
         return nowFavorite;
     }
 
+    private static final String KEY_COLLAPSED_PROTO = "hosts_collapsed_protocols";
+
+    /** Protocol section ids collapsed on the Hosts page, per workspace (device-local display state). */
+    @NonNull
+    public java.util.Set<String> getCollapsedHostSections() {
+        java.util.Set<String> set = new java.util.LinkedHashSet<>();
+        try {
+            JSONArray array = new JSONArray(mPreferences.getString(ns(KEY_COLLAPSED_PROTO), "[]"));
+            for (int i = 0; i < array.length(); i++) {
+                String key = array.optString(i);
+                if (!key.isEmpty()) set.add(key);
+            }
+        } catch (JSONException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to load collapsed host sections", e);
+        }
+        return set;
+    }
+
+    /** Toggle a protocol section's collapsed state; returns whether it is collapsed afterwards. */
+    public boolean toggleCollapsedHostSection(@NonNull String protocol) {
+        java.util.Set<String> set = getCollapsedHostSections();
+        boolean collapsed;
+        if (set.remove(protocol)) collapsed = false;
+        else { set.add(protocol); collapsed = true; }
+        JSONArray array = new JSONArray();
+        for (String key : set) array.put(key);
+        putVaultList(KEY_COLLAPSED_PROTO, array.toString());
+        return collapsed;
+    }
+
     private void writeGithubTools(@NonNull List<GithubTool> list) {
         JSONArray array = new JSONArray();
         try {

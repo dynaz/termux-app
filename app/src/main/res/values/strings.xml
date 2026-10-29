@@ -245,6 +245,10 @@
     <string name="terminow_local_terminal">Local Terminal</string>
     <string name="terminow_local_terminal_subtitle">This device</string>
     <string name="terminow_active">Active</string>
+    <string name="terminow_hosts_section_other">Other</string>
+    <string name="terminow_hosts_unsupported_protocol">This connection type isn\'t supported yet. You can edit the host\'s details.</string>
+    <string name="terminow_expand">Expand</string>
+    <string name="terminow_collapse">Collapse</string>
     <string name="terminow_new_host">Add host</string>
     <string name="terminow_edit_host">Edit host</string>
     <string name="terminow_host_label">Label</string>

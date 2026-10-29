@@ -209,6 +209,9 @@ public class TerminowHome {
     @Nullable private byte[] mNextPrelude;
     private final View mHeaderView;
     private final View mGridView;
+    private final android.widget.LinearLayout mProtocolFilterRow;
+    /** The selected connection-type filter on the Hosts page: "" = All, else "ssh"/"rdp"/"winrm"/… */
+    private String mProtocolFilter = "";
     private final View mFabView;
     private final View mSettingsScrollView;
     private final TerminowSettings mSettings;
@@ -543,6 +546,7 @@ public class TerminowHome {
         mRailSettings.setOnClickListener(v -> setPage(PAGE_SETTINGS));
         mHeaderView = activity.findViewById(R.id.terminow_header);
         mGridView = activity.findViewById(R.id.terminow_grid);
+        mProtocolFilterRow = activity.findViewById(R.id.terminow_protocol_filter_row);
         mFabView = activity.findViewById(R.id.terminow_fab);
         mSettingsScrollView = activity.findViewById(R.id.terminow_settings_scroll);
         mSettings = new TerminowSettings(activity, mStore, activity.findViewById(R.id.terminow_settings));
@@ -1657,6 +1661,14 @@ public class TerminowHome {
         return group.equals(host.group);
     }
 
+    /** Whether a host matches the search: name, hostname/IP, username or tags (never the password). */
+    private boolean hostMatches(@NonNull TerminowStore.Host host, @NonNull String query) {
+        return host.getTitle().toLowerCase(Locale.ROOT).contains(query)
+            || host.address.toLowerCase(Locale.ROOT).contains(query)
+            || host.username.toLowerCase(Locale.ROOT).contains(query)
+            || TextUtils.join(",", host.tags).toLowerCase(Locale.ROOT).contains(query);
+    }
+
     private int getHostCount(@NonNull String group) {
         int count = 0;
         for (TerminowStore.Host host : mHosts)
@@ -1690,6 +1702,7 @@ public class TerminowHome {
 
         updateSectionTitle();
         mItems.clear();
+        if (mPage != PAGE_HOSTS) mProtocolFilterRow.removeAllViews();   // filter chips only on the Hosts page
         if (mPage == PAGE_MCP) {
             // The page shows its own cards and empty state
             mAdapter.notifyDataSetChanged();
@@ -1697,25 +1710,41 @@ public class TerminowHome {
             mMcpPage.update(query);
             return;
         }
-        if (mPage == PAGE_HOSTS && query.isEmpty()) {
-            if (mCurrentGroup == null) {
+        if (mPage == PAGE_HOSTS) {
+            boolean searching = !query.isEmpty();
+            // Local Terminal + group chips at the top of the ungrouped, unsearched view (unchanged);
+            // while searching, Local Terminal only when it matches.
+            if (!searching && mCurrentGroup == null) {
                 mItems.add(null);
-                for (String group : mGroups)
-                    mItems.add(new Group(group));
-            }
-            for (TerminowStore.Host host : mHosts) {
-                if (isInGroup(host, mCurrentGroup))
-                    mItems.add(host);
-            }
-        } else if (mPage == PAGE_HOSTS) {
-            // A search is done in the hosts of all groups
-            if (mActivity.getString(R.string.terminow_local_terminal).toLowerCase(Locale.ROOT).contains(query))
+                for (String group : mGroups) mItems.add(new Group(group));
+            } else if (searching && mActivity.getString(R.string.terminow_local_terminal).toLowerCase(Locale.ROOT).contains(query)) {
                 mItems.add(null);
+            }
+            // Group hosts in scope by their real connection type, in a fixed order, hiding empty sections.
+            // Collapse state is per-workspace; a search temporarily expands the sections with matches.
+            java.util.Set<String> collapsed = mStore.getCollapsedHostSections();
+            java.util.LinkedHashMap<String, List<TerminowStore.Host>> byProto = new java.util.LinkedHashMap<>();
+            for (String p : PROTOCOL_ORDER) byProto.put(p, new ArrayList<>());
             for (TerminowStore.Host host : mHosts) {
-                if (host.getTitle().toLowerCase(Locale.ROOT).contains(query) ||
-                    host.address.toLowerCase(Locale.ROOT).contains(query) ||
-                    TextUtils.join(",", host.tags).toLowerCase(Locale.ROOT).contains(query))
-                    mItems.add(host);
+                if (!searching && !isInGroup(host, mCurrentGroup)) continue;   // group filter
+                if (searching && !hostMatches(host, query)) continue;         // search across all groups
+                List<TerminowStore.Host> list = byProto.get(protocolKey(host));
+                if (list == null) { list = new ArrayList<>(); byProto.put(protocolKey(host), list); }
+                list.add(host);
+            }
+            // Filter chips (All | present types): reflect the group+search scope; reset a stale filter.
+            if (!mProtocolFilter.isEmpty()) {
+                List<TerminowStore.Host> sel = byProto.get(mProtocolFilter);
+                if (sel == null || sel.isEmpty()) mProtocolFilter = "";
+            }
+            rebuildProtocolChips(byProto);
+            for (String p : PROTOCOL_ORDER) {
+                if (!mProtocolFilter.isEmpty() && !mProtocolFilter.equals(p)) continue;   // protocol filter
+                List<TerminowStore.Host> list = byProto.get(p);
+                if (list == null || list.isEmpty()) continue;
+                boolean isCollapsed = !searching && collapsed.contains(p);
+                mItems.add(new Section(p, list.size(), isCollapsed));
+                if (!isCollapsed) mItems.addAll(list);
             }
         } else if (mPage == PAGE_KEYCHAIN) {
             // Identities first, then the keys, like the keychain of Termius
@@ -1789,6 +1818,9 @@ public class TerminowHome {
     private void onItemClick(@Nullable Object item) {
         if (item == null) {
             openLocalTerminal();
+        } else if (item instanceof Section) {
+            mStore.toggleCollapsedHostSection(((Section) item).protocol);
+            updateItems();
         } else if (item instanceof Group) {
             mCurrentGroup = ((Group) item).name;
             updateItems();
@@ -1808,7 +1840,7 @@ public class TerminowHome {
     }
 
     private boolean onItemLongClick(@Nullable Object item) {
-        if (item == null) return false;
+        if (item == null || item instanceof Section) return false;   // section headers have no context menu
 
         if (item instanceof TerminowStore.Identity) {
             showIdentityDialog((TerminowStore.Identity) item, null);
@@ -3122,6 +3154,16 @@ public class TerminowHome {
     }
 
     private void connect(@NonNull TerminowStore.Host host) {
+        // An unrecognized connection type ("Other"): never silently fall back to SSH. Offer to edit it.
+        if ("other".equals(protocolKey(host))) {
+            new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setTitle(host.getTitle())
+                .setMessage(R.string.terminow_hosts_unsupported_protocol)
+                .setPositiveButton(R.string.terminow_edit, (d, w) -> showHostDialog(host))
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+            return;
+        }
         if (host.isRdp()) {
             openRdp(host);
             return;
@@ -4558,6 +4600,93 @@ public class TerminowHome {
         Group(@NonNull String name) {
             this.name = name;
         }
+    }
+
+    /** A collapsible connection-type section header on the Hosts page (SSH, RDP, WinRM, Other…). */
+    private static class Section {
+        final String protocol;   // "ssh" | "rdp" | "winrm" | "vnc" | "other"
+        final int count;
+        final boolean collapsed;
+        Section(@NonNull String protocol, int count, boolean collapsed) {
+            this.protocol = protocol; this.count = count; this.collapsed = collapsed;
+        }
+    }
+
+    /** Section display order; empty ones are hidden. VNC is listed but never has hosts (no VNC connect). */
+    private static final String[] PROTOCOL_ORDER = {"ssh", "vnc", "rdp", "winrm", "other"};
+
+    /** The section a host belongs to, from the REAL connection type on the record (never guessed). */
+    @NonNull
+    private static String protocolKey(@NonNull TerminowStore.Host host) {
+        if (host.isRdp()) return "rdp";
+        if (host.isWinrm()) return "winrm";
+        String p = host.protocol == null ? "" : host.protocol;
+        if (p.isEmpty() || TerminowStore.Host.PROTOCOL_SSH.equals(p)) return "ssh";
+        return "other";   // an unrecognized protocol value: shown in Other, data left untouched
+    }
+
+    @NonNull
+    private String protocolLabel(@NonNull String protocol) {
+        switch (protocol) {
+            case "ssh":   return "SSH";
+            case "rdp":   return "RDP";
+            case "winrm": return "WinRM";
+            case "vnc":   return "VNC";
+            default:      return mActivity.getString(R.string.terminow_hosts_section_other);
+        }
+    }
+
+    private int protocolIconRes(@NonNull String protocol) {
+        switch (protocol) {
+            case "rdp":   return R.drawable.ic_terminow_desktop;
+            case "winrm": return R.drawable.ic_terminow_terminal;
+            default:      return R.drawable.ic_terminow_hosts;
+        }
+    }
+
+    private int protocolColorRes(@NonNull String protocol) {
+        switch (protocol) {
+            case "rdp":   return R.color.terminow_host_rdp;
+            case "winrm": return R.color.terminow_host_winrm;
+            default:      return R.color.terminow_host_ssh;
+        }
+    }
+
+    /** Build the All|SSH|RDP|WinRM… filter chips from the types present in the current scope. */
+    private void rebuildProtocolChips(@NonNull java.util.LinkedHashMap<String, List<TerminowStore.Host>> byProto) {
+        mProtocolFilterRow.removeAllViews();
+        int present = 0;
+        for (String p : PROTOCOL_ORDER) { List<TerminowStore.Host> l = byProto.get(p); if (l != null && !l.isEmpty()) present++; }
+        if (present <= 1) return;   // only one type (or none): chips would add nothing — keep it clean
+        mProtocolFilterRow.addView(protocolChip(mActivity.getString(R.string.terminow_devops_filter_all), "", mProtocolFilter.isEmpty()));
+        for (String p : PROTOCOL_ORDER) {
+            List<TerminowStore.Host> l = byProto.get(p);
+            if (l == null || l.isEmpty()) continue;
+            mProtocolFilterRow.addView(protocolChip(protocolLabel(p) + " " + l.size(), p, mProtocolFilter.equals(p)));
+        }
+    }
+
+    @NonNull
+    private View protocolChip(@NonNull String label, @NonNull String value, boolean selected) {
+        TextView b = new TextView(mActivity);
+        b.setText(label);
+        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+        b.setGravity(Gravity.CENTER);
+        b.setMinHeight(dp(40));
+        b.setPadding(dp(14), dp(6), dp(14), dp(6));
+        b.setTextColor(ContextCompat.getColor(mActivity, selected ? R.color.terminow_bar_home : R.color.terminow_text));
+        GradientDrawable shape = new GradientDrawable();
+        shape.setCornerRadius(dp(16));
+        shape.setColor(ContextCompat.getColor(mActivity, selected ? R.color.terminow_panel_accent : R.color.terminow_field));
+        b.setBackground(shape);
+        b.setContentDescription(label);
+        android.widget.LinearLayout.LayoutParams lp = new android.widget.LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.rightMargin = dp(8);
+        b.setLayoutParams(lp);
+        b.setOnClickListener(v -> { mProtocolFilter = value; updateItems(); });
+        return b;
     }
 
     /** Show a dialog to add a group, or to rename an existing one. */
@@ -7074,7 +7203,18 @@ public class TerminowHome {
             int iconRes;
             int iconColorRes;
             int sessionCount = 0;
-            if (item instanceof Group) {
+            String countText = null;   // set for a Section header's collapse chevron
+            subtitleView.setVisibility(View.VISIBLE);   // reset (recycled views)
+            if (item instanceof Section) {
+                Section section = (Section) item;
+                iconRes = protocolIconRes(section.protocol);
+                iconColorRes = protocolColorRes(section.protocol);
+                titleView.setText(protocolLabel(section.protocol) + "  (" + section.count + ")");
+                subtitleView.setVisibility(View.GONE);
+                countText = section.collapsed ? "▸" : "▾";   // ▸ collapsed / ▾ expanded
+                countView.setContentDescription(mActivity.getString(section.collapsed
+                    ? R.string.terminow_expand : R.string.terminow_collapse));
+            } else if (item instanceof Group) {
                 String group = ((Group) item).name;
                 int hostCount = getHostCount(group);
                 iconRes = R.drawable.ic_terminow_group;
@@ -7097,9 +7237,12 @@ public class TerminowHome {
                 String kind = host.isRdp() ? "rdp" : host.isWinrm() ? "winrm" : host.telnet ? "telnet" : host.mosh ? "mosh" : "ssh";
                 if (sessionCount > 0)
                     subtitleView.setText(R.string.terminow_active);
-                else
-                    subtitleView.setText(kind + (host.username.isEmpty() ? "" : ", " + host.username) +
-                        (host.tags.isEmpty() ? "" : ", " + TextUtils.join(", ", host.tags)));
+                else {
+                    // Protocol badge + username@hostname/IP, compact; never the password.
+                    String who = (host.username.isEmpty() ? "" : host.username + "@") + host.address;
+                    subtitleView.setText(kind + (who.isEmpty() ? "" : " · " + who) +
+                        (host.tags.isEmpty() ? "" : " · " + TextUtils.join(", ", host.tags)));
+                }
             } else if (item instanceof TerminowStore.Identity) {
                 TerminowStore.Identity identity = (TerminowStore.Identity) item;
                 iconRes = R.drawable.ic_terminow_person;
@@ -7157,7 +7300,7 @@ public class TerminowHome {
             iconView.setImageResource(iconRes);
             int iconColorValue = hostColor != null ? hostColor : ContextCompat.getColor(mActivity, iconColorRes);
             iconView.getBackground().mutate().setColorFilter(iconColorValue, PorterDuff.Mode.SRC_IN);
-            countView.setText(sessionCount > 0 ? String.valueOf(sessionCount) : "");
+            countView.setText(countText != null ? countText : (sessionCount > 0 ? String.valueOf(sessionCount) : ""));
             return view;
         }
 

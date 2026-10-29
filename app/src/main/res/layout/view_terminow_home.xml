@@ -612,11 +612,26 @@
             android:contentDescription="@string/terminow_help"
             android:visibility="gone" />
 
+        <HorizontalScrollView
+            android:id="@+id/terminow_protocol_filter"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_below="@id/terminow_section_title"
+            android:overScrollMode="never"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/terminow_protocol_filter_row"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal" />
+        </HorizontalScrollView>
+
         <GridView
             android:id="@+id/terminow_grid"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:layout_below="@id/terminow_section_title"
+            android:layout_below="@id/terminow_protocol_filter"
             android:clipToPadding="false"
             android:columnWidth="260dp"
             android:horizontalSpacing="10dp"
