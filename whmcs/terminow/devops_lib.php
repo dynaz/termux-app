@@ -202,6 +202,31 @@ function github_get(string $token, string $path): array
     return [$status, is_string($body) ? json_decode($body, true) : null];
 }
 
+/**
+ * Fetch every page of a paginated GitHub list endpoint with the user's token, following the page
+ * number until a short page is returned (GitHub returns the full `per_page` while more remain) or a
+ * safety cap is hit. `$path` must already carry its query string WITHOUT a `page` param. Returns
+ * [status, items]: status 200 with the accumulated items, or the first page's error status. This is
+ * why repo search can find repositories beyond the first page — never just page one.
+ */
+function github_get_all(string $token, string $path, int $perPage = 100, int $maxPages = 10): array
+{
+    $sep = (strpos($path, '?') === false) ? '?' : '&';
+    $items = [];
+    for ($page = 1; $page <= $maxPages; $page++) {
+        [$st, $json] = github_get($token, $path . $sep . 'per_page=' . $perPage . '&page=' . $page);
+        if ($st !== 200 || !is_array($json)) {
+            // Page 1 failing is a real error; a later page failing keeps what we already have.
+            if ($page === 1) return [$st, null];
+            break;
+        }
+        if (count($json) === 0) break;
+        foreach ($json as $it) $items[] = $it;
+        if (count($json) < $perPage) break; // last page
+    }
+    return [200, $items];
+}
+
 /** Revoke an OAuth token at GitHub (app token grant deletion). Best-effort. */
 function revoke_token(array $config, string $token): void
 {
@@ -304,16 +329,24 @@ function handle(\PDO $db, array $claims, string $request, callable $isPremiumNow
     $token = decrypt((string)$conn['enc_token'], config()['token_key']);
 
     if ($action === 'repos') {
-        [$st, $json] = github_get($token, '/user/repos?per_page=50&sort=pushed&affiliation=owner,collaborator,organization_member');
+        // Every page the connection can read (owner, collaborator and org member), so client-side
+        // search covers the whole list — not just the first page.
+        [$st, $json] = github_get_all($token, '/user/repos?sort=pushed&affiliation=owner,collaborator,organization_member');
         if ($st !== 200 || !is_array($json)) throw new Failure(502, 'provider_error');
         $repos = [];
-        foreach ($json as $r) $repos[] = [
-            'fullName'      => (string)($r['full_name'] ?? ''),
-            'private'       => (bool)($r['private'] ?? false),
-            'defaultBranch' => (string)($r['default_branch'] ?? ''),
-            'pushedAt'      => (string)($r['pushed_at'] ?? ''),
-            'htmlUrl'       => (string)($r['html_url'] ?? ''),
-        ];
+        $seen = [];
+        foreach ($json as $r) {
+            $full = (string)($r['full_name'] ?? '');
+            if ($full === '' || isset($seen[$full])) continue; // de-dupe across pages
+            $seen[$full] = true;
+            $repos[] = [
+                'fullName'      => $full,
+                'private'       => (bool)($r['private'] ?? false),
+                'defaultBranch' => (string)($r['default_branch'] ?? ''),
+                'pushedAt'      => (string)($r['pushed_at'] ?? ''),
+                'htmlUrl'       => (string)($r['html_url'] ?? ''),
+            ];
+        }
         return ['repos' => $repos];
     }
     if ($action === 'runs') {

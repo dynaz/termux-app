@@ -27,6 +27,12 @@
     <string name="terminow_devops_link_host">ผูกโฮสต์</string>
     <string name="terminow_devops_select_repo">เลือก repository</string>
     <string name="terminow_devops_no_repos">ไม่พบ repository</string>
+    <string name="terminow_devops_search_repos">ค้นหา repository…</string>
+    <string name="terminow_devops_search_clear">ล้างคำค้นหา</string>
+    <!-- %1$d = matches shown, %2$d = total repositories -->
+    <string name="terminow_devops_repo_count">%1$d จาก %2$d repository</string>
+    <string name="terminow_devops_repo_count_all">%1$d repository</string>
+    <string name="terminow_devops_no_repos_match">ไม่พบ repository ที่ตรงกับ \"%1$s\"</string>
     <string name="terminow_devops_no_runs">ยังไม่มีข้อมูลให้แสดง</string>
     <string name="terminow_devops_not_connected_msg">ยังไม่ได้เชื่อมต่อ GitHub</string>
     <string name="terminow_devops_no_access">คุณไม่มีสิทธิ์เข้าถึง repository นั้น</string>

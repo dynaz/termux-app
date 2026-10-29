@@ -24,8 +24,10 @@ import androidx.core.content.ContextCompat;
 import com.termux.R;
 import com.termux.app.TermuxActivity;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * The DevOps MVP flow (a Premium feature): Connect GitHub → Select Repo → Create Project → Link an
@@ -158,30 +160,64 @@ public final class TerminowDevOpsUi {
         return card;
     }
 
-    /** Select Repo → Create Project. */
+    /** Select Repo (searchable) → Create Project. The backend returns every page the connection can
+     *  read, so filtering here covers the whole list — not just the first page. Filtering is in-memory,
+     *  so there is no per-keystroke backend call to debounce or race. */
     private void newProject(@NonNull Sheet parent) {
         run(mDevOps::repos, parent, repos -> {
             Sheet sheet = new Sheet(mActivity.getString(R.string.terminow_devops_select_repo));
-            if (repos.isEmpty()) sheet.note(mActivity.getString(R.string.terminow_devops_no_repos));
-            for (TerminowDevOps.Repo r : repos) {
-                LinearLayout card = sheet.card();
-                card.setClickable(true);
-                TextView n = sheet.text(r.fullName, 15, R.color.terminow_text);
-                n.setTypeface(Typeface.DEFAULT_BOLD);
-                card.addView(n);
-                card.addView(sheet.text((r.isPrivate ? "private" : "public") + (r.defaultBranch.isEmpty() ? "" : " · " + r.defaultBranch), 12, R.color.terminow_text_secondary));
-                card.setOnClickListener(v -> {
-                    TerminowStore.DevOpsProject p = new TerminowStore.DevOpsProject();
-                    p.provider = "github";
-                    p.repo = r.fullName;
-                    mStore.addDevOpsProject(p);
-                    sheet.dialog.dismiss();
-                    linkHost(parent, p);   // Create Project → Link Host
-                });
-                sheet.content.addView(card);
-            }
+            // true once a repo is tapped, so a second tap during Create Project can't double-select.
+            final boolean[] selecting = {false};
+            final TextView count = sheet.text("", 12, R.color.terminow_text_secondary);
+            android.widget.EditText search = sheet.searchField(mActivity.getString(R.string.terminow_devops_search_repos));
+            sheet.addPinned(count);
+            renderRepoList(sheet, parent, repos, "", count, selecting);
+            search.addTextChangedListener(new android.text.TextWatcher() {
+                @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+                @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
+                @Override public void afterTextChanged(android.text.Editable e) {
+                    renderRepoList(sheet, parent, repos, e.toString(), count, selecting);
+                }
+            });
             sheet.show();
         });
+    }
+
+    /** Filter {@code all} by {@code query} (case-insensitive substring of owner/repo) and rebuild the list. */
+    private void renderRepoList(@NonNull Sheet sheet, @NonNull Sheet parent, @NonNull List<TerminowDevOps.Repo> all,
+                                @NonNull String query, @NonNull TextView count, @NonNull boolean[] selecting) {
+        sheet.content.removeAllViews();
+        String q = query.trim().toLowerCase(Locale.ROOT);
+        List<TerminowDevOps.Repo> shown = new ArrayList<>();
+        for (TerminowDevOps.Repo r : all)
+            if (q.isEmpty() || r.fullName.toLowerCase(Locale.ROOT).contains(q)) shown.add(r);
+
+        count.setText(q.isEmpty()
+            ? mActivity.getString(R.string.terminow_devops_repo_count_all, all.size())
+            : mActivity.getString(R.string.terminow_devops_repo_count, shown.size(), all.size()));
+
+        if (all.isEmpty()) { sheet.note(mActivity.getString(R.string.terminow_devops_no_repos)); return; }
+        if (shown.isEmpty()) { sheet.note(mActivity.getString(R.string.terminow_devops_no_repos_match, query.trim())); return; }
+
+        for (TerminowDevOps.Repo r : shown) {
+            LinearLayout card = sheet.card();
+            card.setClickable(true);
+            TextView n = sheet.text(r.fullName, 15, R.color.terminow_text);
+            n.setTypeface(Typeface.DEFAULT_BOLD);
+            card.addView(n);
+            card.addView(sheet.text((r.isPrivate ? "private" : "public") + (r.defaultBranch.isEmpty() ? "" : " · " + r.defaultBranch), 12, R.color.terminow_text_secondary));
+            card.setOnClickListener(v -> {
+                if (selecting[0]) return;   // guard against a double tap during Create Project
+                selecting[0] = true;
+                TerminowStore.DevOpsProject p = new TerminowStore.DevOpsProject();
+                p.provider = "github";
+                p.repo = r.fullName;
+                mStore.addDevOpsProject(p);
+                sheet.dialog.dismiss();
+                linkHost(parent, p);   // Create Project → Link Host
+            });
+            sheet.content.addView(card);
+        }
     }
 
     /** Link an existing SSH host to a project. */
@@ -297,12 +333,14 @@ public final class TerminowDevOpsUi {
 
     private final class Sheet {
         final Dialog dialog = new Dialog(mActivity);
+        final LinearLayout root = new LinearLayout(mActivity);
         final LinearLayout content = new LinearLayout(mActivity);
         final boolean phone = mActivity.getResources().getConfiguration().screenWidthDp < 600;
+        /** Index in {@link #root} where the scrolling list starts; pinned rows insert just before it. */
+        private int scrollIndex;
 
         Sheet(@NonNull String title) {
             dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-            LinearLayout root = new LinearLayout(mActivity);
             root.setOrientation(LinearLayout.VERTICAL);
             root.setPadding(dp(20), dp(16), dp(20), dp(20));
             GradientDrawable bg = new GradientDrawable();
@@ -323,20 +361,85 @@ public final class TerminowDevOpsUi {
             close.setOnClickListener(v -> dialog.dismiss());
             head.addView(close, new LinearLayout.LayoutParams(dp(48), dp(48)));
             root.addView(head, wrap());
+            scrollIndex = root.getChildCount(); // pinned rows go between the head and the scroll
             content.setOrientation(LinearLayout.VERTICAL);
-            ScrollView scroll = new ScrollView(mActivity);
+            // Cap the list height so a long list scrolls inside the sheet instead of overflowing the
+            // screen (and so the sheet still fits when the soft keyboard is open).
+            ScrollView scroll = new ScrollView(mActivity) {
+                @Override protected void onMeasure(int widthSpec, int heightSpec) {
+                    int max = Math.round(mActivity.getResources().getDisplayMetrics().heightPixels * 0.55f);
+                    super.onMeasure(widthSpec, View.MeasureSpec.makeMeasureSpec(max, View.MeasureSpec.AT_MOST));
+                }
+            };
+            scroll.setFillViewport(true);
             scroll.addView(content);
-            LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+            LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             sp.topMargin = dp(8);
             root.addView(scroll, sp);
             dialog.setContentView(root);
             Window window = dialog.getWindow();
             if (window != null) {
                 window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+                window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
                 int screen = mActivity.getResources().getDisplayMetrics().widthPixels;
                 if (phone) { window.setGravity(Gravity.BOTTOM); window.setLayout(screen, ViewGroup.LayoutParams.WRAP_CONTENT); }
                 else window.setLayout(Math.min(screen - dp(32), dp(520)), ViewGroup.LayoutParams.WRAP_CONTENT);
             }
+        }
+
+        /** Pin a row below the title/close and above the scrolling list (so it never scrolls away). */
+        void addPinned(@NonNull View v) {
+            LinearLayout.LayoutParams lp = wrap();
+            lp.topMargin = dp(10);
+            root.addView(v, scrollIndex++, lp);
+        }
+
+        /** A pinned search field: leading search icon, single-line input, and a × that clears it
+         *  (shown only while there is text). Returns the input so the caller attaches its filter. */
+        @NonNull android.widget.EditText searchField(@NonNull String hint) {
+            LinearLayout row = new LinearLayout(mActivity);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            GradientDrawable shape = new GradientDrawable();
+            shape.setColor(color(R.color.terminow_field));
+            shape.setCornerRadius(dp(12));
+            shape.setStroke(Math.max(1, dp(1)), color(R.color.terminow_quick_border));
+            row.setBackground(shape);
+            row.setPadding(dp(12), 0, dp(6), 0);
+
+            TextView icon = text("🔍", 14, R.color.terminow_text_secondary); // 🔍
+            row.addView(icon, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+            final android.widget.EditText input = new android.widget.EditText(mActivity);
+            input.setHint(hint);
+            input.setSingleLine(true);
+            input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+            input.setTextColor(color(R.color.terminow_text));
+            input.setHintTextColor(color(R.color.terminow_text_secondary));
+            input.setBackground(null);
+            input.setMinHeight(dp(48));
+            input.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);
+            input.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+            LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            ilp.leftMargin = dp(8);
+            row.addView(input, ilp);
+
+            final TextView clear = text("✕", 15, R.color.terminow_text_secondary); // ✕
+            clear.setGravity(Gravity.CENTER);
+            clear.setContentDescription(mActivity.getString(R.string.terminow_devops_search_clear));
+            clear.setVisibility(View.GONE);
+            clear.setOnClickListener(v -> input.setText(""));
+            row.addView(clear, new LinearLayout.LayoutParams(dp(40), dp(40)));
+
+            input.addTextChangedListener(new android.text.TextWatcher() {
+                @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+                @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
+                @Override public void afterTextChanged(android.text.Editable e) {
+                    clear.setVisibility(e.length() > 0 ? View.VISIBLE : View.GONE);
+                }
+            });
+            addPinned(row);
+            return input;
         }
 
         void show() { dialog.show(); }

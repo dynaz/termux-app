@@ -31,6 +31,12 @@
     <string name="terminow_devops_link_host">Link host</string>
     <string name="terminow_devops_select_repo">Select a repository</string>
     <string name="terminow_devops_no_repos">No repositories found.</string>
+    <string name="terminow_devops_search_repos">Search repositories…</string>
+    <string name="terminow_devops_search_clear">Clear search</string>
+    <!-- %1$d = matches shown, %2$d = total repositories -->
+    <string name="terminow_devops_repo_count">%1$d of %2$d repositories</string>
+    <string name="terminow_devops_repo_count_all">%1$d repositories</string>
+    <string name="terminow_devops_no_repos_match">No repositories match \"%1$s\".</string>
     <string name="terminow_devops_no_runs">Nothing to show yet.</string>
     <string name="terminow_devops_not_connected_msg">GitHub is not connected.</string>
     <string name="terminow_devops_no_access">You don\'t have access to that repository.</string>
