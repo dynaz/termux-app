@@ -68,7 +68,8 @@ check($none === null, 'gitlab NOT configured when ids missing');
 $disabled = provider_config($cfg + ['gitlab_enabled' => false], 'gitlab');
 check($disabled === null, 'gitlab held back by *_enabled=false');
 $pc = provider_config($cfg, 'gitlab');
-check(strpos($pc['redirect_uri'], 'provider=gitlab') !== false, 'gitlab redirect carries provider marker');
+check($pc['redirect_uri'] === 'https://cp/cb' && strpos($pc['redirect_uri'], 'provider=') === false,
+    'gitlab uses the one bare callback URL (no provider query)');
 check($pc['scopes'] === 'read_api read_user', 'gitlab default scopes read-only');
 $conf = configured_providers($cfg);
 check($conf['github'] && $conf['gitlab'] && $conf['bitbucket'], 'all three configured in map');

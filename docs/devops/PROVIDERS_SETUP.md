@@ -23,7 +23,7 @@ The app shows each provider's state from the backend:
 ### GitLab.com
 1. GitLab → avatar → **Edit profile** → **Applications** → **Add new application**.
 2. **Name:** TermiNow DevOps
-3. **Redirect URI:** `https://cp.accmove.com/terminow/devops_callback.php?provider=gitlab`
+3. **Redirect URI:** `https://cp.accmove.com/terminow/devops_callback.php`  (bare — no query string)
 4. **Confidential:** ✔ (checked)
 5. **Scopes:** check **`read_api`** and **`read_user`** only.
 6. Save → copy the **Application ID** and **Secret**.
@@ -31,7 +31,7 @@ The app shows each provider's state from the backend:
 ### Bitbucket Cloud
 1. Bitbucket → **Workspace settings** → **OAuth consumers** → **Add consumer**.
 2. **Name:** TermiNow DevOps
-3. **Callback URL:** `https://cp.accmove.com/terminow/devops_callback.php?provider=bitbucket`
+3. **Callback URL:** `https://cp.accmove.com/terminow/devops_callback.php`  (bare — no query string)
 4. **This is a private consumer:** leave default (it has a secret).
 5. **Permissions:** check **Account: Read**, **Repositories: Read**, **Pipelines: Read**. Nothing else.
 6. Save → expand the consumer to copy the **Key** (client id) and **Secret**.

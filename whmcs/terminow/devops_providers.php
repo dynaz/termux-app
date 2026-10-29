@@ -76,11 +76,13 @@ function provider_config(array $config, string $provider): ?array
     if ($id === '' || $secret === '') return null;
     if (array_key_exists($provider . '_enabled', $config) && !$config[$provider . '_enabled']) return null;
     $def = provider_def($provider);
-    $redirect = (string)($config[$provider . '_redirect_uri'] ?? $config['redirect_uri'] ?? '');
+    // All providers share ONE bare callback URL (the GitHub one, which already works). The single-use
+    // `state` carries which provider the callback is for, so no `?provider=` query is needed — and a
+    // bare redirect URI avoids the exact-match / query-string friction that GitLab and Bitbucket have.
+    // Any stored <provider>_redirect_uri (which an older setup may have saved with a ?provider= query)
+    // is intentionally ignored in favor of this single bare URL.
+    $redirect = (string)($config['redirect_uri'] ?? '');
     if ($redirect === '') return null;
-    // Each provider gets its own callback marker so one redirect file can serve all providers.
-    if ($provider !== 'github' && strpos($redirect, 'provider=') === false)
-        $redirect .= (strpos($redirect, '?') === false ? '?' : '&') . 'provider=' . $provider;
     return [
         'provider'      => $provider,
         'client_id'     => $id,
