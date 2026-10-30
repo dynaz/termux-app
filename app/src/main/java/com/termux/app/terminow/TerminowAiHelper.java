@@ -31,6 +31,9 @@ public final class TerminowAiHelper {
     /** The `terminow` CLI wrapper asset and where it installs in the guest (on ~/.local/bin). */
     public static final String CLI_ASSET = "terminow-ai/terminow";
     public static final String GUEST_CLI_REL = ".local/bin/terminow";
+    /** The Claude Code `/bridge` slash command asset and where it installs (Claude user commands). */
+    public static final String COMMAND_ASSET = "terminow-ai/bridge-command.md";
+    public static final String GUEST_COMMAND_REL = ".claude/commands/bridge.md";
     /** Where the helper is installed in the guest home. */
     public static final String GUEST_HELPER_REL = ".local/share/terminow-ai/terminow-ai-bridge.py";
     /** Where the token file is kept in the guest home, with 0600 permissions. */

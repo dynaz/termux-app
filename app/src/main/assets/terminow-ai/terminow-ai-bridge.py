@@ -19,6 +19,8 @@
 #   TERMINOW_AI_TOKEN_FILE  path to a file holding the token (preferred)
 #   TERMINOW_AI_TOKEN       the token itself (fallback; discouraged)
 
+import hashlib
+import json
 import os
 import sys
 import socket
@@ -33,12 +35,31 @@ import time
 # over. TERMINOW_AI_CLIENT_ID overrides it (used by tests).
 _PROCESS_CLIENT_ID = os.environ.get("TERMINOW_AI_CLIENT_ID", "").strip() or os.urandom(16).hex()
 
+# The CLI subcommands set this to a terminal-stable id, so a `connect` is still in effect for the
+# next `status` in the same tab. The MCP relay leaves it None and uses the per-process id, which is
+# what keeps two tabs apart.
+_CLIENT_ID_OVERRIDE = None
+
 
 def log(*a):
     print("[terminow-ai]", *a, file=sys.stderr, flush=True)
 
 
 def client_id():
+    return _CLIENT_ID_OVERRIDE or _PROCESS_CLIENT_ID
+
+
+def cli_client_id():
+    # Stable within one terminal and distinct per tab, via the controlling terminal. A pipe with no
+    # tty falls back to this process's id. This CLI client is separate from Claude Code's own client.
+    override = os.environ.get("TERMINOW_AI_CLIENT_ID", "").strip()
+    if override:
+        return override
+    for fd in (0, 1, 2):
+        try:
+            return "cli-" + hashlib.sha256(os.ttyname(fd).encode("utf-8")).hexdigest()[:24]
+        except OSError:
+            continue
     return _PROCESS_CLIENT_ID
 
 
@@ -251,6 +272,51 @@ def doctor(verbose):
             pass
 
 
+def _close(sock):
+    try:
+        sock.close()
+    except OSError:
+        pass
+
+
+def _open():
+    # Connect, authenticate (which registers this client), and run the MCP handshake. Returns the
+    # live socket, or prints the reason and returns None. Never prints a token or credential.
+    token = read_token()
+    if not token:
+        print("bridge: not provisioned (run Connect & Test in TermiNow)")
+        return None
+    try:
+        sock = connect()
+    except OSError as e:
+        print("bridge: unreachable (%s)" % e)
+        return None
+    if sock is None:
+        print("bridge: no transport configured")
+        return None
+    if not authenticate(sock, token):
+        print("bridge: authentication failed (reconnect in TermiNow)")
+        _close(sock)
+        return None
+    _rpc(sock, 1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {},
+                                 "clientInfo": {"name": "terminow-cli", "version": "1"}})
+    sock.sendall((json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n").encode("utf-8"))
+    return sock
+
+
+def _tool(sock, mid, name, arguments):
+    resp = _rpc(sock, mid, "tools/call", {"name": name, "arguments": arguments})
+    result = (resp or {}).get("result") or {}
+    content = result.get("content") or []
+    body = {}
+    if content:
+        try:
+            body = json.loads(content[0].get("text", "{}"))
+        except (ValueError, AttributeError):
+            body = {}
+    return bool(result.get("isError", False)), body
+
+
 def status():
     token = read_token()
     port = read_port()
@@ -259,23 +325,91 @@ def status():
     if not token:
         print("bridge: not provisioned")
         return 2
-    try:
-        sock = connect()
-        ok = sock is not None and authenticate(sock, token)
-        if sock is not None:
-            sock.close()
-        print("bridge:", "connected" if ok else "reachable but auth failed" if sock is not None else "unreachable")
-        return 0 if ok else 3
-    except OSError as e:
-        print("bridge: unreachable (%s)" % e)
+    sock = _open()
+    if sock is None:
         return 3
+    try:
+        print("bridge: connected")
+        is_error, body = _tool(sock, 2, "bridge_status", {})
+        selected = None if is_error else body.get("selected_host")
+        if selected:
+            print("selected host:", selected.get("host_id"), "(%s)" % selected.get("alias", ""))
+        else:
+            print("selected host: none (use: terminow bridge connect <host-id>)")
+        return 0
+    finally:
+        _close(sock)
+
+
+def cmd_hosts():
+    sock = _open()
+    if sock is None:
+        return 3
+    try:
+        is_error, body = _tool(sock, 2, "hosts_list", {})
+        if is_error:
+            print("error:", body.get("message", body.get("error", "failed")))
+            return 3
+        hosts = body.get("hosts", [])
+        if not hosts:
+            print("No hosts are available to this environment. Enable AI access for a host in TermiNow.")
+            return 0
+        for h in hosts:
+            print("%-16s %-20s %s@%s:%s  [%s]" % (
+                h.get("host_id", "?"), h.get("alias", ""), h.get("username", ""),
+                h.get("hostname", ""), h.get("port", ""), ",".join(h.get("capabilities", []))))
+        return 0
+    finally:
+        _close(sock)
+
+
+def cmd_connect(host_id):
+    if not host_id:
+        print("usage: terminow bridge connect <host-id>   (list ids with: terminow bridge hosts)")
+        return 2
+    sock = _open()
+    if sock is None:
+        return 3
+    try:
+        is_error, body = _tool(sock, 2, "select_host", {"host_id": host_id})
+        if is_error:
+            print("could not select:", body.get("message", body.get("error", "failed")))
+            return 3
+        print("selected %s (%s) for this terminal." % (body.get("host_id"), body.get("alias", "")))
+        print("note: Claude Code chooses its own host with /bridge; this selection is the CLI client's.")
+        return 0
+    finally:
+        _close(sock)
+
+
+def cmd_disconnect():
+    sock = _open()
+    if sock is None:
+        return 3
+    try:
+        is_error, _ = _tool(sock, 2, "disconnect_host", {})
+        print("the CLI client's host selection was cleared." if not is_error else "could not clear the selection.")
+        return 0 if not is_error else 3
+    finally:
+        _close(sock)
 
 
 def main():
     # Subcommands for the `terminow bridge` CLI; with no subcommand this is the MCP stdio relay.
     args = sys.argv[1:]
-    if args and args[0] in ("doctor", "status"):
-        return doctor("-v" in args or "--verbose" in args) if args[0] == "doctor" else status()
+    if args and args[0] in ("doctor", "status", "hosts", "connect", "disconnect"):
+        global _CLIENT_ID_OVERRIDE
+        _CLIENT_ID_OVERRIDE = cli_client_id()
+        cmd = args[0]
+        if cmd == "doctor":
+            return doctor("-v" in args or "--verbose" in args)
+        if cmd == "status":
+            return status()
+        if cmd == "hosts":
+            return cmd_hosts()
+        if cmd == "connect":
+            return cmd_connect(args[1] if len(args) > 1 else "")
+        return cmd_disconnect()
     if not read_token():
         log("no token; run 'Connect Claude Code' in TermiNow")
         return 2

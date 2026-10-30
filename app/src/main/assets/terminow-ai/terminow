@@ -1,8 +1,12 @@
 #!/bin/sh
 # TermiNow bridge CLI (installed by TermiNow into the environment).
-#   terminow bridge          -> status
-#   terminow bridge status   -> is the bridge reachable and authenticated (sanitized)
-#   terminow bridge doctor   -> full MCP handshake check (add -v for host details)
+#   terminow bridge                 -> status
+#   terminow bridge status          -> reachable? authenticated? selected host (sanitized)
+#   terminow bridge hosts           -> list the hosts this environment may use
+#   terminow bridge connect <id>    -> select a host for this terminal's CLI client
+#   terminow bridge disconnect      -> clear the CLI client's selected host
+#   terminow bridge doctor          -> full MCP handshake check (add -v for host details)
+# Claude Code selects its own host with /bridge; the CLI client is separate.
 # No token or credential is ever printed.
 HELPER="$HOME/.local/share/terminow-ai/terminow-ai-bridge.py"
 if [ ! -f "$HELPER" ]; then
@@ -13,6 +17,6 @@ fi
 sub="${1:-status}"
 [ $# -gt 0 ] && shift
 case "$sub" in
-    status|doctor) exec python3 "$HELPER" "$sub" "$@" ;;
-    *) echo "usage: terminow bridge [status|doctor]" >&2; exit 2 ;;
+    status|hosts|connect|disconnect|doctor) exec python3 "$HELPER" "$sub" "$@" ;;
+    *) echo "usage: terminow bridge [status|hosts|connect <id>|disconnect|doctor]" >&2; exit 2 ;;
 esac

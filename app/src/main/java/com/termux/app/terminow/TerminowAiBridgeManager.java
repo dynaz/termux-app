@@ -271,8 +271,10 @@ public final class TerminowAiBridgeManager {
 
         try {
             installAsset(TerminowAiHelper.HELPER_ASSET, guestHelper);
-            // The `terminow` CLI wrapper, so `terminow bridge status|doctor` works in the environment.
+            // The `terminow` CLI wrapper, so `terminow bridge status|hosts|connect|doctor` works.
             installAsset(TerminowAiHelper.CLI_ASSET, underRootfs(rootfs, guestHome, TerminowAiHelper.GUEST_CLI_REL));
+            // The Claude Code `/bridge` slash command, so a session can select and test a host.
+            installAsset(TerminowAiHelper.COMMAND_ASSET, underRootfs(rootfs, guestHome, TerminowAiHelper.GUEST_COMMAND_REL));
             String token = mSession.mint(environmentKey);
             writeTokenFile(guestTokenFile, token);
             writePortFile(guestPortFile, mServer.getPort());
