@@ -467,8 +467,14 @@ public final class TerminalView extends View {
         int rowsInHistory = mEmulator.getScreen().getActiveTranscriptRows();
         if (mTopRow < -rowsInHistory) setTopRow(-rowsInHistory);
 
-        if (isSelectingText() || mEmulator.isAutoScrollDisabled()) {
-            // Do not scroll when selecting text.
+        // Keep the viewport steady, instead of snapping to the bottom, while the user is reading
+        // older output: when selecting text, when the emulator asked to hold position, or simply
+        // when the user has scrolled up into the transcript (mTopRow < 0, which is per-session and
+        // already restored on a session switch). At the very bottom (mTopRow == 0) output scrolls
+        // as before, so ordinary typing is unchanged.
+        boolean readingHistory = mTopRow < 0;
+        if (isSelectingText() || mEmulator.isAutoScrollDisabled() || readingHistory) {
+            // Do not scroll when selecting text or reading history.
             int rowShift = mEmulator.getScrollCounter();
             if (-mTopRow + rowShift > rowsInHistory) {
                 // .. unless we're hitting the end of history transcript, in which
@@ -476,7 +482,7 @@ public final class TerminalView extends View {
                 if (isSelectingText())
                     stopTextSelectionMode();
 
-                if (mEmulator.isAutoScrollDisabled()) {
+                if (mEmulator.isAutoScrollDisabled() || readingHistory) {
                     setTopRow(-rowsInHistory);
                     skipScrolling = true;
                 }
