@@ -239,6 +239,17 @@
             app:tint="@color/terminow_text" />
 
         <ImageView
+            android:id="@+id/terminow_toolbar_screenshot"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="4dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/terminow_toolbar_screenshot"
+            android:padding="9dp"
+            android:src="@drawable/ic_terminow_image"
+            app:tint="@color/terminow_text" />
+
+        <ImageView
             android:id="@+id/terminow_toolbar_more"
             android:layout_width="40dp"
             android:layout_height="40dp"

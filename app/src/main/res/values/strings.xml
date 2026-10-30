@@ -305,6 +305,28 @@
     <string name="terminow_terminal_search_count">%1$d/%2$d</string>
     <string name="terminow_terminal_search_none">0/0</string>
     <string name="terminow_terminal_search_retained">Retained history only</string>
+    <!-- Scroll Screenshot. -->
+    <string name="terminow_toolbar_screenshot">Scroll screenshot</string>
+    <string name="terminow_capture_title">Scroll screenshot</string>
+    <string name="terminow_capture_visible">Visible terminal</string>
+    <string name="terminow_capture_range">Select scrollback range</string>
+    <string name="terminow_capture_all">All available scrollback</string>
+    <!-- %1$d = retained line count. -->
+    <string name="terminow_capture_range_note">%1$d lines are retained. Older history has scrolled out of the buffer and cannot be captured.</string>
+    <string name="terminow_capture_range_first">First line</string>
+    <string name="terminow_capture_range_last">Last line</string>
+    <string name="terminow_capture_do">Capture</string>
+    <string name="terminow_capture_working">Capturing…</string>
+    <string name="terminow_capture_ready">Screenshot ready</string>
+    <!-- %1$d = lines. -->
+    <string name="terminow_capture_lines">Captured %1$d lines.</string>
+    <!-- %1$d = images, %2$d = lines. -->
+    <string name="terminow_capture_pages">%1$d images, %2$d lines.</string>
+    <string name="terminow_capture_save">Save</string>
+    <string name="terminow_capture_share">Share</string>
+    <!-- %1$d = images saved. -->
+    <string name="terminow_capture_saved">Saved %1$d image(s) to Pictures/TermiNow</string>
+    <string name="terminow_capture_failed">Capture failed</string>
     <string name="terminow_save">Save</string>
     <string name="terminow_autofill_unavailable">No autofill service is enabled to fill in a password</string>
     <string name="terminow_action_new_host">+ New host</string>

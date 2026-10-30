@@ -39,6 +39,7 @@ import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 
 import com.termux.terminal.KeyHandler;
+import com.termux.terminal.TerminalBuffer;
 import com.termux.terminal.TerminalEmulator;
 import com.termux.terminal.TerminalSearcher;
 import com.termux.terminal.TerminalSession;
@@ -1311,6 +1312,78 @@ public final class TerminalView extends View {
     private void notifySearchResults() {
         if (mSearchResultListener != null)
             mSearchResultListener.onSearchResults(mSearchIndex < 0 ? 0 : mSearchIndex + 1, mSearchMatches.size());
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // Scroll Screenshot: offscreen capture of the retained buffer
+    // ------------------------------------------------------------------------------------------
+
+    /** A consistent, detached snapshot of a row range plus what the offscreen renderer needs. */
+    public static final class CaptureSource {
+        public final TerminalBuffer buffer;   // detached copy; rows addressed 0..totalRows-1
+        public final int[] palette;           // a copy of the live colour palette
+        public final int columns;
+        public final int totalRows;
+        public final int backgroundColor;
+        public final float fontWidth;
+        public final int lineHeight;
+
+        CaptureSource(TerminalBuffer buffer, int[] palette, int columns, int totalRows,
+                      int backgroundColor, float fontWidth, int lineHeight) {
+            this.buffer = buffer;
+            this.palette = palette;
+            this.columns = columns;
+            this.totalRows = totalRows;
+            this.backgroundColor = backgroundColor;
+            this.fontWidth = fontWidth;
+            this.lineHeight = lineHeight;
+        }
+    }
+
+    /** Topmost capturable external row (oldest retained history). */
+    public int captureHistoryTop() {
+        return mEmulator == null ? 0 : -mEmulator.getScreen().getActiveTranscriptRows();
+    }
+
+    /** Bottommost capturable external row (last screen row). */
+    public int captureBottom() {
+        return mEmulator == null ? 0 : mEmulator.mRows - 1;
+    }
+
+    /** The first external row currently visible on screen (for the "visible" capture option). */
+    public int captureVisibleTop() {
+        return mTopRow;
+    }
+
+    /**
+     * Snapshot the current session's external rows {@code [firstExternal, lastExternal]} for an
+     * offscreen capture. A detached copy is taken now, so later output never shifts the capture, and
+     * the live viewport, scroll position and auto-follow are untouched. Call on the main thread.
+     */
+    @Nullable
+    public CaptureSource captureSource(int firstExternal, int lastExternal) {
+        if (mEmulator == null) return null;
+        TerminalBuffer snapshot = mEmulator.getScreen().cloneRows(firstExternal, lastExternal);
+        int[] palette = mEmulator.mColors.mCurrentColors.clone();
+        int background = palette[com.termux.terminal.TextStyle.COLOR_INDEX_BACKGROUND];
+        return new CaptureSource(snapshot, palette, mEmulator.mColumns, snapshot.getActiveRows(),
+            background, mRenderer.getFontWidth(), mRenderer.getFontLineSpacing());
+    }
+
+    /**
+     * Render rows {@code [firstRow, firstRow+rowCount)} of a snapshot into a bitmap — one capture
+     * page. Uses the live renderer, so call on the main thread (the snapshot is frozen, so paging
+     * across posts stays consistent). The caller recycles the bitmap after encoding.
+     */
+    @NonNull
+    public android.graphics.Bitmap renderCapturePage(@NonNull CaptureSource src, int firstRow, int rowCount) {
+        int width = Math.max(1, Math.round(src.columns * src.fontWidth));
+        int height = Math.max(1, rowCount * src.lineHeight);
+        android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        canvas.drawColor(src.backgroundColor);
+        mRenderer.renderSnapshot(canvas, src.buffer, src.palette, src.columns, firstRow, rowCount);
+        return bitmap;
     }
 
     public void setTopRow(int topRow) {

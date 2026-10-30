@@ -61,18 +61,33 @@ public final class TerminalRenderer {
     public final void render(TerminalEmulator mEmulator, Canvas canvas, int topRow,
                              int selectionY1, int selectionY2, int selectionX1, int selectionX2) {
         final boolean reverseVideo = mEmulator.isReverseVideo();
-        final int endRow = topRow + mEmulator.mRows;
-        final int columns = mEmulator.mColumns;
-        final int cursorCol = mEmulator.getCursorCol();
-        final int cursorRow = mEmulator.getCursorRow();
-        final boolean cursorVisible = mEmulator.shouldCursorBeVisible();
-        final TerminalBuffer screen = mEmulator.getScreen();
         final int[] palette = mEmulator.mColors.mCurrentColors;
-        final int cursorShape = mEmulator.getCursorStyle();
 
         if (reverseVideo)
             canvas.drawColor(palette[TextStyle.COLOR_INDEX_FOREGROUND], PorterDuff.Mode.SRC);
 
+        renderRows(canvas, mEmulator.getScreen(), palette, mEmulator.mColumns, topRow, topRow + mEmulator.mRows,
+            reverseVideo, mEmulator.getCursorRow(), mEmulator.getCursorCol(), mEmulator.shouldCursorBeVisible(),
+            mEmulator.getCursorStyle(), selectionY1, selectionY2, selectionX1, selectionX2);
+    }
+
+    /**
+     * Draw rows {@code [firstRow, firstRow+rowCount)} of a detached snapshot buffer at the top of the
+     * canvas, using the live palette and column count, with no cursor, selection or reverse video.
+     * Used by the offscreen Scroll Screenshot capture, which renders a consistent snapshot of the
+     * retained buffer without ever touching the live terminal view. Pixels are produced by the same
+     * {@link #renderRows} path as on-screen rendering, so colours, ANSI styling, Unicode and wrapped
+     * lines match the live terminal (inline sixel images are not carried into a snapshot).
+     */
+    public final void renderSnapshot(Canvas canvas, TerminalBuffer screen, int[] palette, int columns,
+                                     int firstRow, int rowCount) {
+        renderRows(canvas, screen, palette, columns, firstRow, firstRow + rowCount,
+            false, -1, -1, false, 0, -1, -1, -1, -1);
+    }
+
+    private void renderRows(Canvas canvas, TerminalBuffer screen, int[] palette, int columns, int topRow, int endRow,
+                            boolean reverseVideo, int cursorRow, int cursorCol, boolean cursorVisible, int cursorShape,
+                            int selectionY1, int selectionY2, int selectionX1, int selectionX2) {
         float heightOffset = mFontLineSpacingAndAscent;
         for (int row = topRow; row < endRow; row++) {
             heightOffset += mFontLineSpacing;
@@ -81,7 +96,7 @@ public final class TerminalRenderer {
             int selx1 = -1, selx2 = -1;
             if (row >= selectionY1 && row <= selectionY2) {
                 if (row == selectionY1) selx1 = selectionX1;
-                selx2 = (row == selectionY2) ? selectionX2 : mEmulator.mColumns;
+                selx2 = (row == selectionY2) ? selectionX2 : columns;
             }
 
             TerminalRow lineObject = screen.allocateFullLineIfNecessary(screen.externalToInternalRow(row));
@@ -104,11 +119,11 @@ public final class TerminalRenderer {
                 final int codePoint = charIsHighsurrogate ? Character.toCodePoint(charAtIndex, line[currentCharIndex + 1]) : charAtIndex;
                 final long style = lineObject.getStyle(column);
                 if (TextStyle.isTerminalBitmap(style)) {
-                    Bitmap bitmap = mEmulator.getScreen().getSixelBitmap(style);
+                    Bitmap bitmap = screen.getSixelBitmap(style);
                     if (bitmap != null) {
                         float left = column * mFontWidth;
                         float top = heightOffset - mFontLineSpacing;
-                        Rect bitmapSrcRect = mEmulator.getScreen().getSixelRect(style);
+                        Rect bitmapSrcRect = screen.getSixelRect(style);
                         RectF bitmapDestRect = new RectF(left, top, left + mFontWidth, top + mFontLineSpacing);
                         canvas.drawBitmap(bitmap, bitmapSrcRect, bitmapDestRect, null);
                     }
@@ -140,7 +155,7 @@ public final class TerminalRenderer {
                     } else {
                         final int columnWidthSinceLastRun = column - lastRunStartColumn;
                         final int charsSinceLastRun = currentCharIndex - lastRunStartIndex;
-                        int cursorColor = lastRunInsideCursor ? mEmulator.mColors.mCurrentColors[TextStyle.COLOR_INDEX_CURSOR] : 0;
+                        int cursorColor = lastRunInsideCursor ? palette[TextStyle.COLOR_INDEX_CURSOR] : 0;
                         boolean invertCursorTextColor = false;
                         if (lastRunInsideCursor && cursorShape == TerminalEmulator.TERMINAL_CURSOR_STYLE_BLOCK) {
                             invertCursorTextColor = true;
@@ -169,7 +184,7 @@ public final class TerminalRenderer {
 
             final int columnWidthSinceLastRun = columns - lastRunStartColumn;
             final int charsSinceLastRun = currentCharIndex - lastRunStartIndex;
-            int cursorColor = lastRunInsideCursor ? mEmulator.mColors.mCurrentColors[TextStyle.COLOR_INDEX_CURSOR] : 0;
+            int cursorColor = lastRunInsideCursor ? palette[TextStyle.COLOR_INDEX_CURSOR] : 0;
             boolean invertCursorTextColor = false;
             if (lastRunInsideCursor && cursorShape == TerminalEmulator.TERMINAL_CURSOR_STYLE_BLOCK) {
                 invertCursorTextColor = true;

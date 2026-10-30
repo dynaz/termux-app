@@ -63,6 +63,19 @@ public class TerminalSearcherTest extends TerminalTestCase {
         assertEquals(0, m.get(0).endCol);
     }
 
+    public void testCloneRowsSnapshotsHistoryAndScreenAndIsDetached() {
+        // 3x2: "111" scrolls into history; screen shows "222"/"333".
+        withTerminalSized(3, 2).enterString("111222333");
+        TerminalBuffer copy = mTerminal.getScreen().cloneRows(-1, 1);
+        assertEquals(3, copy.getActiveRows());
+        assertEquals("111", copy.getSelectedText(0, 0, 3, 0).trim());
+        assertEquals("222", copy.getSelectedText(0, 1, 3, 1).trim());
+        assertEquals("333", copy.getSelectedText(0, 2, 3, 2).trim());
+        // The snapshot is detached: further output must not change the copy.
+        enterString("444");
+        assertEquals("111", copy.getSelectedText(0, 0, 3, 0).trim());
+    }
+
     public void testCombiningMarkMatchesWithinOneCell() {
         // A base letter plus a combining accent occupies a single column; searching the composed
         // query (base + combining) must match — the same shape Thai vowels/tones take.

@@ -218,6 +218,27 @@ public final class TerminalBuffer {
     }
 
     /**
+     * A detached, screen-only copy of the external rows {@code [firstExternal, lastExternal]}, for an
+     * offscreen capture (Scroll Screenshot). Row text, styles and the soft-wrap flag are deep-copied,
+     * so later output never shifts what was captured; inline sixel images are not carried over. The
+     * copy's rows are addressed 0..count-1 (no transcript). Callers clamp the range to valid rows.
+     */
+    @androidx.annotation.NonNull
+    public TerminalBuffer cloneRows(int firstExternal, int lastExternal) {
+        if (firstExternal < -mActiveTranscriptRows) firstExternal = -mActiveTranscriptRows;
+        if (lastExternal > mScreenRows - 1) lastExternal = mScreenRows - 1;
+        int count = Math.max(1, lastExternal - firstExternal + 1);
+        TerminalBuffer copy = new TerminalBuffer(mColumns, count, count);
+        for (int i = 0; i < count; i++) {
+            TerminalRow src = allocateFullLineIfNecessary(externalToInternalRow(firstExternal + i));
+            TerminalRow dst = copy.allocateFullLineIfNecessary(i);
+            dst.copyInterval(src, 0, mColumns, 0);
+            dst.mLineWrap = src.mLineWrap;
+        }
+        return copy;
+    }
+
+    /**
      * Convert a row value from the public external coordinate system to our internal private coordinate system.
      *
      * <pre>

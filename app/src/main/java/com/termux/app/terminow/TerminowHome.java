@@ -164,6 +164,7 @@ public class TerminowHome {
     private final TerminowVaultsUi mVaultsUi;
     private final TerminowKeyPanel mKeyPanel;
     private final TerminowTerminalSearch mTerminalSearch;
+    private final TerminowTerminalCapture mTerminalCapture;
     private final TerminowLinuxUi mLinuxUi;
     private TerminowQuickLaunch mQuickLaunch;
     private TerminowBackupUi mBackupUi;
@@ -449,6 +450,8 @@ public class TerminowHome {
         activity.findViewById(R.id.terminow_toolbar_keys).setOnClickListener(v -> mKeyPanel.toggle());
         mTerminalSearch = new TerminowTerminalSearch(activity, activity.findViewById(R.id.terminow_terminal_search_bar));
         activity.findViewById(R.id.terminow_toolbar_search).setOnClickListener(v -> mTerminalSearch.toggle());
+        mTerminalCapture = new TerminowTerminalCapture(activity);
+        activity.findViewById(R.id.terminow_toolbar_screenshot).setOnClickListener(v -> mTerminalCapture.start());
         mRailHosts = activity.findViewById(R.id.terminow_rail_hosts);
         mRailSnippets = activity.findViewById(R.id.terminow_rail_snippets);
         mSearchView = activity.findViewById(R.id.terminow_search);
