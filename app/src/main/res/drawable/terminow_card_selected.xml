@@ -1,0 +1,6 @@
+<!-- A host card while its action menu is open: the usual card with a subtle accent border. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/terminow_surface" />
+    <corners android:radius="14dp" />
+    <stroke android:width="2dp" android:color="@color/terminow_accent" />
+</shape>

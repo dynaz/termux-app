@@ -288,6 +288,12 @@
     <string name="terminow_duplicate">Duplicate</string>
     <string name="terminow_duplicate_suffix">%1$s copy</string>
     <string name="terminow_delete">Delete</string>
+    <!-- Host action menu (Edit / Duplicate / Delete). The labels double as accessibility labels. -->
+    <string name="terminow_host_action_edit">Edit host</string>
+    <string name="terminow_host_action_duplicate">Duplicate host</string>
+    <string name="terminow_host_action_delete">Delete host</string>
+    <string name="terminow_host_delete_title">Delete “%1$s”?</string>
+    <string name="terminow_host_delete_message">This removes the saved connection from TermiNow. The server itself is not affected.</string>
     <string name="terminow_save">Save</string>
     <string name="terminow_autofill_unavailable">No autofill service is enabled to fill in a password</string>
     <string name="terminow_action_new_host">+ New host</string>

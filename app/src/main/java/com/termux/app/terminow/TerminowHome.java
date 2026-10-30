@@ -1881,6 +1881,10 @@ public class TerminowHome {
     }
 
     private boolean onItemLongClick(@Nullable Object item) {
+        return onItemLongClick(item, null);
+    }
+
+    private boolean onItemLongClick(@Nullable Object item, @Nullable View anchor) {
         if (item == null || item instanceof Section) return false;   // section headers have no context menu
 
         if (item instanceof TerminowStore.Identity) {
@@ -1907,12 +1911,14 @@ public class TerminowHome {
             return true;
         }
 
-        // A host can also be duplicated; the other item types keep the plain Edit/Delete menu.
-        boolean isHost = item instanceof TerminowStore.Host;
-        CharSequence[] actions = isHost
-            ? new CharSequence[]{mActivity.getString(R.string.terminow_edit), mActivity.getString(R.string.terminow_duplicate),
-                mActivity.getString(R.string.terminow_delete)}
-            : new CharSequence[]{mActivity.getString(R.string.terminow_edit), mActivity.getString(R.string.terminow_delete)};
+        // Hosts get the richer action menu (an anchored popover on large screens, a compact bottom
+        // sheet on phones); the other item types keep the plain Edit/Delete list.
+        if (item instanceof TerminowStore.Host) {
+            showHostActionMenu((TerminowStore.Host) item, anchor);
+            return true;
+        }
+
+        CharSequence[] actions = {mActivity.getString(R.string.terminow_edit), mActivity.getString(R.string.terminow_delete)};
         new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog).setItems(actions, (dialog, which) -> {
             if (item instanceof Group) {
                 String group = ((Group) item).name;
@@ -1936,17 +1942,6 @@ public class TerminowHome {
                     mStore.setForwards(mForwards);
                     updateItems();
                 }
-            } else if (item instanceof TerminowStore.Host) {
-                TerminowStore.Host host = (TerminowStore.Host) item;
-                if (which == 0) {
-                    showHostDialog(host);
-                } else if (which == 1) {
-                    duplicateHost(host);
-                } else {
-                    mHosts.remove(host);
-                    mStore.setHosts(mHosts);
-                    updateItems();
-                }
             } else {
                 TerminowStore.Snippet snippet = (TerminowStore.Snippet) item;
                 if (which == 0) {
@@ -1959,6 +1954,56 @@ public class TerminowHome {
             }
         }).show();
         return true;
+    }
+
+    /**
+     * Show the Edit / Duplicate / Delete menu for a host, anchored beside its card on large screens
+     * or as a bottom sheet on phones. The card is highlighted while the menu is open. Actions resolve
+     * the host again by its stable id at tap time, so a list change between open and tap can never act
+     * on the wrong row; a host that has since been removed is simply ignored.
+     */
+    private void showHostActionMenu(@NonNull TerminowStore.Host host, @Nullable View anchor) {
+        final String uuid = host.uuid;
+        String title = host.getTitle();
+        String subtitle = protocolLabel(protocolKey(host));
+        final android.graphics.drawable.Drawable previousBackground = anchor != null ? anchor.getBackground() : null;
+        if (anchor != null) anchor.setBackgroundResource(R.drawable.terminow_card_selected);
+
+        TerminowHostActionMenu.show(mActivity, anchor, title, subtitle, new TerminowHostActionMenu.Callbacks() {
+            @Override public void onEdit() {
+                TerminowStore.Host h = hostByUuid(uuid);
+                if (h != null) showHostDialog(h);
+            }
+            @Override public void onDuplicate() {
+                TerminowStore.Host h = hostByUuid(uuid);
+                if (h != null) duplicateHost(h);
+            }
+            @Override public void onDelete() {
+                TerminowStore.Host h = hostByUuid(uuid);
+                if (h != null) confirmDeleteHost(h);
+            }
+        }, () -> { if (anchor != null) anchor.setBackground(previousBackground); });
+    }
+
+    /** Confirm, naming the host, before removing its saved connection. */
+    private void confirmDeleteHost(@NonNull TerminowStore.Host host) {
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(mActivity.getString(R.string.terminow_host_delete_title, host.getTitle()))
+            .setMessage(R.string.terminow_host_delete_message)
+            .setPositiveButton(R.string.terminow_delete, (dialog, which) -> {
+                mHosts.remove(host);
+                mStore.setHosts(mHosts);
+                updateItems();
+            })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    /** The current host instance with this stable id, or {@code null} if it is no longer present. */
+    @Nullable
+    private TerminowStore.Host hostByUuid(@NonNull String uuid) {
+        for (TerminowStore.Host host : mHosts) if (uuid.equals(host.uuid)) return host;
+        return null;
     }
 
     /**
@@ -7244,7 +7289,7 @@ public class TerminowHome {
                 });
                 v.setOnLongClickListener(x -> {
                     int p = getBindingAdapterPosition();
-                    return p != androidx.recyclerview.widget.RecyclerView.NO_POSITION && onItemLongClick(mItems.get(p));
+                    return p != androidx.recyclerview.widget.RecyclerView.NO_POSITION && onItemLongClick(mItems.get(p), x);
                 });
             }
         }

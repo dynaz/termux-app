@@ -1,0 +1,8 @@
+<!-- Background for the compact modal bottom sheet (phones): the surface colour with only the top
+     corners rounded, so it meets the bottom edge of the screen cleanly. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/terminow_surface" />
+    <corners
+        android:topLeftRadius="22dp"
+        android:topRightRadius="22dp" />
+</shape>

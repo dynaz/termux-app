@@ -185,4 +185,18 @@
         <item name="android:textColor">@color/terminow_accent</item>
     </style>
 
+    <!-- The host-action bottom sheet on phones: a non-floating, full-width window pinned to the
+         bottom, with its own (top-rounded) background and a slide-up animation. The dim behind it
+         keeps the sheet modal; a tap outside or Back dismisses it. -->
+    <style name="TerminowSheetDialog" parent="@android:style/Theme.Material.Dialog">
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowMinWidthMajor">100%</item>
+        <item name="android:windowMinWidthMinor">100%</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:windowAnimationStyle">@android:style/Animation.InputMethod</item>
+        <item name="android:colorAccent">@color/terminow_accent</item>
+    </style>
+
 </resources>
