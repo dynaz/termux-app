@@ -186,7 +186,7 @@ public final class TerminowAiBridgeManager {
                 return new SetupResult(false, error);
             }
             mStore.setAiBridgeEnabled(true);
-            return new SetupResult(true, "The bridge is listening on 127.0.0.1:" + mServer.getPort());
+            return new SetupResult(true, "The bridge is listening on " + mServer.boundHostAddress() + ":" + mServer.getPort());
         }
         mStore.setAiBridgeEnabled(false);
         mServer.stop();
@@ -200,7 +200,7 @@ public final class TerminowAiBridgeManager {
         mServer.stop();
         String error = startServer();
         if (error != null) return new SetupResult(false, error);
-        return new SetupResult(true, "The bridge is listening on 127.0.0.1:" + mServer.getPort());
+        return new SetupResult(true, "The bridge is listening on " + mServer.boundHostAddress() + ":" + mServer.getPort());
     }
 
     public synchronized boolean isEnabled() {
@@ -493,7 +493,7 @@ public final class TerminowAiBridgeManager {
     public synchronized Diagnostics diagnose(@NonNull String environmentKey, @NonNull String user) {
         List<Diag> steps = new ArrayList<>();
         steps.add(mServer.isRunning()
-            ? new Diag("Bridge service", Step.OK, "Listening on 127.0.0.1:" + mServer.getPort())
+            ? new Diag("Bridge service", Step.OK, "Listening on " + mServer.boundHostAddress() + ":" + mServer.getPort())
             : new Diag("Bridge service", Step.FAIL, mLastError != null ? mLastError : "Stopped"));
         steps.add(premium()
             ? new Diag("Premium", Step.OK, "active")

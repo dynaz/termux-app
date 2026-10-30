@@ -74,6 +74,15 @@ public final class TerminowAiBridgeServer {
         return isRunning() ? mPort : 0;
     }
 
+    /** The address the listener is actually bound to (for truthful diagnostics), empty when not running. */
+    @NonNull
+    public synchronized String boundHostAddress() {
+        ServerSocket socket = mServerSocket;
+        if (socket == null || socket.isClosed()) return "";
+        InetAddress address = socket.getInetAddress();
+        return address == null ? "" : address.getHostAddress();
+    }
+
     /**
      * Start listening on 127.0.0.1, at {@code wantedPort} if it is free, otherwise any free port.
      * Returns {@code null} on success, or the full (sanitized) reason it could not start.
@@ -81,7 +90,7 @@ public final class TerminowAiBridgeServer {
     @Nullable
     public synchronized String start(int wantedPort) {
         if (isRunning()) return null;
-        InetAddress loopback = InetAddress.getLoopbackAddress();
+        InetAddress loopback = ipv4Loopback();
         ServerSocket socket = null;
         try {
             socket = bind(loopback, wantedPort);
@@ -103,6 +112,22 @@ public final class TerminowAiBridgeServer {
         mAcceptThread.setDaemon(true);
         mAcceptThread.start();
         return null;
+    }
+
+    /**
+     * The IPv4 loopback, bound explicitly so the listener and its clients always meet on the same
+     * stack. {@link InetAddress#getLoopbackAddress()} can return the IPv6 loopback ({@code ::1}) on an
+     * IPv6-preferring device, which left the socket bound on {@code ::1} while the Ubuntu helper and
+     * the in-app self-test connect to {@code 127.0.0.1}: {@code isRunning()} read true yet every
+     * connect was refused. Four raw bytes never trigger a name lookup, so this cannot fail.
+     */
+    @NonNull
+    private static InetAddress ipv4Loopback() {
+        try {
+            return InetAddress.getByAddress(new byte[]{127, 0, 0, 1});
+        } catch (java.net.UnknownHostException impossible) {
+            return InetAddress.getLoopbackAddress(); // a 4-byte literal is always valid; never reached
+        }
     }
 
     @NonNull

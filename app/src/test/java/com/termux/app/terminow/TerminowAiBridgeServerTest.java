@@ -225,4 +225,31 @@ public class TerminowAiBridgeServerTest {
             server.stop();
         }
     }
+
+    /**
+     * Regression: the listener must bind the IPv4 loopback (127.0.0.1) — the address the Ubuntu helper
+     * and the in-app self-test both connect to. {@link InetAddress#getLoopbackAddress()} returns ::1 on
+     * an IPv6-preferring device, which bound the socket on ::1 while every client used 127.0.0.1:
+     * isRunning() read true yet the connect was refused. Asserting the bound address (not the host's
+     * own loopback) guards this on any JVM, and a literal-IPv4 client must be served end to end.
+     */
+    @Test
+    public void listenerBindsIpv4LoopbackForLiteralClients() throws Exception {
+        String token = session.mint("ubuntu");
+        assertNull(server.start(0));
+        try {
+            assertEquals("127.0.0.1", server.boundHostAddress());
+            InetAddress ipv4 = InetAddress.getByAddress(new byte[]{127, 0, 0, 1});
+            try (Socket socket = new Socket(ipv4, server.getPort())) {
+                Writer w = new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8);
+                BufferedReader r = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+                w.write("AUTH " + token + "\n");
+                w.flush();
+                assertEquals("OK", r.readLine());
+            }
+        } finally {
+            server.stop();
+        }
+        assertEquals("", server.boundHostAddress());
+    }
 }
