@@ -40,7 +40,11 @@ import androidx.annotation.RequiresApi;
 
 import com.termux.terminal.KeyHandler;
 import com.termux.terminal.TerminalEmulator;
+import com.termux.terminal.TerminalSearcher;
 import com.termux.terminal.TerminalSession;
+
+import java.util.ArrayList;
+import java.util.List;
 import com.termux.view.textselection.TextSelectionCursorController;
 
 /** View displaying and interacting with a {@link TerminalSession}. */
@@ -70,6 +74,15 @@ public final class TerminalView extends View {
     /** The top row of text to display. Ranges from -activeTranscriptRows to 0. */
     int mTopRow;
     int[] mDefaultSelectors = new int[]{-1,-1,-1,-1};
+
+    // --- Terminal history search. All state is view-local and tied to the attached session's
+    // emulator; it is cleared on a session switch so one session's search never leaks into another. ---
+    private final List<TerminalSearcher.Match> mSearchMatches = new ArrayList<>();
+    private int mSearchIndex = -1;
+    private String mSearchQuery = "";
+    private boolean mSearchCaseSensitive = false;
+    private boolean mSearchDirty = false;
+    private SearchResultListener mSearchResultListener;
 
     float mScaleFactor = 1.f;
     final GestureAndScaleRecognizer mGestureRecognizer;
@@ -299,6 +312,9 @@ public final class TerminalView extends View {
         mEmulator = null;
         mCombiningAccent = 0;
 
+        // Search is scoped to one session's emulator; drop it so matches never carry to another.
+        clearSearch();
+
         // The emulator's cached value will be read in `updateSize()` when emulator is set.
         setTopRow(0, false);
 
@@ -505,6 +521,10 @@ public final class TerminalView extends View {
         }
 
         mEmulator.clearScrollCounter();
+
+        // New output (or eviction) shifts every match's coordinates; mark the results stale so the
+        // next search navigation recomputes them instead of pointing at the wrong rows.
+        if (!mSearchQuery.isEmpty()) mSearchDirty = true;
 
         invalidate();
         if (mAccessibilityEnabled && !mDescriptionPending) {
@@ -1153,6 +1173,14 @@ public final class TerminalView extends View {
                 mTextSelectionCursorController.getSelectors(sel);
             }
 
+            // When not selecting text, highlight the current search match by reusing the renderer's
+            // selection highlight (a linear region, so it spans a wrap correctly). No handles, no
+            // change to the terminal contents.
+            if (!isSelectingText() && mSearchIndex >= 0 && mSearchIndex < mSearchMatches.size()) {
+                TerminalSearcher.Match match = mSearchMatches.get(mSearchIndex);
+                sel = new int[]{match.startRow, match.endRow, match.startCol, match.endCol};
+            }
+
             mRenderer.render(mEmulator, canvas, mTopRow, sel[0], sel[1], sel[2], sel[3]);
 
             // render the text selection handles
@@ -1189,6 +1217,100 @@ public final class TerminalView extends View {
 
     public int getTopRow() {
         return mTopRow;
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // Terminal history search
+    // ------------------------------------------------------------------------------------------
+
+    /** Notified with the one-based index of the current match (0 when none) and the total. */
+    public interface SearchResultListener {
+        void onSearchResults(int currentOneBased, int total);
+    }
+
+    public void setSearchResultListener(SearchResultListener listener) {
+        mSearchResultListener = listener;
+    }
+
+    /** Start or update a search over the active session's retained history and current screen. */
+    public void runSearch(String query, boolean caseSensitive) {
+        mSearchQuery = query == null ? "" : query;
+        mSearchCaseSensitive = caseSensitive;
+        recomputeSearch();
+        mSearchIndex = -1;
+        if (!mSearchMatches.isEmpty()) {
+            // Prefer the first match at or below the current viewport, else the first overall.
+            int chosen = 0;
+            for (int i = 0; i < mSearchMatches.size(); i++) {
+                if (mSearchMatches.get(i).startRow >= mTopRow) { chosen = i; break; }
+            }
+            mSearchIndex = chosen;
+        }
+        showCurrentMatch();
+    }
+
+    public void searchNext() { stepSearch(1); }
+
+    public void searchPrevious() { stepSearch(-1); }
+
+    public void clearSearch() {
+        mSearchQuery = "";
+        mSearchMatches.clear();
+        mSearchIndex = -1;
+        mSearchDirty = false;
+        notifySearchResults();
+        invalidate();
+    }
+
+    /** How many matches the last search found (recomputed lazily when output changed). */
+    public int getSearchMatchCount() {
+        ensureSearchFresh();
+        return mSearchMatches.size();
+    }
+
+    private void stepSearch(int delta) {
+        ensureSearchFresh();
+        if (mSearchMatches.isEmpty()) { mSearchIndex = -1; showCurrentMatch(); return; }
+        if (mSearchIndex < 0) mSearchIndex = delta > 0 ? 0 : mSearchMatches.size() - 1;
+        else mSearchIndex = (mSearchIndex + delta + mSearchMatches.size()) % mSearchMatches.size();
+        showCurrentMatch();
+    }
+
+    private void recomputeSearch() {
+        mSearchMatches.clear();
+        if (mEmulator != null && !mSearchQuery.isEmpty()) {
+            mSearchMatches.addAll(TerminalSearcher.search(mEmulator.getScreen(), mSearchQuery, mSearchCaseSensitive));
+        }
+        mSearchDirty = false;
+    }
+
+    private void ensureSearchFresh() {
+        if (mSearchDirty && !mSearchQuery.isEmpty()) {
+            recomputeSearch();
+            if (mSearchIndex >= mSearchMatches.size())
+                mSearchIndex = mSearchMatches.isEmpty() ? -1 : mSearchMatches.size() - 1;
+        }
+    }
+
+    private void showCurrentMatch() {
+        if (mEmulator != null && mSearchIndex >= 0 && mSearchIndex < mSearchMatches.size()) {
+            TerminalSearcher.Match m = mSearchMatches.get(mSearchIndex);
+            int rowsInHistory = mEmulator.getScreen().getActiveTranscriptRows();
+            // Bring the match into view, but never force a jump to the bottom.
+            if (m.startRow < mTopRow || m.startRow > mTopRow + mEmulator.mRows - 1) {
+                int target = m.startRow - mEmulator.mRows / 3;
+                if (target > 0) target = 0;
+                if (target < -rowsInHistory) target = -rowsInHistory;
+                setTopRow(target);
+            }
+        }
+        notifySearchResults();
+        invalidate();
+    }
+
+    private void notifySearchResults() {
+        if (mSearchResultListener != null)
+            mSearchResultListener.onSearchResults(mSearchIndex < 0 ? 0 : mSearchIndex + 1, mSearchMatches.size());
     }
 
     public void setTopRow(int topRow) {

@@ -163,6 +163,7 @@ public class TerminowHome {
     private final View mVaultButton;
     private final TerminowVaultsUi mVaultsUi;
     private final TerminowKeyPanel mKeyPanel;
+    private final TerminowTerminalSearch mTerminalSearch;
     private final TerminowLinuxUi mLinuxUi;
     private TerminowQuickLaunch mQuickLaunch;
     private TerminowBackupUi mBackupUi;
@@ -446,6 +447,8 @@ public class TerminowHome {
         mVaultSyncIcon.setContentDescription(activity.getString(R.string.terminow_vault_status));
         mKeyPanel = new TerminowKeyPanel(activity, mStore, activity.findViewById(R.id.terminow_key_panel));
         activity.findViewById(R.id.terminow_toolbar_keys).setOnClickListener(v -> mKeyPanel.toggle());
+        mTerminalSearch = new TerminowTerminalSearch(activity, activity.findViewById(R.id.terminow_terminal_search_bar));
+        activity.findViewById(R.id.terminow_toolbar_search).setOnClickListener(v -> mTerminalSearch.toggle());
         mRailHosts = activity.findViewById(R.id.terminow_rail_hosts);
         mRailSnippets = activity.findViewById(R.id.terminow_rail_snippets);
         mSearchView = activity.findViewById(R.id.terminow_search);

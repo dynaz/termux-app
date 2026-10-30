@@ -294,6 +294,17 @@
     <string name="terminow_host_action_delete">Delete host</string>
     <string name="terminow_host_delete_title">Delete “%1$s”?</string>
     <string name="terminow_host_delete_message">This removes the saved connection from TermiNow. The server itself is not affected.</string>
+    <!-- Terminal history search. -->
+    <string name="terminow_toolbar_search">Search terminal</string>
+    <string name="terminow_terminal_search_hint">Search history</string>
+    <string name="terminow_terminal_search_case">Match case</string>
+    <string name="terminow_terminal_search_prev">Previous match</string>
+    <string name="terminow_terminal_search_next">Next match</string>
+    <string name="terminow_terminal_search_close">Close search</string>
+    <!-- %1$d = current match, %2$d = total matches. -->
+    <string name="terminow_terminal_search_count">%1$d/%2$d</string>
+    <string name="terminow_terminal_search_none">0/0</string>
+    <string name="terminow_terminal_search_retained">Retained history only</string>
     <string name="terminow_save">Save</string>
     <string name="terminow_autofill_unavailable">No autofill service is enabled to fill in a password</string>
     <string name="terminow_action_new_host">+ New host</string>

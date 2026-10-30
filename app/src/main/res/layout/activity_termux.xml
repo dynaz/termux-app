@@ -228,6 +228,17 @@
             app:tint="@color/terminow_text" />
 
         <ImageView
+            android:id="@+id/terminow_toolbar_search"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="4dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/terminow_toolbar_search"
+            android:padding="9dp"
+            android:src="@drawable/ic_terminow_search"
+            app:tint="@color/terminow_text" />
+
+        <ImageView
             android:id="@+id/terminow_toolbar_more"
             android:layout_width="40dp"
             android:layout_height="40dp"
@@ -339,6 +350,93 @@
             android:layout_alignParentBottom="true" />
 
     </RelativeLayout>
+
+    <!-- Terminal history search bar: a compact overlay at the top of the terminal, hidden until
+         opened from the toolbar. It never changes the terminal contents. -->
+    <LinearLayout
+        android:id="@+id/terminow_terminal_search_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:layout_margin="6dp"
+        android:background="@drawable/terminow_card"
+        android:elevation="8dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="4dp"
+        android:visibility="gone">
+
+        <EditText
+            android:id="@+id/terminow_search_input"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@null"
+            android:hint="@string/terminow_terminal_search_hint"
+            android:imeOptions="actionSearch"
+            android:inputType="text"
+            android:maxLines="1"
+            android:minHeight="48dp"
+            android:singleLine="true"
+            android:textColor="@color/terminow_text"
+            android:textColorHint="@color/terminow_text_secondary"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/terminow_search_count"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="4dp"
+            android:minWidth="52dp"
+            android:gravity="center"
+            android:textColor="@color/terminow_text_secondary"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/terminow_search_case"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/terminow_terminal_search_case"
+            android:gravity="center"
+            android:text="Aa"
+            android:textColor="@color/terminow_text_secondary"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/terminow_search_prev"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/terminow_terminal_search_prev"
+            android:gravity="center"
+            android:text="↑"
+            android:textColor="@color/terminow_text"
+            android:textSize="18sp" />
+
+        <TextView
+            android:id="@+id/terminow_search_next"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/terminow_terminal_search_next"
+            android:gravity="center"
+            android:text="↓"
+            android:textColor="@color/terminow_text"
+            android:textSize="18sp" />
+
+        <TextView
+            android:id="@+id/terminow_search_close"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/terminow_terminal_search_close"
+            android:gravity="center"
+            android:text="✕"
+            android:textColor="@color/terminow_text"
+            android:textSize="16sp" />
+    </LinearLayout>
 
     <!-- The key panel at the right of the terminal on a wide screen, which then leaves room for it -->
     <FrameLayout
