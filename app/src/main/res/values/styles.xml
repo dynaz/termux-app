@@ -188,6 +188,22 @@
     <!-- The host-action bottom sheet on phones: a non-floating, full-width window pinned to the
          bottom, with its own (top-rounded) background and a slide-up animation. The dim behind it
          keeps the sheet modal; a tap outside or Back dismisses it. -->
+    <!-- The draggable, scrollable bottom sheet for the terminal key-bar panels (e.g. More). An
+         explicit MaterialComponents BottomSheetDialog theme, so it works under the app's
+         android:Theme.Material base. The sheet background is transparent here because the panel
+         draws its own rounded terminow_panel background. -->
+    <style name="TerminowBottomSheet" parent="@style/Theme.MaterialComponents.BottomSheetDialog">
+        <item name="bottomSheetStyle">@style/TerminowBottomSheet.Modal</item>
+        <item name="android:windowAnimationStyle">@android:style/Animation.Dialog</item>
+        <item name="colorAccent">@color/terminow_panel_accent</item>
+        <item name="android:colorAccent">@color/terminow_panel_accent</item>
+    </style>
+
+    <style name="TerminowBottomSheet.Modal" parent="@style/Widget.MaterialComponents.BottomSheet.Modal">
+        <item name="android:background">@android:color/transparent</item>
+        <item name="backgroundTint">@android:color/transparent</item>
+    </style>
+
     <style name="TerminowSheetDialog" parent="@android:style/Theme.Material.Dialog">
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowIsFloating">false</item>

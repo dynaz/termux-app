@@ -711,51 +711,90 @@ public class TerminowKeyBar {
     @NonNull
     private LinearLayout openSheet(@NonNull String titleText) {
         if (mDialog != null && mDialog.isShowing()) mDialog.dismiss();
-        Dialog dialog = new Dialog(mActivity, R.style.TerminowPanelDialog);
+        com.google.android.material.bottomsheet.BottomSheetDialog dialog =
+            new com.google.android.material.bottomsheet.BottomSheetDialog(mActivity, R.style.TerminowBottomSheet);
         mDialog = dialog;
-        LinearLayout root = new LinearLayout(mActivity);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setGravity(Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        root.setBackgroundColor(color(R.color.terminow_panel_scrim));
-        root.setOnClickListener(v -> dialog.dismiss());
 
         LinearLayout sheet = new LinearLayout(mActivity);
         sheet.setOrientation(LinearLayout.VERTICAL);
-        sheet.setClickable(true);
         GradientDrawable background = new GradientDrawable();
         background.setColor(color(R.color.terminow_panel));
         float radius = dp(20);
         background.setCornerRadii(new float[]{radius, radius, radius, radius, 0, 0, 0, 0});
         sheet.setBackground(background);
-        sheet.setPadding(dp(16), dp(12), dp(16), dp(12));
+
+        // A visible drag handle. The whole sheet is draggable via BottomSheetBehavior.
+        View handle = new View(mActivity);
+        GradientDrawable handleBg = new GradientDrawable();
+        handleBg.setColor(color(R.color.terminow_text_secondary));
+        handleBg.setCornerRadius(dp(2));
+        handle.setBackground(handleBg);
+        LinearLayout.LayoutParams handleParams = new LinearLayout.LayoutParams(dp(36), dp(4));
+        handleParams.gravity = Gravity.CENTER_HORIZONTAL;
+        handleParams.topMargin = dp(10);
+        handleParams.bottomMargin = dp(4);
+        sheet.addView(handle, handleParams);
+
+        // Fixed header: title stays put while the action list scrolls; a Close (X) dismisses.
+        LinearLayout header = new LinearLayout(mActivity);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(dp(16), 0, dp(4), dp(4));
         TextView title = text(titleText, 18, R.color.terminow_text);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         ViewCompat.setAccessibilityHeading(title, true);
-        sheet.addView(title);
+        header.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView close = text("✕", 16, R.color.terminow_text);
+        close.setGravity(Gravity.CENTER);
+        close.setMinWidth(dp(44));
+        close.setMinHeight(dp(44));
+        android.util.TypedValue ripple = new android.util.TypedValue();
+        mActivity.getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true);
+        close.setBackgroundResource(ripple.resourceId);
+        close.setContentDescription(mActivity.getString(android.R.string.cancel));
+        close.setOnClickListener(v -> dialog.dismiss());
+        header.addView(close);
+        sheet.addView(header);
 
-        ScrollView scroll = new ScrollView(mActivity);
+        // The scrolling action list fills the rest of the sheet; NestedScrollView cooperates with the
+        // sheet drag (list scrolls; a downward drag at the top collapses/dismisses the sheet).
+        androidx.core.widget.NestedScrollView scroll = new androidx.core.widget.NestedScrollView(mActivity);
         LinearLayout content = new LinearLayout(mActivity);
         content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(16), 0, dp(16), dp(12));
         scroll.addView(content);
-        sheet.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        root.addView(sheet, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        root.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
-            int width = Math.min(right - left, dp(560));
-            int scrollMax = Math.round((bottom - top) * 0.8f) - dp(60);
-            ViewGroup.LayoutParams params = sheet.getLayoutParams();
-            ViewGroup.LayoutParams scrollParams = scroll.getLayoutParams();
-            int scrollHeight = content.getHeight() > scrollMax ? scrollMax : ViewGroup.LayoutParams.WRAP_CONTENT;
-            if (params.width != width || scrollParams.height != scrollHeight) {
-                params.width = width;
-                scrollParams.height = scrollHeight;
-                sheet.post(() -> {
-                    sheet.setLayoutParams(params);
-                    scroll.setLayoutParams(scrollParams);
-                });
-            }
+        sheet.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        // Keep the last action clear of the navigation bar / keyboard.
+        ViewCompat.setOnApplyWindowInsetsListener(scroll, (v, insets) -> {
+            int navBottom = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars()).bottom;
+            int imeBottom = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime()).bottom;
+            content.setPadding(content.getPaddingLeft(), content.getPaddingTop(), content.getPaddingRight(),
+                dp(12) + Math.max(navBottom, imeBottom));
+            return insets;
         });
-        dialog.setContentView(root);
-        // The keyboard only opens when a field of the sheet is tapped
+
+        dialog.setContentView(sheet);
+        View container = dialog.findViewById(com.google.android.material.R.id.design_bottom_sheet);
+        if (container != null) {
+            // Let the sheet reach ~95% on expand: the container fills the screen and the behavior
+            // controls how much is shown.
+            container.getLayoutParams().height = ViewGroup.LayoutParams.MATCH_PARENT;
+            if (sheet.getLayoutParams() != null) sheet.getLayoutParams().height = ViewGroup.LayoutParams.MATCH_PARENT;
+            int screenHeight = mActivity.getResources().getDisplayMetrics().heightPixels;
+            com.google.android.material.bottomsheet.BottomSheetBehavior<View> behavior =
+                com.google.android.material.bottomsheet.BottomSheetBehavior.from(container);
+            behavior.setFitToContents(false);
+            behavior.setHalfExpandedRatio(0.65f);                 // opens at ~65%
+            behavior.setExpandedOffset(Math.round(screenHeight * 0.05f)); // expands to ~95%
+            behavior.setPeekHeight(Math.round(screenHeight * 0.3f), false); // collapse target
+            behavior.setHideable(true);                           // drag down again dismisses
+            behavior.setSkipCollapsed(false);
+            behavior.setDraggable(true);
+            behavior.setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_HALF_EXPANDED);
+        }
+
+        // The keyboard only opens when a field of the sheet is tapped.
         if (dialog.getWindow() != null)
             dialog.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN |
                 android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
