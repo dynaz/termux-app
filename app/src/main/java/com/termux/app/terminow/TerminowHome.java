@@ -1540,7 +1540,12 @@ public class TerminowHome {
         // rather than show two toggles at once.
         boolean headerless = page == PAGE_LAUNCH || page == PAGE_FILES || page == PAGE_AI
             || page == PAGE_MCP_BRIDGE || page == PAGE_SETTINGS;
-        if (mRailMenu != null) mRailMenu.setVisibility(headerless ? View.VISIBLE : View.GONE);
+        // Quick Launch renders its OWN sidebar toggle beside its title (in the content area), so the
+        // floating rail toggle is NOT shown there — otherwise there are two toggles and it overlaps the
+        // Launch rail icon. The other header-less pages (Files, AI, MCP Bridge, Settings) have no content
+        // toggle and still rely on this one, so it stays for them.
+        boolean showRailMenu = headerless && page != PAGE_LAUNCH;
+        if (mRailMenu != null) mRailMenu.setVisibility(showRailMenu ? View.VISIBLE : View.GONE);
         updateSectionHelp();
         setRailItemSelected(mRailLaunch, page == PAGE_LAUNCH);
         if (page == PAGE_LAUNCH) {
