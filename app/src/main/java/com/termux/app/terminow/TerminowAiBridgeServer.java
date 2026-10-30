@@ -161,6 +161,13 @@ public final class TerminowAiBridgeServer {
         return mConnections.size();
     }
 
+    /** How many connections are currently serving {@code environmentKey}: the helper(s) of one env. */
+    public int openConnectionCountOf(@NonNull String environmentKey) {
+        int count = 0;
+        for (String env : mConnections.values()) if (environmentKey.equals(env)) count++;
+        return count;
+    }
+
     private void acceptLoop(@NonNull ServerSocket serverSocket) {
         while (!serverSocket.isClosed()) {
             Socket socket;

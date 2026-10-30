@@ -221,6 +221,21 @@ public final class TerminowAiBridge {
         return hostDescriptor(host);
     }
 
+    /**
+     * A host that some client of {@code envKey} currently has selected, for status display, or
+     * {@code null} if none. With one client per environment (the usual case) this is that client's
+     * target; it never reveals a credential, only the stable host id.
+     */
+    @Nullable
+    public synchronized String selectedHostIdFor(@NonNull String envKey) {
+        long now = mClock.now();
+        String prefix = envKey + "\u0000";
+        for (Map.Entry<String, Selection> entry : mSelections.entrySet()) {
+            if (entry.getKey().startsWith(prefix) && entry.getValue().expiresAt > now) return entry.getValue().hostUuid;
+        }
+        return null;
+    }
+
     /** Forget this client's selection, if any. */
     public synchronized void clearSelection(@NonNull String envKey, @Nullable String clientId) {
         if (clientId == null || clientId.isEmpty()) return;

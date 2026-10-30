@@ -3,6 +3,7 @@ package com.termux.app.terminow;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -260,6 +261,19 @@ public class TerminowAiBridgeTest {
         } catch (TerminowAiError.Exception e) {
             assertEquals(TerminowAiError.HOST_NOT_AUTHORIZED, e.error);
         }
+    }
+
+    @Test
+    public void selectedHostIdForReportsAClientSelectionForDisplay() throws Exception {
+        hosts.add(host("a", "A", true, TerminowStore.AiAccess.CAP_RUN_COMMAND));
+        assertNull(bridge.selectedHostIdFor("ubuntu"));
+        bridge.selectHost("ubuntu", "c1", "a");
+        assertEquals("a", bridge.selectedHostIdFor("ubuntu"));
+        // Scoped to the environment: another environment sees nothing.
+        assertNull(bridge.selectedHostIdFor("debian"));
+        // Expires with the selection.
+        now += TerminowAiBridge.SELECTION_TTL_MS + 1;
+        assertNull(bridge.selectedHostIdFor("ubuntu"));
     }
 
     @Test

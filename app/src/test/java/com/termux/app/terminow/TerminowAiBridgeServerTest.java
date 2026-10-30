@@ -226,6 +226,28 @@ public class TerminowAiBridgeServerTest {
         }
     }
 
+    @Test
+    public void openConnectionCountIsPerEnvironment() throws Exception {
+        String ubuntuToken = session.mint("ubuntu");
+        session.mint("debian");
+        assertNull(server.start(0));
+        try (Socket socket = new Socket(InetAddress.getLoopbackAddress(), server.getPort())) {
+            Writer w = new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8);
+            BufferedReader r = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+            w.write("AUTH " + ubuntuToken + "\n");
+            w.flush();
+            assertEquals("OK", r.readLine());
+            // Round-trip one request so the server has mapped the socket to its environment.
+            w.write("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n");
+            w.flush();
+            assertTrue(r.readLine().contains("\"id\":1"));
+            assertEquals(1, server.openConnectionCountOf("ubuntu"));
+            assertEquals(0, server.openConnectionCountOf("debian"));
+        } finally {
+            server.stop();
+        }
+    }
+
     /**
      * Regression: the listener must bind the IPv4 loopback (127.0.0.1) — the address the Ubuntu helper
      * and the in-app self-test both connect to. {@link InetAddress#getLoopbackAddress()} returns ::1 on
