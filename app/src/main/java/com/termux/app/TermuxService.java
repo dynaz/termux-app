@@ -121,6 +121,30 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
         runStartForeground();
 
         SystemEventReceiver.registerPackageUpdateEvents(this);
+
+        startAiBridgeIfEnabled();
+    }
+
+    /**
+     * Start the Local AI Bridge listener at service/process start, not only when the home screen is
+     * built. The listener is a process-scoped singleton that Claude Code reaches from a Linux
+     * environment over loopback; if this service is (re)created straight into a terminal session
+     * without the home UI ever being constructed in the process, the listener would otherwise never
+     * bind and the helper would report "could not reach the listener". Idempotent and a no-op unless
+     * the bridge is enabled and Premium is active.
+     */
+    private void startAiBridgeIfEnabled() {
+        try {
+            com.termux.app.terminow.TerminowAiBridgeManager.getInstance(
+                    getApplicationContext(),
+                    new com.termux.app.terminow.TerminowStore(this),
+                    new com.termux.app.terminow.TerminowMcpTargets(
+                        new java.io.File(com.termux.shared.termux.TermuxConstants.TERMUX_PREFIX_DIR_PATH),
+                        new java.io.File(com.termux.shared.termux.TermuxConstants.TERMUX_HOME_DIR_PATH)))
+                .startIfEnabled();
+        } catch (RuntimeException e) {
+            Logger.logWarn(LOG_TAG, "Local AI Bridge did not start: " + e.getMessage());
+        }
     }
 
     @SuppressLint("Wakelock")
