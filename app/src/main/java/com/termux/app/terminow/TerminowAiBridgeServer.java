@@ -48,7 +48,7 @@ public final class TerminowAiBridgeServer {
 
     /** Builds the MCP handler for one authenticated peer (an environment or a paired client). */
     public interface ServerFactory {
-        @NonNull Handler forEnvironment(@NonNull String environmentKey);
+        @NonNull Handler forEnvironment(@NonNull String environmentKey, @Nullable String clientId);
     }
 
     private final TerminowAiSession mSession;
@@ -247,10 +247,22 @@ public final class TerminowAiBridgeServer {
         }
         out.write("OK\n");
         out.flush();
+        // Optional per-client registration: a line "CLIENT <id>" right after AUTH names one client
+        // (a single Claude Code process) so its host selection is kept apart from other clients of
+        // the same environment. A peer that does not send it is a legacy, environment-scoped client
+        // and must pass an explicit host_id on every call.
+        String clientId = null;
+        String next = in.readLine();
+        if (next != null && next.trim().startsWith("CLIENT ")) {
+            String id = next.trim().substring("CLIENT ".length()).trim();
+            if (!id.isEmpty()) clientId = id;
+            out.write("OK\n");
+            out.flush();
+            next = in.readLine();
+        }
         if (onAuthenticated != null) onAuthenticated.accept(environmentKey);
-        Handler server = mFactory.forEnvironment(environmentKey);
-        String line;
-        while ((line = in.readLine()) != null) {
+        Handler server = mFactory.forEnvironment(environmentKey, clientId);
+        for (String line = next; line != null; line = in.readLine()) {
             if (line.trim().isEmpty()) continue;
             JSONObject response = handleLine(server, line);
             if (response != null) {

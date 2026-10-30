@@ -131,7 +131,9 @@ public final class TerminowMcpBridgeManager {
         });
 
         mServer = new TerminowAiBridgeServer(mClients,
-            clientKey -> new TerminowMcpBridgeMcpServer(mBridge, clientKey, this::secrets, BuildConfig.VERSION_NAME));
+            // The relay keys handlers by its own pairing client key; the AI-bridge per-process client
+            // id does not apply here, so it is ignored.
+            (clientKey, clientId) -> new TerminowMcpBridgeMcpServer(mBridge, clientKey, this::secrets, BuildConfig.VERSION_NAME));
 
         // The relay dials out to a remote MCP endpoint; its traffic is answered as the relay's own
         // paired client, so the same per-session authorization applies to remote AI clients.

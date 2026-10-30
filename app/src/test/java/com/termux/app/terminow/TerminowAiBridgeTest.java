@@ -159,4 +159,120 @@ public class TerminowAiBridgeTest {
             assertEquals(expected, e.error);
         }
     }
+
+    // ----- Per-client host selection -----
+
+    @Test
+    public void selectHostThenResolveUsesItAndEchoesDetails() throws Exception {
+        hosts.add(host("a", "Server A", true, TerminowStore.AiAccess.CAP_RUN_COMMAND));
+        JSONObject chosen = bridge.selectHost("ubuntu", "c1", "a");
+        assertEquals("a", chosen.optString("host_id"));
+        assertEquals("Server A", chosen.optString("alias"));
+        assertFalse(chosen.toString().contains("s3cret"));
+        assertEquals("a", bridge.resolveHostId("ubuntu", "c1", ""));
+    }
+
+    @Test
+    public void explicitHostIdAlwaysWinsOverSelection() throws Exception {
+        hosts.add(host("a", "A", true, TerminowStore.AiAccess.CAP_RUN_COMMAND));
+        hosts.add(host("b", "B", true, TerminowStore.AiAccess.CAP_RUN_COMMAND));
+        bridge.selectHost("ubuntu", "c1", "a");
+        assertEquals("b", bridge.resolveHostId("ubuntu", "c1", "b"));
+    }
+
+    @Test
+    public void resolveWithoutSelectionOrHostIdFailsLoudly() {
+        try {
+            bridge.resolveHostId("ubuntu", "c1", "");
+            fail("Expected BAD_REQUEST");
+        } catch (TerminowAiError.Exception e) {
+            assertEquals(TerminowAiError.BAD_REQUEST, e.error);
+        }
+    }
+
+    @Test
+    public void selectionIsNeverSharedAcrossClients() throws Exception {
+        hosts.add(host("a", "A", true, TerminowStore.AiAccess.CAP_RUN_COMMAND));
+        bridge.selectHost("ubuntu", "c1", "a");
+        // A different client in the same environment has no selection and must not inherit c1's.
+        try {
+            bridge.resolveHostId("ubuntu", "c2", "");
+            fail("Expected BAD_REQUEST for the other client");
+        } catch (TerminowAiError.Exception e) {
+            assertEquals(TerminowAiError.BAD_REQUEST, e.error);
+        }
+        assertEquals("a", bridge.resolveHostId("ubuntu", "c1", ""));
+    }
+
+    @Test
+    public void selectionExpiresAfterIdleTtlButIsRefreshedOnUse() throws Exception {
+        hosts.add(host("a", "A", true, TerminowStore.AiAccess.CAP_RUN_COMMAND));
+        bridge.selectHost("ubuntu", "c1", "a");
+        now += TerminowAiBridge.SELECTION_TTL_MS / 2;
+        assertEquals("a", bridge.resolveHostId("ubuntu", "c1", "")); // within TTL, refreshes it
+        now += TerminowAiBridge.SELECTION_TTL_MS / 2 + 1; // < TTL since the refresh, so still valid
+        assertEquals("a", bridge.resolveHostId("ubuntu", "c1", ""));
+        now += TerminowAiBridge.SELECTION_TTL_MS + 1; // now idle past the TTL
+        try {
+            bridge.resolveHostId("ubuntu", "c1", "");
+            fail("Expected expiry");
+        } catch (TerminowAiError.Exception e) {
+            assertEquals(TerminowAiError.BAD_REQUEST, e.error);
+        }
+    }
+
+    @Test
+    public void clearSelectionForgetsIt() throws Exception {
+        hosts.add(host("a", "A", true, TerminowStore.AiAccess.CAP_RUN_COMMAND));
+        bridge.selectHost("ubuntu", "c1", "a");
+        bridge.clearSelection("ubuntu", "c1");
+        try {
+            bridge.resolveHostId("ubuntu", "c1", "");
+            fail("Expected BAD_REQUEST");
+        } catch (TerminowAiError.Exception e) {
+            assertEquals(TerminowAiError.BAD_REQUEST, e.error);
+        }
+    }
+
+    @Test
+    public void selectHostRequiresARegisteredClient() {
+        hosts.add(host("a", "A", true, TerminowStore.AiAccess.CAP_RUN_COMMAND));
+        try {
+            bridge.selectHost("ubuntu", null, "a");
+            fail("Expected BAD_REQUEST");
+        } catch (TerminowAiError.Exception e) {
+            assertEquals(TerminowAiError.BAD_REQUEST, e.error);
+        }
+    }
+
+    @Test
+    public void selectHostRejectsAHostNotAvailableToTheEnvironment() {
+        hosts.add(host("a", "A", false, TerminowStore.AiAccess.CAP_RUN_COMMAND)); // AI access off
+        try {
+            bridge.selectHost("ubuntu", "c1", "a");
+            fail("Expected HOST_NOT_AUTHORIZED");
+        } catch (TerminowAiError.Exception e) {
+            assertEquals(TerminowAiError.HOST_NOT_AUTHORIZED, e.error);
+        }
+        try {
+            bridge.selectHost("ubuntu", "c1", "missing");
+            fail("Expected HOST_NOT_AUTHORIZED");
+        } catch (TerminowAiError.Exception e) {
+            assertEquals(TerminowAiError.HOST_NOT_AUTHORIZED, e.error);
+        }
+    }
+
+    @Test
+    public void disablingOrRemovingTheHostDropsTheSelection() throws Exception {
+        TerminowStore.Host h = host("a", "A", true, TerminowStore.AiAccess.CAP_RUN_COMMAND);
+        hosts.add(h);
+        bridge.selectHost("ubuntu", "c1", "a");
+        bridge.onHostRemoved("a");
+        try {
+            bridge.resolveHostId("ubuntu", "c1", "");
+            fail("Expected the selection to be gone");
+        } catch (TerminowAiError.Exception e) {
+            assertEquals(TerminowAiError.BAD_REQUEST, e.error);
+        }
+    }
 }

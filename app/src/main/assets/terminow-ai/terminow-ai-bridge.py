@@ -26,8 +26,20 @@ import threading
 import time
 
 
+# A per-process client id, generated once at start. It names this one Claude Code process to the
+# bridge so its host selection is kept apart from other clients of the same environment: two Ubuntu
+# tabs are two processes with two ids; a bridge restart reuses the same id (same process) so the
+# selection survives; a full Claude restart is a new process with a new id, so nothing stale carries
+# over. TERMINOW_AI_CLIENT_ID overrides it (used by tests).
+_PROCESS_CLIENT_ID = os.environ.get("TERMINOW_AI_CLIENT_ID", "").strip() or os.urandom(16).hex()
+
+
 def log(*a):
     print("[terminow-ai]", *a, file=sys.stderr, flush=True)
+
+
+def client_id():
+    return _PROCESS_CLIENT_ID
 
 
 def read_token():
@@ -93,7 +105,9 @@ def connect():
 
 
 def authenticate(sock, token):
-    # One line: AUTH <token>\n  -> OK\n or ERR <reason>\n
+    # AUTH <token>\n -> OK\n or ERR <reason>\n, then an optional CLIENT <id>\n -> OK\n that registers
+    # this process so its host selection is private to it. The env token still authorizes the
+    # environment; the client id only separates concurrent clients within it.
     sock.sendall(b"AUTH " + token.encode("utf-8") + b"\n")
     reply = b""
     while not reply.endswith(b"\n"):
@@ -101,7 +115,20 @@ def authenticate(sock, token):
         if not chunk:
             break
         reply += chunk
-    return reply.strip() == b"OK"
+    if reply.strip() != b"OK":
+        return False
+    cid = client_id()
+    if cid:
+        sock.sendall(b"CLIENT " + cid.encode("utf-8") + b"\n")
+        reply = b""
+        while not reply.endswith(b"\n"):
+            chunk = sock.recv(64)
+            if not chunk:
+                break
+            reply += chunk
+        if reply.strip() != b"OK":
+            return False
+    return True
 
 
 def pump(src_recv, dst_write, name):

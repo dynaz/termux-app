@@ -94,7 +94,7 @@ public final class TerminowAiBridgeManager {
         });
 
         mServer = new TerminowAiBridgeServer(mSession,
-            env -> new TerminowAiMcpServer(mBridge, env, this::secrets, BuildConfig.VERSION_NAME));
+            (env, clientId) -> new TerminowAiMcpServer(mBridge, env, clientId, this::secrets, BuildConfig.VERSION_NAME));
     }
 
     // ---------------------------------------------------------------------------------------

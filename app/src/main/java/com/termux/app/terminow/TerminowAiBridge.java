@@ -103,6 +103,7 @@ public final class TerminowAiBridge {
     /** Drop every grant for a host, for all environments: on disable, delete, or credential change. */
     public synchronized void revokeHost(@NonNull String hostUuid) {
         mGrants.values().removeIf(grant -> grant.hostUuid.equals(hostUuid));
+        mSelections.values().removeIf(selection -> selection.hostUuid.equals(hostUuid));
     }
 
     public synchronized void revokeAll() {
@@ -169,6 +170,120 @@ public final class TerminowAiBridge {
         if (!"rules".equals(host.aiAccess.approvalPolicy) && !hasValidGrant(envKey, host))
             throw TerminowAiError.APPROVAL_REQUIRED.of("Approve this host for the AI first");
         return TerminowStore.resolve(host, mDeps.identities());
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Per-client host selection
+    //
+    // A registered client (one Claude Code process, named by a per-process client id) may choose a
+    // "current" host so ssh_exec/ssh_test can omit host_id. A selection is scoped to (environment,
+    // client) and is NEVER shared with another client: one tab's choice can never retarget another's,
+    // and there is no silent default. Selecting a host does NOT authorize it; every call still goes
+    // through authorize(), which the env token gates. A selection is dropped after SELECTION_TTL_MS
+    // idle and refreshed each time it is used, so an exited client leaves nothing stale behind.
+    // ---------------------------------------------------------------------------------------
+
+    /** How long an unused selection is kept before it is forgotten. */
+    public static final long SELECTION_TTL_MS = 30 * 60 * 1000L;
+
+    private static final class Selection {
+        final String hostUuid;
+        long expiresAt;
+
+        Selection(@NonNull String hostUuid, long expiresAt) {
+            this.hostUuid = hostUuid;
+            this.expiresAt = expiresAt;
+        }
+    }
+
+    private final Map<String, Selection> mSelections = new HashMap<>();
+
+    @NonNull
+    private static String selectionKey(@NonNull String envKey, @NonNull String clientId) {
+        return envKey + "\u0000" + clientId;
+    }
+
+    /**
+     * Choose the current host for this client. Validates the host is available to this environment
+     * and AI-enabled; it does not grant it (ssh_exec still authorizes). Returns a non-secret
+     * descriptor. Requires a registered client, so selection can never be attributed to "the
+     * environment" at large.
+     */
+    @NonNull
+    public synchronized JSONObject selectHost(@NonNull String envKey, @Nullable String clientId, @NonNull String hostUuid)
+            throws TerminowAiError.Exception {
+        if (clientId == null || clientId.isEmpty())
+            throw TerminowAiError.BAD_REQUEST.of("Register a client before selecting a host");
+        TerminowStore.Host host = TerminowStore.findHostByUuid(mDeps.hosts(), hostUuid);
+        if (host == null || !host.aiAccess.allowsEnv(envKey))
+            throw TerminowAiError.HOST_NOT_AUTHORIZED.of("The host is not available to this environment");
+        mSelections.put(selectionKey(envKey, clientId), new Selection(hostUuid, mClock.now() + SELECTION_TTL_MS));
+        return hostDescriptor(host);
+    }
+
+    /** Forget this client's selection, if any. */
+    public synchronized void clearSelection(@NonNull String envKey, @Nullable String clientId) {
+        if (clientId == null || clientId.isEmpty()) return;
+        mSelections.remove(selectionKey(envKey, clientId));
+    }
+
+    /**
+     * The host id a call targets: the explicit one if given, otherwise this client's selection
+     * (refreshed), otherwise an error. It never falls back to another client's selection and never
+     * picks a default, so an ambiguous request fails loudly instead of acting on the wrong host.
+     */
+    @NonNull
+    synchronized String resolveHostId(@NonNull String envKey, @Nullable String clientId, @NonNull String explicitHostId)
+            throws TerminowAiError.Exception {
+        if (!explicitHostId.isEmpty()) return explicitHostId;
+        if (clientId != null && !clientId.isEmpty()) {
+            Selection selection = mSelections.get(selectionKey(envKey, clientId));
+            long now = mClock.now();
+            if (selection != null && selection.expiresAt > now) {
+                selection.expiresAt = now + SELECTION_TTL_MS;
+                return selection.hostUuid;
+            }
+            if (selection != null) mSelections.remove(selectionKey(envKey, clientId));
+        }
+        throw TerminowAiError.BAD_REQUEST.of("No host selected; pass host_id or call select_host first");
+    }
+
+    /** This client's bridge status: whether it is registered and which host it has selected. No secrets. */
+    @NonNull
+    public synchronized JSONObject bridgeStatus(@NonNull String envKey, @Nullable String clientId) {
+        JSONObject json = new JSONObject();
+        try {
+            json.put("environment", envKey);
+            json.put("client_registered", clientId != null && !clientId.isEmpty());
+            String selectedId = null;
+            if (clientId != null && !clientId.isEmpty()) {
+                Selection selection = mSelections.get(selectionKey(envKey, clientId));
+                if (selection != null && selection.expiresAt > mClock.now()) selectedId = selection.hostUuid;
+            }
+            TerminowStore.Host host = selectedId == null ? null : TerminowStore.findHostByUuid(mDeps.hosts(), selectedId);
+            json.put("selected_host", host != null && host.aiAccess.allowsEnv(envKey) ? hostDescriptor(host) : JSONObject.NULL);
+        } catch (org.json.JSONException ignored) {
+            // A partial object is still usable
+        }
+        return json;
+    }
+
+    /** The non-secret facts about a host, as select_host and bridge_status return them. */
+    @NonNull
+    private static JSONObject hostDescriptor(@NonNull TerminowStore.Host host) {
+        JSONObject json = new JSONObject();
+        try {
+            json.put("host_id", host.uuid);
+            json.put("alias", host.getTitle());
+            json.put("protocol", host.telnet ? "telnet" : host.mosh ? "mosh" : host.protocol);
+            json.put("hostname", host.address);
+            json.put("port", host.port);
+            json.put("username", host.username);
+            json.put("capabilities", new JSONArray(host.aiAccess.capabilities));
+        } catch (org.json.JSONException ignored) {
+            // best effort; a partial descriptor is still non-secret
+        }
+        return json;
     }
 
     // ---------------------------------------------------------------------------------------

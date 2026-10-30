@@ -50,7 +50,7 @@ public class TerminowAiBridgeServerTest {
             @Override public File sshHome() { return new File("/tmp"); }
         });
         server = new TerminowAiBridgeServer(session,
-            env -> new TerminowAiMcpServer(bridge, env, () -> (Collection<String>) new ArrayList<String>(), "test"));
+            (env, clientId) -> new TerminowAiMcpServer(bridge, env, clientId, () -> (Collection<String>) new ArrayList<String>(), "test"));
     }
 
     @Test

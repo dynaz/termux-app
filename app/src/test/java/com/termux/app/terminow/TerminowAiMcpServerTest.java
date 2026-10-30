@@ -47,7 +47,7 @@ public class TerminowAiMcpServerTest {
             @Override public String savedPassphrase(String keyName) { return null; }
             @Override public File sshHome() { return new File("/tmp"); }
         });
-        server = new TerminowAiMcpServer(bridge, "ubuntu", () -> (Collection<String>) secrets, "1.0");
+        server = new TerminowAiMcpServer(bridge, "ubuntu", "client-test", () -> (Collection<String>) secrets, "1.0");
     }
 
     private JSONObject rpc(String method, JSONObject params, Object id) {
@@ -80,7 +80,10 @@ public class TerminowAiMcpServerTest {
         String text = resp.toString();
         assertTrue(text.contains("hosts_list"));
         assertTrue(text.contains("ssh_test"));
-        // ssh_test requires host_id
+        // the selection tools are advertised too
+        assertTrue(text.contains("select_host"));
+        assertTrue(text.contains("bridge_status"));
+        // host_id is still an accepted argument (now optional)
         assertTrue(text.contains("host_id"));
     }
 

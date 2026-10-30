@@ -29,13 +29,16 @@ public final class TerminowAiMcpServer implements TerminowAiBridgeServer.Handler
 
     private final TerminowAiBridge mBridge;
     private final String mEnvKey;
+    /** The per-process client id from the CLIENT handshake line, or {@code null} for a legacy client. */
+    @Nullable private final String mClientId;
     private final Secrets mSecrets;
     private final String mVersion;
 
-    public TerminowAiMcpServer(@NonNull TerminowAiBridge bridge, @NonNull String envKey, @NonNull Secrets secrets,
-                               @NonNull String version) {
+    public TerminowAiMcpServer(@NonNull TerminowAiBridge bridge, @NonNull String envKey, @Nullable String clientId,
+                               @NonNull Secrets secrets, @NonNull String version) {
         mBridge = bridge;
         mEnvKey = envKey;
+        mClientId = clientId;
         mSecrets = secrets;
         mVersion = version;
     }
@@ -97,33 +100,60 @@ public final class TerminowAiMcpServer implements TerminowAiBridgeServer.Handler
 
         JSONObject sshTest = new JSONObject();
         sshTest.put("name", "ssh_test");
-        sshTest.put("description", "Test the SSH connection to an allowed host by its host_id, using TermiNow's own " +
-            "credentials and known-hosts. Returns whether it is reachable, authenticated and the host key is known. No secrets are returned.");
+        sshTest.put("description", "Test the SSH connection to an allowed host, using TermiNow's own credentials and " +
+            "known-hosts. Pass host_id, or omit it to use this client's selected host (see select_host). Returns whether " +
+            "it is reachable, authenticated and the host key is known. No secrets are returned.");
         JSONObject props = new JSONObject().put("host_id", new JSONObject()
             .put("type", "string")
-            .put("description", "The host_id from hosts_list."));
+            .put("description", "The host_id from hosts_list. Optional; defaults to the selected host."));
         sshTest.put("inputSchema", new JSONObject()
             .put("type", "object")
             .put("properties", props)
-            .put("required", new JSONArray().put("host_id"))
             .put("additionalProperties", false));
         tools.put(sshTest);
 
         JSONObject sshExec = new JSONObject();
         sshExec.put("name", "ssh_exec");
         sshExec.put("description", "Run a command over SSH on an allowed host (needs the run_command capability). " +
-            "The command has all the access of the SSH account. Returns exit_code, stdout, stderr, whether output was truncated, and duration. No secrets are returned.");
+            "Pass host_id, or omit it to use this client's selected host (see select_host). The command has all the " +
+            "access of the SSH account. Returns exit_code, stdout, stderr, whether output was truncated, and duration. No secrets are returned.");
         JSONObject execProps = new JSONObject();
-        execProps.put("host_id", new JSONObject().put("type", "string").put("description", "The host_id from hosts_list."));
+        execProps.put("host_id", new JSONObject().put("type", "string").put("description", "The host_id from hosts_list. Optional; defaults to the selected host."));
         execProps.put("command", new JSONObject().put("type", "string").put("description", "The command to run, via /bin/sh -lc."));
         execProps.put("timeout_seconds", new JSONObject().put("type", "integer")
             .put("description", "How long to allow, up to " + TerminowAiBridge.EXEC_TIMEOUT_MAX_S + "; default " + TerminowAiBridge.EXEC_TIMEOUT_DEFAULT_S + "."));
         sshExec.put("inputSchema", new JSONObject()
             .put("type", "object")
             .put("properties", execProps)
-            .put("required", new JSONArray().put("host_id").put("command"))
+            .put("required", new JSONArray().put("command"))
             .put("additionalProperties", false));
         tools.put(sshExec);
+
+        JSONObject selectHost = new JSONObject();
+        selectHost.put("name", "select_host");
+        selectHost.put("description", "Choose the current host for this client, so later ssh_exec/ssh_test calls can omit " +
+            "host_id. Selecting does not grant access; a host that needs approval must still be approved in TermiNow. " +
+            "The selection is private to this client and is never used for another client. Returns the selected host's non-secret details.");
+        selectHost.put("inputSchema", new JSONObject()
+            .put("type", "object")
+            .put("properties", new JSONObject().put("host_id", new JSONObject().put("type", "string").put("description", "The host_id from hosts_list.")))
+            .put("required", new JSONArray().put("host_id"))
+            .put("additionalProperties", false));
+        tools.put(selectHost);
+
+        JSONObject disconnectHost = new JSONObject();
+        disconnectHost.put("name", "disconnect_host");
+        disconnectHost.put("description", "Clear this client's selected host. Does not close any command already running.");
+        disconnectHost.put("inputSchema", new JSONObject()
+            .put("type", "object").put("properties", new JSONObject()).put("additionalProperties", false));
+        tools.put(disconnectHost);
+
+        JSONObject bridgeStatus = new JSONObject();
+        bridgeStatus.put("name", "bridge_status");
+        bridgeStatus.put("description", "Report this client's bridge state: whether it is registered and which host it has selected. No secrets are returned.");
+        bridgeStatus.put("inputSchema", new JSONObject()
+            .put("type", "object").put("properties", new JSONObject()).put("additionalProperties", false));
+        tools.put(bridgeStatus);
 
         return new JSONObject().put("tools", tools);
     }
@@ -139,18 +169,26 @@ public final class TerminowAiMcpServer implements TerminowAiBridgeServer.Handler
                 case "hosts_list":
                     return toolContent(new JSONObject().put("hosts", mBridge.hostsList(mEnvKey)));
                 case "ssh_test": {
-                    String hostId = args.optString("host_id");
-                    if (hostId.isEmpty()) return toolError(TerminowAiError.BAD_REQUEST, "host_id is required");
+                    String hostId = mBridge.resolveHostId(mEnvKey, mClientId, args.optString("host_id"));
                     return toolContent(mBridge.sshTest(mEnvKey, hostId));
                 }
                 case "ssh_exec": {
-                    String hostId = args.optString("host_id");
                     String command = args.optString("command");
-                    if (hostId.isEmpty()) return toolError(TerminowAiError.BAD_REQUEST, "host_id is required");
                     if (command.isEmpty()) return toolError(TerminowAiError.BAD_REQUEST, "command is required");
+                    String hostId = mBridge.resolveHostId(mEnvKey, mClientId, args.optString("host_id"));
                     int timeout = args.optInt("timeout_seconds", TerminowAiBridge.EXEC_TIMEOUT_DEFAULT_S);
                     return toolContent(mBridge.sshExec(mEnvKey, hostId, command, timeout));
                 }
+                case "select_host": {
+                    String hostId = args.optString("host_id");
+                    if (hostId.isEmpty()) return toolError(TerminowAiError.BAD_REQUEST, "host_id is required");
+                    return toolContent(mBridge.selectHost(mEnvKey, mClientId, hostId));
+                }
+                case "disconnect_host":
+                    mBridge.clearSelection(mEnvKey, mClientId);
+                    return toolContent(new JSONObject().put("disconnected", true));
+                case "bridge_status":
+                    return toolContent(mBridge.bridgeStatus(mEnvKey, mClientId));
                 default:
                     return toolError(TerminowAiError.BAD_REQUEST, "Unknown tool: " + name);
             }

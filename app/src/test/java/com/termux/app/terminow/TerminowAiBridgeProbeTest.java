@@ -59,7 +59,7 @@ public class TerminowAiBridgeProbeTest {
             @Override public File sshHome() { return new File(System.getProperty("java.io.tmpdir")); }
         });
         return new TerminowAiBridgeServer(session,
-            env -> new TerminowAiMcpServer(bridge, env, Collections::emptyList, "test"));
+            (env, clientId) -> new TerminowAiMcpServer(bridge, env, clientId, Collections::emptyList, "test"));
     }
 
     @Test
