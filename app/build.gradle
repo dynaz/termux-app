@@ -142,6 +142,16 @@ android {
         manifestPlaceholders.TERMUX_TASKER_APP_NAME = "Termux:Tasker"
         manifestPlaceholders.TERMUX_WIDGET_APP_NAME = "Termux:Widget"
 
+        // Package native libraries only for the architectures TermiNow fully supports (set in
+        // terminow-bootstrap.properties). This applies to prebuilt libraries too — e.g. the RDP engine
+        // ships an x86_64 variant, but without a matching bootstrap archive, proot loader and terminal
+        // JNI an x86_64 (or 32-bit x86) build is non-functional and would crash — so no release
+        // advertises or serves a broken ABI split. Adding a real x86_64 bootstrap to the properties
+        // widens this automatically.
+        ndk {
+            abiFilters(*terminowAbis)
+        }
+
         externalNativeBuild {
             ndkBuild {
                 cFlags "-std=c11", "-Wall", "-Wextra", "-Werror", "-Os", "-fno-stack-protector", "-Wl,--gc-sections"
