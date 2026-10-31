@@ -1,5 +1,6 @@
 package com.termux.app.terminow;
 
+import android.app.AlertDialog;
 import android.app.Dialog;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -17,7 +18,9 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
 import androidx.core.content.ContextCompat;
+import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 
 import com.termux.R;
 import com.termux.app.TermuxActivity;
@@ -112,21 +115,103 @@ final class TerminowAiBridgeSheet {
         for (TerminowStore.Host host : mStore.getHosts()) {
             if (host.telnet || !host.isTerminal() || !host.aiAccess.enabled) continue;
             any = true;
-            final String hostId = host.uuid;
+            final TerminowStore.Host target = host;
             final String hostTitle = host.getTitle();
-            row(content, hostTitle, mActivity.getString(R.string.terminow_bridge_tap_test), () -> {
-                mActivity.showToast(mActivity.getString(R.string.terminow_bridge_working), false);
-                mExecutor.execute(() -> {
-                    TerminowAiBridgeProbe.Result p = mManager.selfTest(envKey, hostId);
-                    final boolean ok = "ok".equals(p.sshTest);
-                    final String msg = mActivity.getString(R.string.terminow_bridge_host_result, hostTitle,
-                        p.sshTest != null ? p.sshTest : (p.error != null ? p.error : "no result"));
-                    mHandler.post(() -> mActivity.showToast(msg, !ok));
-                });
-            });
+            // The label reflects the SAME authorization the test will enforce, so "Allowed" never
+            // precedes an APPROVAL_REQUIRED. A host whose access is in place but that still needs a
+            // per-request approval is shown as such, not as fully allowed.
+            TerminowAiBridge.AuthDecision decision =
+                mManager.evaluate(envKey, host, TerminowStore.AiAccess.CAP_TEST_CONNECTION);
+            row(content, hostTitle, hostStatusLabel(decision), () -> onHostTapped(envKey, who, target, hostTitle));
         }
         if (!any) row(content, mActivity.getString(R.string.terminow_bridge_no_hosts),
             mActivity.getString(R.string.terminow_bridge_no_hosts_desc), () -> { });
+    }
+
+    /** The per-host sub-label, from the authoritative decision (never a bare "Allowed" when approval is due). */
+    @NonNull
+    private String hostStatusLabel(@NonNull TerminowAiBridge.AuthDecision decision) {
+        switch (decision) {
+            case ALLOWED:            return mActivity.getString(R.string.terminow_bridge_tap_test);
+            case APPROVAL_NEEDED:
+            case FINGERPRINT_CHANGED: return mActivity.getString(R.string.terminow_bridge_approval_needed);
+            case CAPABILITY_DENIED:  return mActivity.getString(R.string.terminow_bridge_test_not_allowed);
+            case KEYCHAIN_LOCKED:    return mActivity.getString(R.string.terminow_bridge_locked_label);
+            default:                 return "";
+        }
+    }
+
+    /** A host row was tapped: re-evaluate now and act — test, ask for approval, or explain why not. */
+    private void onHostTapped(@NonNull String envKey, @NonNull String client,
+                              @NonNull TerminowStore.Host host, @NonNull String hostTitle) {
+        switch (mManager.evaluate(envKey, host, TerminowStore.AiAccess.CAP_TEST_CONNECTION)) {
+            case ALLOWED:
+                runHostTest(envKey, host.uuid, hostTitle);
+                break;
+            case APPROVAL_NEEDED:
+            case FINGERPRINT_CHANGED:
+                showApprovalDialog(envKey, client, host, hostTitle);
+                break;
+            case CAPABILITY_DENIED:
+                mActivity.showToast(mActivity.getString(R.string.terminow_bridge_test_cap_hint, hostTitle), true);
+                break;
+            case KEYCHAIN_LOCKED:
+                mActivity.showToast(mActivity.getString(R.string.terminow_bridge_locked_hint), true);
+                break;
+            default:
+                mActivity.showToast(mActivity.getString(R.string.terminow_bridge_host_denied, hostTitle), true);
+                break;
+        }
+    }
+
+    /**
+     * A native approval dialog naming the requesting client, the host and the requested capability.
+     * Approving persists a session grant at the (environment, host) scope and retries the test once;
+     * cancelling leaves access denied and says so. It never grants anything beyond test access.
+     */
+    private void showApprovalDialog(@NonNull String envKey, @NonNull String client,
+                                    @NonNull TerminowStore.Host host, @NonNull String hostTitle) {
+        String capability = mActivity.getString(R.string.terminow_bridge_cap_test);
+        String message = mActivity.getString(R.string.terminow_bridge_approval_message, client, hostTitle, capability);
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_bridge_approval_title)
+            .setMessage(message)
+            .setPositiveButton(R.string.terminow_bridge_approve, (d, w) -> {
+                mManager.grant(envKey, host, TerminowAiBridgeManager.SESSION_GRANT_TTL_MS);
+                runHostTest(envKey, host.uuid, hostTitle);
+            })
+            .setNegativeButton(android.R.string.cancel, (d, w) ->
+                mActivity.showToast(mActivity.getString(R.string.terminow_bridge_approval_cancelled, hostTitle), true))
+            .show();
+    }
+
+    /** Run the connection test from Claude's view and report an actionable result (never a raw code). */
+    private void runHostTest(@NonNull String envKey, @NonNull String hostId, @NonNull String hostTitle) {
+        mActivity.showToast(mActivity.getString(R.string.terminow_bridge_working), false);
+        mExecutor.execute(() -> {
+            TerminowAiBridgeProbe.Result p = mManager.selfTest(envKey, hostId);
+            final boolean ok = "ok".equals(p.sshTest);
+            final String msg = ok ? mActivity.getString(R.string.terminow_bridge_host_ok, hostTitle)
+                : mActivity.getString(R.string.terminow_bridge_host_failed, hostTitle, friendlyTestError(p));
+            mHandler.post(() -> mActivity.showToast(msg, !ok));
+        });
+    }
+
+    /** Turn a probe result into words the user can act on, instead of a raw error code like APPROVAL_REQUIRED. */
+    @NonNull
+    private String friendlyTestError(@NonNull TerminowAiBridgeProbe.Result p) {
+        String code = p.sshTest != null ? p.sshTest : (p.error != null ? p.error : "");
+        switch (code) {
+            case "APPROVAL_REQUIRED": return mActivity.getString(R.string.terminow_bridge_err_approval);
+            case "CAPABILITY_DENIED": return mActivity.getString(R.string.terminow_bridge_err_capability);
+            case "KEYCHAIN_LOCKED":   return mActivity.getString(R.string.terminow_bridge_err_locked);
+            case "HOST_NOT_AUTHORIZED": return mActivity.getString(R.string.terminow_bridge_err_access);
+            case "AUTH_FAILED":       return mActivity.getString(R.string.terminow_bridge_err_auth);
+            case "NETWORK_UNREACHABLE": return mActivity.getString(R.string.terminow_bridge_err_network);
+            case "HOST_KEY_CHANGED":  return mActivity.getString(R.string.terminow_bridge_err_hostkey);
+            case "":                  return mActivity.getString(R.string.terminow_bridge_err_unknown);
+            default:                  return code;
+        }
     }
 
     private void showReport(@NonNull String report) {
@@ -170,16 +255,21 @@ final class TerminowAiBridgeSheet {
         float radius = dp(20);
         background.setCornerRadii(new float[]{radius, radius, radius, radius, 0, 0, 0, 0});
         sheet.setBackground(background);
-        sheet.setPadding(dp(16), dp(12), dp(16), dp(12));
+        sheet.setPadding(dp(16), dp(14), dp(16), dp(12));
         TextView title = new TextView(mActivity);
         title.setText(titleText);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
         title.setTextColor(color(R.color.terminow_text));
         title.setTypeface(Typeface.DEFAULT_BOLD);
+        // Give the header its full line height so a descender/ascender is never clipped at the top.
+        title.setPadding(0, dp(2), 0, dp(6));
+        title.setMinHeight(dp(36));
+        title.setGravity(Gravity.CENTER_VERTICAL);
         ViewCompat.setAccessibilityHeading(title, true);
         sheet.addView(title);
 
         ScrollView scroll = new ScrollView(mActivity);
+        scroll.setClipToPadding(false);
         LinearLayout content = new LinearLayout(mActivity);
         content.setOrientation(LinearLayout.VERTICAL);
         scroll.addView(content);
@@ -201,6 +291,13 @@ final class TerminowAiBridgeSheet {
             }
         });
         dialog.setContentView(root);
+        // Keep the last row above the system navigation bar / gesture area, and clear of the keyboard,
+        // by padding the sheet's bottom with whatever the system occupies there.
+        ViewCompat.setOnApplyWindowInsetsListener(root, (v, insets) -> {
+            Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.ime());
+            sheet.setPadding(sheet.getPaddingLeft(), sheet.getPaddingTop(), sheet.getPaddingRight(), dp(12) + bars.bottom);
+            return insets;
+        });
         if (dialog.getWindow() != null)
             dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
                 | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);

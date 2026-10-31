@@ -152,6 +152,104 @@ public class TerminowAiBridgeTest {
         assertNotEquals(TerminowStore.aiFingerprint(host("a", "A", true)), TerminowStore.aiFingerprint(h2));
     }
 
+    // ----- The authoritative decision shared by the UI label and the execution path -----
+
+    @Test
+    public void evaluateAgreesWithAuthorizeSoTheUiNeverContradictsExecution() throws Exception {
+        // A host that looks "Allowed" (enabled + test capability) but whose policy needs a per-request
+        // approval: the UI must show "approval needed", and execution must refuse the same way. This is
+        // the exact regression: the row said Allowed yet the test returned APPROVAL_REQUIRED.
+        TerminowStore.Host h = host("a", "81 Drivo", true, TerminowStore.AiAccess.CAP_TEST_CONNECTION);
+        h.aiAccess.approvalPolicy = "ask";
+        hosts.add(h);
+
+        assertEquals(TerminowAiBridge.AuthDecision.APPROVAL_NEEDED,
+            bridge.evaluate(h, "ubuntu", TerminowStore.AiAccess.CAP_TEST_CONNECTION));
+        assertTrue("host access itself is in place; only the approval is missing",
+            bridge.evaluate(h, "ubuntu", TerminowStore.AiAccess.CAP_TEST_CONNECTION).hostAccessAllowed());
+        assertCode(TerminowAiError.APPROVAL_REQUIRED, "ubuntu", "a");
+
+        // After approval (a grant), both agree it is allowed.
+        bridge.grant("ubuntu", h, 60_000);
+        assertEquals(TerminowAiBridge.AuthDecision.ALLOWED,
+            bridge.evaluate(h, "ubuntu", TerminowStore.AiAccess.CAP_TEST_CONNECTION));
+        assertEquals("root", bridge.authorize("ubuntu", "a", TerminowStore.AiAccess.CAP_TEST_CONNECTION).username);
+    }
+
+    @Test
+    public void evaluateReportsEachDistinctReason() {
+        // Enabled + capability + rules policy → fully allowed.
+        TerminowStore.Host ok = host("ok", "OK", true, TerminowStore.AiAccess.CAP_TEST_CONNECTION);
+        assertEquals(TerminowAiBridge.AuthDecision.ALLOWED,
+            bridge.evaluate(ok, "ubuntu", TerminowStore.AiAccess.CAP_TEST_CONNECTION));
+
+        // Unknown / disabled / wrong environment → host access not allowed.
+        assertEquals(TerminowAiBridge.AuthDecision.HOST_NOT_AUTHORIZED,
+            bridge.evaluate(null, "ubuntu", TerminowStore.AiAccess.CAP_TEST_CONNECTION));
+        TerminowStore.Host disabled = host("d", "D", false, TerminowStore.AiAccess.CAP_TEST_CONNECTION);
+        assertEquals(TerminowAiBridge.AuthDecision.HOST_NOT_AUTHORIZED,
+            bridge.evaluate(disabled, "ubuntu", TerminowStore.AiAccess.CAP_TEST_CONNECTION));
+
+        // Enabled but the test capability is not granted → capability denied (not "Allowed", and a
+        // mere grant must NOT be offered to fix it: that would need changing the host's rules).
+        TerminowStore.Host noCap = host("c", "C", true);
+        assertEquals(TerminowAiBridge.AuthDecision.CAPABILITY_DENIED,
+            bridge.evaluate(noCap, "ubuntu", TerminowStore.AiAccess.CAP_TEST_CONNECTION));
+        assertFalse(bridge.evaluate(noCap, "ubuntu", TerminowStore.AiAccess.CAP_TEST_CONNECTION).hostAccessAllowed());
+
+        // Endpoint changed since access was allowed → re-approval (shown as approval needed).
+        TerminowStore.Host moved = host("m", "M", true, TerminowStore.AiAccess.CAP_TEST_CONNECTION);
+        moved.port = 2288;   // fingerprint no longer matches the saved one
+        assertEquals(TerminowAiBridge.AuthDecision.FINGERPRINT_CHANGED,
+            bridge.evaluate(moved, "ubuntu", TerminowStore.AiAccess.CAP_TEST_CONNECTION));
+        assertTrue(bridge.evaluate(moved, "ubuntu", TerminowStore.AiAccess.CAP_TEST_CONNECTION).hostAccessAllowed());
+
+        // Keychain locked → cannot resolve credentials.
+        unlocked = false;
+        assertEquals(TerminowAiBridge.AuthDecision.KEYCHAIN_LOCKED,
+            bridge.evaluate(ok, "ubuntu", TerminowStore.AiAccess.CAP_TEST_CONNECTION));
+    }
+
+    @Test
+    public void testApprovalDoesNotGrantRunCommand() throws Exception {
+        // Approving a connection test must not let commands run: run_command is a separate capability.
+        TerminowStore.Host h = host("a", "A", true, TerminowStore.AiAccess.CAP_TEST_CONNECTION);
+        h.aiAccess.approvalPolicy = "ask";
+        hosts.add(h);
+        bridge.grant("ubuntu", h, 60_000);   // the approval the Bridge dialog makes
+        assertEquals("root", bridge.authorize("ubuntu", "a", TerminowStore.AiAccess.CAP_TEST_CONNECTION).username);
+        // ssh_exec still denied: the host never allowed run_command.
+        assertEquals(TerminowAiBridge.AuthDecision.CAPABILITY_DENIED,
+            bridge.evaluate(h, "ubuntu", TerminowStore.AiAccess.CAP_RUN_COMMAND));
+    }
+
+    @Test
+    public void duplicateIpHostsAreEvaluatedIndependentlyByUuid() {
+        // Two saved hosts that share an address but are distinct records: a grant/policy on one must
+        // never leak to the other. Authorization keys on the stable uuid, never the IP.
+        TerminowStore.Host one = host("one", "Primary", true, TerminowStore.AiAccess.CAP_TEST_CONNECTION);
+        one.address = "10.0.0.50";
+        one.aiAccess.approvalPolicy = "rules";
+        one.aiAccess.fingerprint = TerminowStore.aiFingerprint(one);
+        TerminowStore.Host two = host("two", "Secondary", true, TerminowStore.AiAccess.CAP_TEST_CONNECTION);
+        two.address = "10.0.0.50";
+        two.aiAccess.approvalPolicy = "ask";
+        two.aiAccess.fingerprint = TerminowStore.aiFingerprint(two);
+        hosts.add(one);
+        hosts.add(two);
+
+        assertEquals(TerminowAiBridge.AuthDecision.ALLOWED,
+            bridge.evaluate(one, "ubuntu", TerminowStore.AiAccess.CAP_TEST_CONNECTION));
+        assertEquals(TerminowAiBridge.AuthDecision.APPROVAL_NEEDED,
+            bridge.evaluate(two, "ubuntu", TerminowStore.AiAccess.CAP_TEST_CONNECTION));
+
+        // Approving the second does not change the first, and vice versa.
+        bridge.grant("ubuntu", two, 60_000);
+        assertEquals(TerminowAiBridge.AuthDecision.ALLOWED,
+            bridge.evaluate(two, "ubuntu", TerminowStore.AiAccess.CAP_TEST_CONNECTION));
+        assertEquals(1, bridge.activeGrantCount());
+    }
+
     private void assertCode(TerminowAiError expected, String env, String uuid) {
         try {
             bridge.authorize(env, uuid, TerminowStore.AiAccess.CAP_TEST_CONNECTION);
