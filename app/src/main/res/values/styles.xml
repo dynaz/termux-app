@@ -130,13 +130,13 @@
         <item name="android:trackTint">@color/terminow_panel_switch_track</item>
     </style>
 
-    <!-- The round button at the end of a field of the host panel -->
+    <!-- The round button at the end of a field of the host panel: compact, not oversized. -->
     <style name="TerminowPanelFieldIcon">
-        <item name="android:layout_width">40dp</item>
-        <item name="android:layout_height">40dp</item>
-        <item name="android:layout_marginStart">12dp</item>
+        <item name="android:layout_width">34dp</item>
+        <item name="android:layout_height">34dp</item>
+        <item name="android:layout_marginStart">10dp</item>
         <item name="android:background">@drawable/terminow_field_icon</item>
-        <item name="android:padding">9dp</item>
+        <item name="android:padding">8dp</item>
         <item name="android:scaleType">fitCenter</item>
         <item name="android:tint">@color/terminow_bar_home</item>
     </style>
