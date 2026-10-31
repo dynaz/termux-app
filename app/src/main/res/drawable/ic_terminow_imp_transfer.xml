@@ -1,0 +1,6 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <!-- Site/session transfer: an up and a down arrow -->
+    <path android:fillColor="#FFFFFF" android:pathData="M7,3L11,8L8.5,8L8.5,14L5.5,14L5.5,8L3,8Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M17,21L13,16L15.5,16L15.5,10L18.5,10L18.5,16L21,16Z" />
+</vector>

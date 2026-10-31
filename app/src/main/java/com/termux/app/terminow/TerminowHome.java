@@ -309,6 +309,13 @@ public class TerminowHome {
             }
         });
         mLauncher.setLinux(mLinuxUi);
+        // The unified Connect picker (toolbar environment button) reaches host connections through here.
+        mLauncher.setHostActions(new TerminowConnectPicker.HostActions() {
+            @Override public void connect(@NonNull TerminowStore.Host host) { TerminowHome.this.connect(host); }
+            @Override public void connectSftp(@NonNull TerminowStore.Host host) { TerminowHome.this.connectSftp(host); }
+            @Override public void edit(@NonNull TerminowStore.Host host) { showHostDialog(host); }
+            @Override public void addHost() { showHostDialog(null); }
+        });
         mLauncherButton = activity.findViewById(R.id.terminow_launcher_button);
         mLauncherButton.setOnClickListener(v -> showQuickLaunch());
         mTerminalToolbar = activity.findViewById(R.id.terminow_terminal_toolbar);
@@ -628,7 +635,7 @@ public class TerminowHome {
         mActionsView = activity.findViewById(R.id.terminow_actions);
         activity.findViewById(R.id.terminow_action_new_host).setOnClickListener(v -> newHostFromFilter());
         activity.findViewById(R.id.terminow_action_new_group).setOnClickListener(v -> showGroupDialog(null));
-        activity.findViewById(R.id.terminow_action_import).setOnClickListener(v -> showImportDialog());
+        activity.findViewById(R.id.terminow_action_import).setOnClickListener(v -> showImportCenter());
         // The title of a group goes back to all hosts
         mSectionTitleView.setOnClickListener(v -> onBackPressed());
 
@@ -921,59 +928,84 @@ public class TerminowHome {
         List<TermuxSession> termuxSessions = service.getTermuxSessions();
         View selectedTab = null;
 
+        // Compact, logo-only tabs. The distro/host is taken from the session's TermiNow metadata (never
+        // the running process), so starting fish, Claude or another command never changes a tab's icon.
+        // First pass: how many sessions share each identity group, so same-distro tabs get a number badge.
+        java.util.Map<String, Integer> groupTotals = new java.util.HashMap<>();
+        for (TermuxSession ts : termuxSessions) {
+            TerminalSession s = ts.getTerminalSession();
+            if (s == null) continue;
+            String key = mLauncher.tabIdentity(s).groupKey();
+            Integer n = groupTotals.get(key);
+            groupTotals.put(key, n == null ? 1 : n + 1);
+        }
+        java.util.Map<String, Integer> groupSeen = new java.util.HashMap<>();
+
         for (int i = 0; i < termuxSessions.size(); i++) {
             final TerminalSession session = termuxSessions.get(i).getTerminalSession();
             if (session == null) continue;
-            boolean selected = !homeVisible && session == currentSession;
+            final boolean selected = !homeVisible && session == currentSession;
+            final TerminowLauncher.TabIdentity identity = mLauncher.tabIdentity(session);
+            final String name = getSessionTitle(session, i);
+            final String gkey = identity.groupKey();
+            Integer seen = groupSeen.get(gkey);
+            final int number = seen == null ? 1 : seen + 1;   // stable 1-based number within the group
+            groupSeen.put(gkey, number);
+            boolean showBadge = groupTotals.containsKey(gkey) && groupTotals.get(gkey) > 1;
 
-            LinearLayout tab = new LinearLayout(mActivity);
-            tab.setOrientation(LinearLayout.HORIZONTAL);
-            tab.setGravity(Gravity.CENTER_VERTICAL);
+            android.widget.FrameLayout tab = new android.widget.FrameLayout(mActivity);
             tab.setBackgroundResource(selected ? R.drawable.terminow_tab : R.drawable.terminow_tab_idle);
-            tab.setPadding(dp(12), 0, dp(selected ? 4 : 12), 0);
-            LinearLayout.LayoutParams tabParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(36));
-            tabParams.setMarginStart(dp(8));
+            LinearLayout.LayoutParams tabParams = new LinearLayout.LayoutParams(dp(48), ViewGroup.LayoutParams.MATCH_PARENT);
+            tabParams.setMarginStart(dp(6));
             tab.setLayoutParams(tabParams);
+            tab.setMinimumWidth(dp(48));
+            tab.setMinimumHeight(dp(48));
 
-            TextView titleView = new TextView(mActivity);
-            titleView.setText(getSessionTitle(session, i));
-            titleView.setTextSize(14);
-            titleView.setTextColor(ContextCompat.getColor(mActivity, selected ? R.color.terminow_text : R.color.terminow_text_secondary));
-            titleView.setMaxLines(1);
-            titleView.setEllipsize(TextUtils.TruncateAt.END);
-            titleView.setMaxWidth(dp(200));
-            tab.addView(titleView);
+            LinearLayout col = new LinearLayout(mActivity);
+            col.setOrientation(LinearLayout.VERTICAL);
+            col.setGravity(Gravity.CENTER);
+            tab.addView(col, new android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-            if (selected) {
-                // A clean 20dp × with an 8dp inset (36dp box), expanded to a 48dp touch target below so
-                // the close target is separate from the tab-selection target and easy to hit.
-                ImageView closeView = new ImageView(mActivity);
-                closeView.setImageResource(R.drawable.ic_terminow_close);
-                closeView.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-                closeView.setPadding(dp(8), dp(8), dp(8), dp(8));
-                closeView.setContentDescription(mActivity.getString(R.string.terminow_close_named, getSessionTitle(session, i)));
-                android.util.TypedValue ripple = new android.util.TypedValue();
-                mActivity.getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true);
-                if (ripple.resourceId != 0) closeView.setBackgroundResource(ripple.resourceId);
-                closeView.setClickable(true);
-                closeView.setFocusable(true);
-                closeView.setOnClickListener(v -> {
-                    v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
-                    closeSession(session);
-                });
-                tab.addView(closeView, new LinearLayout.LayoutParams(dp(36), dp(36)));
-                final LinearLayout tabRef = tab;
-                // Expand the touchable area of the × to at least 48dp without enlarging the icon.
-                tab.post(() -> {
-                    android.graphics.Rect rect = new android.graphics.Rect();
-                    closeView.getHitRect(rect);
-                    int padV = Math.max(0, (dp(48) - rect.height()) / 2);
-                    int padH = Math.max(0, (dp(48) - rect.width()) / 2);
-                    rect.top -= padV; rect.bottom += padV; rect.left -= padH; rect.right += padH;
-                    tabRef.setTouchDelegate(new android.view.TouchDelegate(rect, closeView));
-                });
-                selectedTab = tab;
+            ImageView logo = new ImageView(mActivity);
+            logo.setImageResource(identity.iconRes);
+            logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            if (identity.tintIcon)
+                logo.setColorFilter(ContextCompat.getColor(mActivity, selected ? R.color.terminow_text : R.color.terminow_text_secondary));
+            col.addView(logo, new LinearLayout.LayoutParams(dp(24), dp(24)));
+
+            // Selected tab: an underline under the logo (the tab background also changes).
+            View underline = new View(mActivity);
+            underline.setBackgroundColor(selected
+                ? ContextCompat.getColor(mActivity, R.color.terminow_panel_accent) : android.graphics.Color.TRANSPARENT);
+            LinearLayout.LayoutParams ulp = new LinearLayout.LayoutParams(dp(20), dp(2));
+            ulp.topMargin = dp(3);
+            col.addView(underline, ulp);
+
+            if (showBadge) {
+                TextView badge = new TextView(mActivity);
+                badge.setText(String.valueOf(number));
+                badge.setTextSize(9);
+                badge.setTextColor(ContextCompat.getColor(mActivity, R.color.terminow_bar_home));
+                badge.setGravity(Gravity.CENTER);
+                badge.setIncludeFontPadding(false);
+                android.graphics.drawable.GradientDrawable chip = new android.graphics.drawable.GradientDrawable();
+                chip.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+                chip.setColor(ContextCompat.getColor(mActivity, R.color.terminow_panel_accent));
+                badge.setBackground(chip);
+                android.widget.FrameLayout.LayoutParams blp =
+                    new android.widget.FrameLayout.LayoutParams(dp(14), dp(14), Gravity.END | Gravity.TOP);
+                blp.topMargin = dp(4);
+                blp.setMarginEnd(dp(4));
+                tab.addView(badge, blp);
             }
+
+            String a11y = mActivity.getString(selected ? R.string.terminow_tab_a11y_selected : R.string.terminow_tab_a11y, name, number);
+            if (!identity.hostName.isEmpty())
+                a11y = a11y + ", " + mActivity.getString(R.string.terminow_tab_host_label, identity.hostName);
+            tab.setContentDescription(a11y);
+            tab.setClickable(true);
+            tab.setFocusable(true);
 
             tab.setOnClickListener(v -> {
                 mActivity.getTermuxTerminalSessionClient().setCurrentSession(session);
@@ -983,10 +1015,12 @@ public class TerminowHome {
                     refresh();
             });
             tab.setOnLongClickListener(v -> {
-                mActivity.getTermuxTerminalSessionClient().renameSession(session);
+                v.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
+                showSessionActions(session, name, identity);
                 return true;
             });
 
+            if (selected) selectedTab = tab;
             mTabsView.addView(tab);
         }
 
@@ -1023,6 +1057,26 @@ public class TerminowHome {
         if (!TextUtils.isEmpty(session.mSessionName)) return session.mSessionName;
         if (!TextUtils.isEmpty(session.getTitle())) return session.getTitle();
         return mActivity.getString(R.string.terminow_local_terminal) + " " + (index + 1);
+    }
+
+    /**
+     * The long-press menu of a compact session tab: the full session name as the title (and the host name
+     * for a remote session), then Rename and Close. Close goes through {@link #closeSession} so the
+     * existing running-process confirmation is preserved.
+     */
+    private void showSessionActions(@NonNull TerminalSession session, @NonNull String name,
+                                    @NonNull TerminowLauncher.TabIdentity identity) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog).setTitle(name);
+        if (!identity.hostName.isEmpty())
+            builder.setMessage(mActivity.getString(R.string.terminow_tab_host_label, identity.hostName));
+        CharSequence[] items = {
+            mActivity.getString(R.string.terminow_tab_rename),
+            mActivity.getString(R.string.terminow_tab_close)
+        };
+        builder.setItems(items, (d, which) -> {
+            if (which == 0) mActivity.getTermuxTerminalSessionClient().renameSession(session);
+            else closeSession(session);
+        }).show();
     }
 
     /**
@@ -2073,8 +2127,7 @@ public class TerminowHome {
         addMenuItem(menu, popup, R.drawable.ic_terminow_hosts,
             mActivity.getString(R.string.terminow_connect_menu), mActivity.getString(R.string.terminow_connect_menu_summary),
             this::showConnectPicker);
-        addMenuItem(menu, popup, R.drawable.ic_terminow_import, R.string.terminow_quick_import, this::showImportChooser);
-        addMenuItem(menu, popup, R.drawable.ic_terminow_import, R.string.terminow_qimport_menu, this::showQuickImport);
+        addMenuItem(menu, popup, R.drawable.ic_terminow_import, R.string.terminow_impc_menu, this::showImportCenter);
         addMenuItem(menu, popup, R.drawable.ic_terminow_hosts, R.string.terminow_discovery_menu, this::showNetworkDiscovery);
         addMenuItem(menu, popup, R.drawable.ic_terminow_serial,
             mActivity.getString(R.string.terminow_serial_menu), mActivity.getString(R.string.terminow_serial_menu_summary),
@@ -2151,6 +2204,29 @@ public class TerminowHome {
             @Override public void viewHost(@NonNull TerminowStore.Host host) {
                 if (!isVisible()) show();
                 updateItems();
+            }
+        }).show();
+    }
+
+    /** The unified Import Center: one screen for every import source, replacing Import + Quick Import. */
+    private void showImportCenter() {
+        new TerminowImportCenter(mActivity, new TerminowImportCenter.Actions() {
+            @Override public void chooseFileAutoDetect() { pickImportFile(false); }
+            @Override public void importSource(@NonNull TerminowImportParsers.Source source) {
+                mQuickImportSource = source;
+                pickQuickImportFile();
+            }
+            @Override public void importTermius() { showTermiusImport(); }
+            @Override public void importAws() {
+                new TerminowCloudImportUi(mActivity, quickImportDelegate()).start(TerminowCloudImportUi.Provider.AWS);
+            }
+            @Override public void importDigitalOcean() {
+                new TerminowCloudImportUi(mActivity, quickImportDelegate()).start(TerminowCloudImportUi.Provider.DIGITALOCEAN);
+            }
+            @Override public void importFilesToWorkspace() {
+                // Workspace file copy stays a distinct flow from host parsers.
+                if (!isVisible() && mSftpBrowser.has(mActivity.getCurrentSession())) mSftpBrowser.pickUpload();
+                else mFiles.importFiles(getCurrentSftpSession());
             }
         }).show();
     }

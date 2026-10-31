@@ -102,6 +102,51 @@
     <string name="terminow_close_keep">Keep open</string>
     <string name="terminow_close_confirm">Close session</string>
     <string name="terminow_close_named">Close %1$s</string>
+    <!-- Compact distro-logo session tabs -->
+    <string name="terminow_tab_rename">Rename</string>
+    <string name="terminow_tab_close">Close</string>
+    <string name="terminow_tab_host_label">Host: %1$s</string>
+    <!-- Accessibility for a tab: %1$s = full session name, %2$d = session number -->
+    <string name="terminow_tab_a11y">%1$s, session %2$d</string>
+    <string name="terminow_tab_a11y_selected">%1$s, session %2$d, selected</string>
+    <!-- Unified "Connect to…" picker (toolbar environment button) -->
+    <string name="terminow_connpick_title">Connect to…</string>
+    <string name="terminow_connpick_search">Search sessions, distros, or hosts</string>
+    <string name="terminow_connpick_tab_sessions">Sessions</string>
+    <string name="terminow_connpick_tab_local">Local</string>
+    <string name="terminow_connpick_tab_hosts">Hosts</string>
+    <string name="terminow_connpick_active">Active</string>
+    <string name="terminow_connpick_no_sessions">No open sessions.</string>
+    <string name="terminow_connpick_no_local">No local environments.</string>
+    <string name="terminow_connpick_no_hosts">No saved hosts yet</string>
+    <string name="terminow_connpick_no_hosts_match">No hosts match your search.</string>
+    <string name="terminow_connpick_add_host">Add host</string>
+    <string name="terminow_connpick_group_ssh">SSH</string>
+    <string name="terminow_connpick_group_rdp">RDP</string>
+    <string name="terminow_connpick_group_winrm">WinRM</string>
+    <string name="terminow_connpick_type_local">TermiNow local shell</string>
+    <string name="terminow_connpick_type_distro">Linux</string>
+    <string name="terminow_connpick_type_session">Session</string>
+    <!-- Unified Import Center -->
+    <string name="terminow_impc_menu">Import</string>
+    <string name="terminow_impc_title">Import</string>
+    <string name="terminow_impc_subtitle">Bring your hosts and files into TermiNow</string>
+    <string name="terminow_impc_choose_file">Choose file</string>
+    <string name="terminow_impc_choose_file_sub">Automatically detect a supported import format</string>
+    <string name="terminow_impc_group_apps">From other apps</string>
+    <string name="terminow_impc_group_config">Configuration files</string>
+    <string name="terminow_impc_group_cloud">Cloud providers</string>
+    <string name="terminow_impc_group_files">Files to workspace</string>
+    <string name="terminow_impc_filezilla_sub">Site Manager XML</string>
+    <string name="terminow_impc_putty_sub">Exported session registry file</string>
+    <string name="terminow_impc_securecrt_sub">Session configuration</string>
+    <string name="terminow_impc_termius_sub">Exported hosts</string>
+    <string name="terminow_impc_openssh_sub">Hosts and connection settings</string>
+    <string name="terminow_impc_csv_sub">Host list</string>
+    <string name="terminow_impc_aws_sub">Import EC2 instances</string>
+    <string name="terminow_impc_do_sub">Import droplets</string>
+    <string name="terminow_impc_files">Import files</string>
+    <string name="terminow_impc_files_sub">Copy device files into a workspace folder</string>
     <string name="terminow_quick_detach">Detach</string>
     <string name="terminow_quick_end_tmux">End session</string>
     <string name="terminow_quick_end_tmux_title">End %1$s?</string>

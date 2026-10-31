@@ -40,6 +40,8 @@ import com.termux.R;
 import com.termux.app.terminow.linux.TerminowAndroidGroups;
 import com.termux.app.terminow.linux.TerminowLinuxEnv;
 import com.termux.app.TermuxActivity;
+import com.termux.app.TermuxService;
+import com.termux.shared.termux.shell.command.runner.terminal.TermuxSession;
 import com.termux.terminal.TerminalEmulator;
 import com.termux.app.terminow.files.TerminowSftpFs;
 import com.termux.shared.termux.TermuxConstants;
@@ -2474,6 +2476,54 @@ public class TerminowLauncher {
     }
 
     /**
+     * How a top session tab should be shown as a compact icon: which drawable, whether to tint it (distro
+     * logos keep their brand colour; monochrome glyphs are tinted), the kind for its long-press menu and
+     * accessibility label, and the host display name for a remote session. Resolved from the session's
+     * TermiNow metadata — never from the running process — so starting fish, Claude or another command in
+     * a tab never changes its icon. An untracked session is shown with the generic terminal icon.
+     */
+    public static final class TabIdentity {
+        public final int iconRes;
+        public final boolean tintIcon;
+        @NonNull public final String distroId;   // "" when not a local distro
+        @NonNull public final String kind;        // local | distro | ssh | telnet | sftp | host | unknown
+        @NonNull public final String hostName;    // the host display name for a remote session, else ""
+        TabIdentity(int iconRes, boolean tintIcon, @NonNull String distroId, @NonNull String kind, @NonNull String hostName) {
+            this.iconRes = iconRes;
+            this.tintIcon = tintIcon;
+            this.distroId = distroId;
+            this.kind = kind;
+            this.hostName = hostName;
+        }
+        /** A stable grouping key: sessions with the same key are the "same distro/host kind" for numbering. */
+        @NonNull public String groupKey() { return distroId.isEmpty() ? kind : "distro:" + distroId; }
+    }
+
+    /** Resolve the tab icon/identity of a session from its tracked metadata (not its running process). */
+    @NonNull
+    public TabIdentity tabIdentity(@NonNull TerminalSession session) {
+        SessionInfo info = mInfo.get(session);
+        if (info == null)
+            return new TabIdentity(R.drawable.ic_terminow_terminal, true, "", "unknown", "");
+        if (info.environmentKey == null) {
+            // A connection to a saved host (no local environment): pick the connection-type icon.
+            String tool = info.tool;
+            if ("sftp".equals(tool)) return new TabIdentity(R.drawable.ic_terminow_file, true, "", "sftp", info.environmentLabel);
+            if ("rdp".equals(tool)) return new TabIdentity(R.drawable.ic_terminow_desktop, true, "", "rdp", info.environmentLabel);
+            if ("winrm".equals(tool)) return new TabIdentity(R.drawable.ic_terminow_desktop, true, "", "winrm", info.environmentLabel);
+            String kind = "telnet".equals(tool) ? "telnet" : "ssh";
+            return new TabIdentity(R.drawable.ic_terminow_hosts, true, "", kind, info.environmentLabel);
+        }
+        if (TerminowMcpTargets.TARGET_TERMINOW.equals(info.environmentKey))
+            return new TabIdentity(R.drawable.ic_terminow_terminal, true, "", "local", "");
+        Environment environment = environmentFor(info.environmentKey);
+        String distroId = environment != null ? environmentDistroId(environment) : "";
+        if (distroId.isEmpty() || "local".equals(distroId))
+            return new TabIdentity(R.drawable.ic_terminow_terminal, true, "", "local", "");
+        return new TabIdentity(TerminowQuickLaunch.iconOf(distroId), false, distroId, "distro", "");
+    }
+
+    /**
      * Remember a local Linux session that is closing, so the Local Linux picker can offer to open a new
      * shell in its place. Only container environments are recorded (not the bare TermiNow shell or SSH).
      */
@@ -2542,7 +2592,7 @@ public class TerminowLauncher {
     public void bindToolbar(@NonNull View toolbar) {
         mToolbarEnvironment = toolbar.findViewById(R.id.terminow_toolbar_environment);
         mToolbarFolder = toolbar.findViewById(R.id.terminow_toolbar_folder);
-        mToolbarEnvironment.setOnClickListener(v -> switchEnvironment());
+        mToolbarEnvironment.setOnClickListener(v -> openConnectPicker());
         mToolbarFolder.setOnClickListener(v -> changeFolder());
         toolbar.findViewById(R.id.terminow_toolbar_tools).setOnClickListener(v -> show());
         View install = toolbar.findViewById(R.id.terminow_toolbar_install);
@@ -2623,28 +2673,67 @@ public class TerminowLauncher {
                     show();
                     return;
                 }
-                Environment environment = environments.get(which);
-                setEnvironment(environment.key);
-                // A Linux environment opens as the settings say: in this tab, a new one, or ask
-                if (!environment.isLocal()) {
-                    openUbuntu(environment);
-                    return;
-                }
-                TerminalSession current = mActivity.getCurrentSession();
-                TerminalSession session = lastShellOf(environment);
-                if (session != null) {
-                    if (session == current) {
-                        mActivity.showToast(mActivity.getString(R.string.terminow_toolbar_already_in, environment.label), false);
-                    } else {
-                        mHost.showSession(session);
-                        mActivity.showToast(mActivity.getString(R.string.terminow_toolbar_switched, session.mSessionName), false);
-                    }
-                    return;
-                }
-                if (environment.isLocal()) launchShell(environment);
-                else launchUbuntu(environment);
+                selectEnvironment(environments.get(which));
             })
             .show();
+    }
+
+    /**
+     * Act on an environment chosen in a picker: make it the toolbar environment, then open it the way the
+     * settings say (resume the last shell, a new tab, or the current tab — asking when not remembered).
+     * Shared by the legacy environment dialog and the unified Connect picker's Local tab.
+     */
+    void selectEnvironment(@NonNull Environment environment) {
+        setEnvironment(environment.key);
+        // A Linux environment opens as the settings say: in this tab, a new one, or ask
+        if (!environment.isLocal()) {
+            openUbuntu(environment);
+            return;
+        }
+        TerminalSession current = mActivity.getCurrentSession();
+        TerminalSession session = lastShellOf(environment);
+        if (session != null) {
+            if (session == current) {
+                mActivity.showToast(mActivity.getString(R.string.terminow_toolbar_already_in, environment.label), false);
+            } else {
+                mHost.showSession(session);
+                mActivity.showToast(mActivity.getString(R.string.terminow_toolbar_switched, session.mSessionName), false);
+            }
+            return;
+        }
+        launchShell(environment);
+    }
+
+    /** Bring a running session to the front (used by the Connect picker's Sessions tab). */
+    void activateSession(@NonNull TerminalSession session) {
+        mHost.showSession(session);
+    }
+
+    /** All open sessions, in tab order, with their tracked metadata (for the Connect picker). */
+    @NonNull
+    java.util.List<TerminalSession> openSessions() {
+        java.util.List<TerminalSession> out = new java.util.ArrayList<>();
+        TermuxService service = mActivity.getTermuxService();
+        if (service == null) return out;
+        for (TermuxSession ts : service.getTermuxSessions()) {
+            TerminalSession s = ts.getTerminalSession();
+            if (s != null) out.add(s);
+        }
+        return out;
+    }
+
+    /** Set by TerminowHome so the Connect picker can reach the per-protocol host connection flows. */
+    @Nullable private TerminowConnectPicker.HostActions mHostActions;
+
+    void setHostActions(@NonNull TerminowConnectPicker.HostActions actions) { mHostActions = actions; }
+
+    /**
+     * Open the unified "Connect to…" picker (Sessions / Local / Hosts). Falls back to the legacy
+     * environment dialog if the host actions were not wired yet, so the toolbar is never dead.
+     */
+    void openConnectPicker() {
+        if (mHostActions == null) { switchEnvironment(); return; }
+        new TerminowConnectPicker(mActivity, mStore, this, mHostActions).show();
     }
 
     /**
