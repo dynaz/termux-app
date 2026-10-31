@@ -33,6 +33,8 @@ const CONFIG_FILE      = __DIR__ . '/devops_config.php';
 require_once __DIR__ . '/devops_providers.php';
 // Optional GitHub App support for PRIVATE repositories (kept separate from the public OAuth App).
 require_once __DIR__ . '/devops_github_app.php';
+// GitHub fine-grained Personal Access Token: a third, user-supplied, read-only GitHub credential.
+require_once __DIR__ . '/devops_github_pat.php';
 
 class Failure extends \Exception
 {
@@ -485,6 +487,10 @@ function handle(\PDO $db, array $claims, string $request, callable $isPremiumNow
         github_app_delete($db, $uid);
         return ['status' => 'disconnected'];
     }
+    if ($action === 'github_pat_disconnect') {   // remove the fine-grained PAT; allowed even when Premium lapsed
+        delete_pat($db, $uid);
+        return ['status' => 'disconnected'];
+    }
 
     // Everything else needs Premium now (sync is disabled when it has lapsed).
     if (!$isPremiumNow()) throw new Failure(403, 'premium_required');
@@ -505,6 +511,14 @@ function handle(\PDO $db, array $claims, string $request, callable $isPremiumNow
         if (!$app) throw new Failure(503, 'provider_not_configured');
         $state = state_create($db, $uid, $email, $now, 'github_app');
         return ['installUrl' => github_app_install_url($app, $state)];
+    }
+    if ($action === 'github_pat_connect') {
+        // Add/replace the user's fine-grained PAT (private repositories, read-only). The token is entered
+        // in the app and posted here over TLS; it is validated at GitHub, encrypted, and stored. We never
+        // add or widen a scope — the token is used exactly as the user minted it.
+        if ($provider !== 'github') throw new Failure(400, 'bad_provider');
+        $tokenIn = (string)($req['token'] ?? '');
+        return github_pat_connect($db, $uid, $email, $tokenIn, $config['token_key'], $now);
     }
     if ($action === 'status') {
         // Per-provider status for the home screen: configured (Connect vs "Coming soon"), connected, and
@@ -545,6 +559,9 @@ function handle(\PDO $db, array $claims, string $request, callable $isPremiumNow
                 'installed' => $bind !== null,
                 'account'   => $bind ? (string)$bind['account_login'] : '',
             ];
+            // Fine-grained PAT (a third private-repo credential): available regardless of server config,
+            // connected/valid/login reflect the stored token (valid=false → the app shows Replace token).
+            $providers['github']['pat'] = github_pat_status($db, $uid, $config['token_key'], $now);
         }
         $cur = $conns[$provider] ?? null;
         return [
@@ -555,16 +572,32 @@ function handle(\PDO $db, array $claims, string $request, callable $isPremiumNow
         ];
     }
 
-    // Data actions need a stored connection; active_token refreshes an expiring GitLab/Bitbucket token.
-    $token = active_token($db, $uid, $provider, $config, $now);
+    // Data actions need a stored credential. For GitHub the OAuth connection is OPTIONAL when a PAT or a
+    // GitHub App binding exists (either can stand alone), so a PAT-only user still works; for GitLab and
+    // Bitbucket the OAuth connection is required and active_token refreshes an expiring token.
+    if ($provider === 'github') {
+        $oauth = load_connection($db, $uid, 'github');
+        $token = $oauth ? active_token($db, $uid, 'github', $config, $now) : '';
+        $hasPat = load_pat($db, $uid) !== null;
+        $app = github_app_config($config);
+        $hasApp = $app && github_app_load($db, $uid);
+        if ($token === '' && !$hasPat && !$hasApp) throw new Failure(409, 'not_connected');
+    } else {
+        $token = active_token($db, $uid, $provider, $config, $now);
+    }
 
     if ($action === 'repos') {
-        $repos = list_repos($provider, $token);
-        // GitHub: also include the user's GitHub App installation repositories (private-capable), merged
-        // and tagged source=app. If the installation was revoked, this silently keeps the public list and
-        // status() surfaces the reconnect state.
-        if ($provider === 'github') $repos = github_merge_app_repos($db, $uid, $config, $repos, $now);
-        return ['repos' => $repos];
+        if ($provider !== 'github') return ['repos' => list_repos($provider, $token)];
+        // GitHub: the OAuth public list (if connected) plus the GitHub App installation repos (source=app)
+        // plus the PAT's repos (source=pat), merged. A dead PAT does not silently drop to public-only — it
+        // keeps the list and adds a warning the home screen shows ("token expired — Replace").
+        $warnings = [];
+        $repos = $token !== '' ? list_repos('github', $token) : [];
+        $repos = github_merge_app_repos($db, $uid, $config, $repos, $now);
+        $repos = github_merge_pat_repos($db, $uid, $config['token_key'], $repos, $warnings);
+        $out = ['repos' => $repos];
+        if ($warnings) $out['warnings'] = array_values(array_unique($warnings));
+        return $out;
     }
     if ($action === 'runs') {
         $repo = provider_repo_ref($provider, $req);
@@ -600,16 +633,29 @@ function github_merge_app_repos(\PDO $db, string $uid, array $config, array $oau
 }
 
 /**
- * The token to use for a GitHub data call: the GitHub App installation token when the request names
- * source=app (private repos), otherwise the OAuth token. Non-GitHub providers always use $oauthToken.
+ * The token to use for a GitHub data call, chosen by the request's `source` so the credential that owns
+ * the repo is always the one used — never a silent fallback to a public-only token that would hide the
+ * real error:
+ *   - source=app → the GitHub App installation token (private repos)
+ *   - source=pat → the user's fine-grained PAT (throws pat_not_connected if it was removed)
+ *   - otherwise  → the OAuth token (throws not_connected if there is none)
+ * Non-GitHub providers always use $oauthToken.
  */
 function github_data_token(\PDO $db, string $uid, string $provider, array $config, string $oauthToken, array $req, int $now): string
 {
-    if ($provider !== 'github' || (string)($req['source'] ?? '') !== 'app') return $oauthToken;
-    $app = github_app_config($config);
-    $bind = $app ? github_app_load($db, $uid) : null;
-    if (!$app || !$bind) throw new Failure(409, 'not_connected');
-    return github_app_installation_token($app, (string)$bind['installation_id'], $now);
+    if ($provider !== 'github') return $oauthToken;
+    $source = (string)($req['source'] ?? '');
+    if ($source === 'pat') {
+        return pat_token($db, $uid, $config['token_key']);   // 409 pat_not_connected if removed — no fallback
+    }
+    if ($source === 'app') {
+        $app = github_app_config($config);
+        $bind = $app ? github_app_load($db, $uid) : null;
+        if (!$app || !$bind) throw new Failure(409, 'not_connected');
+        return github_app_installation_token($app, (string)$bind['installation_id'], $now);
+    }
+    if ($oauthToken === '') throw new Failure(409, 'not_connected');   // OAuth repo but OAuth not connected
+    return $oauthToken;
 }
 
 /**

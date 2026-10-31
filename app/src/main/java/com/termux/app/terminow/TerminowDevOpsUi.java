@@ -231,6 +231,7 @@ public final class TerminowDevOpsUi {
                     mActivity.getString(R.string.terminow_devops_connection_expired, name), R.color.terminow_mcp_warn, false,
                     new RowAction(mActivity.getString(R.string.terminow_install_retry), true, () -> connectProvider(sheet, pid, name)),
                     new RowAction(mActivity.getString(R.string.terminow_devops_disconnect_short), false, () -> confirmDisconnect(sheet, pid, name)));
+                if ("github".equals(pid)) patRow(sheet, p);   // PAT is independent of the OAuth state
             } else if (p.connected) {
                 anyConnected = true;
                 providerRow(sheet, pid, name, R.color.terminow_text,
@@ -249,11 +250,15 @@ public final class TerminowDevOpsUi {
                             mActivity.getString(R.string.terminow_devops_private_subtitle), R.color.terminow_text_secondary, true,
                             new RowAction(mActivity.getString(R.string.terminow_devops_connect_short), true, () -> connectGithubApp(sheet)));
                     }
+                    patRow(sheet, p);   // fine-grained PAT (a third private-repo credential)
                 }
             } else if (p.configured) {
                 providerRow(sheet, pid, name, R.color.terminow_text,
                     mActivity.getString(R.string.terminow_devops_not_connected_short), R.color.terminow_text_secondary, false,
                     new RowAction(mActivity.getString(R.string.terminow_devops_connect_short), true, () -> connectProvider(sheet, pid, name)));
+                // A PAT can be added without an OAuth connection (independent read-only credential); a
+                // connected PAT is itself a working credential, so it unlocks Projects/New project below.
+                if ("github".equals(pid)) { patRow(sheet, p); if (p.patConnected) anyConnected = true; }
             } else {
                 providerRow(sheet, pid, name, R.color.terminow_text_secondary,
                     mActivity.getString(R.string.terminow_devops_coming_soon), R.color.terminow_text_secondary, true);
@@ -384,6 +389,117 @@ public final class TerminowDevOpsUi {
         return mActivity.getString(R.string.terminow_devops_error);
     }
 
+    /**
+     * The GitHub fine-grained PAT row (a third private-repo credential, independent of OAuth). Shows Add
+     * when none is stored, Replace + Remove when one is, and a warning + Replace when the stored token has
+     * expired or been revoked. The logo is dimmed to mark it as a GitHub sub-row (like the GitHub App row).
+     */
+    private void patRow(@NonNull Sheet sheet, @NonNull TerminowDevOps.Provider p) {
+        final String gh = "github";
+        if (p.patConnected && !p.patValid) {
+            providerRow(sheet, gh, mActivity.getString(R.string.terminow_devops_pat_title), R.color.terminow_text,
+                mActivity.getString(R.string.terminow_devops_pat_invalid), R.color.terminow_mcp_warn, true,
+                new RowAction(mActivity.getString(R.string.terminow_devops_pat_replace), true, () -> showPatForm(sheet)),
+                new RowAction(mActivity.getString(R.string.terminow_devops_pat_remove), false, () -> confirmPatRemove(sheet)));
+        } else if (p.patConnected) {
+            providerRow(sheet, gh, mActivity.getString(R.string.terminow_devops_pat_title), R.color.terminow_text,
+                mActivity.getString(R.string.terminow_devops_pat_connected, p.patLogin.isEmpty() ? "?" : p.patLogin),
+                R.color.terminow_text_secondary, true,
+                new RowAction(mActivity.getString(R.string.terminow_devops_pat_replace), false, () -> showPatForm(sheet)),
+                new RowAction(mActivity.getString(R.string.terminow_devops_pat_remove), false, () -> confirmPatRemove(sheet)));
+        } else {
+            providerRow(sheet, gh, mActivity.getString(R.string.terminow_devops_pat_title), R.color.terminow_text,
+                mActivity.getString(R.string.terminow_devops_pat_subtitle), R.color.terminow_text_secondary, true,
+                new RowAction(mActivity.getString(R.string.terminow_devops_pat_add), true, () -> showPatForm(sheet)));
+        }
+    }
+
+    /**
+     * Prompt for a fine-grained PAT. The input is masked and offers no suggestions; the token is validated
+     * and stored server-side (never kept on the device). The Save button is wired manually so a rejected
+     * token keeps the form open with a message instead of dismissing silently.
+     */
+    private void showPatForm(@NonNull Sheet home) {
+        LinearLayout box = new LinearLayout(mActivity);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(8), dp(20), 0);
+
+        TextView help = new TextView(mActivity);
+        help.setText(mActivity.getString(R.string.terminow_devops_pat_form_help));
+        help.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        help.setTextColor(color(R.color.terminow_text_secondary));
+        box.addView(help);
+
+        final android.widget.EditText input = new android.widget.EditText(mActivity);
+        input.setHint(mActivity.getString(R.string.terminow_devops_pat_form_hint));
+        input.setSingleLine(true);
+        input.setTextColor(color(R.color.terminow_text));
+        input.setHintTextColor(color(R.color.terminow_text_secondary));
+        // Masked, no autocomplete/suggestions/clipboard-learning for a secret.
+        input.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+            | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        ilp.topMargin = dp(12);
+        box.addView(input, ilp);
+
+        TextView org = new TextView(mActivity);
+        org.setText(mActivity.getString(R.string.terminow_devops_pat_form_org));
+        org.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        org.setTextColor(color(R.color.terminow_text_secondary));
+        LinearLayout.LayoutParams olp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        olp.topMargin = dp(10);
+        box.addView(org, olp);
+
+        final android.app.AlertDialog dlg = new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(mActivity.getString(R.string.terminow_devops_pat_form_title))
+            .setView(box)
+            .setPositiveButton(mActivity.getString(R.string.terminow_devops_pat_save), null)   // wired in onShow
+            .setNegativeButton(android.R.string.cancel, null)
+            .create();
+        dlg.setOnShowListener(d -> dlg.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String token = input.getText().toString().trim();
+            if (token.isEmpty()) { mActivity.showToast(mActivity.getString(R.string.terminow_devops_pat_empty), true); return; }
+            submitPat(home, dlg, token);
+        }));
+        dlg.show();
+    }
+
+    /** Store the token off the main thread; keep the form open on a bad token, reopen Home on success. */
+    private void submitPat(@NonNull Sheet home, @NonNull android.app.AlertDialog dlg, @NonNull String token) {
+        final View positive = dlg.getButton(android.app.AlertDialog.BUTTON_POSITIVE);
+        positive.setEnabled(false);
+        new Thread(() -> {
+            try {
+                mDevOps.patConnect(token);
+                mHandler.post(() -> {
+                    dismissQuietly(dlg);
+                    mActivity.showToast(mActivity.getString(R.string.terminow_devops_pat_saved), false);
+                    reopen();
+                });
+            } catch (TerminowDevOps.DevOpsException e) {
+                Log.w(TAG, "pat connect fail code=" + e.code + " http=" + e.httpCode);   // never logs the token
+                mHandler.post(() -> {
+                    positive.setEnabled(true);
+                    if (e.isPremiumRequired()) { dismissQuietly(dlg); mHost.openUpgrade(); }
+                    else mActivity.showToast(devOpsMessage(e), true);   // bad_token keeps the form open
+                });
+            } catch (Exception e) {
+                mHandler.post(() -> { positive.setEnabled(true); mActivity.showToast(mActivity.getString(R.string.terminow_devops_error), true); });
+            }
+        }, "devops-pat").start();
+    }
+
+    private void confirmPatRemove(@NonNull Sheet parent) {
+        new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(mActivity.getString(R.string.terminow_devops_pat_title))
+            .setMessage(R.string.terminow_devops_pat_remove_confirm)
+            .setPositiveButton(mActivity.getString(R.string.terminow_devops_pat_remove), (d, w) ->
+                run(() -> { mDevOps.patDisconnect(); return Boolean.TRUE; }, parent, ok -> reopen()))
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
     /** The authorize URL must be HTTPS on the provider's own host, checked before opening a browser. */
     private boolean isValidProviderAuthorizeUrl(@NonNull String providerId, @Nullable String url) {
         if (url == null || !url.toLowerCase(Locale.ROOT).startsWith("https://")) return false;
@@ -469,6 +585,9 @@ public final class TerminowDevOpsUi {
      *  so there is no per-keystroke backend call to debounce or race. */
     private void selectRepo(@NonNull Sheet parent, @NonNull String provider) {
         run(() -> mDevOps.repos(provider), parent, repos -> {
+            // Surface a dead-PAT warning rather than hiding it behind a quietly public-only list.
+            if (mDevOps.lastRepoWarnings.contains("pat_invalid"))
+                mActivity.showToast(mActivity.getString(R.string.terminow_devops_pat_invalid_warn), true);
             Sheet sheet = new Sheet(mActivity.getString(R.string.terminow_devops_select_repo));
             // true once a repo is tapped, so a second tap during Create Project can't double-select.
             final boolean[] selecting = {false};
@@ -670,6 +789,11 @@ public final class TerminowDevOpsUi {
     private String devOpsMessage(@NonNull TerminowDevOps.DevOpsException e) {
         if (e.isNotConnected()) return mActivity.getString(R.string.terminow_devops_not_connected_msg);
         if ("no_access".equals(e.code)) return mActivity.getString(R.string.terminow_devops_no_access);
+        if (e.isActionsForbidden()) return mActivity.getString(R.string.terminow_devops_actions_forbidden);
+        if (e.isTokenInvalid()) return mActivity.getString(R.string.terminow_devops_token_invalid);
+        if (e.isRateLimited()) return mActivity.getString(R.string.terminow_devops_rate_limited);
+        if (e.isPatNotConnected()) return mActivity.getString(R.string.terminow_devops_pat_not_connected);
+        if (e.isBadToken()) return mActivity.getString(R.string.terminow_devops_pat_bad);
         // 503 / service not configured yet, or other provider error — honest, not simulated.
         return mActivity.getString(R.string.terminow_devops_backend_required);
     }

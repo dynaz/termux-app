@@ -56,4 +56,27 @@
     <string name="terminow_devops_not_connected_msg">ยังไม่ได้เชื่อมต่อ GitHub</string>
     <string name="terminow_devops_no_access">คุณไม่มีสิทธิ์เข้าถึง repository นั้น</string>
     <string name="terminow_devops_error">เกิดข้อผิดพลาด โปรดลองใหม่</string>
+    <!-- GitHub fine-grained Personal Access Token (ข้อมูลรับรองแบบอ่านอย่างเดียวที่ผู้ใช้กรอกเอง) -->
+    <string name="terminow_devops_pat_title">โทเค็นแบบ fine-grained</string>
+    <string name="terminow_devops_pat_subtitle">เข้าถึง repository ส่วนตัวแบบอ่านอย่างเดียว</string>
+    <string name="terminow_devops_pat_add">เพิ่มโทเค็น</string>
+    <string name="terminow_devops_pat_replace">เปลี่ยนโทเค็น</string>
+    <string name="terminow_devops_pat_remove">ลบออก</string>
+    <!-- %1$s = GitHub login -->
+    <string name="terminow_devops_pat_connected">@%1$s · อ่านอย่างเดียว</string>
+    <string name="terminow_devops_pat_invalid">โทเค็นหมดอายุหรือถูกเพิกถอน — โปรดเปลี่ยนโทเค็น</string>
+    <string name="terminow_devops_pat_form_title">เพิ่มโทเค็นแบบ fine-grained</string>
+    <string name="terminow_devops_pat_form_hint">github_pat_…</string>
+    <string name="terminow_devops_pat_form_help">สร้าง fine-grained personal access token บน GitHub แบบอ่านอย่างเดียว — Contents: Read, Actions: Read, Metadata: Read — และให้สิทธิ์เฉพาะ repository ที่ต้องการ แล้ววางโทเค็นด้านล่าง โทเค็นจะถูกส่งผ่าน HTTPS อย่างปลอดภัย เก็บแบบเข้ารหัสบนเซิร์ฟเวอร์ และใช้เพื่ออ่านเท่านั้น แอปไม่เพิ่มสิทธิ์ใด ๆ</string>
+    <string name="terminow_devops_pat_form_org">สำหรับ repository ขององค์กร โทเค็นอาจต้องได้รับการอนุมัติจากองค์กรก่อนจึงจะมองเห็นได้</string>
+    <string name="terminow_devops_pat_save">บันทึกโทเค็น</string>
+    <string name="terminow_devops_pat_empty">โปรดวางโทเค็นก่อน</string>
+    <string name="terminow_devops_pat_bad">โทเค็นนี้ดูไม่ถูกต้อง หรือ GitHub ปฏิเสธ โปรดตรวจสอบแล้วลองใหม่</string>
+    <string name="terminow_devops_pat_saved">บันทึกโทเค็นแล้ว</string>
+    <string name="terminow_devops_pat_invalid_warn">โทเค็นแบบ fine-grained ของคุณหมดอายุหรือถูกเพิกถอน โปรดเปลี่ยนโทเค็นเพื่อดู repository ส่วนตัว</string>
+    <string name="terminow_devops_pat_remove_confirm">ลบโทเค็นแบบ fine-grained หรือไม่? โปรเจกต์และการเชื่อมต่ออื่นจะยังอยู่</string>
+    <string name="terminow_devops_actions_forbidden">โทเค็นอ่าน repository นี้ได้แต่ไม่มีสิทธิ์ Actions โปรดแก้ไขโทเค็นบน GitHub แล้วให้สิทธิ์ Actions: Read</string>
+    <string name="terminow_devops_token_invalid">โทเค็นหมดอายุหรือถูกเพิกถอน โปรดเปลี่ยนโทเค็นใน DevOps เพื่อใช้งานต่อ</string>
+    <string name="terminow_devops_rate_limited">ถึงขีดจำกัดอัตราการเรียกของ GitHub โปรดลองใหม่ในอีกสองสามนาที</string>
+    <string name="terminow_devops_pat_not_connected">ยังไม่มีโทเค็นสำหรับ repository นี้ โปรดเพิ่มโทเค็นแบบ fine-grained ใน DevOps</string>
 </resources>

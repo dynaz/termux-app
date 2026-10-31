@@ -354,13 +354,39 @@ function dedupe_repos(array $repos): array
     return $out;
 }
 
+/**
+ * Map a non-200 from a GitHub Actions read to a precise Failure, so the app can give specific guidance
+ * instead of a blanket "no access". In particular it separates "the token can read the repo but lacks
+ * Actions:Read" (a fine-grained-PAT misconfiguration the user can fix) from "the token cannot see this
+ * repo at all", and detects rate limiting and a dead token:
+ *   - 401                      → token_invalid (expired/revoked; the app shows Replace/Reconnect)
+ *   - 429, or 403 "rate limit" → rate_limited
+ *   - 403, repo IS readable    → actions_forbidden (add Actions:Read to the token)
+ *   - 403 (repo not readable) / 404 → no_access
+ */
+function github_read_failure(string $token, string $repo, int $st, $json): Failure
+{
+    if ($st === 401) return new Failure(401, 'token_invalid');
+    if ($st === 429) return new Failure(429, 'rate_limited');
+    if ($st === 403) {
+        $msg = is_array($json) ? strtolower((string)($json['message'] ?? '')) : '';
+        if (strpos($msg, 'rate limit') !== false || strpos($msg, 'secondary rate') !== false) return new Failure(429, 'rate_limited');
+        // Can the credential see the repository itself? If yes, this is purely an Actions-permission gap.
+        [$rst] = api_get('github', $token, "/repos/$repo");
+        if ($rst === 200) return new Failure(403, 'actions_forbidden');
+        return new Failure(403, 'no_access');
+    }
+    if ($st === 404) return new Failure(403, 'no_access');
+    return new Failure(502, 'provider_error');
+}
+
 /** Pipeline runs for a repo, normalized. */
 function list_runs(string $provider, string $token, string $repo): array
 {
     if ($provider === 'github') {
         [$st, $json] = api_get($provider, $token, "/repos/$repo/actions/runs?per_page=30");
-        if ($st === 404 || $st === 403) throw new Failure(403, 'no_access');
-        if ($st !== 200 || !is_array($json)) throw new Failure(502, 'provider_error');
+        if ($st !== 200) throw github_read_failure($token, $repo, $st, $json);
+        if (!is_array($json)) throw new Failure(502, 'provider_error');
         return array_map(fn($r) => [
             'id'         => (string)($r['id'] ?? ''),
             'name'       => (string)($r['name'] ?? ($r['display_title'] ?? '')),
@@ -407,8 +433,8 @@ function list_logs(string $provider, string $token, string $repo, string $run): 
 {
     if ($provider === 'github') {
         [$st, $json] = api_get($provider, $token, "/repos/$repo/actions/runs/$run/jobs");
-        if ($st === 404 || $st === 403) throw new Failure(403, 'no_access');
-        if ($st !== 200 || !is_array($json)) throw new Failure(502, 'provider_error');
+        if ($st !== 200) throw github_read_failure($token, $repo, $st, $json);
+        if (!is_array($json)) throw new Failure(502, 'provider_error');
         return array_map(fn($j) => [
             'name'       => (string)($j['name'] ?? ''),
             'status'     => (string)($j['status'] ?? ''),

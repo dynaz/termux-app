@@ -60,4 +60,28 @@
     <string name="terminow_devops_not_connected_msg">GitHub is not connected.</string>
     <string name="terminow_devops_no_access">You don\'t have access to that repository.</string>
     <string name="terminow_devops_error">Something went wrong. Please try again.</string>
+    <!-- GitHub fine-grained Personal Access Token (a third, user-supplied, read-only credential for
+         private repositories). The token is entered here and sent securely; the app never adds scopes. -->
+    <string name="terminow_devops_pat_title">Fine-grained token</string>
+    <string name="terminow_devops_pat_subtitle">Read-only access to private repositories</string>
+    <string name="terminow_devops_pat_add">Add token</string>
+    <string name="terminow_devops_pat_replace">Replace token</string>
+    <string name="terminow_devops_pat_remove">Remove</string>
+    <!-- %1$s = GitHub login -->
+    <string name="terminow_devops_pat_connected">@%1$s · read-only</string>
+    <string name="terminow_devops_pat_invalid">Token expired or revoked — replace it.</string>
+    <string name="terminow_devops_pat_form_title">Add a fine-grained token</string>
+    <string name="terminow_devops_pat_form_hint">github_pat_…</string>
+    <string name="terminow_devops_pat_form_help">On GitHub, create a fine-grained personal access token with read-only access — Contents: Read, Actions: Read, Metadata: Read — and grant it only the repositories you want. Paste it below. It is sent securely over HTTPS, stored encrypted on the server, and used only to read. The app never adds permissions.</string>
+    <string name="terminow_devops_pat_form_org">For repositories owned by an organization, the token may need the organization\'s approval before it can see them.</string>
+    <string name="terminow_devops_pat_save">Save token</string>
+    <string name="terminow_devops_pat_empty">Paste a token first.</string>
+    <string name="terminow_devops_pat_bad">That doesn\'t look like a valid GitHub token, or GitHub rejected it. Check the token and try again.</string>
+    <string name="terminow_devops_pat_saved">Token saved.</string>
+    <string name="terminow_devops_pat_invalid_warn">Your fine-grained token has expired or been revoked. Replace it to see its private repositories.</string>
+    <string name="terminow_devops_pat_remove_confirm">Remove the fine-grained token? Your projects and other connections are kept.</string>
+    <string name="terminow_devops_actions_forbidden">The token can read this repository but not its Actions. On GitHub, edit the token and grant Actions: Read.</string>
+    <string name="terminow_devops_token_invalid">The token has expired or been revoked. Replace it in DevOps to continue.</string>
+    <string name="terminow_devops_rate_limited">GitHub\'s rate limit was reached. Please try again in a few minutes.</string>
+    <string name="terminow_devops_pat_not_connected">No token is connected for this repository. Add a fine-grained token in DevOps.</string>
 </resources>

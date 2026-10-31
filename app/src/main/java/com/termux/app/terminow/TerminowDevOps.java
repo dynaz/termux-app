@@ -45,6 +45,16 @@ public final class TerminowDevOps {
         /** Whether this means the user needs Premium (or it lapsed) — the UI shows the upgrade flow. */
         public boolean isPremiumRequired() { return "premium_required".equals(code); }
         public boolean isNotConnected() { return "not_connected".equals(code); }
+        /** The pasted PAT was malformed, or GitHub rejected it at connect time. */
+        public boolean isBadToken() { return "bad_token".equals(code); }
+        /** A stored PAT/OAuth token has expired or been revoked (reactively detected on 401). */
+        public boolean isTokenInvalid() { return "token_invalid".equals(code); }
+        /** The credential can read the repo but lacks Actions:Read. */
+        public boolean isActionsForbidden() { return "actions_forbidden".equals(code); }
+        /** GitHub's rate limit (primary or secondary) was hit. */
+        public boolean isRateLimited() { return "rate_limited".equals(code); }
+        /** A source=pat data call was made but no PAT is stored. */
+        public boolean isPatNotConnected() { return "pat_not_connected".equals(code); }
     }
 
     /** One provider's state on the home screen. */
@@ -58,6 +68,10 @@ public final class TerminowDevOps {
         public boolean privateAvailable;  // the backend has a GitHub App configured
         public boolean privateInstalled;  // this user has an App installation bound
         public String privateAccount = "";
+        // GitHub fine-grained PAT (a third private-repo credential) — only meaningful for "github".
+        public boolean patConnected;      // a PAT is stored for this user
+        public boolean patValid = true;   // false when the stored PAT expired/was revoked (needs Replace)
+        public String patLogin = "";      // the PAT account login (for "@name")
     }
 
     public static final class Status {
@@ -115,6 +129,12 @@ public final class TerminowDevOps {
                     pr.privateInstalled = pr2.optBoolean("installed");
                     pr.privateAccount = pr2.optString("account");
                 }
+                JSONObject pat = p.optJSONObject("pat");
+                if (pat != null) {
+                    pr.patConnected = pat.optBoolean("connected");
+                    pr.patValid = pat.optBoolean("valid", true);
+                    pr.patLogin = pat.optString("login");
+                }
                 s.providers.add(pr);
             }
         }
@@ -146,9 +166,41 @@ public final class TerminowDevOps {
     /** Remove the GitHub App (private repositories) installation binding. */
     public void githubAppDisconnect() throws IOException { post(req("github_app_disconnect", "github")); }
 
+    /** A connected PAT's account login + token type, returned by {@link #patConnect(String)}. */
+    public static final class PatResult {
+        public final String login;
+        public final String tokenType;   // "fine_grained" | "classic"
+        PatResult(@NonNull String login, @NonNull String tokenType) { this.login = login; this.tokenType = tokenType; }
+    }
+
+    /**
+     * Add or replace the user's GitHub fine-grained PAT (private repositories, read-only). The token is
+     * posted over TLS and validated + stored server-side; it is never kept on the device. Throws a
+     * {@link DevOpsException} with code {@code bad_token} when the token is malformed or GitHub rejects it.
+     */
+    @NonNull
+    public PatResult patConnect(@NonNull String token) throws IOException {
+        JSONObject body = req("github_pat_connect", "github");
+        putOpt(body, "token", token);
+        JSONObject o = post(body);
+        return new PatResult(o.optString("login"), o.optString("tokenType"));
+    }
+
+    /** Remove the stored fine-grained PAT (allowed even when Premium has lapsed). */
+    public void patDisconnect() throws IOException { post(req("github_pat_disconnect", "github")); }
+
+    /** Warnings from the most recent {@link #repos(String)} call (e.g. "pat_invalid"), or empty. Set on
+     *  the worker thread that ran repos() and read in the success callback posted after it. */
+    @NonNull public volatile List<String> lastRepoWarnings = new ArrayList<>();
+
     @NonNull
     public List<Repo> repos(@NonNull String provider) throws IOException {
-        JSONArray array = post(req("repos", provider)).optJSONArray("repos");
+        JSONObject resp = post(req("repos", provider));
+        List<String> warnings = new ArrayList<>();
+        JSONArray w = resp.optJSONArray("warnings");
+        if (w != null) for (int i = 0; i < w.length(); i++) { String s = w.optString(i); if (!s.isEmpty()) warnings.add(s); }
+        lastRepoWarnings = warnings;
+        JSONArray array = resp.optJSONArray("repos");
         List<Repo> list = new ArrayList<>();
         if (array != null) for (int i = 0; i < array.length(); i++) {
             JSONObject r = array.optJSONObject(i);
