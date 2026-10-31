@@ -247,8 +247,21 @@ public final class TerminowOpen {
     }
 
     private static void installApk(@NonNull TermuxActivity activity, @NonNull Uri apk) {
-        // On Android 8+ the app needs the user's permission to install from this source
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && !activity.getPackageManager().canRequestPackageInstalls()) {
+        // On Android 8+ the app normally needs the user's permission to install from this source. On
+        // newer Android (target SDK 36 / Android 16) canRequestPackageInstalls() THROWS a
+        // SecurityException unless the app declares REQUEST_INSTALL_PACKAGES — which TermiNow does not —
+        // instead of returning false. Guard it so the app never crashes: when we cannot determine the
+        // state, we skip the friendly pre-prompt and let the system package installer handle the
+        // unknown-sources permission itself.
+        boolean canRequestInstalls = true;
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            try {
+                canRequestInstalls = activity.getPackageManager().canRequestPackageInstalls();
+            } catch (Exception e) {
+                canRequestInstalls = true;   // not determinable without the permission; defer to the installer
+            }
+        }
+        if (!canRequestInstalls) {
             new AlertDialog.Builder(activity, R.style.TerminowAlertDialog)
                 .setTitle(R.string.terminow_open_apk_source_title)
                 .setMessage(R.string.terminow_open_apk_source_message)
