@@ -1,5 +1,6 @@
 package com.termux.shared.android;
 
+import android.os.Build;
 import android.system.ErrnoException;
 import android.system.Os;
 
@@ -52,9 +53,18 @@ public class SELinuxUtils {
      */
     @Nullable
     public static String getFileContext(@NonNull String path) {
+        // Os.getxattr(String, String) was added in API 33 (Android 13). On older Android the method
+        // does not exist, so calling it throws NoSuchMethodError, which is a LinkageError (an Error,
+        // not a RuntimeException). It previously escaped the catch below and crashed the app on
+        // startup while building the shell environment on every device below API 33. The SELinux
+        // file context is best-effort diagnostic info, so return null when it can not be read. The
+        // LinkageError catch is a safety net in case the method is missing regardless of the version.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return null;
+        }
         try {
             return clean(Os.getxattr(path, "security.selinux"), -1);
-        } catch (ErrnoException | RuntimeException e) {
+        } catch (ErrnoException | RuntimeException | LinkageError e) {
             Logger.logError(LOG_TAG, "Failed to get SELinux context of \"" + path + "\": " + e.getMessage());
             return null;
         }
