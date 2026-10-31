@@ -1743,9 +1743,7 @@ public class TerminowHome {
     }
 
     private boolean isInGroup(@NonNull TerminowStore.Host host, @Nullable String group) {
-        // The hosts of a group that does not exist anymore are shown with the hosts without a group
-        if (group == null) return host.group.isEmpty() || !mGroups.contains(host.group);
-        return group.equals(host.group);
+        return TerminowHostRows.inGroup(host, group, mGroups);
     }
 
     /** New Host: preselect the protocol when a SSH/RDP/WinRM filter chip is active (All = default SSH).
@@ -1764,10 +1762,7 @@ public class TerminowHome {
 
     /** Whether a host matches the search: name, hostname/IP, username or tags (never the password). */
     private boolean hostMatches(@NonNull TerminowStore.Host host, @NonNull String query) {
-        return host.getTitle().toLowerCase(Locale.ROOT).contains(query)
-            || host.address.toLowerCase(Locale.ROOT).contains(query)
-            || host.username.toLowerCase(Locale.ROOT).contains(query)
-            || TextUtils.join(",", host.tags).toLowerCase(Locale.ROOT).contains(query);
+        return TerminowHostRows.matches(host, query);
     }
 
     private int getHostCount(@NonNull String group) {
@@ -1812,40 +1807,22 @@ public class TerminowHome {
             return;
         }
         if (mPage == PAGE_HOSTS) {
-            boolean searching = !query.isEmpty();
-            // Local Terminal + group chips at the top of the ungrouped, unsearched view (unchanged);
-            // while searching, Local Terminal only when it matches.
-            if (!searching && mCurrentGroup == null) {
-                mItems.add(null);
-                for (String group : mGroups) mItems.add(new Group(group));
-            } else if (searching && mActivity.getString(R.string.terminow_local_terminal).toLowerCase(Locale.ROOT).contains(query)) {
-                mItems.add(null);
-            }
-            // Group hosts in scope by their real connection type, in a fixed order, hiding empty sections.
-            // Collapse state is per-workspace; a search temporarily expands the sections with matches.
-            java.util.Set<String> collapsed = mStore.getCollapsedHostSections();
-            java.util.LinkedHashMap<String, List<TerminowStore.Host>> byProto = new java.util.LinkedHashMap<>();
-            for (String p : PROTOCOL_ORDER) byProto.put(p, new ArrayList<>());
-            for (TerminowStore.Host host : mHosts) {
-                if (!searching && !isInGroup(host, mCurrentGroup)) continue;   // group filter
-                if (searching && !hostMatches(host, query)) continue;         // search across all groups
-                List<TerminowStore.Host> list = byProto.get(protocolKey(host));
-                if (list == null) { list = new ArrayList<>(); byProto.put(protocolKey(host), list); }
-                list.add(host);
-            }
-            // Filter chips (All | present types): reflect the group+search scope; reset a stale filter.
-            if (!mProtocolFilter.isEmpty()) {
-                List<TerminowStore.Host> sel = byProto.get(mProtocolFilter);
-                if (sel == null || sel.isEmpty()) mProtocolFilter = "";
-            }
-            rebuildProtocolChips(byProto);
-            for (String p : PROTOCOL_ORDER) {
-                if (!mProtocolFilter.isEmpty() && !mProtocolFilter.equals(p)) continue;   // protocol filter
-                List<TerminowStore.Host> list = byProto.get(p);
-                if (list == null || list.isEmpty()) continue;
-                boolean isCollapsed = !searching && collapsed.contains(p);
-                mItems.add(new Section(p, list.size(), isCollapsed));
-                if (!isCollapsed) mItems.addAll(list);
+            // The ordering (and so which host is at which display position) comes from the pure
+            // TerminowHostRows model, which is unit-tested; here we only map its rows to adapter items
+            // and the filter chips. Collapse state is per-workspace; a search temporarily expands.
+            boolean localMatches = !query.isEmpty()
+                && mActivity.getString(R.string.terminow_local_terminal).toLowerCase(Locale.ROOT).contains(query);
+            TerminowHostRows.Result built = TerminowHostRows.build(mHosts, mGroups, mCurrentGroup, query,
+                localMatches, mStore.getCollapsedHostSections(), mProtocolFilter);
+            mProtocolFilter = built.effectiveProtocolFilter;
+            rebuildProtocolChips(built.byProtocol);
+            for (TerminowHostRows.Row row : built.rows) {
+                switch (row.kind) {
+                    case LOCAL:   mItems.add(null); break;
+                    case GROUP:   mItems.add(new Group(row.group)); break;
+                    case SECTION: mItems.add(new Section(row.protocol, row.count, row.collapsed)); break;
+                    case HOST:    mItems.add(row.host); break;
+                }
             }
         } else if (mPage == PAGE_KEYCHAIN) {
             // Identities first, then the keys, like the keychain of Termius
@@ -2020,7 +1997,7 @@ public class TerminowHome {
      * Show the Edit / Duplicate / Delete menu for a host, anchored beside its card on large screens
      * or as a bottom sheet on phones. The card is highlighted while the menu is open. Actions resolve
      * the host again by its stable id at tap time, so a list change between open and tap can never act
-     * on the wrong row; a host that has since been removed is simply ignored.
+     * on the wrong row; a host that has since been removed is reported, never silently retargeted.
      */
     private void showHostActionMenu(@NonNull TerminowStore.Host host, @Nullable View anchor) {
         final String uuid = host.uuid;
@@ -2032,17 +2009,23 @@ public class TerminowHome {
         TerminowHostActionMenu.show(mActivity, anchor, title, subtitle, new TerminowHostActionMenu.Callbacks() {
             @Override public void onEdit() {
                 TerminowStore.Host h = hostByUuid(uuid);
-                if (h != null) showHostDialog(h);
+                if (h != null) showHostDialog(h); else reportHostGone();
             }
             @Override public void onDuplicate() {
                 TerminowStore.Host h = hostByUuid(uuid);
-                if (h != null) duplicateHost(h);
+                if (h != null) duplicateHost(h); else reportHostGone();
             }
             @Override public void onDelete() {
                 TerminowStore.Host h = hostByUuid(uuid);
-                if (h != null) confirmDeleteHost(h);
+                if (h != null) confirmDeleteHost(h); else reportHostGone();
             }
         }, () -> { if (anchor != null) anchor.setBackground(previousBackground); });
+    }
+
+    /** The action's host was removed (e.g. deleted elsewhere) while its menu was open: say so, and refresh. */
+    private void reportHostGone() {
+        mActivity.showToast(mActivity.getString(R.string.terminow_host_gone), true);
+        updateItems();
     }
 
     /** Confirm, naming the host, before removing its saved connection. */
@@ -2062,8 +2045,8 @@ public class TerminowHome {
     /** The current host instance with this stable id, or {@code null} if it is no longer present. */
     @Nullable
     private TerminowStore.Host hostByUuid(@NonNull String uuid) {
-        for (TerminowStore.Host host : mHosts) if (uuid.equals(host.uuid)) return host;
-        return null;
+        // Guards an empty id (never matches), so a host without a stable id can never be retargeted.
+        return TerminowStore.findHostByUuid(mHosts, uuid);
     }
 
     /**
@@ -4041,6 +4024,16 @@ public class TerminowHome {
         View sshRow = dialog.findViewById(R.id.terminow_host_ssh_row);
         View moshRow = dialog.findViewById(R.id.terminow_host_mosh_row);
         View keyRowView = dialog.findViewById(R.id.terminow_host_key_row);
+        // Advanced is one collapsed section holding the session options and Telnet; tapping its
+        // header expands it. Its contents still open on the active session with its own context.
+        View advancedHeader = dialog.findViewById(R.id.terminow_host_advanced_header);
+        View advancedGroup = dialog.findViewById(R.id.terminow_host_advanced_group);
+        ImageView advancedChevron = dialog.findViewById(R.id.terminow_host_advanced_chevron);
+        advancedHeader.setOnClickListener(v -> {
+            boolean show = advancedGroup.getVisibility() != View.VISIBLE;
+            advancedGroup.setVisibility(show ? View.VISIBLE : View.GONE);
+            advancedChevron.animate().rotation(show ? 180f : 0f).setDuration(150).start();
+        });
         String[] protocols = {TerminowStore.Host.PROTOCOL_SSH, TerminowStore.Host.PROTOCOL_RDP, TerminowStore.Host.PROTOCOL_WINRM};
         int[] protocolLabels = {R.string.terminow_host_protocol_ssh, R.string.terminow_host_protocol_rdp, R.string.terminow_host_protocol_winrm};
         List<TextView> protocolChips = new ArrayList<>();
@@ -4084,6 +4077,12 @@ public class TerminowHome {
             keyRowView.setVisibility(windows ? View.GONE : View.VISIBLE);
             // RDP keeps only the jump host of the session options: its SSH tunnel
             sessionCard.setVisibility(winrm ? View.GONE : View.VISIBLE);
+            // WinRM leaves the Advanced section empty (no session card, no Telnet), so hide it.
+            advancedHeader.setVisibility(winrm ? View.GONE : View.VISIBLE);
+            if (winrm) {
+                advancedGroup.setVisibility(View.GONE);
+                advancedChevron.setRotation(0f);
+            }
             ViewGroup sessionGroup = (ViewGroup) sessionCard;
             for (int c = 0; c < sessionGroup.getChildCount(); c++) {
                 View child = sessionGroup.getChildAt(c);
@@ -4362,6 +4361,62 @@ public class TerminowHome {
             dialog.dismiss();
             if (onSaved != null)
                 onSaved.onHostSaved(host);
+        });
+
+        // Warn before discarding unsaved edits. A signature of every editable field, captured once
+        // the form is populated, is compared when the user leaves; an identical signature means
+        // nothing changed, so the panel closes silently. Saving dismisses the dialog directly and
+        // so never prompts. Secrets are never shown in the prompt — only whether a change exists.
+        final java.util.function.Supplier<String> hostFormSignature = () -> {
+            StringBuilder sb = new StringBuilder();
+            sb.append(labelView.getText()).append('\u0001')
+              .append(addressView.getText()).append('\u0001')
+              .append(portView.getText()).append('\u0001')
+              .append(usernameView.getText()).append('\u0001')
+              .append(passwordView.getText()).append('\u0001')
+              .append(moshServerView.getText()).append('\u0001')
+              .append(telnetPortView.getText()).append('\u0001')
+              .append(domainView.getText()).append('\u0001')
+              .append(protocol[0]).append('\u0001')
+              .append(scope[0]).append('\u0001')
+              .append(backspaceView.isChecked()).append(sshView.isChecked()).append(moshView.isChecked())
+              .append(agentView.isChecked()).append(remoteTmuxView.isChecked()).append(telnetView.isChecked())
+              .append(rdpNlaView.isChecked()).append(rdpClipboardView.isChecked())
+              .append(winrmHttpsView.isChecked()).append(winrmVerifyView.isChecked()).append('\u0001')
+              .append(rdpSize[0]).append('x').append(rdpSize[1]).append('\u0001')
+              .append(draft.identity).append('\u0001')
+              .append(TextUtils.join(",", draft.tags)).append('\u0001')
+              .append(draft.jumpHost).append('\u0001')
+              .append(draft.proxyType).append('\u0001').append(draft.proxyHost).append('\u0001').append(draft.proxyPort).append('\u0001')
+              .append(draft.colorScheme).append('\u0001')
+              .append(draft.icon).append('\u0001')
+              .append(draft.iconColor);
+            return sb.toString();
+        };
+        final String hostFormOriginal = hostFormSignature.get();
+        final Runnable confirmHostClose = () -> {
+            if (hostFormSignature.get().equals(hostFormOriginal)) {
+                dialog.dismiss();
+                return;
+            }
+            new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setTitle(R.string.terminow_host_discard_title)
+                .setMessage(R.string.terminow_host_discard_message)
+                .setNegativeButton(R.string.terminow_host_keep_editing, null)
+                .setPositiveButton(R.string.terminow_host_discard, (d, w) -> dialog.dismiss())
+                .show();
+        };
+        // Route every "leave without saving" path through the unsaved-changes check: the dimmed
+        // backdrop, the Close button and the system Back key. Save keeps its own direct dismiss.
+        rootView.setOnClickListener(v -> confirmHostClose.run());
+        dialog.findViewById(R.id.terminow_host_close).setOnClickListener(v -> confirmHostClose.run());
+        dialog.setOnKeyListener((d, keyCode, event) -> {
+            if (keyCode == android.view.KeyEvent.KEYCODE_BACK
+                    && event.getAction() == android.view.KeyEvent.ACTION_UP && !event.isCanceled()) {
+                confirmHostClose.run();
+                return true;
+            }
+            return false;
         });
 
         dialog.show();
@@ -4783,16 +4838,12 @@ public class TerminowHome {
     }
 
     /** Section display order; empty ones are hidden. VNC is listed but never has hosts (no VNC connect). */
-    private static final String[] PROTOCOL_ORDER = {"ssh", "vnc", "rdp", "winrm", "other"};
+    private static final String[] PROTOCOL_ORDER = TerminowHostRows.PROTOCOL_ORDER;
 
     /** The section a host belongs to, from the REAL connection type on the record (never guessed). */
     @NonNull
     private static String protocolKey(@NonNull TerminowStore.Host host) {
-        if (host.isRdp()) return "rdp";
-        if (host.isWinrm()) return "winrm";
-        String p = host.protocol == null ? "" : host.protocol;
-        if (p.isEmpty() || TerminowStore.Host.PROTOCOL_SSH.equals(p)) return "ssh";
-        return "other";   // an unrecognized protocol value: shown in Other, data left untouched
+        return TerminowHostRows.protocolKey(host);
     }
 
     @NonNull

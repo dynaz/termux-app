@@ -241,6 +241,19 @@ public final class TerminowAiBridgeManager {
         mBridge.grant(environmentKey, host, ttlMillis);
     }
 
+    /** How long a grant made from the Bridge approval dialog lasts (a working session). */
+    public static final long SESSION_GRANT_TTL_MS = 8 * 60 * 60 * 1000L;
+
+    /**
+     * The authoritative authorization decision for a host and capability, shared with the execution
+     * path so the Bridge UI never shows a state the execution would contradict.
+     */
+    @NonNull
+    public TerminowAiBridge.AuthDecision evaluate(@NonNull String environmentKey, @NonNull TerminowStore.Host host,
+                                                  @NonNull String capability) {
+        return mBridge.evaluate(host, environmentKey, capability);
+    }
+
     // ---------------------------------------------------------------------------------------
     // Connecting Claude Code of an environment
     // ---------------------------------------------------------------------------------------

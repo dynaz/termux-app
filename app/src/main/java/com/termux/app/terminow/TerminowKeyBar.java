@@ -85,7 +85,7 @@ public class TerminowKeyBar {
     private final java.util.List<View> mKeyCells = new java.util.ArrayList<>();
     private final java.util.List<View> mArrowCells = new java.util.ArrayList<>();
     /** The tools, in order; the secondary ones may move to the More overflow when space is tight. */
-    @Nullable private View mClipboardCell, mQuickCutCell, mCommandsCell, mMoreCell;
+    @Nullable private View mClipboardCell, mQuickCutCell, mCommandsCell, mBridgeCell, mSnippetsCell, mMoreCell;
     private boolean mUserKeysShown;
     /** Which secondary tools did not fit in two rows and were moved to the More sheet. */
     private boolean mQuickCutOverflow, mCommandsOverflow;
@@ -211,6 +211,10 @@ public class TerminowKeyBar {
         mQuickCutCell = iconCap(R.drawable.ic_terminow_quickcut, R.string.terminow_quickcut_title, this::openQuickCut);
         boolean ai = TerminowKeyBarModel.isAi(mode);
         mCommandsCell = iconCap(iconOf(mode), ai ? R.string.terminow_keybar_ai_shortcuts : R.string.terminow_keybar_commands, this::showCommands);
+        // Direct-access buttons placed just before More. Both actions stay in the More sheet too; these
+        // only shortcut to the same handlers, for the session that is active when the button is tapped.
+        mBridgeCell = iconCap(R.drawable.ic_terminow_bridge_ai, R.string.terminow_bridge_title, this::openBridge);
+        mSnippetsCell = iconCap(R.drawable.ic_terminow_snippets, R.string.terminow_keybar_snippets, this::openSnippets);
         mMoreCell = iconCap(R.drawable.ic_terminow_more, R.string.terminow_keybar_more, this::showMore);
 
         mDistributedWidth = -1;
@@ -262,12 +266,18 @@ public class TerminowKeyBar {
         if (mClipboardCell != null) row2Tools.add(mClipboardCell);
         if (mQuickCutCell != null) row2Tools.add(mQuickCutCell);
         if (mCommandsCell != null) row2Tools.add(mCommandsCell);
+        if (mBridgeCell != null) row2Tools.add(mBridgeCell);
+        if (mSnippetsCell != null) row2Tools.add(mSnippetsCell);
         if (mMoreCell != null) row2Tools.add(mMoreCell);
         row2.addAll(row2Tools);
+        // When space is tight, shed the extras to the More sheet (never shrink below 48dp). Snippets and
+        // AI Bridge go first since they always remain in More; then the commands and QuickCut shortcuts.
         while (row2.size() > perRow) {
-            if (mCommandsCell != null && row2.remove(mCommandsCell)) mCommandsOverflow = true;
-            else if (mQuickCutCell != null && row2.remove(mQuickCutCell)) mQuickCutOverflow = true;
-            else break;   // only core cells remain; the fillViewport scroll is the last-resort fallback
+            if (mSnippetsCell != null && row2.remove(mSnippetsCell)) continue;
+            if (mBridgeCell != null && row2.remove(mBridgeCell)) continue;
+            if (mCommandsCell != null && row2.remove(mCommandsCell)) { mCommandsOverflow = true; continue; }
+            if (mQuickCutCell != null && row2.remove(mQuickCutCell)) { mQuickCutOverflow = true; continue; }
+            break;   // only core cells remain; the fillViewport scroll is the last-resort fallback
         }
 
         for (View v : row1) keysRow.addView(stretch(v));
@@ -574,7 +584,7 @@ public class TerminowKeyBar {
             ViewCompat.setStateDescription(row, mActivity.getString(option == choice ? R.string.terminow_keybar_chosen : R.string.terminow_keybar_not_chosen));
         }
         section(content, R.string.terminow_bridge_title);
-        row(content, mActivity.getString(R.string.terminow_bridge_open), mActivity.getString(R.string.terminow_bridge_open_desc), this::showBridge);
+        row(content, mActivity.getString(R.string.terminow_bridge_open), mActivity.getString(R.string.terminow_bridge_open_desc), this::openBridge);
         addMore(content);
     }
 
@@ -601,6 +611,24 @@ public class TerminowKeyBar {
         String shell = info != null ? info.tool : "";
         new TerminowAiBridgeSheet(mActivity, home.getAiBridge(), home.getStore())
             .open(envKey, user, envLabel, sessionName, shell, session.mHandle);
+    }
+
+    /** Toolbar/More shortcut to the AI Bridge: dismiss the More sheet first so panels never stack. */
+    private void openBridge() {
+        dismissSheet();
+        showBridge();
+    }
+
+    /** Toolbar/More shortcut to the snippet picker for the current session; dismiss the More sheet first. */
+    private void openSnippets() {
+        dismissSheet();
+        TerminowHome home = mActivity.getTerminowHome();
+        if (home != null) home.showSnippetsPicker();
+    }
+
+    /** Close the More sheet if it is open, so a panel opened from it replaces it instead of stacking. */
+    private void dismissSheet() {
+        if (mDialog != null && mDialog.isShowing()) mDialog.dismiss();
     }
 
     @NonNull
@@ -825,7 +853,7 @@ public class TerminowKeyBar {
         TerminowHome home = mActivity.getTerminowHome();
         if (home != null) {
             row(content, mActivity.getString(R.string.terminow_keybar_snippets), mActivity.getString(R.string.terminow_keybar_snippets_description),
-                home::showSnippetsPicker);
+                this::openSnippets);
             row(content, mActivity.getString(R.string.terminow_keybar_more_keys), mActivity.getString(R.string.terminow_keybar_more_keys_description),
                 home::toggleKeyPanel);
         }

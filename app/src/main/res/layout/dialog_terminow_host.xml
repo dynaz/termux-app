@@ -48,14 +48,23 @@
                 android:textSize="18sp"
                 android:textStyle="bold" />
 
-            <ImageButton
+            <!-- A labeled Save button, not an icon alone, so its action is unmistakable. -->
+            <TextView
                 android:id="@+id/terminow_host_save"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
-                android:background="@null"
-                android:contentDescription="@string/terminow_save"
-                android:src="@drawable/ic_terminow_check"
-                android:tint="@color/terminow_text" />
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:layout_marginEnd="4dp"
+                android:background="@drawable/terminow_host_save_button"
+                android:drawableStart="@drawable/ic_terminow_check"
+                android:drawablePadding="6dp"
+                android:drawableTint="@color/terminow_bar_home"
+                android:gravity="center"
+                android:minWidth="88dp"
+                android:paddingHorizontal="16dp"
+                android:text="@string/terminow_save"
+                android:textColor="@color/terminow_bar_home"
+                android:textSize="15sp"
+                android:textStyle="bold" />
         </LinearLayout>
 
         <ScrollView
@@ -70,6 +79,12 @@
                 android:orientation="vertical"
                 android:paddingHorizontal="12dp"
                 android:paddingBottom="24dp">
+
+                <!-- Connection -->
+                <TextView
+                    style="@style/TerminowPanelSection"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/terminow_host_section_connection" />
 
                 <!-- The vault that the host is saved in -->
                 <TextView
@@ -399,19 +414,14 @@
                     </LinearLayout>
                 </LinearLayout>
 
-                <!-- Credentials -->
+                <!-- Authentication -->
+                <TextView
+                    style="@style/TerminowPanelSection"
+                    android:text="@string/terminow_host_section_authentication" />
+
                 <LinearLayout
                     style="@style/TerminowPanelCard"
-                    android:layout_marginTop="12dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
-                        android:text="@string/terminow_host_credentials"
-                        android:textColor="@color/terminow_text"
-                        android:textSize="15sp"
-                        android:textStyle="bold" />
+                    android:layout_marginTop="4dp">
 
                     <!-- An identity of the keychain, whose username, password and key the host logs in with -->
                     <LinearLayout style="@style/TerminowPanelFieldRow">
@@ -513,6 +523,59 @@
                     </LinearLayout>
                 </LinearLayout>
 
+                <!-- Advanced: collapsed by default, with a summary of what it holds -->
+                <LinearLayout
+                    android:id="@+id/terminow_host_advanced_header"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:gravity="center_vertical"
+                    android:minHeight="48dp"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="14dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/terminow_host_advanced"
+                            android:textColor="@color/terminow_text"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginEnd="12dp"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/terminow_host_advanced_summary"
+                            android:textColor="@color/terminow_text_secondary"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:id="@+id/terminow_host_advanced_chevron"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_terminow_chevron_down"
+                        android:tint="@color/terminow_text_secondary" />
+                </LinearLayout>
+
+                <!-- Everything inside Advanced is hidden until the header is tapped -->
+                <LinearLayout
+                    android:id="@+id/terminow_host_advanced_group"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
                 <!-- Session options -->
                 <LinearLayout
                     android:id="@+id/terminow_host_session_card"
@@ -554,9 +617,14 @@
                             style="@style/TerminowPanelCheck" />
                     </LinearLayout>
 
+                    <!-- Height wraps (with a 52dp minimum) so the two-line tmux summary is never clipped. -->
                     <LinearLayout
                         style="@style/TerminowPanelToggleRow"
-                        android:layout_marginTop="6dp">
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:minHeight="52dp"
+                        android:paddingTop="6dp"
+                        android:paddingBottom="6dp">
 
                         <LinearLayout
                             android:layout_width="0dp"
@@ -572,6 +640,7 @@
                             <TextView
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
+                                android:layout_marginEnd="12dp"
                                 android:text="@string/terminow_host_remote_tmux_summary"
                                 android:textColor="@color/terminow_text_secondary"
                                 android:textSize="12sp" />
@@ -579,7 +648,8 @@
 
                         <CheckBox
                             android:id="@+id/terminow_host_remote_tmux"
-                            style="@style/TerminowPanelCheck" />
+                            style="@style/TerminowPanelCheck"
+                            android:layout_gravity="center_vertical" />
                     </LinearLayout>
 
                     <LinearLayout style="@style/TerminowPanelFieldRow">
@@ -767,6 +837,7 @@
                     android:textColor="@color/terminow_text_secondary"
                     android:textSize="12sp"
                     tools:ignore="SmallSp" />
+                </LinearLayout>
             </LinearLayout>
         </ScrollView>
     </LinearLayout>

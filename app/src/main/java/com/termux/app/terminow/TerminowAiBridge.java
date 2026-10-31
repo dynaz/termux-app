@@ -149,27 +149,74 @@ public final class TerminowAiBridge {
     // ---------------------------------------------------------------------------------------
 
     /**
+     * The single authoritative decision for "may {@code envKey} use this host for {@code capability}
+     * right now?", with the exact reason. Both the execution path ({@link #authorize}) and the UI
+     * (the AI Bridge sheet's per-host label and test action) read THIS, so what the UI shows can
+     * never disagree with what execution enforces — the mismatch that made a host look "Allowed"
+     * yet return APPROVAL_REQUIRED on a test. Pure and non-throwing, so it is unit-testable and safe
+     * to call while drawing a list.
+     */
+    public enum AuthDecision {
+        /** Fully authorized: the call would run now. */
+        ALLOWED,
+        /** The host is not AI-enabled or not shared with this environment. */
+        HOST_NOT_AUTHORIZED,
+        /** Host access is allowed, but this capability is not on the host's AI rules. */
+        CAPABILITY_DENIED,
+        /** The endpoint or credentials changed since access was allowed; the user must approve again. */
+        FINGERPRINT_CHANGED,
+        /** The keychain is locked, so saved credentials cannot be resolved. */
+        KEYCHAIN_LOCKED,
+        /** Host access + capability are allowed, but the policy ("ask"/"session") needs a current grant. */
+        APPROVAL_NEEDED;
+
+        /** Whether host access itself is in place (so only a per-request approval, not access, is missing). */
+        public boolean hostAccessAllowed() {
+            return this == ALLOWED || this == APPROVAL_NEEDED || this == FINGERPRINT_CHANGED;
+        }
+    }
+
+    /** Evaluate authorization without side effects or throwing; the one source of truth for UI and execution. */
+    @NonNull
+    public synchronized AuthDecision evaluate(@Nullable TerminowStore.Host host, @NonNull String envKey,
+                                              @NonNull String capability) {
+        if (host == null || !host.aiAccess.allowsEnv(envKey)) return AuthDecision.HOST_NOT_AUTHORIZED;
+        if (!host.aiAccess.allows(capability)) return AuthDecision.CAPABILITY_DENIED;
+        // A grant or saved rules must match the endpoint and credentials allowed; otherwise agree again.
+        if (!host.aiAccess.fingerprint.isEmpty() && !host.aiAccess.fingerprint.equals(TerminowStore.aiFingerprint(host)))
+            return AuthDecision.FINGERPRINT_CHANGED;
+        if (!mDeps.keychainUnlocked()) return AuthDecision.KEYCHAIN_LOCKED;
+        // "rules": the saved capabilities are enough. "ask"/"session": a current grant is needed.
+        if (!"rules".equals(host.aiAccess.approvalPolicy) && !hasValidGrant(envKey, host))
+            return AuthDecision.APPROVAL_NEEDED;
+        return AuthDecision.ALLOWED;
+    }
+
+    /**
      * Whether {@code envKey} may use the host {@code hostUuid} for {@code capability} now, and the
      * resolved host if so. Throws with the exact reason otherwise; the reasons never mix up
-     * policy, a locked keychain and an unknown host.
+     * policy, a locked keychain and an unknown host. Delegates the decision to {@link #evaluate} so
+     * it stays identical to what the UI shows.
      */
     @NonNull
     TerminowStore.Host authorize(@NonNull String envKey, @NonNull String hostUuid, @NonNull String capability)
             throws TerminowAiError.Exception {
         TerminowStore.Host host = TerminowStore.findHostByUuid(mDeps.hosts(), hostUuid);
-        if (host == null || !host.aiAccess.allowsEnv(envKey))
-            throw TerminowAiError.HOST_NOT_AUTHORIZED.of("The host is not available to this environment");
-        if (!host.aiAccess.allows(capability))
-            throw TerminowAiError.CAPABILITY_DENIED.of("This host does not allow " + capability);
-        // A grant or saved rules must match the endpoint and credentials allowed; otherwise agree again
-        if (!host.aiAccess.fingerprint.isEmpty() && !host.aiAccess.fingerprint.equals(TerminowStore.aiFingerprint(host)))
-            throw TerminowAiError.APPROVAL_REQUIRED.of("The host's address or credentials changed since access was allowed");
-        if (!mDeps.keychainUnlocked())
-            throw TerminowAiError.KEYCHAIN_LOCKED.of("Unlock TermiNow to use saved credentials");
-        // "rules": the saved capabilities are enough. "ask"/"session": a current grant is needed.
-        if (!"rules".equals(host.aiAccess.approvalPolicy) && !hasValidGrant(envKey, host))
-            throw TerminowAiError.APPROVAL_REQUIRED.of("Approve this host for the AI first");
-        return TerminowStore.resolve(host, mDeps.identities());
+        switch (evaluate(host, envKey, capability)) {
+            case HOST_NOT_AUTHORIZED:
+                throw TerminowAiError.HOST_NOT_AUTHORIZED.of("The host is not available to this environment");
+            case CAPABILITY_DENIED:
+                throw TerminowAiError.CAPABILITY_DENIED.of("This host does not allow " + capability);
+            case FINGERPRINT_CHANGED:
+                throw TerminowAiError.APPROVAL_REQUIRED.of("The host's address or credentials changed since access was allowed");
+            case KEYCHAIN_LOCKED:
+                throw TerminowAiError.KEYCHAIN_LOCKED.of("Unlock TermiNow to use saved credentials");
+            case APPROVAL_NEEDED:
+                throw TerminowAiError.APPROVAL_REQUIRED.of("Approve this host for the AI first");
+            case ALLOWED:
+            default:
+                return TerminowStore.resolve(host, mDeps.identities());
+        }
     }
 
     // ---------------------------------------------------------------------------------------

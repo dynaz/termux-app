@@ -294,6 +294,15 @@
     <string name="terminow_host_action_delete">Delete host</string>
     <string name="terminow_host_delete_title">Delete “%1$s”?</string>
     <string name="terminow_host_delete_message">This removes the saved connection from TermiNow. The server itself is not affected.</string>
+    <string name="terminow_host_gone">That host is no longer available, so nothing was changed.</string>
+    <string name="terminow_host_discard_title">Discard changes?</string>
+    <string name="terminow_host_discard_message">You have unsaved changes to this host. If you leave now, they will be lost.</string>
+    <string name="terminow_host_discard">Discard</string>
+    <string name="terminow_host_keep_editing">Keep editing</string>
+    <string name="terminow_host_section_connection">Connection</string>
+    <string name="terminow_host_section_authentication">Authentication</string>
+    <string name="terminow_host_advanced">Advanced</string>
+    <string name="terminow_host_advanced_summary">Snippets, forwarding, jump host, proxy, environment variables, appearance and Telnet</string>
     <!-- Terminal history search. -->
     <string name="terminow_toolbar_search">Search terminal</string>
     <string name="terminow_terminal_search_hint">Search history</string>
