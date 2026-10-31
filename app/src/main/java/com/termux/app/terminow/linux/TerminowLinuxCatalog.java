@@ -81,7 +81,18 @@ public final class TerminowLinuxCatalog {
         new Entry("kali", "Kali Linux", "rolling (2026.3)",
             "Security testing distribution, the official NetHunter minimal rootfs. Runs through PRoot: Wi-Fi monitor mode, packet injection and kernel modules are not available.",
             "aarch64", "https://kali.download/nethunter-images/kali-2026.3/rootfs/kali-nethunter-rootfs-minimal-arm64.tar.xz",
-            "96aeced81a857a987715a14417af05c2934e3e19052d6151c398a1c215448b60", 125846088L, 850L * 1024 * 1024, false)
+            "96aeced81a857a987715a14417af05c2934e3e19052d6151c398a1c215448b60", 125846088L, 850L * 1024 * 1024, false),
+        // Arch Linux ARM (aarch64). Its os-release ID is "archarm" (not "arch"); the display name is kept
+        // as "Arch Linux ARM". The archive is Termux proot-distro's own aarch64 Arch image, pinned to the
+        // immutable v4.17.3 release asset and the SHA-256 from proot-distro's distro-plugins/archlinux.sh
+        // manifest at that tag (verified by downloading: size + SHA-256, os-release ID=archarm, and the
+        // ELF of usr/bin/bash is AArch64). Like Kali it is a .tar.xz wrapped in one top-level directory
+        // (archlinux-aarch64/), which proot-distro of the runtime strips as it unpacks with its own path
+        // checks. It is a base image; the user updates it in-place with pacman (signatures stay verified).
+        new Entry("archarm", "Arch Linux ARM", "rolling",
+            "A customizable Linux environment for advanced users.",
+            "aarch64", "https://github.com/termux/proot-distro/releases/download/v4.17.3/archlinux-aarch64-pd-v4.17.3.tar.xz",
+            "dc56b998ffa2663209417396c8d70caf87c8052acf41e9a2c6daf24cbd181533", 144808000L, 720L * 1024 * 1024, false)
     ));
 
     private TerminowLinuxCatalog() {}

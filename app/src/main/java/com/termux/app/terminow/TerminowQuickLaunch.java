@@ -317,6 +317,7 @@ public class TerminowQuickLaunch {
             case "debian": return R.drawable.ic_terminow_os_debian;
             case "alpine": return R.drawable.ic_terminow_os_alpine;
             case "kali": return R.drawable.ic_terminow_os_kali;
+            case "archarm": case "arch": case "archlinux": return R.drawable.ic_terminow_os_arch;
             case "local": return R.drawable.ic_terminow_os_local;
             default: return R.drawable.ic_terminow_os_linux;
         }

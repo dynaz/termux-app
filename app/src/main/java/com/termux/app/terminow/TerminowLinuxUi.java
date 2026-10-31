@@ -382,7 +382,7 @@ public class TerminowLinuxUi {
             case "alpine": return 0xFF0D597F;
             case "kali": return 0xFF367BF0;
             case "fedora": return 0xFF51A2DA;
-            case "archlinux": case "arch": return 0xFF1793D1;
+            case "archarm": case "archlinux": case "arch": return 0xFF1793D1;
             default: return 0xFF3C4258;
         }
     }

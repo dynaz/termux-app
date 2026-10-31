@@ -725,6 +725,18 @@ public class TerminowLinuxTest {
         }
         assertEquals("aarch64", TerminowLinuxCatalog.archOfAbi("arm64-v8a"));
         assertEquals("arm", TerminowLinuxCatalog.archOfAbi("armeabi-v7a"));
+
+        // Arch Linux ARM is present, aarch64, Premium, with the pinned proot-distro image + its SHA-256.
+        TerminowLinuxCatalog.Entry arch = TerminowLinuxCatalog.get("archarm");
+        assertNotNull(arch);
+        assertEquals("Arch Linux ARM", arch.name);
+        assertEquals("aarch64", arch.arch);
+        assertFalse(arch.experimental);
+        assertTrue(arch.url.startsWith("https://github.com/termux/proot-distro/releases/download/"));
+        assertEquals("dc56b998ffa2663209417396c8d70caf87c8052acf41e9a2c6daf24cbd181533", arch.sha256);
+        assertEquals(144808000L, arch.downloadBytes);
+        assertTrue(TerminowLinuxCatalog.requiresPremium(arch.distroId));
+        assertEquals(TerminowLinuxCatalog.Support.AVAILABLE, arch.supportOn("aarch64"));
     }
 
     @Test
@@ -849,6 +861,7 @@ public class TerminowLinuxTest {
         assertTrue(TerminowLinuxCatalog.requiresPremium("debian"));
         assertTrue(TerminowLinuxCatalog.requiresPremium("alpine"));
         assertTrue(TerminowLinuxCatalog.requiresPremium("kali"));
+        assertTrue(TerminowLinuxCatalog.requiresPremium("archarm"));   // Arch Linux ARM (os-release ID=archarm)
         // A future distro id that no one has whitelisted is Premium by default.
         assertTrue(TerminowLinuxCatalog.requiresPremium("archlinux"));
         assertTrue(TerminowLinuxCatalog.requiresPremium("fedora"));
