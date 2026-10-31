@@ -142,14 +142,25 @@ android {
         manifestPlaceholders.TERMUX_TASKER_APP_NAME = "Termux:Tasker"
         manifestPlaceholders.TERMUX_WIDGET_APP_NAME = "Termux:Widget"
 
+        // Whether this build splits the APK per ABI (one APK per architecture). The same condition
+        // drives the splits block below. When splits are on, splits.abi.include restricts the
+        // packaged ABIs and AGP forbids also setting ndk.abiFilters ("abiFilters cannot be present
+        // when splits abi filters are set"), so the packaging filter is only applied when splits are
+        // off (e.g. the universal APK).
+        def abiSplitsEnabled = (gradle.startParameter.taskNames.any { it.contains("Debug") } && splitAPKsForDebugBuilds == "1") ||
+            (gradle.startParameter.taskNames.any { it.contains("Release") } && splitAPKsForReleaseBuilds == "1")
+
         // Package native libraries only for the architectures TermiNow fully supports (set in
         // terminow-bootstrap.properties). This applies to prebuilt libraries too — e.g. the RDP engine
         // ships an x86_64 variant, but without a matching bootstrap archive, proot loader and terminal
         // JNI an x86_64 (or 32-bit x86) build is non-functional and would crash — so no release
         // advertises or serves a broken ABI split. Adding a real x86_64 bootstrap to the properties
-        // widens this automatically.
+        // widens this automatically. When ABI splits are on, splits.abi.include does the same filtering,
+        // so this packaging filter is only set when splits are off.
         ndk {
-            abiFilters(*terminowAbis)
+            if (!abiSplitsEnabled) {
+                abiFilters(*terminowAbis)
+            }
         }
 
         externalNativeBuild {
@@ -162,8 +173,7 @@ android {
 
         splits {
             abi {
-                enable ((gradle.startParameter.taskNames.any { it.contains("Debug") } && splitAPKsForDebugBuilds == "1") ||
-                    (gradle.startParameter.taskNames.any { it.contains("Release") } && splitAPKsForReleaseBuilds == "1"))
+                enable (abiSplitsEnabled)
                 reset ()
                 include(*terminowAbis)
                 universalApk false
