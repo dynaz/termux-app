@@ -692,7 +692,10 @@ public class TerminowLinuxTest {
         TerminowLinuxInstaller installer = new TerminowLinuxInstaller(registry, mFolder.newFolder("d"), runner(registry, false, new ArrayList<>()),
             new MemoryMarker(), mOps);
         TerminowLinuxCatalog.Entry ubuntu = TerminowLinuxCatalog.get("ubuntu");
-        for (Object[] attempt : new Object[][]{{"ubuntu", "aarch64", Long.MAX_VALUE}, {"ubuntu2", "x86_64", Long.MAX_VALUE}, {"ubuntu2", "aarch64", 1000L}}) {
+        // "ubuntu" is refused because the alias exists; riscv64 because Ubuntu has no rootfs for it
+        // (it has aarch64 and x86_64 only); the last because there is not enough free space. Ubuntu
+        // IS installable on x86_64 now, so riscv64 is the unsupported-architecture case here.
+        for (Object[] attempt : new Object[][]{{"ubuntu", "aarch64", Long.MAX_VALUE}, {"ubuntu2", "riscv64", Long.MAX_VALUE}, {"ubuntu2", "aarch64", 1000L}}) {
             try {
                 installer.install(ubuntu, (String) attempt[0], (String) attempt[1], (Long) attempt[2], QUIET);
                 fail("installed " + Arrays.toString(attempt));
@@ -721,10 +724,35 @@ public class TerminowLinuxTest {
             assertTrue(entry.sha256.matches("[0-9a-f]{64}"));
             assertTrue(entry.downloadBytes > 0);
             assertEquals(TerminowLinuxCatalog.Support.AVAILABLE, entry.supportOn("aarch64"));
-            assertEquals(TerminowLinuxCatalog.Support.UNSUPPORTED_ARCH, entry.supportOn("x86_64"));
+            // Every rootfs is pinned (https url + sha256 + size) and never falls back across arches.
+            for (TerminowLinuxCatalog.RootFs rf : entry.rootfs) {
+                assertTrue(rf.url, rf.url.startsWith("https://"));
+                assertTrue(rf.sha256.matches("[0-9a-f]{64}"));
+                assertTrue(rf.downloadBytes > 0);
+                assertEquals(TerminowLinuxCatalog.Support.AVAILABLE, entry.supportOn(rf.arch));
+            }
+            // Ubuntu now ships an x86_64 (amd64) rootfs; the others are aarch64 only, so they stay
+            // unsupported on x86_64. Nothing ever installs an aarch64 rootfs on x86_64.
+            if ("ubuntu".equals(entry.distroId)) {
+                assertEquals(TerminowLinuxCatalog.Support.AVAILABLE, entry.supportOn("x86_64"));
+                assertNotNull(entry.rootfsFor("x86_64"));
+                assertEquals("x86_64", entry.rootfsFor("x86_64").arch);
+                assertEquals("e77b6f10c2590cef872b33ee9f635a0e3fd1f57fb074c0e52b5c7f56147a0c86", entry.rootfsFor("x86_64").sha256);
+                assertTrue(entry.rootfsFor("x86_64").url.endsWith("ubuntu-base-24.04.5-base-amd64.tar.gz"));
+                // forArch resolves the primary to the device arch so the installer downloads amd64.
+                assertEquals("x86_64", entry.forArch("x86_64").arch);
+                assertEquals("aarch64", entry.forArch("aarch64").arch);
+            } else {
+                assertEquals(TerminowLinuxCatalog.Support.UNSUPPORTED_ARCH, entry.supportOn("x86_64"));
+                assertNull(entry.rootfsFor("x86_64"));
+                assertNull(entry.forArch("x86_64"));
+            }
+            // riscv64 has no rootfs for any distro yet.
+            assertEquals(TerminowLinuxCatalog.Support.UNSUPPORTED_ARCH, entry.supportOn("riscv64"));
         }
         assertEquals("aarch64", TerminowLinuxCatalog.archOfAbi("arm64-v8a"));
         assertEquals("arm", TerminowLinuxCatalog.archOfAbi("armeabi-v7a"));
+        assertEquals("x86_64", TerminowLinuxCatalog.archOfAbi("x86_64"));
 
         // Arch Linux ARM is present, aarch64, Premium, with the pinned proot-distro image + its SHA-256.
         TerminowLinuxCatalog.Entry arch = TerminowLinuxCatalog.get("archarm");

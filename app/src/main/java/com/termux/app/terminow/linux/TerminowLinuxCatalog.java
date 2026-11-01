@@ -16,9 +16,14 @@ import java.util.List;
  * The checksums are the ones the distributions publish: Ubuntu's SHA256SUMS of the release,
  * Alpine's latest-releases.yaml, and the layer digest of Debian's official image in the commit
  * of debuerreotype's artifacts that the URL is pinned to, and Kali's SHA256SUMS of the pinned
-     * NetHunter rootfs snapshot (kali.download/nethunter-images/kali-2026.3). They were also checked
-     * by downloading. Kali's rootfs is a .tar.xz wrapped in one top-level directory; proot-distro of
-     * the runtime unpacks it with its own path checks and strips that leading directory.
+ * NetHunter rootfs snapshot (kali.download/nethunter-images/kali-2026.3). They were also checked
+ * by downloading. Kali's rootfs is a .tar.xz wrapped in one top-level directory; proot-distro of
+ * the runtime unpacks it with its own path checks and strips that leading directory.
+ *
+ * A distribution can have a rootfs for more than one architecture (see {@link RootFs}). The device
+ * architecture (from {@link #archOfAbi}) selects which one is installed; there is never a fallback
+ * to another architecture's rootfs, so e.g. an x86_64 device never installs an aarch64 rootfs. A
+ * distribution with no rootfs for the device architecture reports {@link Support#UNSUPPORTED_ARCH}.
  */
 public final class TerminowLinuxCatalog {
 
@@ -31,47 +36,120 @@ public final class TerminowLinuxCatalog {
         EXPERIMENTAL
     }
 
+    /** One rootfs archive of a distribution, for a single architecture. */
+    public static final class RootFs {
+        /** The architecture in the words of proot-distro: aarch64, x86_64, arm, i686, riscv64. */
+        public final String arch;
+        /** Empty for a rootfs that can not be installed (a placeholder for an arch not yet built). */
+        public final String url;
+        public final String sha256;
+        public final long downloadBytes;
+        /** About what the rootfs takes once unpacked, for the space check. */
+        public final long installedBytes;
+
+        public RootFs(@NonNull String arch, @NonNull String url, @NonNull String sha256,
+                      long downloadBytes, long installedBytes) {
+            this.arch = arch;
+            this.url = url;
+            this.sha256 = sha256;
+            this.downloadBytes = downloadBytes;
+            this.installedBytes = installedBytes;
+        }
+
+        public boolean installable() {
+            return !url.isEmpty();
+        }
+    }
+
     public static class Entry {
         /** The ID of os-release, also the default name of the container. */
         public final String distroId;
         public final String name;
         public final String version;
         public final String description;
+        public final boolean experimental;
+        /** The rootfs of this distribution, one per architecture. The first is the primary. */
+        public final List<RootFs> rootfs;
+
+        // The primary (first) rootfs, mirrored as fields for display defaults and so existing callers
+        // that do not resolve an architecture keep working. Architecture-specific code must use
+        // rootfsFor(deviceArch) / forArch(deviceArch) instead, so the right architecture is installed.
         public final String arch;
-        /** Empty for an entry that can not be installed. */
         public final String url;
         public final String sha256;
         public final long downloadBytes;
-        /** About what the rootfs takes once unpacked, for the space check. */
         public final long installedBytes;
-        public final boolean experimental;
 
+        /** A distribution with rootfs for one or more architectures. */
         Entry(@NonNull String distroId, @NonNull String name, @NonNull String version, @NonNull String description,
-              @NonNull String arch, @NonNull String url, @NonNull String sha256, long downloadBytes, long installedBytes,
-              boolean experimental) {
+              boolean experimental, @NonNull RootFs... rootfs) {
+            if (rootfs.length == 0) throw new IllegalArgumentException("an entry needs at least one rootfs");
             this.distroId = distroId;
             this.name = name;
             this.version = version;
             this.description = description;
-            this.arch = arch;
-            this.url = url;
-            this.sha256 = sha256;
-            this.downloadBytes = downloadBytes;
-            this.installedBytes = installedBytes;
             this.experimental = experimental;
+            this.rootfs = Collections.unmodifiableList(Arrays.asList(rootfs));
+            RootFs primary = rootfs[0];
+            this.arch = primary.arch;
+            this.url = primary.url;
+            this.sha256 = primary.sha256;
+            this.downloadBytes = primary.downloadBytes;
+            this.installedBytes = primary.installedBytes;
+        }
+
+        /** The single-architecture form kept for the distributions that have only an aarch64 rootfs. */
+        Entry(@NonNull String distroId, @NonNull String name, @NonNull String version, @NonNull String description,
+              @NonNull String arch, @NonNull String url, @NonNull String sha256, long downloadBytes, long installedBytes,
+              boolean experimental) {
+            this(distroId, name, version, description, experimental,
+                new RootFs(arch, url, sha256, downloadBytes, installedBytes));
+        }
+
+        /** The installable rootfs for a device architecture, {@code null} if there is none. */
+        @Nullable
+        public RootFs rootfsFor(@NonNull String deviceArch) {
+            for (RootFs r : rootfs) if (r.arch.equals(deviceArch) && r.installable()) return r;
+            return null;
+        }
+
+        private boolean hasInstallableRootFs() {
+            for (RootFs r : rootfs) if (r.installable()) return true;
+            return false;
         }
 
         @NonNull
         public Support supportOn(@NonNull String deviceArch) {
-            if (experimental || url.isEmpty()) return Support.EXPERIMENTAL;
-            return arch.equals(deviceArch) ? Support.AVAILABLE : Support.UNSUPPORTED_ARCH;
+            if (experimental || !hasInstallableRootFs()) return Support.EXPERIMENTAL;
+            return rootfsFor(deviceArch) != null ? Support.AVAILABLE : Support.UNSUPPORTED_ARCH;
+        }
+
+        /**
+         * This entry with the rootfs of the given architecture as its primary, so its mirrored fields
+         * (url, sha256, arch, downloadBytes, installedBytes) describe exactly what will be installed on
+         * that device. {@code null} if the architecture has no installable rootfs.
+         */
+        @Nullable
+        public Entry forArch(@NonNull String deviceArch) {
+            RootFs rf = rootfsFor(deviceArch);
+            if (rf == null) return null;
+            return new Entry(distroId, name, version, description, experimental, rf);
         }
     }
 
+    // Ubuntu Base 24.04.5 LTS, the minimal system with apt, for aarch64 (arm64) and x86_64 (amd64).
+    // Both checksums are from Ubuntu's SHA256SUMS of the 24.04 release; sizes are the Content-Length
+    // of the pinned archives. aarch64 is first (the primary) so the free distro keeps its arm64 values
+    // where an architecture is not resolved.
+    private static final Entry UBUNTU = new Entry("ubuntu", "Ubuntu", "24.04.5 LTS",
+        "The popular Linux of Canonical. Ubuntu Base, the minimal system, with apt.", false,
+        new RootFs("aarch64", "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-arm64.tar.gz",
+            "a91d5a93010193712d346d761372b7c9db6dfcf093893161c64ca107f05914f2", 29936675L, 101L * 1024 * 1024),
+        new RootFs("x86_64", "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-amd64.tar.gz",
+            "e77b6f10c2590cef872b33ee9f635a0e3fd1f57fb074c0e52b5c7f56147a0c86", 30028293L, 101L * 1024 * 1024));
+
     public static final List<Entry> ENTRIES = Collections.unmodifiableList(Arrays.asList(
-        new Entry("ubuntu", "Ubuntu", "24.04.5 LTS", "The popular Linux of Canonical. Ubuntu Base, the minimal system, with apt.",
-            "aarch64", "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-arm64.tar.gz",
-            "a91d5a93010193712d346d761372b7c9db6dfcf093893161c64ca107f05914f2", 29936675L, 101L * 1024 * 1024, false),
+        UBUNTU,
         new Entry("debian", "Debian", "13.7 (trixie)", "The universal operating system, stable and conservative, with apt.",
             "aarch64", "https://raw.githubusercontent.com/debuerreotype/docker-debian-artifacts/cf1f4a45447842b45e9952e0f018ae734a7341c7/trixie/oci/blobs/rootfs.tar.gz",
             "df9831efb49cab24dec437e8482f2a9ddbd9e239131fa3ffe095dc1492081e1d", 49761105L, 142L * 1024 * 1024, false),

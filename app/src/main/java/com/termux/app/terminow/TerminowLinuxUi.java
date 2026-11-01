@@ -502,9 +502,14 @@ public class TerminowLinuxUi {
         List<TerminowLinuxEnv> installed = mRegistry.list();
         for (TerminowLinuxCatalog.Entry entry : TerminowLinuxCatalog.ENTRIES) {
             TerminowLinuxCatalog.Support support = entry.supportOn(arch);
-            String size = entry.downloadBytes > 0 ? mActivity.getString(R.string.terminow_linux_download_size,
-                android.text.format.Formatter.formatShortFileSize(mActivity, entry.downloadBytes)) : "";
-            LinearLayout card = card(entry.distroId, entry.name + " " + entry.version, entry.arch + (size.isEmpty() ? "" : " · " + size));
+            // Show the rootfs for this device's architecture when there is one, so the size and arch
+            // label match what would be installed; otherwise fall back to the primary for the label.
+            TerminowLinuxCatalog.RootFs rf = entry.rootfsFor(arch);
+            long downloadBytes = rf != null ? rf.downloadBytes : entry.downloadBytes;
+            String archLabel = rf != null ? rf.arch : entry.arch;
+            String size = downloadBytes > 0 ? mActivity.getString(R.string.terminow_linux_download_size,
+                android.text.format.Formatter.formatShortFileSize(mActivity, downloadBytes)) : "";
+            LinearLayout card = card(entry.distroId, entry.name + " " + entry.version, archLabel + (size.isEmpty() ? "" : " · " + size));
             card.addView(text(shortDescription(entry), 13, R.color.terminow_text_secondary), matchWrap());
             String state;
             int stateColor = R.color.terminow_text_secondary;
@@ -561,11 +566,15 @@ public class TerminowLinuxUi {
             TerminowLinuxInstaller probe = newInstaller();
             String alias = probe.freeAlias(entry.distroId);
             long usable = usableBytes();
-            boolean space = TerminowLinuxInstaller.hasSpace(usable, entry);
-            String message = mActivity.getString(R.string.terminow_linux_install_message, entry.name + " " + entry.version,
-                android.text.format.Formatter.formatShortFileSize(mActivity, entry.downloadBytes),
-                android.text.format.Formatter.formatShortFileSize(mActivity, entry.installedBytes), alias,
-                android.text.format.Formatter.formatShortFileSize(mActivity, usable), entry.url, entry.sha256);
+            // Resolve the rootfs for this device so the sizes, URL and checksum shown are the ones that
+            // will actually be installed (e.g. the amd64 Ubuntu rootfs on an x86_64 device).
+            TerminowLinuxCatalog.Entry resolved = entry.forArch(deviceArch());
+            if (resolved == null) resolved = entry;
+            boolean space = TerminowLinuxInstaller.hasSpace(usable, resolved);
+            String message = mActivity.getString(R.string.terminow_linux_install_message, resolved.name + " " + resolved.version,
+                android.text.format.Formatter.formatShortFileSize(mActivity, resolved.downloadBytes),
+                android.text.format.Formatter.formatShortFileSize(mActivity, resolved.installedBytes), alias,
+                android.text.format.Formatter.formatShortFileSize(mActivity, usable), resolved.url, resolved.sha256);
             AlertDialog.Builder builder = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
                 .setTitle(mActivity.getString(R.string.terminow_linux_install_title, entry.name))
                 .setMessage(space ? message : message + "\n\n" + mActivity.getString(R.string.terminow_linux_no_space))

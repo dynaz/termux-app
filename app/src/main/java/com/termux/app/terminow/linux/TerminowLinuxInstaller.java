@@ -129,19 +129,24 @@ public class TerminowLinuxInstaller {
         listener.onPhase(Phase.CHECKING, "");
         if (entry.supportOn(deviceArch) != TerminowLinuxCatalog.Support.AVAILABLE)
             throw new InstallException(entry.name + " can not be installed on " + deviceArch + " with TermiNow yet");
+        // Resolve the rootfs for this device's architecture and use it from here on, so an x86_64
+        // device downloads and installs the x86_64 rootfs and never an aarch64 one, and vice versa.
+        TerminowLinuxCatalog.Entry resolved = entry.forArch(deviceArch);
+        if (resolved == null)
+            throw new InstallException(entry.name + " has no rootfs for " + deviceArch);
         if (!TerminowLinuxRegistry.isValidAlias(alias)) throw new InstallException("Not a valid name: " + alias);
         File container = new File(mRegistry.getContainersDir(), alias);
         if (mOps.lstat(container) != null) throw new InstallException("An environment called " + alias + " exists already");
-        if (!hasSpace(usableBytes, entry)) throw new InstallException("Not enough free space: " + entry.name + " needs about " +
-            megabytes(entry.downloadBytes + entry.installedBytes + entry.installedBytes / 5 + SPACE_MARGIN) + " free");
+        if (!hasSpace(usableBytes, resolved)) throw new InstallException("Not enough free space: " + resolved.name + " needs about " +
+            megabytes(resolved.downloadBytes + resolved.installedBytes + resolved.installedBytes / 5 + SPACE_MARGIN) + " free");
         if (!mDownloadDir.isDirectory() && !mDownloadDir.mkdirs()) throw new InstallException("Could not create " + mDownloadDir);
 
         mMarker.set(alias);
         File partial = new File(mDownloadDir, alias + ".download");
-        File archive = new File(mDownloadDir, alias + archiveExtension(entry.url));
+        File archive = new File(mDownloadDir, alias + archiveExtension(resolved.url));
         boolean ok = false;
         try {
-            download(entry, partial, listener);
+            download(resolved, partial, listener);
             checkCancelled();
             if (!partial.renameTo(archive)) throw new InstallException("Could not keep the download");
             listener.onPhase(Phase.VERIFYING, "paths");
