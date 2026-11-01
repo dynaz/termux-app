@@ -134,6 +134,18 @@ android {
         buildConfigField "long", "TERMINOW_INTEGRITY_PROJECT_NUMBER", integrityProjectNumber + "L"
         buildConfigField "String", "TERMUX_PACKAGE_VARIANT", "\"" + project.ext.packageVariant + "\"" // Used by TermuxApplication class
 
+        // Cloud-backup OAuth client ids, from app/terminow-backup-oauth.properties (not committed).
+        // All are PUBLIC client ids/redirects (no client secret is ever stored in the APK). When a
+        // value is empty the matching provider shows "Setup required" with the exact values to add.
+        // See docs/terminow-backup-oauth.md.
+        def oauthProps = new Properties()
+        def oauthFile = file("terminow-backup-oauth.properties")
+        if (oauthFile.isFile()) oauthFile.withInputStream { oauthProps.load(it) }
+        buildConfigField "String", "TERMINOW_DROPBOX_APP_KEY", "\"" + oauthProps.getProperty("dropboxAppKey", "").trim() + "\""
+        buildConfigField "String", "TERMINOW_MS_CLIENT_ID", "\"" + oauthProps.getProperty("microsoftClientId", "").trim() + "\""
+        buildConfigField "String", "TERMINOW_MS_REDIRECT_URI", "\"" + oauthProps.getProperty("microsoftRedirectUri", "").trim() + "\""
+        buildConfigField "String", "TERMINOW_GDRIVE_SERVER_CLIENT_ID", "\"" + oauthProps.getProperty("googleServerClientId", "").trim() + "\""
+
         manifestPlaceholders.TERMUX_PACKAGE_NAME = "com.terminow"
         manifestPlaceholders.TERMUX_APP_NAME = "TermiNow"
         manifestPlaceholders.TERMUX_API_APP_NAME = "Termux:API"

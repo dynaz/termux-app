@@ -1857,6 +1857,101 @@ public class TerminowStore {
         }
     }
 
+    private static final String KEY_OAUTH_TOKENS = "backup_oauth_tokens";    // encrypted {kind: tokens}
+    private static final String KEY_OAUTH_PENDING = "backup_oauth_pending";  // encrypted pending authorization
+    private static final String KEY_CLOUD_DEST = "backup_cloud_destination"; // which provider cloud backups use
+
+    /** The stored OAuth tokens for a provider kind, or {@code null} if that account is not connected. */
+    @Nullable
+    public TerminowOAuth.Tokens getOAuthTokens(@NonNull String kind) {
+        String blob = mPreferences.getString(KEY_OAUTH_TOKENS, null);
+        if (blob == null || blob.isEmpty()) return null;
+        try {
+            org.json.JSONObject all = new org.json.JSONObject(TerminowSecret.unwrap(blob));
+            if (!all.has(kind)) return null;
+            return TerminowOAuth.Tokens.fromJson(all.getJSONObject(kind));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Save (or, with {@code null}, clear = disconnect) the tokens for one provider kind. */
+    public boolean setOAuthTokens(@NonNull String kind, @Nullable TerminowOAuth.Tokens tokens) {
+        try {
+            org.json.JSONObject all;
+            String blob = mPreferences.getString(KEY_OAUTH_TOKENS, null);
+            try { all = (blob == null || blob.isEmpty()) ? new org.json.JSONObject() : new org.json.JSONObject(TerminowSecret.unwrap(blob)); }
+            catch (Exception e) { all = new org.json.JSONObject(); }
+            if (tokens == null) all.remove(kind);
+            else all.put(kind, tokens.toJson());
+            mPreferences.edit().putString(KEY_OAUTH_TOKENS, TerminowSecret.wrap(all.toString())).apply();
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public boolean isOAuthConnected(@NonNull String kind) {
+        TerminowOAuth.Tokens t = getOAuthTokens(kind);
+        return t != null && (!t.accessToken.isEmpty() || !t.refreshToken.isEmpty());
+    }
+
+    /** The pending OAuth authorization (survives process death during the browser consent), or null. */
+    @Nullable
+    public TerminowOAuthFlow.Pending getPendingOAuth() {
+        String blob = mPreferences.getString(KEY_OAUTH_PENDING, null);
+        if (blob == null || blob.isEmpty()) return null;
+        try {
+            return TerminowOAuthFlow.Pending.fromJson(TerminowSecret.unwrap(blob));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public void setPendingOAuth(@Nullable TerminowOAuthFlow.Pending pending) {
+        if (pending == null) {
+            mPreferences.edit().remove(KEY_OAUTH_PENDING).apply();
+            return;
+        }
+        try {
+            mPreferences.edit().putString(KEY_OAUTH_PENDING, TerminowSecret.wrap(pending.toJson().toString())).apply();
+        } catch (Exception e) {
+            // A pending we cannot persist simply means the callback after process death cannot resume.
+        }
+    }
+
+    /** Which provider cloud backups use: "s3" | "gdrive" | "dropbox" | "onedrive" | "" (unset). */
+    @NonNull
+    public String getCloudDestination() {
+        return mPreferences.getString(KEY_CLOUD_DEST, "");
+    }
+
+    public void setCloudDestination(@NonNull String kind) {
+        mPreferences.edit().putString(KEY_CLOUD_DEST, kind).apply();
+    }
+
+    private static final String KEY_CLOUD_PASSWORD = "backup_cloud_password"; // encrypted; empty = none
+
+    /** The optional backup-encryption password used for any cloud destination ("" = off). */
+    @NonNull
+    public String getCloudPassword() {
+        String blob = mPreferences.getString(KEY_CLOUD_PASSWORD, null);
+        if (blob == null || blob.isEmpty()) return "";
+        try { return TerminowSecret.unwrap(blob); } catch (Exception e) { return ""; }
+    }
+
+    public void setCloudPassword(@NonNull String password) {
+        if (password.isEmpty()) {
+            mPreferences.edit().remove(KEY_CLOUD_PASSWORD).apply();
+            return;
+        }
+        try {
+            mPreferences.edit().putString(KEY_CLOUD_PASSWORD, TerminowSecret.wrap(password)).apply();
+        } catch (Exception e) {
+            // A password we cannot encrypt is simply not saved.
+        }
+    }
+
     private static final String KEY_LAST_LOCAL_ENV = "last_local_environment";
 
     /** The key of the local Linux environment chosen last, so the picker defaults to it. "" if none. */

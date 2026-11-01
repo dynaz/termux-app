@@ -48,12 +48,12 @@ public final class TerminowBackupWorker extends Worker {
         TerminowBackupSchedule schedule = store.getBackupSchedule();
 
         if (!schedule.enabled || schedule.alias.isEmpty()) return Result.success();
-        if (!"s3".equals(schedule.destination)) return record(store, schedule, "This TermiNow build can only run scheduled backups to S3 storage");
         if (!schedule.full) return record(store, schedule, "Scheduled folder backups are not supported yet; choose a full backup");
 
-        TerminowS3Config config = store.getS3Config();
-        if (config == null || !config.isComplete())
-            return record(store, schedule, "No cloud storage is set up for scheduled backups");
+        String kind = schedule.destination.isEmpty() ? store.getCloudDestination() : schedule.destination;
+        TerminowBackupProvider provider = kind.isEmpty() ? null : TerminowCloudProviders.resolve(store, kind);
+        if (provider == null)
+            return record(store, schedule, "The backup destination (" + TerminowOAuthClients.displayName(kind) + ") is not set up or connected");
         if (!TerminowPhoneBackup.mayBackUp(store))
             return record(store, schedule, "Premium is needed for scheduled backups; existing backups are still available to restore");
         if (schedule.skipWhenActive && TerminowDistroState.isActive(schedule.alias))
@@ -64,7 +64,8 @@ public final class TerminowBackupWorker extends Worker {
         File cacheDir = new File(context.getCacheDir(), "cloud-backup");
         //noinspection ResultOfMethodCallIgnored
         cacheDir.mkdirs();
-        boolean encrypt = !config.encryptionPassword.isEmpty();
+        char[] password = TerminowCloudProviders.password(store);
+        boolean encrypt = password != null;
         String fileName = TerminowBackupArchive.fileName(schedule.alias, TerminowBackupArchive.TYPE_FULL, now) + (encrypt ? ".enc" : "");
         File temp = new File(cacheDir, now + "-" + fileName);
 
@@ -75,9 +76,9 @@ public final class TerminowBackupWorker extends Worker {
         request.distro = schedule.alias;
         request.architecture = TerminowLinuxUi.deviceArch();
         request.appVersion = "TermiNow " + com.termux.BuildConfig.VERSION_NAME + " (" + com.termux.BuildConfig.VERSION_CODE + ")";
-        request.password = encrypt ? config.encryptionPassword.toCharArray() : null;
+        request.password = password;
         request.localFile = temp;
-        request.provider = config.toProvider();
+        request.provider = provider;
         request.remoteKey = TerminowCloudBackup.keyFor(schedule.alias, fileName);
         request.retain = schedule.retain;
 

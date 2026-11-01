@@ -129,6 +129,30 @@
             android:windowSoftInputMode="adjustResize" />
 
         <activity
+            android:name=".app.terminow.TerminowOAuthRedirectActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <!-- Dropbox: custom-scheme redirect registered in the Dropbox App Console. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.terminow" android:host="oauth2redirect" />
+            </intent-filter>
+            <!-- Microsoft (OneDrive): msauth://<package>/<signature hash>. The signature hash is the
+                 path and is build-specific; matching scheme + host receives every registered hash. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="msauth" android:host="${TERMUX_PACKAGE_NAME}" />
+            </intent-filter>
+        </activity>
+
+        <activity
             android:name=".app.activities.HelpActivity"
             android:exported="false"
             android:label="@string/application_name"

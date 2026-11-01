@@ -1082,27 +1082,165 @@ final class TerminowBackupUi {
     // Cloud (S3)
 
     private void showCloud(@NonNull String alias, @NonNull String title) {
-        TerminowS3Config config = mStore.getS3Config();
-        boolean ready = config != null && config.isComplete();
+        String dest = mStore.getCloudDestination();
+        boolean ready = !dest.isEmpty() && TerminowCloudProviders.isConnected(mStore, dest);
+        String backupLabel = ready
+            ? mActivity.getString(R.string.terminow_cloud_backup_now_to, TerminowOAuthClients.displayName(dest))
+            : mActivity.getString(R.string.terminow_cloud_backup_now_setup);
         CharSequence[] items = {
-            mActivity.getString(ready ? R.string.terminow_cloud_backup_now : R.string.terminow_cloud_backup_now_setup),
+            backupLabel,
             mActivity.getString(R.string.terminow_cloud_restore),
             mActivity.getString(R.string.terminow_cloud_schedule),
-            mActivity.getString(R.string.terminow_cloud_settings)};
+            mActivity.getString(R.string.terminow_cloud_accounts)};
         new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
             .setTitle(R.string.terminow_cloud_menu)
             .setItems(items, (d, which) -> {
-                if (which == 0) { if (ready) cloudBackupNow(alias, title, config); else cloudSettings(alias, title); }
-                else if (which == 1) { if (ready) cloudRestore(config); else cloudSettings(alias, title); }
+                if (which == 0) { if (ready) cloudBackupNow(alias, title); else cloudAccounts(); }
+                else if (which == 1) { if (ready) cloudRestore(); else cloudAccounts(); }
                 else if (which == 2) cloudSchedule(alias, title);
-                else cloudSettings(alias, title);
+                else cloudAccounts();
+            })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Cloud accounts (S3 + the three OAuth providers)
+
+    /** The accounts screen: every provider with its status, the active one marked; tap one to manage it. */
+    private void cloudAccounts() {
+        final String[] kinds = {TerminowCloudProviders.S3, TerminowOAuthClients.GDRIVE,
+            TerminowOAuthClients.DROPBOX, TerminowOAuthClients.ONEDRIVE};
+        String dest = mStore.getCloudDestination();
+        CharSequence[] labels = new CharSequence[kinds.length];
+        for (int i = 0; i < kinds.length; i++) labels[i] = accountLabel(kinds[i], dest);
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_cloud_accounts)
+            .setItems(labels, (d, which) -> manageAccount(kinds[which]))
+            .setNeutralButton(R.string.terminow_cloud_password_button, (d, w) -> backupPassword())
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    @NonNull
+    private String accountLabel(@NonNull String kind, @NonNull String dest) {
+        String status;
+        if (TerminowCloudProviders.S3.equals(kind)) {
+            status = mActivity.getString(TerminowCloudProviders.isConnected(mStore, kind)
+                ? R.string.terminow_cloud_status_connected : R.string.terminow_cloud_status_not_set_up);
+        } else if (!TerminowOAuthClients.configured(kind)) {
+            status = mActivity.getString(R.string.terminow_cloud_status_setup_required);
+        } else {
+            status = mActivity.getString(TerminowCloudProviders.isConnected(mStore, kind)
+                ? R.string.terminow_cloud_status_connected : R.string.terminow_cloud_status_not_connected);
+        }
+        String active = kind.equals(dest) ? mActivity.getString(R.string.terminow_cloud_status_active) : "";
+        return TerminowOAuthClients.displayName(kind) + " — " + status + active;
+    }
+
+    private void manageAccount(@NonNull String kind) {
+        if (TerminowCloudProviders.S3.equals(kind)) { manageS3(); return; }
+        if (!TerminowOAuthClients.configured(kind)) { showSetupRequired(kind); return; }
+        boolean connected = TerminowCloudProviders.isConnected(mStore, kind);
+        CharSequence[] options = connected
+            ? new CharSequence[]{mActivity.getString(R.string.terminow_cloud_use_for_backups),
+                                 mActivity.getString(R.string.terminow_cloud_reconnect),
+                                 mActivity.getString(R.string.terminow_cloud_disconnect)}
+            : new CharSequence[]{mActivity.getString(R.string.terminow_cloud_connect)};
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(TerminowOAuthClients.displayName(kind))
+            .setItems(options, (d, which) -> {
+                if (!connected) { connectProvider(kind); return; }
+                if (which == 0) { mStore.setCloudDestination(kind); toastUseFor(kind); }
+                else if (which == 1) connectProvider(kind);
+                else disconnectProvider(kind);
+            })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    private void manageS3() {
+        boolean complete = TerminowCloudProviders.isConnected(mStore, TerminowCloudProviders.S3);
+        CharSequence[] options = complete
+            ? new CharSequence[]{mActivity.getString(R.string.terminow_cloud_use_for_backups),
+                                 mActivity.getString(R.string.terminow_cloud_edit_settings),
+                                 mActivity.getString(R.string.terminow_cloud_remove)}
+            : new CharSequence[]{mActivity.getString(R.string.terminow_cloud_set_up)};
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(TerminowOAuthClients.displayName(TerminowCloudProviders.S3))
+            .setItems(options, (d, which) -> {
+                if (!complete) { cloudSettings(); return; }
+                if (which == 0) { mStore.setCloudDestination(TerminowCloudProviders.S3); toastUseFor(TerminowCloudProviders.S3); }
+                else if (which == 1) cloudSettings();
+                else {
+                    mStore.setS3Config(null);
+                    if (mStore.getCloudDestination().equals(TerminowCloudProviders.S3)) mStore.setCloudDestination("");
+                    mActivity.showToast(mActivity.getString(R.string.terminow_cloud_removed), false);
+                }
+            })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    private void toastUseFor(@NonNull String kind) {
+        mActivity.showToast(mActivity.getString(R.string.terminow_cloud_now_active, TerminowOAuthClients.displayName(kind)), false);
+    }
+
+    /** Launch the browser consent for an OAuth provider; the redirect returns via the redirect activity. */
+    private void connectProvider(@NonNull String kind) {
+        Intent intent = TerminowOAuthFlow.begin(mActivity, mStore, kind);
+        if (intent == null) { showSetupRequired(kind); return; }
+        try {
+            mActivity.startActivity(intent);
+            mActivity.showToast(mActivity.getString(R.string.terminow_cloud_opening_signin, TerminowOAuthClients.displayName(kind)), false);
+        } catch (android.content.ActivityNotFoundException e) {
+            mActivity.showToast(mActivity.getString(R.string.terminow_cloud_no_browser), true);
+        }
+    }
+
+    private void disconnectProvider(@NonNull String kind) {
+        mStore.setOAuthTokens(kind, null);
+        if (mStore.getCloudDestination().equals(kind)) mStore.setCloudDestination("");
+        mActivity.showToast(mActivity.getString(R.string.terminow_cloud_disconnected, TerminowOAuthClients.displayName(kind)), false);
+    }
+
+    private void showSetupRequired(@NonNull String kind) {
+        Context context = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog).getContext();
+        LinearLayout box = vertical(context);
+        box.setPadding(dp(20), dp(8), dp(20), 0);
+        box.addView(label(context, TerminowOAuthClients.setupInfo(kind), false));
+        ScrollView scroll = new ScrollView(context);
+        scroll.addView(box);
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_cloud_status_setup_required)
+            .setView(scroll)
+            .setPositiveButton(android.R.string.ok, null)
+            .show();
+    }
+
+    /** Set or clear the backup-encryption password used for any cloud destination. */
+    private void backupPassword() {
+        Context context = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog).getContext();
+        LinearLayout box = vertical(context);
+        box.setPadding(dp(24), dp(8), dp(24), 0);
+        box.addView(label(context, mActivity.getString(R.string.terminow_cloud_password_message), false));
+        EditText field = passwordField(context, mActivity.getString(R.string.terminow_backup_encrypt_hint));
+        field.setText(mStore.getCloudPassword());
+        box.addView(field);
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_cloud_password_button)
+            .setView(box)
+            .setPositiveButton(android.R.string.ok, (d, w) -> {
+                mStore.setCloudPassword(field.getText().toString());
+                mActivity.showToast(mActivity.getString(field.getText().length() == 0
+                    ? R.string.terminow_cloud_password_cleared : R.string.terminow_cloud_password_saved), false);
             })
             .setNegativeButton(android.R.string.cancel, null)
             .show();
     }
 
     /** The S3 connection form, saved encrypted at rest. */
-    private void cloudSettings(@NonNull String alias, @NonNull String title) {
+    private void cloudSettings() {
         TerminowS3Config config = mStore.getS3Config();
         if (config == null) config = new TerminowS3Config();
         Context context = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog).getContext();
@@ -1165,6 +1303,7 @@ final class TerminowBackupUi {
                         return;
                     }
                     if (mStore.setS3Config(edited)) {
+                        if (mStore.getCloudDestination().isEmpty()) mStore.setCloudDestination(TerminowCloudProviders.S3);
                         dialog.dismiss();
                         mActivity.showToast(mActivity.getString(R.string.terminow_cloud_saved), false);
                     } else {
@@ -1187,14 +1326,17 @@ final class TerminowBackupUi {
         return edit;
     }
 
-    /** Make a full backup of the environment to a cache file and upload it to the configured bucket. */
-    private void cloudBackupNow(@NonNull String alias, @NonNull String title, @NonNull TerminowS3Config config) {
+    /** Make a full backup of the environment to a cache file and upload it to the selected destination. */
+    private void cloudBackupNow(@NonNull String alias, @NonNull String title) {
+        TerminowBackupProvider provider = TerminowCloudProviders.selected(mStore);
+        if (provider == null) { cloudAccounts(); return; }
         if (TerminowPhoneBackup.isRunning()) { showProgress(); return; }
         File cacheDir = new File(mActivity.getCacheDir(), "cloud-backup");
         //noinspection ResultOfMethodCallIgnored
         cacheDir.mkdirs();
         clearDir(cacheDir);   // stale temps from past runs
-        boolean encrypt = !config.encryptionPassword.isEmpty();
+        char[] password = TerminowCloudProviders.password(mStore);
+        boolean encrypt = password != null;
         long now = System.currentTimeMillis();
         String fileName = TerminowBackupArchive.fileName(alias, TerminowBackupArchive.TYPE_FULL, now) + (encrypt ? ".enc" : "");
         TerminowLinuxEnv env = mLinux.envOf(alias);
@@ -1206,23 +1348,25 @@ final class TerminowBackupUi {
         request.distro = env != null ? env.distroId + (env.version.isEmpty() ? "" : " " + env.version) : alias;
         request.architecture = env != null ? env.arch : TerminowLinuxUi.deviceArch();
         request.appVersion = "TermiNow " + com.termux.BuildConfig.VERSION_NAME + " (" + com.termux.BuildConfig.VERSION_CODE + ")";
-        request.password = encrypt ? config.encryptionPassword.toCharArray() : null;
+        request.password = password;
         request.localFile = new File(cacheDir, now + "-" + fileName);
-        request.provider = config.toProvider();
+        request.provider = provider;
         request.remoteKey = TerminowCloudBackup.keyFor(alias, fileName);
         request.retain = Math.max(1, mStore.getBackupSchedule().retain);
         start(request);
     }
 
-    /** List the cloud backups, let the user pick one, download it, and restore through the normal flow. */
-    private void cloudRestore(@NonNull TerminowS3Config config) {
+    /** List the selected destination's backups, let the user pick one, download and restore it. */
+    private void cloudRestore() {
+        TerminowBackupProvider provider = TerminowCloudProviders.selected(mStore);
+        if (provider == null) { cloudAccounts(); return; }
         if (TerminowPhoneBackup.isRunning()) { showProgress(); return; }
         mActivity.showToast(mActivity.getString(R.string.terminow_cloud_listing), false);
         mExecutor.execute(() -> {
             List<TerminowBackupProvider.Remote> listed;
             String error = null;
             try {
-                listed = config.toProvider().list();
+                listed = provider.list();
                 Collections.sort(listed, (a, b) -> Long.compare(b.modifiedMillis, a.modifiedMillis));
             } catch (Exception e) {
                 listed = new ArrayList<>();
@@ -1241,14 +1385,14 @@ final class TerminowBackupUi {
                 }
                 new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
                     .setTitle(R.string.terminow_cloud_restore)
-                    .setItems(labels, (d, which) -> downloadThenRestore(config, backups.get(which)))
+                    .setItems(labels, (d, which) -> downloadThenRestore(provider, backups.get(which)))
                     .setNegativeButton(android.R.string.cancel, null)
                     .show();
             });
         });
     }
 
-    private void downloadThenRestore(@NonNull TerminowS3Config config, @NonNull TerminowBackupProvider.Remote remote) {
+    private void downloadThenRestore(@NonNull TerminowBackupProvider provider, @NonNull TerminowBackupProvider.Remote remote) {
         File cacheDir = new File(mActivity.getCacheDir(), "cloud-restore");
         //noinspection ResultOfMethodCallIgnored
         cacheDir.mkdirs();
@@ -1257,7 +1401,7 @@ final class TerminowBackupUi {
         mActivity.showToast(mActivity.getString(R.string.terminow_cloud_downloading), false);
         mExecutor.execute(() -> {
             String error = null;
-            try { TerminowCloudBackup.downloadTo(config.toProvider(), remote.key, temp); }
+            try { TerminowCloudBackup.downloadTo(provider, remote.key, temp); }
             catch (Exception e) { error = e.getMessage(); }
             final String err = error;
             mHandler.post(() -> {
@@ -1304,15 +1448,15 @@ final class TerminowBackupUi {
             .setTitle(R.string.terminow_cloud_schedule)
             .setView(scroll)
             .setPositiveButton(R.string.terminow_cloud_save_schedule, (d, w) -> {
-                TerminowS3Config config = mStore.getS3Config();
-                if (enabled.isChecked() && (config == null || !config.isComplete())) {
+                String dest = mStore.getCloudDestination();
+                if (enabled.isChecked() && (dest.isEmpty() || !TerminowCloudProviders.isConnected(mStore, dest))) {
                     mActivity.showToast(mActivity.getString(R.string.terminow_cloud_schedule_needs_storage), true);
                     return;
                 }
                 schedule.enabled = enabled.isChecked();
                 schedule.alias = alias;
                 schedule.full = true;
-                schedule.destination = "s3";
+                schedule.destination = dest;
                 schedule.frequency = freq.getCheckedRadioButtonId() == weekly.getId()
                     ? TerminowBackupSchedule.Frequency.WEEKLY : TerminowBackupSchedule.Frequency.DAILY;
                 schedule.hour = clampInt(hour.getText().toString(), schedule.hour, 0, 23);

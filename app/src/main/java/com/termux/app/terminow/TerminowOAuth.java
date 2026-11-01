@@ -80,6 +80,23 @@ final class TerminowOAuth {
         boolean isFresh(long now) {
             return !accessToken.isEmpty() && (expiresAtMillis == 0 || now < expiresAtMillis - 60_000);
         }
+
+        @NonNull
+        JSONObject toJson() throws JSONException {
+            return new JSONObject()
+                .put("access", accessToken)
+                .put("refresh", refreshToken)
+                .put("expiresAt", expiresAtMillis);
+        }
+
+        @NonNull
+        static Tokens fromJson(@NonNull JSONObject o) {
+            Tokens t = new Tokens();
+            t.accessToken = o.optString("access", "");
+            t.refreshToken = o.optString("refresh", "");
+            t.expiresAtMillis = o.optLong("expiresAt", 0);
+            return t;
+        }
     }
 
     // ---------------------------------------------------------------------------------------

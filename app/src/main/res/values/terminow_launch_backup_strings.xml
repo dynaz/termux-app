@@ -192,4 +192,27 @@
     <string name="terminow_cloud_schedule_needs_storage">Set up cloud storage first</string>
     <string name="terminow_cloud_scheduled">Scheduled. Next run about %1$s</string>
     <string name="terminow_cloud_schedule_off">Scheduled backups turned off</string>
+
+    <!-- Cloud accounts (S3 + OAuth providers) -->
+    <string name="terminow_cloud_backup_now_to">Back up now to %1$s</string>
+    <string name="terminow_cloud_accounts">Cloud accounts</string>
+    <string name="terminow_cloud_status_connected">connected</string>
+    <string name="terminow_cloud_status_not_connected">not connected</string>
+    <string name="terminow_cloud_status_not_set_up">not set up</string>
+    <string name="terminow_cloud_status_setup_required">Setup required</string>
+    <string name="terminow_cloud_status_active">  •  active</string>
+    <string name="terminow_cloud_use_for_backups">Use for backups</string>
+    <string name="terminow_cloud_now_active">%1$s is now the backup destination</string>
+    <string name="terminow_cloud_connect">Connect</string>
+    <string name="terminow_cloud_reconnect">Reconnect</string>
+    <string name="terminow_cloud_disconnect">Disconnect</string>
+    <string name="terminow_cloud_disconnected">%1$s disconnected</string>
+    <string name="terminow_cloud_edit_settings">Edit settings</string>
+    <string name="terminow_cloud_set_up">Set up</string>
+    <string name="terminow_cloud_opening_signin">Opening %1$s sign-in…</string>
+    <string name="terminow_cloud_no_browser">No browser is available to sign in</string>
+    <string name="terminow_cloud_password_button">Backup password</string>
+    <string name="terminow_cloud_password_message">An optional password that encrypts every cloud backup, whichever provider you use. Leave empty for no encryption. Keep it safe — it cannot be recovered.</string>
+    <string name="terminow_cloud_password_saved">Backup password saved</string>
+    <string name="terminow_cloud_password_cleared">Backup password cleared</string>
 </resources>

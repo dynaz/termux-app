@@ -1,6 +1,7 @@
 package com.termux.app.terminow;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -293,8 +294,8 @@ public class TerminowS3ProviderTest {
             assertTrue(expected.getMessage().toLowerCase(Locale.ROOT).contains("size")
                 || expected.getMessage().toLowerCase(Locale.ROOT).contains("bytes"));
         }
-        // The object is still there (it uploaded fine) but nothing was trimmed because verify failed.
-        assertTrue(mStore.containsKey("/mybucket/" + key));
+        // Verify failed, so the unverified object is removed (preserve-on-failure) and nothing was trimmed.
+        assertFalse(mStore.containsKey("/mybucket/" + key));
     }
 
     @Test
