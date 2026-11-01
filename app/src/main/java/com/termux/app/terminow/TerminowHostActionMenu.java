@@ -34,11 +34,13 @@ import com.termux.R;
  */
 public final class TerminowHostActionMenu {
 
-    /** The three actions, invoked after the menu has closed. */
+    /** The actions, invoked after the menu has closed. */
     public interface Callbacks {
         void onEdit();
         void onDuplicate();
         void onDelete();
+        /** Packet capture over SSH; only offered when the caller enables the row. */
+        default void onPacketCapture() {}
     }
 
     /** Popover width on large screens, within the requested 260–300dp range. */
@@ -49,6 +51,16 @@ public final class TerminowHostActionMenu {
 
     public static void show(@NonNull Activity activity, @Nullable View anchor, @NonNull String title,
                             @NonNull String subtitle, @NonNull Callbacks callbacks, @Nullable Runnable onDismiss) {
+        show(activity, anchor, title, subtitle, false, callbacks, onDismiss);
+    }
+
+    /**
+     * @param packetCapture when true, a "Packet capture" row is shown (for an SSH host that can be
+     *                      captured on over its own connection); otherwise that row stays hidden.
+     */
+    public static void show(@NonNull Activity activity, @Nullable View anchor, @NonNull String title,
+                            @NonNull String subtitle, boolean packetCapture, @NonNull Callbacks callbacks,
+                            @Nullable Runnable onDismiss) {
         View content = activity.getLayoutInflater().inflate(R.layout.view_terminow_host_action_menu, null, false);
         ((TextView) content.findViewById(R.id.terminow_action_title)).setText(title);
         TextView sub = content.findViewById(R.id.terminow_action_subtitle);
@@ -63,6 +75,11 @@ public final class TerminowHostActionMenu {
         final Runnable[] dismiss = new Runnable[1];
         wireRow(content, R.id.terminow_action_edit, callbacks::onEdit, dismiss);
         wireRow(content, R.id.terminow_action_duplicate, callbacks::onDuplicate, dismiss);
+        if (packetCapture) {
+            View captureRow = content.findViewById(R.id.terminow_action_capture);
+            captureRow.setVisibility(View.VISIBLE);
+            wireRow(content, R.id.terminow_action_capture, callbacks::onPacketCapture, dismiss);
+        }
         wireRow(content, R.id.terminow_action_delete, callbacks::onDelete, dismiss);
 
         if (large) showPopover(activity, anchor, content, dismiss, onDismiss);

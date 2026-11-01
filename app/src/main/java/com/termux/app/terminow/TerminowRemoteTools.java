@@ -84,6 +84,38 @@ final class TerminowRemoteTools {
         return command.toString();
     }
 
+    /**
+     * Download a capture file from the host to the device over SFTP, reusing the host's connection
+     * (reconnecting if the channel has dropped, which is the disconnect/reconnect reconciliation for a
+     * capture whose live channel ended). The remote file is never deleted or changed — it is preserved
+     * until and after a successful download — and no package is installed and no permission is altered.
+     *
+     * @return the local file the capture was written to, under {@code ~/.terminow/captures}
+     */
+    @NonNull
+    File downloadCapture(@NonNull TerminowStore.Host host, @NonNull String remoteAbsPath) throws IOException {
+        TerminowSftpFs fs = connectionFor(host);
+        if (!fs.isConnected()) fs.connect();
+        int slash = remoteAbsPath.lastIndexOf('/');
+        String dir = slash <= 0 ? "/" : remoteAbsPath.substring(0, slash);
+        String name = remoteAbsPath.substring(slash + 1);
+        if (name.isEmpty()) throw new IOException("invalid remote path");
+        com.termux.app.terminow.files.TerminowFs.Node dirNode = fs.getDirectory(dir);
+        com.termux.app.terminow.files.TerminowFs.Node fileNode = fs.find(dirNode, name);
+        if (fileNode == null) throw new IOException("remote capture not found");
+        File destDir = new File(TermuxConstants.TERMUX_HOME_DIR_PATH, ".terminow/captures");
+        //noinspection ResultOfMethodCallIgnored
+        destDir.mkdirs();
+        File dest = new File(destDir, name);
+        try (java.io.InputStream in = fs.openInput(fileNode);
+             java.io.OutputStream out = new java.io.FileOutputStream(dest)) {
+            byte[] buffer = new byte[65536];
+            int read;
+            while ((read = in.read(buffer)) != -1) out.write(buffer, 0, read);
+        }
+        return dest;
+    }
+
     /** Close the connection of a host when no install of it is running. */
     synchronized void closeIdle(@NonNull TerminowStore.Host host) {
         String alias = aliasOf(host);

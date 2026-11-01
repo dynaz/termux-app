@@ -1,6 +1,7 @@
 package com.termux.app.terminow;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -63,6 +64,78 @@ public final class TerminowCapture {
 
     public static boolean isValidInterface(@NonNull String iface) {
         return INTERFACE.matcher(iface).matches();
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Capture capability — whether live capture is actually possible, not merely whether uid is 0
+
+    /**
+     * The result of probing whether live capture can work in an environment. In a PRoot/Termux guest
+     * {@code id -u} reports 0, but the Linux kernel still denies {@code CAP_NET_RAW} to the sandbox,
+     * so a raw-socket capture fails with "Operation not permitted" even as "root". This is why live
+     * capture is gated on an actual probe rather than on the user id.
+     */
+    public enum CapturePrivilege {
+        /** tcpdump opened a capture socket (a packet arrived, or the probe timed out while listening). */
+        OK,
+        /** tcpdump was denied the capture socket — typical of a PRoot guest without CAP_NET_RAW. */
+        DENIED,
+        /** The probed interface does not exist (capture may still work on another interface). */
+        NO_DEVICE,
+        /** tcpdump is not installed. */
+        NO_TCPDUMP,
+        /** The probe produced no decisive signal. */
+        UNKNOWN
+    }
+
+    /**
+     * A shell script that probes capture capability by attempting a single-packet capture to
+     * {@code /dev/null}, bounded by {@code timeout}, and prints {@code TERMINOW_CAP_PRIV=<result>}
+     * plus a short {@code TERMINOW_CAP_DETAIL=} line of tcpdump's own message. It never writes a real
+     * capture file and is safe to run repeatedly. {@code iface} is validated and falls back to
+     * {@code any}; it is only ever a value matching {@link #INTERFACE}, so it is safe to embed.
+     */
+    @NonNull
+    public static String probeScript(@NonNull String iface) {
+        String dev = isValidInterface(iface) ? iface : "any";
+        return "if ! command -v tcpdump >/dev/null 2>&1; then printf 'TERMINOW_CAP_PRIV=notcpdump\\n'; exit 0; fi\n"
+            + "out=$(timeout 5 tcpdump -i " + dev + " -c 1 -w /dev/null 2>&1); code=$?\n"
+            + "if [ \"$code\" = 0 ] || [ \"$code\" = 124 ]; then printf 'TERMINOW_CAP_PRIV=ok\\n'\n"
+            + "elif printf '%s' \"$out\" | grep -qiE 'permitted|permission|denied|cap_net_raw'; then printf 'TERMINOW_CAP_PRIV=denied\\n'\n"
+            + "elif printf '%s' \"$out\" | grep -qiE 'no such device|bad interface|no suitable device|siocgifindex|not found'; then printf 'TERMINOW_CAP_PRIV=nodev\\n'\n"
+            + "else printf 'TERMINOW_CAP_PRIV=unknown\\n'; fi\n"
+            + "printf 'TERMINOW_CAP_DETAIL=%s\\n' \"$(printf '%s' \"$out\" | tr '\\n' ' ' | cut -c1-300)\"\n"
+            + "exit 0\n";
+    }
+
+    /** Parse {@link #probeScript} output into a {@link CapturePrivilege}; UNKNOWN if no marker is seen. */
+    @NonNull
+    public static CapturePrivilege parseCapturePrivilege(@NonNull String output) {
+        String value = markerValue(output, "TERMINOW_CAP_PRIV=");
+        if (value == null) return CapturePrivilege.UNKNOWN;
+        switch (value.trim()) {
+            case "ok": return CapturePrivilege.OK;
+            case "denied": return CapturePrivilege.DENIED;
+            case "nodev": return CapturePrivilege.NO_DEVICE;
+            case "notcpdump": return CapturePrivilege.NO_TCPDUMP;
+            default: return CapturePrivilege.UNKNOWN;
+        }
+    }
+
+    /** The short tcpdump message the probe captured, for showing the user why capture is unavailable. */
+    @NonNull
+    public static String parseProbeDetail(@NonNull String output) {
+        String value = markerValue(output, "TERMINOW_CAP_DETAIL=");
+        return value == null ? "" : value.trim();
+    }
+
+    @Nullable
+    private static String markerValue(@NonNull String output, @NonNull String marker) {
+        for (String line : output.split("\n")) {
+            int at = line.indexOf(marker);
+            if (at >= 0) return line.substring(at + marker.length());
+        }
+        return null;
     }
 
     public static boolean isValidCaptureFilter(@NonNull String filter) {

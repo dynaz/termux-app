@@ -292,6 +292,7 @@
     <string name="terminow_host_action_edit">Edit host</string>
     <string name="terminow_host_action_duplicate">Duplicate host</string>
     <string name="terminow_host_action_delete">Delete host</string>
+    <string name="terminow_host_action_capture">Packet capture</string>
     <string name="terminow_host_delete_title">Delete “%1$s”?</string>
     <string name="terminow_host_delete_message">This removes the saved connection from TermiNow. The server itself is not affected.</string>
     <!-- Terminal history search. -->

@@ -72,4 +72,16 @@
     <string name="terminow_cap_clear">ล้าง</string>
     <string name="terminow_cap_log_empty">ผลลัพธ์จะปรากฏที่นี่</string>
     <string name="terminow_cap_deferred">ยังไม่มีตัวแสดงแพ็กเก็ตในแอป การวิเคราะห์ทำผ่าน TShark และ Wireshark</string>
+    <string name="terminow_cap_target_env">สภาพแวดล้อม: %1$s</string>
+    <string name="terminow_cap_target_host">โฮสต์: %1$s (ผ่าน SSH)</string>
+    <string name="terminow_cap_checking_priv">กำลังตรวจสอบสิทธิ์การจับ…</string>
+    <string name="terminow_cap_denied_local">สภาพแวดล้อมนี้ทำงานเป็น root ภายใน PRoot แต่เคอร์เนลของ Android ไม่ได้ให้สิทธิ์เข้าถึงแพ็กเก็ตดิบ (CAP_NET_RAW) จึงไม่สามารถจับแบบสดที่นี่ได้ คุณยังวิเคราะห์ไฟล์ .pcap ได้ในแท็บวิเคราะห์ หรือจับบนโฮสต์ Linux ระยะไกลจาก โฮสต์ → จับแพ็กเก็ต</string>
+    <string name="terminow_cap_denied_remote">โฮสต์นี้ปฏิเสธการจับแพ็กเก็ตดิบสำหรับผู้ใช้นี้ (CAP_NET_RAW) การจับมักต้องใช้บัญชีที่มีสิทธิ์บนโฮสต์ TermiNow จะไม่เปลี่ยนสิทธิ์หรือติดตั้งสิ่งใด โปรดสอบถามผู้ดูแลโฮสต์ หรือวิเคราะห์ไฟล์ .pcap ที่มีอยู่ในแท็บวิเคราะห์</string>
+    <string name="terminow_cap_nodev">ไม่พบอินเทอร์เฟซนั้นระหว่างการตรวจสอบ กรอกอินเทอร์เฟซที่มีอยู่ที่นี่ (เช่น eth0 หรือ wlan0) หรือปล่อยเป็น \"any\"</string>
+    <string name="terminow_cap_download">ดาวน์โหลดลงอุปกรณ์</string>
+    <string name="terminow_cap_downloading">กำลังดาวน์โหลดการจับผ่าน SFTP…</string>
+    <string name="terminow_cap_download_done">ดาวน์โหลดไปที่ %1$s</string>
+    <string name="terminow_cap_download_failed">ดาวน์โหลดไม่สำเร็จ ไฟล์การจับบนโฮสต์ยังถูกเก็บไว้ ดูบันทึก</string>
+    <string name="terminow_host_action_capture">จับแพ็กเก็ต</string>
+    <string name="terminow_tools_security_heading">ความปลอดภัย · %1$s</string>
 </resources>

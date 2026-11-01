@@ -129,4 +129,33 @@ public class TerminowCaptureTest {
         assertEquals("'a'", TerminowCapture.sq("a"));
         assertEquals("'a'\\''b'", TerminowCapture.sq("a'b"));
     }
+
+    @Test
+    public void capturePrivilegeIsParsedFromTheProbeMarker() {
+        assertEquals(TerminowCapture.CapturePrivilege.OK,
+            TerminowCapture.parseCapturePrivilege("TERMINOW_CAP_PRIV=ok\nTERMINOW_CAP_DETAIL=\n"));
+        assertEquals(TerminowCapture.CapturePrivilege.DENIED,
+            TerminowCapture.parseCapturePrivilege("TERMINOW_CAP_PRIV=denied\nTERMINOW_CAP_DETAIL=tcpdump: eth0: Operation not permitted\n"));
+        assertEquals(TerminowCapture.CapturePrivilege.NO_DEVICE,
+            TerminowCapture.parseCapturePrivilege("TERMINOW_CAP_PRIV=nodev\n"));
+        assertEquals(TerminowCapture.CapturePrivilege.NO_TCPDUMP,
+            TerminowCapture.parseCapturePrivilege("TERMINOW_CAP_PRIV=notcpdump\n"));
+        assertEquals(TerminowCapture.CapturePrivilege.UNKNOWN,
+            TerminowCapture.parseCapturePrivilege("TERMINOW_CAP_PRIV=weird\n"));
+        // No marker at all (e.g. the command never ran) is UNKNOWN, never a false OK.
+        assertEquals(TerminowCapture.CapturePrivilege.UNKNOWN,
+            TerminowCapture.parseCapturePrivilege("bash: tcpdump: command not found\n"));
+    }
+
+    @Test
+    public void probeDetailIsExtractedAndProbeScriptIsBounded() {
+        assertEquals("tcpdump: eth0: Operation not permitted",
+            TerminowCapture.parseProbeDetail("TERMINOW_CAP_PRIV=denied\nTERMINOW_CAP_DETAIL=tcpdump: eth0: Operation not permitted\n"));
+        String script = TerminowCapture.probeScript("eth0");
+        assertTrue("probe is bounded by timeout", script.contains("timeout 5 tcpdump"));
+        assertTrue("probe writes nothing real", script.contains("-w /dev/null"));
+        assertTrue("probe uses the validated interface", script.contains("-i eth0"));
+        // An invalid interface can never be embedded: it falls back to 'any'.
+        assertTrue(TerminowCapture.probeScript("a; rm -rf /").contains("-i any"));
+    }
 }

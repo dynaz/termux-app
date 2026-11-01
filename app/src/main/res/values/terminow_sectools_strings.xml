@@ -72,4 +72,15 @@
     <string name="terminow_cap_clear">Clear</string>
     <string name="terminow_cap_log_empty">Output appears here.</string>
     <string name="terminow_cap_deferred">An in-app packet viewer is not included yet; analysis is through TShark and Wireshark.</string>
+    <string name="terminow_cap_target_env">Environment: %1$s</string>
+    <string name="terminow_cap_target_host">Host: %1$s (over SSH)</string>
+    <string name="terminow_cap_checking_priv">Checking capture privileges…</string>
+    <string name="terminow_cap_denied_local">This environment runs as root inside PRoot, but the Android kernel does not grant it raw-packet (CAP_NET_RAW) access, so live capture here is not possible. You can still analyse a .pcap file in Analyse, or run a capture on a remote Linux host from Hosts → Packet capture.</string>
+    <string name="terminow_cap_denied_remote">This host denied raw-packet capture for this user (CAP_NET_RAW). Capture usually needs a privileged account on the host. TermiNow will not change permissions or install anything; ask the host administrator, or analyse an existing .pcap in Analyse.</string>
+    <string name="terminow_cap_nodev">That interface was not found during the check. Enter an interface that exists here (for example eth0 or wlan0), or leave it as \"any\".</string>
+    <string name="terminow_cap_download">Download to device</string>
+    <string name="terminow_cap_downloading">Downloading capture over SFTP…</string>
+    <string name="terminow_cap_download_done">Downloaded to %1$s</string>
+    <string name="terminow_cap_download_failed">Download failed. The remote capture is kept; see the log.</string>
+    <string name="terminow_tools_security_heading">Security · %1$s</string>
 </resources>

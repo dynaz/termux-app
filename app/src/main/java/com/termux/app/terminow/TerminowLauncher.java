@@ -523,6 +523,13 @@ public class TerminowLauncher {
         mCaptureSheet.show(environment.key, getUser(environment));
     }
 
+    /** Open the Packet capture screen for a saved SSH host: capture runs on the host over its own connection. */
+    void showRemoteCapture(@NonNull TerminowStore.Host host) {
+        if (mRemoteTools == null) mRemoteTools = new TerminowRemoteTools(mActivity, mStore);
+        if (mCaptureSheet == null) mCaptureSheet = new TerminowCaptureSheet(mActivity, mTargets.getPrefixDir());
+        mCaptureSheet.showRemote(host, mRemoteTools);
+    }
+
     /** Install tools into the environment of the tab, as its user. */
     void showInstallTools() {
         TerminalSession session = mActivity.getCurrentSession();

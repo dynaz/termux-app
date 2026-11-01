@@ -443,10 +443,49 @@ final class TerminowToolSheet {
         content.addView(mList, matchWrap());
         populateList(target);
 
+        addSecuritySection(content, target);
+
         TextView footer = note(mActivity.getString(mDetection != null && mDetection.isRoot() ? R.string.terminow_install_note_root :
             R.string.terminow_install_note_user, targetName(target, false), target.user));
         footer.setPadding(dp(4), dp(12), dp(4), 0);
         content.addView(footer, matchWrap());
+    }
+
+    /**
+     * A small Security section so the Security tools and Packet capture screens are discoverable from
+     * the Tools Library, not only the terminal overflow menu. For a local Linux environment both open
+     * for that environment; for an SSH host only Packet capture is offered (it runs over the host's own
+     * connection). The label names the selected environment so the destination is never ambiguous.
+     */
+    private void addSecuritySection(@NonNull LinearLayout content, @NonNull Target target) {
+        boolean localDistro = !target.ssh && target.environment != null && !target.environment.isLocal();
+        boolean sshHost = target.ssh && target.host != null;
+        if (!localDistro && !sshHost) return;
+
+        TextView heading = note(mActivity.getString(R.string.terminow_tools_security_heading, targetName(target, false)));
+        heading.setPadding(dp(4), dp(14), dp(4), dp(2));
+        content.addView(heading, matchWrap());
+
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        if (localDistro) {
+            final TerminowLauncher.Environment env = target.environment;
+            row.addView(button(mActivity.getString(R.string.terminow_sec_title), false, true, () -> {
+                dismiss();
+                mLauncher.showSecurityTools(env);
+            }));
+            row.addView(button(mActivity.getString(R.string.terminow_cap_title), false, true, () -> {
+                dismiss();
+                mLauncher.showPacketCapture(env);
+            }));
+        } else {
+            final TerminowStore.Host host = target.host;
+            row.addView(button(mActivity.getString(R.string.terminow_cap_title), false, true, () -> {
+                dismiss();
+                mLauncher.showRemoteCapture(host);
+            }));
+        }
+        content.addView(row, matchWrap());
     }
 
     /** The My tools / Discover tabs, the search box, and — in Discover — the category chips and From GitHub. */

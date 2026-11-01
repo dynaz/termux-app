@@ -2032,7 +2032,10 @@ public class TerminowHome {
         final android.graphics.drawable.Drawable previousBackground = anchor != null ? anchor.getBackground() : null;
         if (anchor != null) anchor.setBackgroundResource(R.drawable.terminow_card_selected);
 
-        TerminowHostActionMenu.show(mActivity, anchor, title, subtitle, new TerminowHostActionMenu.Callbacks() {
+        // Packet capture runs over the host's SSH connection (SFTP for download), so it is offered only
+        // for an SSH host — not telnet, RDP, WinRM or VNC.
+        boolean canCapture = host.isTerminal() && !host.telnet;
+        TerminowHostActionMenu.show(mActivity, anchor, title, subtitle, canCapture, new TerminowHostActionMenu.Callbacks() {
             @Override public void onEdit() {
                 TerminowStore.Host h = hostByUuid(uuid);
                 if (h != null) showHostDialog(h);
@@ -2044,6 +2047,10 @@ public class TerminowHome {
             @Override public void onDelete() {
                 TerminowStore.Host h = hostByUuid(uuid);
                 if (h != null) confirmDeleteHost(h);
+            }
+            @Override public void onPacketCapture() {
+                TerminowStore.Host h = hostByUuid(uuid);
+                if (h != null) mLauncher.showRemoteCapture(h);
             }
         }, () -> { if (anchor != null) anchor.setBackground(previousBackground); });
     }

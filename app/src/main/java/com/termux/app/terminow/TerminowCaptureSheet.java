@@ -60,7 +60,10 @@ public final class TerminowCaptureSheet {
 
     private final TermuxActivity mActivity;
     private final File mPrefixDir;
-    private final TerminowToolInstaller.Runner mRunner;
+    /** The local proot runner, used when the target is a Linux environment on the device. */
+    private final TerminowToolInstaller.Runner mLocalRunner;
+    /** The runner in effect for the open target — local proot, or a host's SSH exec channel. */
+    private TerminowToolInstaller.Runner mRunner;
     private final Handler mHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService mExecutor = Executors.newSingleThreadExecutor();
 
@@ -77,11 +80,21 @@ public final class TerminowCaptureSheet {
     private String mExportFormat = "fields";
     @Nullable private String mLastCapture;
 
+    /** Set when the target is a saved SSH host rather than a local environment. */
+    private boolean mRemote;
+    @Nullable private TerminowStore.Host mHost;
+    @Nullable private TerminowRemoteTools mRemoteTools;
+    /** The last remote capture downloaded to the device, for the status line. */
+    @Nullable private String mDownloadedLocalPath;
+
     /** A running capture or analysis process, or null; only one runs at a time. */
     @Nullable private volatile Process mRun;
     private volatile boolean mBusy;
     /** null = not checked yet; true/false once the environment has been probed. */
     @Nullable private Boolean mHasTcpdump, mHasTshark, mHasWireshark, mHasDisplay;
+    /** Whether live capture can actually work here (not merely whether uid is 0); null until probed. */
+    @Nullable private TerminowCapture.CapturePrivilege mPrivilege;
+    private String mProbeDetail = "";
 
     // Capture form fields (kept so a mode switch preserves typed values).
     private String mIface = "any", mFilter = "", mDuration = "60", mSize = "10", mAnalyzeFile = "", mDisplayFilter = "";
@@ -93,14 +106,43 @@ public final class TerminowCaptureSheet {
         mPrefixDir = prefixDir;
         TerminowClaudeSetup setup = new TerminowClaudeSetup(activity, new TerminowMcpTargets(prefixDir,
             new File(TermuxConstants.TERMUX_HOME_DIR_PATH)));
-        mRunner = (alias, user, script, args) -> setup.start(TerminowToolInstaller.command(prefixDir, alias, user, script, args));
+        mLocalRunner = (alias, user, script, args) -> setup.start(TerminowToolInstaller.command(prefixDir, alias, user, script, args));
+        mRunner = mLocalRunner;
     }
 
-    /** Open for an environment as a user (root unless the environment names another). */
+    /** Open for a local Linux environment as a user (root unless the environment names another). */
     public void show(@NonNull String alias, @NonNull String user) {
+        mRemote = false;
+        mHost = null;
+        mRemoteTools = null;
+        mRunner = mLocalRunner;
         mAlias = alias;
         mUser = USER.matcher(user).matches() ? user : "root";
+        resetProbe();
         open();
+    }
+
+    /**
+     * Open for a saved SSH host: capture and analysis run on the host over its own SSH exec channel
+     * (the same connection the File Manager and remote tools use), and a finished capture can be
+     * downloaded to the device over SFTP. The remote capture file is never deleted or modified.
+     */
+    public void showRemote(@NonNull TerminowStore.Host host, @NonNull TerminowRemoteTools remoteTools) {
+        mRemote = true;
+        mHost = host;
+        mRemoteTools = remoteTools;
+        mRunner = remoteTools.runnerFor(host);
+        mAlias = TerminowRemoteTools.aliasOf(host);
+        mUser = host.username == null || host.username.isEmpty() ? "root" : host.username;
+        mDownloadedLocalPath = null;
+        resetProbe();
+        open();
+    }
+
+    private void resetProbe() {
+        mHasTcpdump = mHasTshark = mHasWireshark = mHasDisplay = null;
+        mPrivilege = null;
+        mProbeDetail = "";
     }
 
     // ---------------------------------------------------------------------------------------
@@ -149,6 +191,12 @@ public final class TerminowCaptureSheet {
         info.setOnClickListener(v -> showInfo());
         titleRow.addView(info);
         sheet.addView(titleRow, matchWrap());
+
+        // Make plain which environment the capture runs in, and (for a host) over which connection.
+        TextView target = text(mActivity.getString(mRemote ? R.string.terminow_cap_target_host : R.string.terminow_cap_target_env, targetLabel()),
+            12, R.color.terminow_text_secondary);
+        target.setPadding(0, 0, 0, dp(4));
+        sheet.addView(target, matchWrap());
 
         sheet.addView(modeChips(), matchWrap());
 
@@ -279,8 +327,23 @@ public final class TerminowCaptureSheet {
     }
 
     private void renderCapture(@NonNull LinearLayout form) {
-        if (Boolean.FALSE.equals(mHasTcpdump))
+        boolean canStart = true;
+        if (Boolean.FALSE.equals(mHasTcpdump)) {
             form.addView(hint(mActivity.getString(R.string.terminow_cap_need_tcpdump)), matchWrap());
+            canStart = false;
+        } else if (mPrivilege == TerminowCapture.CapturePrivilege.DENIED) {
+            // uid may be 0, but the kernel still denies CAP_NET_RAW to a PRoot guest. Say so plainly and
+            // point at the ways that do work: capture on a real SSH host, or analyse an existing .pcap.
+            String detail = mProbeDetail.isEmpty() ? "" : "\n\n" + mProbeDetail;
+            form.addView(hint(mActivity.getString(mRemote ? R.string.terminow_cap_denied_remote : R.string.terminow_cap_denied_local) + detail), matchWrap());
+            canStart = false;
+        } else if (mPrivilege == TerminowCapture.CapturePrivilege.NO_DEVICE) {
+            form.addView(hint(mActivity.getString(R.string.terminow_cap_nodev)), matchWrap());
+            // An interface typo is recoverable, so Start stays enabled to let another interface be tried.
+        } else if (mPrivilege == null && !Boolean.FALSE.equals(mHasTcpdump)) {
+            form.addView(hint(mActivity.getString(R.string.terminow_cap_checking_priv)), matchWrap());
+        }
+
         EditText iface = field(R.string.terminow_cap_iface, R.string.terminow_cap_iface_hint, mIface, InputType.TYPE_CLASS_TEXT, form);
         EditText filter = field(R.string.terminow_cap_filter, R.string.terminow_cap_filter_hint, mFilter, InputType.TYPE_CLASS_TEXT, form);
         EditText duration = field(R.string.terminow_cap_duration, 0, mDuration, InputType.TYPE_CLASS_NUMBER, form);
@@ -293,13 +356,21 @@ public final class TerminowCaptureSheet {
         actions.setPadding(0, dp(6), 0, 0);
         if (mBusy) {
             actions.addView(textButton(mActivity.getString(R.string.terminow_cap_stop), true, this::stopRun));
-        } else {
+        } else if (canStart) {
             boolean locked = !TerminowAccountUi.isPremium(new TerminowStore(mActivity));
             actions.addView(textButton(mActivity.getString(locked ? R.string.terminow_cap_start_premium : R.string.terminow_cap_start), true,
                 () -> startCapture(iface.getText().toString(), filter.getText().toString(),
                     duration.getText().toString(), size.getText().toString())));
         }
         form.addView(actions, matchWrap());
+
+        // In remote mode, a finished capture can be pulled to the device over SFTP (the remote file is
+        // preserved). Offer it whenever a capture path is known and nothing is currently running.
+        if (mRemote && mLastCapture != null && !mBusy) {
+            final String capturePath = mLastCapture;
+            form.addView(textButton(mActivity.getString(R.string.terminow_cap_download), false,
+                () -> downloadRemoteCapture(capturePath)), matchWrap());
+        }
     }
 
     private void renderAnalyze(@NonNull LinearLayout form) {
@@ -465,6 +536,34 @@ public final class TerminowCaptureSheet {
         return true;
     }
 
+    /**
+     * Pull a remote capture to the device over SFTP (reconnecting the host if its channel dropped).
+     * The remote file is left in place — preserved before and after the download succeeds.
+     */
+    private void downloadRemoteCapture(@NonNull String remotePath) {
+        TerminowRemoteTools tools = mRemoteTools;
+        TerminowStore.Host host = mHost;
+        if (!mRemote || tools == null || host == null) return;
+        if (!TerminowCapture.isValidCapturePath(remotePath)) { toast(R.string.terminow_cap_bad_file); return; }
+        if (mBusy) { toast(R.string.terminow_cap_running_other); return; }
+        mBusy = true;
+        setStatus(mActivity.getString(R.string.terminow_cap_downloading));
+        render();
+        mExecutor.execute(() -> {
+            String message;
+            try {
+                File local = tools.downloadCapture(host, remotePath);
+                mDownloadedLocalPath = local.getAbsolutePath();
+                message = mActivity.getString(R.string.terminow_cap_download_done, mDownloadedLocalPath);
+            } catch (IOException | RuntimeException e) {
+                appendLine("download error: " + e.getMessage());
+                message = mActivity.getString(R.string.terminow_cap_download_failed);
+            }
+            final String done = message;
+            mHandler.post(() -> { mBusy = false; setStatus(done); render(); });
+        });
+    }
+
     private void stopRun() {
         Process run = mRun;
         if (run != null) run.destroy();
@@ -585,15 +684,48 @@ public final class TerminowCaptureSheet {
         mExecutor.execute(() -> {
             Map<String, String> found = TerminowSecurityTools.detect(mRunner, alias, user);
             boolean display = probeDisplay(alias, user);
+            // Only probe capture privilege when tcpdump is present (no point otherwise); this is what
+            // distinguishes a real capture capability from merely running as uid 0 inside a PRoot guest.
+            TerminowCapture.CapturePrivilege privilege = null;
+            String probeDetail = "";
+            if (found.containsKey("tcpdump")) {
+                String probe = runProbe(alias, user);
+                privilege = TerminowCapture.parseCapturePrivilege(probe);
+                probeDetail = TerminowCapture.parseProbeDetail(probe);
+            }
+            final TerminowCapture.CapturePrivilege priv = privilege;
+            final String detail = probeDetail;
             mHandler.post(() -> {
                 if (!alias.equals(mAlias)) return;
                 mHasTcpdump = found.containsKey("tcpdump");
                 mHasTshark = found.containsKey("tshark");
                 mHasWireshark = found.containsKey("wireshark");
                 mHasDisplay = display;
+                mPrivilege = priv;
+                mProbeDetail = detail;
                 if (mDialog != null) render();
             });
         });
+    }
+
+    /** Run the capture-privilege probe once and return its full output (empty on any failure). */
+    @NonNull
+    private String runProbe(@NonNull String alias, @NonNull String user) {
+        try {
+            Process p = mRunner.start(alias, user, TerminowCapture.probeScript(mIface));
+            StringBuilder out = new StringBuilder();
+            Thread err = new Thread(() -> drainQuiet(p.getErrorStream()));
+            err.setDaemon(true);
+            err.start();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) out.append(line).append('\n');
+            }
+            if (!p.waitFor(12, java.util.concurrent.TimeUnit.SECONDS)) { p.destroy(); return out.toString(); }
+            return out.toString();
+        } catch (IOException | RuntimeException | InterruptedException e) {
+            return "";
+        }
     }
 
     private boolean probeDisplay(@NonNull String alias, @NonNull String user) {
@@ -638,6 +770,11 @@ public final class TerminowCaptureSheet {
         args[0] = first;
         for (int i = 0; i < rest.size(); i++) args[i + 1] = rest.get(i);
         return args;
+    }
+
+    private String targetLabel() {
+        if (mRemote && mHost != null) return mHost.getTitle() + " · " + mUser;
+        return mAlias + " · " + mUser;
     }
 
     /** The captures directory for the current user inside the environment. */
