@@ -23,6 +23,11 @@ public final class TerminowAwsSigV4 {
     private static final String ALGORITHM = "AWS4-HMAC-SHA256";
     private static final String TERMINATOR = "aws4_request";
 
+    /** For S3 uploads: stream the body without pre-hashing it (valid over HTTPS). */
+    public static final String UNSIGNED_PAYLOAD = "UNSIGNED-PAYLOAD";
+    /** SHA-256 of the empty string, the payload hash for a request with no body (GET/DELETE/LIST). */
+    public static final String EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
     private TerminowAwsSigV4() {}
 
     /**
@@ -36,6 +41,22 @@ public final class TerminowAwsSigV4 {
                                        @NonNull Map<String, String> headers, @NonNull String payload,
                                        @NonNull String accessKey, @NonNull String secretKey,
                                        @NonNull String amzDate, @NonNull String dateStamp) {
+        return authorizationWithHash(method, service, region, canonicalUri, canonicalQuery, headers,
+            sha256Hex(payload), accessKey, secretKey, amzDate, dateStamp);
+    }
+
+    /**
+     * Like {@link #authorization} but the payload is already hashed (its {@code x-amz-content-sha256}
+     * value), so S3 can pass {@link #UNSIGNED_PAYLOAD} or {@link #EMPTY_SHA256} without a raw body.
+     * {@code headers} must already contain {@code x-amz-content-sha256} equal to {@code payloadHash}
+     * so it is signed.
+     */
+    @NonNull
+    public static String authorizationWithHash(@NonNull String method, @NonNull String service, @NonNull String region,
+                                                @NonNull String canonicalUri, @NonNull String canonicalQuery,
+                                                @NonNull Map<String, String> headers, @NonNull String payloadHash,
+                                                @NonNull String accessKey, @NonNull String secretKey,
+                                                @NonNull String amzDate, @NonNull String dateStamp) {
         // Canonical headers, sorted by lower-cased name.
         TreeMap<String, String> sorted = new TreeMap<>();
         for (Map.Entry<String, String> e : headers.entrySet())
@@ -50,7 +71,7 @@ public final class TerminowAwsSigV4 {
         }
 
         String canonicalRequest = method + '\n' + canonicalUri + '\n' + canonicalQuery + '\n'
-            + canonicalHeaders + '\n' + signedHeaders + '\n' + sha256Hex(payload);
+            + canonicalHeaders + '\n' + signedHeaders + '\n' + payloadHash;
 
         String credentialScope = dateStamp + '/' + region + '/' + service + '/' + TERMINATOR;
         String stringToSign = ALGORITHM + '\n' + amzDate + '\n' + credentialScope + '\n' + sha256Hex(canonicalRequest);
@@ -88,6 +109,25 @@ public final class TerminowAwsSigV4 {
         } catch (Exception e) {
             throw new IllegalStateException("SHA-256 is unavailable", e);
         }
+    }
+
+    /** RFC 3986 encoding. When {@code encodeSlash} is false, '/' is kept (for a canonical URI path). */
+    @NonNull
+    public static String uriEncode(@NonNull String value, boolean encodeSlash) {
+        StringBuilder out = new StringBuilder();
+        for (byte b : value.getBytes(StandardCharsets.UTF_8)) {
+            char c = (char) (b & 0xff);
+            if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+                || c == '-' || c == '.' || c == '_' || c == '~') {
+                out.append(c);
+            } else if (c == '/' && !encodeSlash) {
+                out.append('/');
+            } else {
+                out.append('%').append(Character.toUpperCase(Character.forDigit((b >> 4) & 0xf, 16)))
+                   .append(Character.toUpperCase(Character.forDigit(b & 0xf, 16)));
+            }
+        }
+        return out.toString();
     }
 
     @NonNull
