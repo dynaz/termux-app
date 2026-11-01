@@ -141,4 +141,8 @@
     <string name="terminow_backup_encrypt_show">Show password</string>
     <string name="terminow_backup_encrypt_restore_title">Encrypted backup</string>
     <string name="terminow_backup_encrypt_restore_message">“%1$s” is encrypted. Enter its password to read and restore it.</string>
+
+    <!-- Scheduled backups -->
+    <string name="terminow_backup_schedule_channel">Scheduled backups</string>
+    <string name="terminow_backup_schedule_notification_title">TermiNow backup</string>
 </resources>

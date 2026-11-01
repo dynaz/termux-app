@@ -19,6 +19,9 @@ final class TerminowBackupSchedule {
     enum Frequency { DAILY, WEEKLY }
 
     boolean enabled = false;
+    /** Which environment to back up, and whether a full backup (vs its home folder). */
+    String alias = "";
+    boolean full = true;
     Frequency frequency = Frequency.DAILY;
     int hour = 2;                       // 02:00 by default, a quiet hour
     int minute = 0;
@@ -38,6 +41,8 @@ final class TerminowBackupSchedule {
     JSONObject toJson() throws JSONException {
         JSONObject o = new JSONObject();
         o.put("enabled", enabled);
+        o.put("alias", alias);
+        o.put("full", full);
         o.put("frequency", frequency.name());
         o.put("hour", hour);
         o.put("minute", minute);
@@ -59,6 +64,8 @@ final class TerminowBackupSchedule {
         try {
             JSONObject o = new JSONObject(json);
             s.enabled = o.optBoolean("enabled", false);
+            s.alias = o.optString("alias", "");
+            s.full = o.optBoolean("full", true);
             try { s.frequency = Frequency.valueOf(o.optString("frequency", "DAILY")); } catch (IllegalArgumentException ignored) {}
             s.hour = clamp(o.optInt("hour", 2), 0, 23);
             s.minute = clamp(o.optInt("minute", 0), 0, 59);

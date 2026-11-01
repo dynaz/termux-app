@@ -20,6 +20,8 @@ final class TerminowS3Config {
     String accessKey = "";
     String secretKey = "";
     boolean pathStyle = true;   // on by default: works with MinIO/B2/Wasabi, and with AWS too
+    /** Optional: when set, scheduled backups to this destination are encrypted with this password. */
+    String encryptionPassword = "";
 
     boolean isComplete() {
         return !endpoint.trim().isEmpty() && !region.trim().isEmpty() && !bucket.trim().isEmpty()
@@ -47,6 +49,7 @@ final class TerminowS3Config {
         o.put("accessKey", accessKey);
         o.put("secretKey", secretKey);
         o.put("pathStyle", pathStyle);
+        o.put("encryptionPassword", encryptionPassword);
         return o;
     }
 
@@ -62,6 +65,7 @@ final class TerminowS3Config {
             c.accessKey = o.optString("accessKey", "");
             c.secretKey = o.optString("secretKey", "");
             c.pathStyle = o.optBoolean("pathStyle", true);
+            c.encryptionPassword = o.optString("encryptionPassword", "");
         } catch (JSONException ignored) {
             // A corrupt value leaves an empty, incomplete config.
         }

@@ -124,6 +124,27 @@ public class TerminowBackupPolicyTest {
     }
 
     @Test
+    public void distroActiveStateUsesTheRegisteredCheck() {
+        TerminowDistroState.setCheck(null);
+        assertFalse("no check registered -> not known active", TerminowDistroState.isActive("ubuntu"));
+        java.util.Set<String> active = new java.util.HashSet<>(Arrays.asList("ubuntu"));
+        TerminowDistroState.setCheck(active::contains);
+        assertTrue(TerminowDistroState.isActive("ubuntu"));
+        assertFalse(TerminowDistroState.isActive("debian"));
+        assertFalse("empty alias is never active", TerminowDistroState.isActive(""));
+        TerminowDistroState.setCheck(null);
+    }
+
+    @Test
+    public void scheduleKeepsItsTargetEnvironment() throws Exception {
+        TerminowBackupSchedule s = new TerminowBackupSchedule();
+        s.alias = "ubuntu"; s.full = false;
+        TerminowBackupSchedule back = TerminowBackupSchedule.fromJson(s.toJson().toString());
+        assertEquals("ubuntu", back.alias);
+        assertFalse(back.full);
+    }
+
+    @Test
     public void retentionNeverDeletesEverythingOnABadRetain() {
         List<TerminowBackupProvider.Remote> list = new ArrayList<>(Arrays.asList(
             r("terminow-backups/u/1", 1000), r("terminow-backups/u/2", 2000)));

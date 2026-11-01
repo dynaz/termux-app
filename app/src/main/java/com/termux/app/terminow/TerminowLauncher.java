@@ -263,6 +263,8 @@ public class TerminowLauncher {
         mEnvironmentKey = getPrefs().optString("environment", TerminowMcpTargets.TARGET_TERMINOW);
         mProfiles = new TerminowLaunchProfilesUi(activity, store, this);
         mPicker = new TerminowSessionPicker(activity, store, this);
+        // So a background scheduled backup can skip an environment that has live sessions.
+        TerminowDistroState.setCheck(alias -> !sessionsOf(alias).isEmpty());
     }
 
     /** The registry of Linux environments, for their names, users, folders and shared folders. */
