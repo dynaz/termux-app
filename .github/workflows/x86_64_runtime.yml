@@ -1,0 +1,82 @@
+name: x86_64 runtime validation
+
+# Deeper x86_64 validation beyond the smoke test: boots a hardware-accelerated x86_64 Android
+# emulator on a GitHub x86_64 runner, installs the x86_64 debug APK, and runs
+# .github/scripts/x86_64_runtime.sh against the extracted bootstrap: shell command execution,
+# pkg/apt update + package install, concurrent shell sessions, SSH over the loopback, the AI Bridge
+# runtime (node), and Ubuntu through proot-distro (install, login, networking, restart). The shell
+# and pkg/apt checks gate the job; the rest are reported with their output as evidence. Needs x86_64
+# enabled in app/terminow-bootstrap.properties so the x86_64 APK can build.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch or ref to build and test"
+        default: x86_64-bootstrap-enable
+
+permissions:
+  contents: read
+
+jobs:
+  runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      TERMUX_PACKAGE_VARIANT: apt-android-7
+    steps:
+      - name: Verify runner and KVM
+        run: |
+          echo "Runner arch: $(uname -m), CPUs: $(nproc)"
+          if [ -e /dev/kvm ]; then ls -la /dev/kvm; else
+            echo "::error::/dev/kvm is absent: a hardware-accelerated x86_64 emulator cannot run on this runner."
+            exit 1
+          fi
+
+      - name: Enable KVM access
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Build x86_64 debug APK
+        run: |
+          ./gradlew :app:assembleFullDebug
+          APK="$(find app/build/outputs/apk -name '*_x86_64.apk' | head -1)"
+          if [ -z "$APK" ]; then
+            echo "::error::No x86_64 APK built. Is x86_64 enabled in app/terminow-bootstrap.properties? Built: $(find app/build/outputs/apk -name '*.apk')"
+            exit 1
+          fi
+          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
+          echo "Built $APK"
+
+      - name: Run x86_64 runtime validation on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 24
+          arch: x86_64
+          target: default
+          force-avd-creation: true
+          disable-animations: true
+          emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu swiftshader_indirect -camera-back none -camera-front none
+          script: bash .github/scripts/x86_64_runtime.sh "$APK_PATH"
+
+      - name: Upload runtime logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: x86_64-runtime-logs
+          path: |
+            runtime.txt
+            logcat.txt
+          if-no-files-found: ignore
