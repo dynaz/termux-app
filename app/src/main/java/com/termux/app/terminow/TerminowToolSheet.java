@@ -871,7 +871,8 @@ final class TerminowToolSheet {
         final String envLabel = target.environment.label;
         final String user = target.user;
         LinearLayout card = new LinearLayout(mActivity);
-        card.setOrientation(LinearLayout.VERTICAL);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
         GradientDrawable bg = new GradientDrawable();
         bg.setCornerRadius(dp(12));
         bg.setColor(color(R.color.terminow_field));
@@ -883,12 +884,22 @@ final class TerminowToolSheet {
             TerminowHome home = mActivity.getTerminowHome();
             if (home == null) return;
             new TerminowAiBridgeSheet(mActivity, home.getAiBridge(), home.getStore())
+                .onChooseHosts(home::showAiHosts)
                 .open(envKey, user, envLabel, mActivity.getString(R.string.terminow_install_title), "", "");
         });
+        // The AI Bridge shield (its own dark backdrop, so no tile behind it).
+        ImageView icon = new ImageView(mActivity);
+        icon.setImageResource(R.drawable.ic_terminow_ai);
+        icon.setContentDescription(mActivity.getString(R.string.terminow_bridge_tool_name));
+        card.addView(icon, new LinearLayout.LayoutParams(dp(40), dp(40)));
+        LinearLayout texts = new LinearLayout(mActivity);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        texts.setPadding(dp(12), 0, 0, 0);
         TextView name = text(mActivity.getString(R.string.terminow_bridge_tool_name), 15, R.color.terminow_text);
         name.setTypeface(Typeface.DEFAULT_BOLD);
-        card.addView(name);
-        card.addView(text(mActivity.getString(R.string.terminow_bridge_tool_desc), 13, R.color.terminow_text_secondary));
+        texts.addView(name);
+        texts.addView(text(mActivity.getString(R.string.terminow_bridge_tool_desc), 13, R.color.terminow_text_secondary));
+        card.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         LinearLayout.LayoutParams lp = matchWrap();
         lp.bottomMargin = dp(8);
         parent.addView(card, lp);

@@ -159,7 +159,8 @@ public class SettingsActivity extends AppCompatActivity {
                 }
 
                 donatePreference.setOnPreferenceClickListener(preference -> {
-                    ShareUtils.openUrl(context, TermuxConstants.TERMUX_DONATE_URL);
+                    // TermiNow's own donate page, not Termux's.
+                    ShareUtils.openUrl(context, "https://terminow.online/donate");
                     return true;
                 });
             }
