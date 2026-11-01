@@ -176,6 +176,101 @@ public class TerminowToolInstallerTest {
     }
 
     @Test
+    public void openCodeIsVerifiedByPathWhenItsInstallerUsesItsOwnBinDir() throws Exception {
+        // OpenCode's installer hardcodes ~/.opencode/bin (not ~/.local/bin) and does not put it on a
+        // non-interactive shell's PATH, so the resolver must still find and verify the binary by path.
+        TerminowToolInstaller.Runner runner = environment("0", "none", "", "ok");
+        TerminowToolInstaller.Job job = installAndWait(runner, "root", TerminowToolInstaller.Tool.OPENCODE);
+        assertEquals(job.getLog(), TerminowToolInstaller.State.SUCCEEDED, job.getState());
+        assertFalse(job.wasAlreadyInstalled());
+        assertEquals("0.4.2", job.getVersion());
+        assertTrue(calls(), calls().contains("curl -fsSL https://opencode.ai/install"));
+        // The binary is where OpenCode's installer puts it, not ~/.local/bin.
+        assertTrue(new File(mDir, "home/.opencode/bin/opencode").exists());
+        assertFalse(new File(mDir, "home/.local/bin/opencode").exists());
+        assertTrue(job.getLog(), job.getLog().contains("/.opencode/bin/opencode"));
+    }
+
+    @Test
+    public void openCodeAlreadyThereButNotOnPathIsVerifiedWithoutReinstalling() throws Exception {
+        TerminowToolInstaller.Runner runner = environment("0", "none", "", "ok");
+        installAndWait(runner, "root", TerminowToolInstaller.Tool.OPENCODE);   // creates ~/.opencode/bin/opencode
+        new File(mDir, "calls").delete();                                       // forget what was downloaded
+        TerminowToolInstaller.forget("ubuntu", "root", TerminowToolInstaller.Tool.OPENCODE);
+        // Re-run (a Retry): the binary is present but not on this PATH — it must verify, not re-download.
+        TerminowToolInstaller.Job job = installAndWait(runner, "root", TerminowToolInstaller.Tool.OPENCODE);
+        assertEquals(job.getLog(), TerminowToolInstaller.State.SUCCEEDED, job.getState());
+        assertTrue(job.wasAlreadyInstalled());
+        assertEquals("0.4.2", job.getVersion());
+        assertEquals("nothing is re-downloaded on a PATH-only retry", "", calls());
+    }
+
+    /** Run a snippet after the resolver helpers in a plain /bin/sh with HOME set; returns stdout+rc. */
+    private String runResolver(String home, String snippet) throws Exception {
+        assumeTrue(new File("/bin/sh").exists());
+        File script = new File(temp.newFolder(), "resolver.sh");
+        Files.write(script.toPath(), (TerminowToolInstaller.RESOLVE_BIN + snippet).getBytes(StandardCharsets.UTF_8));
+        ProcessBuilder b = new ProcessBuilder("/bin/sh", script.getPath());
+        b.environment().put("HOME", home);
+        b.redirectErrorStream(true);
+        Process p = b.start();
+        String out = new String(readAll(p.getInputStream()), StandardCharsets.UTF_8);
+        assertTrue(p.waitFor(20, TimeUnit.SECONDS));
+        return out + "rc=" + p.exitValue();
+    }
+
+    @Test
+    public void resolveBinFindsABinaryOutsidePathAndPrintsItsAbsolutePath() throws Exception {
+        File home = temp.newFolder();
+        File dir = new File(home, ".opencode/bin");
+        assertTrue(dir.mkdirs());
+        File bin = new File(dir, "opencode");
+        Files.write(bin.toPath(), "#!/bin/sh\n".getBytes(StandardCharsets.UTF_8));
+        assertTrue(bin.setExecutable(true));
+        String out = runResolver(home.getPath(), "resolve_bin opencode; echo rc2=$?\n");
+        assertTrue(out, out.contains(bin.getPath()));
+        assertTrue(out, out.contains("rc2=0"));
+    }
+
+    @Test
+    public void resolveBinHonoursAnExplicitInstallDirFirst() throws Exception {
+        File home = temp.newFolder();
+        File custom = temp.newFolder();
+        File bin = new File(custom, "opencode");
+        Files.write(bin.toPath(), "#!/bin/sh\n".getBytes(StandardCharsets.UTF_8));
+        assertTrue(bin.setExecutable(true));
+        String out = runResolver(home.getPath(), "resolve_bin opencode '" + custom.getPath() + "'; echo rc2=$?\n");
+        assertTrue(out, out.contains(bin.getPath()));
+        assertTrue(out, out.contains("rc2=0"));
+    }
+
+    @Test
+    public void resolveBinReturnsNonZeroWhenTheExecutableIsMissing() throws Exception {
+        String out = runResolver(temp.newFolder().getPath(), "resolve_bin opencode; echo rc2=$?\n");
+        assertTrue(out, out.contains("rc2=1"));
+    }
+
+    @Test
+    public void addToPathDoesNotDuplicateADir() throws Exception {
+        String out = runResolver(temp.newFolder().getPath(), "PATH=/usr/bin; add_to_path /x; add_to_path /x; echo \"P=$PATH\"\n");
+        assertTrue(out, out.contains("P=/x:/usr/bin"));
+    }
+
+    @Test
+    public void stripAnsiRemovesColourAndCursorSequences() {
+        assertEquals("Installing opencode", TerminowToolInstaller.stripAnsi("\u001b[1;32mInstalling\u001b[0m opencode"));
+        assertEquals("done", TerminowToolInstaller.stripAnsi("\u001b[2K\u001b[Gdone"));
+        assertEquals("plain", TerminowToolInstaller.stripAnsi("plain"));
+    }
+
+    @Test
+    public void cleanLineKeepsOnlyTheLastStateOfCarriageReturnProgressAndStripsAnsi() {
+        assertEquals("100%", TerminowToolInstaller.cleanLine("10%\r50%\r100%"));
+        assertEquals("Downloading", TerminowToolInstaller.cleanLine("\u001b[36mDownloading\u001b[0m"));
+        assertEquals("ok", TerminowToolInstaller.cleanLine("busy\r\u001b[32mok\u001b[0m"));
+    }
+
+    @Test
     public void gstackAndPluginsNeedClaudeCode() throws Exception {
         TerminowToolInstaller.Runner runner = environment("0", "none", "", "ok");
         TerminowToolInstaller.Job gstack = installAndWait(runner, "root", TerminowToolInstaller.Tool.GSTACK);
@@ -358,7 +453,8 @@ public class TerminowToolInstallerTest {
         Process process = builder.start();
         String path = new String(readAll(process.getInputStream()), StandardCharsets.UTF_8).trim();
         assertTrue(process.waitFor(10, TimeUnit.SECONDS));
-        assertEquals("/home/u/.local/bin:/usr/local/bin:/usr/bin:/bin", path);
+        // The guest tool bin dirs are prepended and the /data (TermiNow host) folder is dropped.
+        assertEquals("/home/u/.local/bin:/home/u/.opencode/bin:/home/u/.bun/bin:/usr/local/bin:/usr/bin:/bin", path);
     }
 
     @Test

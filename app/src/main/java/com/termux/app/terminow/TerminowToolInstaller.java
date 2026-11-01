@@ -104,7 +104,7 @@ public final class TerminowToolInstaller {
 
     /** Why an install failed, from its TERMINOW_FAILED line, or how the process ended. */
     public enum Failure {
-        NO_APT, NO_SUDO, SUDO_PASSWORD, UNSUPPORTED_ARCH, NEEDS_CLAUDE, APT_UPDATE, APT_INSTALL, NETWORK, INSTALLER, PATH, VERIFY,
+        NO_APT, NO_SUDO, SUDO_PASSWORD, UNSUPPORTED_ARCH, NEEDS_CLAUDE, APT_UPDATE, APT_INSTALL, NETWORK, INSTALLER, PATH, VERIFY, NOT_FOUND,
         CANCELLED, START, EXIT;
 
         @NonNull
@@ -121,6 +121,7 @@ public final class TerminowToolInstaller {
                 case "installer": return INSTALLER;
                 case "path": return PATH;
                 case "verify": return VERIFY;
+                case "not-found": return NOT_FOUND;
                 default: return EXIT;
             }
         }
@@ -303,9 +304,19 @@ public final class TerminowToolInstaller {
      * of TermiNow (Android programs under /data) at the end, so without this, the git and curl of
      * TermiNow were reported as installed in Ubuntu, and were used, before Ubuntu had its own.
      */
+    /**
+     * The directories, under $HOME, where TermiNow's tool installers place executables, as a shell
+     * PATH fragment. Tools do not all install into ~/.local/bin: OpenCode's official installer
+     * hardcodes ~/.opencode/bin and adds it only to an interactive shell's .bashrc, so a
+     * non-interactive install/verify/launch shell never sees it. Prepending these dirs in one place
+     * lets detection, verification and launch find a tool wherever its installer put it. Keep in step
+     * with {@code resolve_bin} in {@link #RESOLVE_BIN}.
+     */
+    public static final String GUEST_BIN_DIRS = "$HOME/.local/bin:$HOME/.opencode/bin:$HOME/.bun/bin";
+
     static final String OWN_PATH =
         "p=; IFS=:; for d in $PATH; do case $d in /data/*) ;; *) p=\"$p${p:+:}$d\";; esac; done; unset IFS\n" +
-        "PATH=\"$HOME/.local/bin:$p\"; export PATH\n";
+        "PATH=\"" + GUEST_BIN_DIRS + ":$p\"; export PATH\n";
 
     /**
      * What the user has: its uid, the CPU, apt and sudo, and the version of each tool. Claude
@@ -343,6 +354,24 @@ public final class TerminowToolInstaller {
      * comes from its official installer. Plugins, the arguments after {@code plugins}, are
      * installed from the official marketplace with Claude Code, which is added if it is not there.
      */
+    /**
+     * Resolves an installed tool's executable to an absolute path, across the dirs TermiNow installers
+     * use ({@link #GUEST_BIN_DIRS}) and an optional explicit dir ($2), without trusting a login shell's
+     * PATH. {@code resolve_bin NAME [DIR]} prints the path and returns 0, or prints nothing and returns
+     * 1. {@code add_to_path DIR} prepends a dir to the current process PATH once. Part of
+     * {@link #INSTALL_SCRIPT}; exposed for {@code TerminowToolInstallerTest}.
+     */
+    static final String RESOLVE_BIN =
+        "add_to_path() { case \":$PATH:\" in *\":$1:\"*) ;; *) PATH=\"$1:$PATH\"; export PATH;; esac; }\n" +
+        "resolve_bin() {\n" +
+        "  for d in ${2:+\"$2\"} \"$HOME/.local/bin\" \"$HOME/.opencode/bin\" \"$HOME/.bun/bin\"; do\n" +
+        "    [ -x \"$d/$1\" ] && { printf '%s\\n' \"$d/$1\"; return 0; }\n" +
+        "  done\n" +
+        "  c=$(command -v \"$1\" 2>/dev/null) || c=\n" +
+        "  [ -n \"$c\" ] && [ -x \"$c\" ] && { printf '%s\\n' \"$c\"; return 0; }\n" +
+        "  return 1\n" +
+        "}\n";
+
     static final String INSTALL_SCRIPT =
         "stage() { echo \"TERMINOW_STAGE=$1\"; }\n" +
         "fail() { echo \"TERMINOW_FAILED=$1\"; exit \"${2:-1}\"; }\n" +
@@ -436,6 +465,7 @@ public final class TerminowToolInstaller {
         "  npm install -g \"$1\" || fail installer 36\n" +
         "}\n" +
         "native_arch() { case \"$(uname -m)\" in aarch64|arm64|x86_64|amd64) ;; *) fail unsupported-arch 15;; esac; }\n" +
+        RESOLVE_BIN +
         "case \"$tool\" in\n" +
         "  claude)\n" +
         "    if v=$(claude --version 2>/dev/null) && [ -n \"$v\" ]; then\n" +
@@ -491,20 +521,24 @@ public final class TerminowToolInstaller {
         "    [ -n \"$v\" ] || fail verify 30\n" +
         "    echo \"TERMINOW_VERSION=$(first \"$v\")\"\n" +
         "    ;;\n" +
-        // OpenCode, from its official install script, into ~/.local/bin
+        // OpenCode, from its official install script. Its installer hardcodes ~/.opencode/bin and adds
+        // it only to an interactive shell's .bashrc (OPENCODE_INSTALL_DIR is not honoured), so the
+        // binary is resolved by path, not by trusting `opencode` on this non-interactive PATH.
         "  opencode)\n" +
-        "    if v=$(opencode --version 2>/dev/null) && [ -n \"$v\" ]; then\n" +
-        "      echo TERMINOW_ALREADY=1; persist_path; stage verifying; echo \"TERMINOW_VERSION=$(first \"$v\")\"; exit 0\n" +
+        "    if oc=$(resolve_bin opencode \"$OPENCODE_INSTALL_DIR\") && v=$(\"$oc\" --version 2>/dev/null) && [ -n \"$v\" ]; then\n" +
+        "      echo TERMINOW_ALREADY=1; add_to_path \"$(dirname \"$oc\")\"; persist_path; stage verifying\n" +
+        "      echo \"TermiNow: found opencode at $oc\"; echo \"TERMINOW_VERSION=$(first \"$v\")\"; exit 0\n" +
         "    fi\n" +
         "    native_arch\n" +
         "    stage dependencies\n" +
         "    apt_install curl ca-certificates\n" +
         "    stage installing\n" +
-        "    export OPENCODE_INSTALL_DIR=\"$HOME/.local/bin\"\n" +
         "    run_installer https://opencode.ai/install\n" +
-        "    persist_path\n" +
         "    stage verifying\n" +
-        "    v=$(opencode --version 2>&1) || { echo \"$v\"; fail verify 30; }\n" +
+        "    oc=$(resolve_bin opencode \"$OPENCODE_INSTALL_DIR\") || fail not-found 30\n" +
+        "    add_to_path \"$(dirname \"$oc\")\"; persist_path\n" +
+        "    echo \"TermiNow: verifying $oc\"\n" +
+        "    v=$(\"$oc\" --version 2>&1) || { echo \"$v\"; fail verify 30; }\n" +
         "    [ -n \"$v\" ] || fail verify 30\n" +
         "    echo \"TERMINOW_VERSION=$(first \"$v\")\"\n" +
         "    ;;\n" +
@@ -832,14 +866,34 @@ public final class TerminowToolInstaller {
     private static void readLines(@NonNull InputStream stream, @NonNull LineSink sink) {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
             String line;
-            // apt and curl draw progress with carriage returns: only the last state of a line is kept
             while ((line = reader.readLine()) != null) {
-                int cr = line.lastIndexOf('\r', line.length() - 2);
-                sink.line(cr >= 0 ? line.substring(cr + 1).replace("\r", "") : line.replace("\r", ""));
+                sink.line(cleanLine(line));
             }
         } catch (IOException ignored) {
             // The process ended or was stopped
         }
+    }
+
+    private static final java.util.regex.Pattern ANSI = java.util.regex.Pattern.compile(
+        "\u001b\\[[0-9;?]*[ -/]*[@-~]" +        // CSI (colour, cursor): ESC [ ... final byte
+        "|\u001b\\][^\u0007\u001b]*(?:\u0007|\u001b\\\\)" + // OSC (title etc.): ESC ] ... BEL or ESC \
+        "|\u001b[@-Z\\\\-_]");                  // other two-byte escapes: ESC + one char
+
+    /** Remove ANSI colour and cursor escape sequences (OpenCode's installer colours its output). */
+    static String stripAnsi(@NonNull String s) {
+        return s.indexOf('\u001b') < 0 ? s : ANSI.matcher(s).replaceAll("");
+    }
+
+    /**
+     * Clean one line of installer/detection output for the log and parsing: keep only the last state
+     * of a carriage-return progress line (apt, curl, download bars) so it does not become hundreds of
+     * lines, and strip ANSI escapes so they do not show as garbage in the Tools Library log.
+     */
+    static String cleanLine(@NonNull String line) {
+        int cr = line.lastIndexOf('\r', line.length() - 2);
+        String s = cr >= 0 ? line.substring(cr + 1) : line;
+        if (s.indexOf('\r') >= 0) s = s.replace("\r", "");
+        return stripAnsi(s);
     }
 
     /** Find out what is installed, blocking, for the sheet when it opens and after an install. */
