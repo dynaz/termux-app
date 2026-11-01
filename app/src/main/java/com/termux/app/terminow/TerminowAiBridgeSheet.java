@@ -9,6 +9,7 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -41,11 +42,20 @@ final class TerminowAiBridgeSheet {
     private final ExecutorService mExecutor = Executors.newSingleThreadExecutor();
     private final Handler mHandler = new Handler(Looper.getMainLooper());
     @Nullable private Dialog mDialog;
+    /** What the "AI Bridge is ready" popup's primary button does: open the host permission picker. */
+    @Nullable private Runnable mOnChooseHosts;
 
     TerminowAiBridgeSheet(@NonNull TermuxActivity activity, @NonNull TerminowAiBridgeManager manager, @NonNull TerminowStore store) {
         mActivity = activity;
         mManager = manager;
         mStore = store;
+    }
+
+    /** Set what the success popup's "Choose hosts" button does; chainable. */
+    @NonNull
+    TerminowAiBridgeSheet onChooseHosts(@Nullable Runnable action) {
+        mOnChooseHosts = action;
+        return this;
     }
 
     /**
@@ -94,7 +104,12 @@ final class TerminowAiBridgeSheet {
                     }
                     final boolean fok = ok;
                     final String msg = message;
-                    mHandler.post(() -> mActivity.showToast(msg, !fok));
+                    // The success popup is shown only here, after a manual Connect & Test passes —
+                    // never for a background refresh, a screen redraw or status polling.
+                    mHandler.post(() -> {
+                        if (fok) showReadyPopup(environmentLabel);
+                        else mActivity.showToast(msg, true);
+                    });
                 });
             });
         row(content, mActivity.getString(R.string.terminow_ai_diagnose),
@@ -149,6 +164,97 @@ final class TerminowAiBridgeSheet {
         });
     }
 
+    /**
+     * The "AI Bridge is ready" popup, shown only after a manual Connect &amp; Test passes. It names the
+     * real environment, says plainly that verification does not test remote SSH, and its primary
+     * button opens the host permission picker. It never grants a host; that is a separate choice.
+     */
+    private void showReadyPopup(@NonNull String environmentLabel) {
+        if (mDialog != null && mDialog.isShowing()) mDialog.dismiss();
+        String env = environmentLabel.isEmpty() ? mActivity.getString(R.string.terminow_bridge_claude) : environmentLabel;
+        Dialog dialog = new Dialog(mActivity, R.style.TerminowPanelDialog);
+        mDialog = dialog;
+
+        LinearLayout root = new LinearLayout(mActivity);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setGravity(Gravity.CENTER);
+        root.setBackgroundColor(color(R.color.terminow_panel_scrim));
+
+        LinearLayout card = new LinearLayout(mActivity);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setClickable(true);
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(color(R.color.terminow_panel));
+        background.setCornerRadius(dp(20));
+        card.setBackground(background);
+        card.setPadding(dp(20), dp(18), dp(20), dp(14));
+        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
+            Math.min(mActivity.getResources().getDisplayMetrics().widthPixels, dp(480)),
+            ViewGroup.LayoutParams.WRAP_CONTENT);
+        cardParams.setMargins(dp(16), dp(16), dp(16), dp(16));
+        card.setLayoutParams(cardParams);
+
+        TextView title = new TextView(mActivity);
+        title.setText(mActivity.getString(R.string.terminow_ai_ready_title));
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        title.setTextColor(color(R.color.terminow_text));
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        ViewCompat.setAccessibilityHeading(title, true);
+        card.addView(title);
+
+        TextView message = new TextView(mActivity);
+        message.setText(mActivity.getString(R.string.terminow_ai_ready_message, env));
+        message.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        message.setTextColor(color(R.color.terminow_text_secondary));
+        LinearLayout.LayoutParams messageParams = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        messageParams.topMargin = dp(10);
+        message.setLayoutParams(messageParams);
+        card.addView(message);
+
+        android.widget.Button choose = new android.widget.Button(mActivity);
+        choose.setAllCaps(false);
+        choose.setText(mActivity.getString(R.string.terminow_ai_ready_choose));
+        choose.setTextColor(color(R.color.terminow_text));
+        GradientDrawable chooseBg = new GradientDrawable();
+        chooseBg.setColor(color(R.color.terminow_panel_accent));
+        chooseBg.setCornerRadius(dp(10));
+        choose.setBackground(chooseBg);
+        LinearLayout.LayoutParams chooseParams = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        chooseParams.topMargin = dp(16);
+        choose.setLayoutParams(chooseParams);
+        choose.setOnClickListener(v -> {
+            dialog.dismiss();
+            if (mOnChooseHosts != null) mOnChooseHosts.run();
+        });
+        card.addView(choose);
+
+        android.widget.Button done = new android.widget.Button(mActivity);
+        done.setAllCaps(false);
+        done.setText(mActivity.getString(R.string.terminow_ai_ready_done));
+        done.setTextColor(color(R.color.terminow_text));
+        GradientDrawable doneBg = new GradientDrawable();
+        doneBg.setColor(color(R.color.terminow_panel_scrim));
+        doneBg.setCornerRadius(dp(10));
+        done.setBackground(doneBg);
+        LinearLayout.LayoutParams doneParams = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        doneParams.topMargin = dp(8);
+        done.setLayoutParams(doneParams);
+        done.setOnClickListener(v -> dialog.dismiss());
+        card.addView(done);
+
+        ScrollView outer = new ScrollView(mActivity);
+        outer.addView(card);
+        root.addView(outer, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        dialog.setContentView(root);
+        dialog.setOnDismissListener(d -> {
+            if (mDialog == dialog) mDialog = null;
+        });
+        dialog.show();
+    }
+
     // ---- bottom-sheet scaffolding (mirrors the toolbar sheet so the two look the same) ----
 
     @NonNull
@@ -171,13 +277,24 @@ final class TerminowAiBridgeSheet {
         background.setCornerRadii(new float[]{radius, radius, radius, radius, 0, 0, 0, 0});
         sheet.setBackground(background);
         sheet.setPadding(dp(16), dp(12), dp(16), dp(12));
+        LinearLayout header = new LinearLayout(mActivity);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        ImageView headerIcon = new ImageView(mActivity);
+        headerIcon.setImageResource(R.drawable.ic_terminow_ai);
+        headerIcon.setContentDescription(titleText);
+        header.addView(headerIcon, new LinearLayout.LayoutParams(dp(32), dp(32)));
         TextView title = new TextView(mActivity);
         title.setText(titleText);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
         title.setTextColor(color(R.color.terminow_text));
         title.setTypeface(Typeface.DEFAULT_BOLD);
         ViewCompat.setAccessibilityHeading(title, true);
-        sheet.addView(title);
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        titleParams.leftMargin = dp(10);
+        header.addView(title, titleParams);
+        sheet.addView(header);
 
         ScrollView scroll = new ScrollView(mActivity);
         LinearLayout content = new LinearLayout(mActivity);

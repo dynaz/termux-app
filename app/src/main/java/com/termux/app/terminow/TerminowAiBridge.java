@@ -54,24 +54,76 @@ public final class TerminowAiBridge {
         @NonNull File sshHome();
     }
 
-    /** An allowance to use a host, for a while, from one environment: the policy "ask"/"session" needs it. */
+    /**
+     * A session allowance to use a host for one capability, from one authenticated client/session.
+     * It is bound to (environment, client, host, capability) and to the credentials in force when it
+     * was made; changing the endpoint or credentials, disabling access or removing the host drops it,
+     * and a decision in one session never reaches another because the client id is part of the key.
+     */
     static final class Grant {
         final String envKey;
+        @Nullable final String clientId;
         final String hostUuid;
+        final String capability;
         final String fingerprint;
         final long expiresAt;
 
-        Grant(@NonNull String envKey, @NonNull String hostUuid, @NonNull String fingerprint, long expiresAt) {
+        Grant(@NonNull String envKey, @Nullable String clientId, @NonNull String hostUuid, @NonNull String capability,
+              @NonNull String fingerprint, long expiresAt) {
             this.envKey = envKey;
+            this.clientId = clientId;
             this.hostUuid = hostUuid;
+            this.capability = capability;
             this.fingerprint = fingerprint;
             this.expiresAt = expiresAt;
         }
     }
 
+    /** How long a "for this session" grant lasts as a safety cap; a disconnect or revoke ends it sooner. */
+    public static final long SESSION_GRANT_TTL_MS = 8 * 60 * 60 * 1000L;
+
+    /**
+     * The authenticated caller of a tool: the environment (proven by the session token) and, when the
+     * client sent a {@code CLIENT} line, its per-process id and the labels a prompt shows. A session
+     * grant can be bound only when {@link #sessionBindable()} holds.
+     */
+    public static final class Caller {
+        public final String envKey;
+        @Nullable public final String clientId;
+        public final String clientName;
+        public final String sessionLabel;
+
+        public Caller(@NonNull String envKey, @Nullable String clientId, @NonNull String clientName,
+                      @NonNull String sessionLabel) {
+            this.envKey = envKey;
+            this.clientId = clientId;
+            this.clientName = clientName;
+            this.sessionLabel = sessionLabel;
+        }
+
+        /** A session grant can be remembered only when the session can be identified: a non-empty client id. */
+        public boolean sessionBindable() {
+            return clientId != null && !clientId.isEmpty();
+        }
+    }
+
+    /**
+     * Where an approval decision comes from. The real gate parks the request in
+     * {@link TerminowAiApprovals} and blocks until the user decides (or it times out / is cancelled);
+     * the default denies at once, so a build with no approval UI fails closed rather than hanging.
+     */
+    public interface ApprovalGate {
+        @NonNull TerminowAiApprovals.Decision await(@NonNull TerminowAiApprovals.Spec spec);
+    }
+
     private final Deps mDeps;
     private final Clock mClock;
+    /** Interactive, per-session grants: key (env, client, host, capability). */
     private final Map<String, Grant> mGrants = new HashMap<>();
+    /** Env-wide grants for managed tasks (no interactive client): key (env, host, capability). */
+    private final Map<String, Grant> mEnvGrants = new HashMap<>();
+    @NonNull private volatile ApprovalGate mGate = spec -> TerminowAiApprovals.Decision.DENY;
+    private long mApprovalTimeoutMs = 2 * 60 * 1000L;
 
     public TerminowAiBridge(@NonNull Deps deps, @NonNull Clock clock) {
         mDeps = deps;
@@ -82,38 +134,96 @@ public final class TerminowAiBridge {
         this(deps, System::currentTimeMillis);
     }
 
+    /** Install the approval gate (the app's, backed by {@link TerminowAiApprovals} and the UI). */
+    public void setApprovalGate(@NonNull ApprovalGate gate) {
+        mGate = gate;
+    }
+
+    /** How long a parked approval waits before it times out; the prompt shows this window. */
+    public void setApprovalTimeoutMs(long timeoutMs) {
+        if (timeoutMs > 0) mApprovalTimeoutMs = timeoutMs;
+    }
+
+    public long approvalTimeoutMs() {
+        return mApprovalTimeoutMs;
+    }
+
     @NonNull
-    private static String grantKey(@NonNull String envKey, @NonNull String hostUuid) {
-        return envKey + "|" + hostUuid;
+    private static String grantKey(@NonNull String envKey, @Nullable String clientId, @NonNull String hostUuid,
+                                   @NonNull String capability) {
+        return envKey + "|" + (clientId == null ? "" : clientId) + "|" + hostUuid + "|" + capability;
     }
 
     // ---------------------------------------------------------------------------------------
     // Grants and revocation
     // ---------------------------------------------------------------------------------------
 
-    /** Allow an environment to use a host until {@code now + ttlMillis}, bound to its credentials now. */
-    public synchronized void grant(@NonNull String envKey, @NonNull TerminowStore.Host host, long ttlMillis) {
-        mGrants.put(grantKey(envKey, host.uuid), new Grant(envKey, host.uuid, TerminowStore.aiFingerprint(host), mClock.now() + ttlMillis));
+    /**
+     * Remember that a client/session may use a host for one capability until {@code now + ttlMillis},
+     * bound to the credentials now. Only bound when the session can be identified; a null/empty
+     * client id is not stored, since it could not be isolated from another session.
+     */
+    public synchronized void grantSession(@NonNull String envKey, @Nullable String clientId,
+                                          @NonNull TerminowStore.Host host, @NonNull String capability, long ttlMillis) {
+        if (clientId == null || clientId.isEmpty()) return;
+        mGrants.put(grantKey(envKey, clientId, host.uuid, capability),
+            new Grant(envKey, clientId, host.uuid, capability, TerminowStore.aiFingerprint(host), mClock.now() + ttlMillis));
     }
 
-    public synchronized void revoke(@NonNull String envKey, @NonNull String hostUuid) {
-        mGrants.remove(grantKey(envKey, hostUuid));
+    @NonNull
+    private static String envGrantKey(@NonNull String envKey, @NonNull String hostUuid, @NonNull String capability) {
+        return envKey + "|" + hostUuid + "|" + capability;
     }
 
-    /** Drop every grant for a host, for all environments: on disable, delete, or credential change. */
+    /**
+     * Grant an environment (not an interactive session) a host for both capabilities until
+     * {@code now + ttlMillis}, for a managed task that runs as that environment. Bound to the
+     * credentials now; a disconnect, revoke or credential change drops it. This is the only
+     * non-interactive path and does not need a client id.
+     */
+    public synchronized void grantEnv(@NonNull String envKey, @NonNull TerminowStore.Host host, long ttlMillis) {
+        long expiry = mClock.now() + ttlMillis;
+        String fingerprint = TerminowStore.aiFingerprint(host);
+        for (String capability : new String[]{TerminowStore.AiAccess.CAP_TEST_CONNECTION, TerminowStore.AiAccess.CAP_RUN_COMMAND}) {
+            mEnvGrants.put(envGrantKey(envKey, host.uuid, capability),
+                new Grant(envKey, null, host.uuid, capability, fingerprint, expiry));
+        }
+    }
+
+    public synchronized void revoke(@NonNull String envKey, @Nullable String clientId, @NonNull String hostUuid,
+                                    @NonNull String capability) {
+        mGrants.remove(grantKey(envKey, clientId, hostUuid, capability));
+    }
+
+    /** Drop every session grant of a client/session: on that client disconnecting. */
+    public synchronized void revokeClient(@NonNull String envKey, @Nullable String clientId) {
+        mGrants.values().removeIf(grant -> grant.envKey.equals(envKey)
+            && java.util.Objects.equals(grant.clientId, clientId));
+    }
+
+    /** Drop every grant of an environment (session and env-wide): on its token being revoked. */
+    public synchronized void revokeEnv(@NonNull String envKey) {
+        mGrants.values().removeIf(grant -> grant.envKey.equals(envKey));
+        mEnvGrants.values().removeIf(grant -> grant.envKey.equals(envKey));
+    }
+
+    /** Drop every grant for a host, for all sessions and environments: on disable, delete, or credential change. */
     public synchronized void revokeHost(@NonNull String hostUuid) {
         mGrants.values().removeIf(grant -> grant.hostUuid.equals(hostUuid));
+        mEnvGrants.values().removeIf(grant -> grant.hostUuid.equals(hostUuid));
         mSelections.values().removeIf(selection -> selection.hostUuid.equals(hostUuid));
     }
 
     public synchronized void revokeAll() {
         mGrants.clear();
+        mEnvGrants.clear();
     }
 
     public synchronized int activeGrantCount() {
         long now = mClock.now();
         mGrants.values().removeIf(grant -> grant.expiresAt <= now);
-        return mGrants.size();
+        mEnvGrants.values().removeIf(grant -> grant.expiresAt <= now);
+        return mGrants.size() + mEnvGrants.size();
     }
 
     /**
@@ -127,21 +237,35 @@ public final class TerminowAiBridge {
         }
         String fingerprint = TerminowStore.aiFingerprint(host);
         mGrants.values().removeIf(grant -> grant.hostUuid.equals(host.uuid) && !grant.fingerprint.equals(fingerprint));
+        mEnvGrants.values().removeIf(grant -> grant.hostUuid.equals(host.uuid) && !grant.fingerprint.equals(fingerprint));
     }
 
     public synchronized void onHostRemoved(@NonNull String hostUuid) {
         revokeHost(hostUuid);
     }
 
-    private synchronized boolean hasValidGrant(@NonNull String envKey, @NonNull TerminowStore.Host host) {
-        Grant grant = mGrants.get(grantKey(envKey, host.uuid));
-        if (grant == null) return false;
-        if (grant.expiresAt <= mClock.now()) {
-            mGrants.remove(grantKey(envKey, host.uuid));
+    private synchronized boolean hasValidGrant(@NonNull String envKey, @Nullable String clientId,
+                                               @NonNull TerminowStore.Host host, @NonNull String capability) {
+        String fingerprint = TerminowStore.aiFingerprint(host);
+        long now = mClock.now();
+        String key = grantKey(envKey, clientId, host.uuid, capability);
+        Grant grant = mGrants.get(key);
+        if (grant != null) {
+            if (grant.expiresAt <= now) {
+                mGrants.remove(key);
+            } else if (grant.fingerprint.equals(fingerprint)) {
+                return true; // a live per-session grant for other credentials does not carry over
+            }
+        }
+        // Fall back to an env-wide grant (a managed task), same expiry and credential binding.
+        String envKeyStr = envGrantKey(envKey, host.uuid, capability);
+        Grant envGrant = mEnvGrants.get(envKeyStr);
+        if (envGrant == null) return false;
+        if (envGrant.expiresAt <= now) {
+            mEnvGrants.remove(envKeyStr);
             return false;
         }
-        // A grant made for other credentials does not carry over
-        return grant.fingerprint.equals(TerminowStore.aiFingerprint(host));
+        return envGrant.fingerprint.equals(fingerprint);
     }
 
     // ---------------------------------------------------------------------------------------
@@ -149,27 +273,66 @@ public final class TerminowAiBridge {
     // ---------------------------------------------------------------------------------------
 
     /**
-     * Whether {@code envKey} may use the host {@code hostUuid} for {@code capability} now, and the
-     * resolved host if so. Throws with the exact reason otherwise; the reasons never mix up
-     * policy, a locked keychain and an unknown host.
+     * The static, no-prompt checks: the host exists and is available to this environment, the
+     * capability is allowed, the endpoint/credentials still match what was allowed, and the keychain
+     * is unlocked. Returns the host (not yet resolved). Throws the exact reason otherwise. These are
+     * re-run after an approval, so nothing that changed while the user decided slips through.
      */
     @NonNull
-    TerminowStore.Host authorize(@NonNull String envKey, @NonNull String hostUuid, @NonNull String capability)
+    private TerminowStore.Host staticChecks(@NonNull String envKey, @NonNull String hostUuid, @NonNull String capability)
             throws TerminowAiError.Exception {
         TerminowStore.Host host = TerminowStore.findHostByUuid(mDeps.hosts(), hostUuid);
         if (host == null || !host.aiAccess.allowsEnv(envKey))
             throw TerminowAiError.HOST_NOT_AUTHORIZED.of("The host is not available to this environment");
         if (!host.aiAccess.allows(capability))
             throw TerminowAiError.CAPABILITY_DENIED.of("This host does not allow " + capability);
-        // A grant or saved rules must match the endpoint and credentials allowed; otherwise agree again
         if (!host.aiAccess.fingerprint.isEmpty() && !host.aiAccess.fingerprint.equals(TerminowStore.aiFingerprint(host)))
             throw TerminowAiError.APPROVAL_REQUIRED.of("The host's address or credentials changed since access was allowed");
         if (!mDeps.keychainUnlocked())
             throw TerminowAiError.KEYCHAIN_LOCKED.of("Unlock TermiNow to use saved credentials");
-        // "rules": the saved capabilities are enough. "ask"/"session": a current grant is needed.
-        if (!"rules".equals(host.aiAccess.approvalPolicy) && !hasValidGrant(envKey, host))
-            throw TerminowAiError.APPROVAL_REQUIRED.of("Approve this host for the AI first");
-        return TerminowStore.resolve(host, mDeps.identities());
+        return host;
+    }
+
+    /**
+     * Whether this caller may use the host for this capability now, and the resolved host if so. For
+     * the "rules" policy the saved capabilities are enough. For "ask"/"session" a live session grant
+     * is honoured; otherwise the user is prompted (the call blocks on {@link #mGate}) and, on
+     * approval, the permission is re-validated before the host is returned. {@code command} is the
+     * exact command for a run_command prompt, so the user approves what will actually run; it is null
+     * for a connection test. Throws the exact reason when not allowed; the reasons never mix up
+     * policy, a locked keychain, a denial and a cancellation.
+     */
+    @NonNull
+    TerminowStore.Host authorize(@NonNull Caller caller, @NonNull String hostUuid, @NonNull String capability,
+                                 @Nullable String command) throws TerminowAiError.Exception {
+        TerminowStore.Host host = staticChecks(caller.envKey, hostUuid, capability);
+        if ("rules".equals(host.aiAccess.approvalPolicy)) return TerminowStore.resolve(host, mDeps.identities());
+        if (hasValidGrant(caller.envKey, caller.clientId, host, capability))
+            return TerminowStore.resolve(host, mDeps.identities());
+
+        // Not pre-authorized: park the request and wait for the user. This blocks the caller's
+        // connection thread only, not other sessions, and resolves on a decision, timeout or cancel.
+        TerminowAiApprovals.Spec spec = new TerminowAiApprovals.Spec(
+            caller.envKey, caller.clientId, caller.clientName, caller.sessionLabel,
+            host.uuid, host.getTitle(), host.address, host.port, capability,
+            command, TerminowStore.aiFingerprint(host), caller.sessionBindable(), mApprovalTimeoutMs);
+        TerminowAiApprovals.Decision decision = mGate.await(spec);
+        switch (decision) {
+            case ALLOW_SESSION:
+                grantSession(caller.envKey, caller.clientId, host, capability, SESSION_GRANT_TTL_MS);
+                break;
+            case ALLOW_ONCE:
+                break; // authorize only this parked call; remember nothing
+            case DENY:
+                throw TerminowAiError.APPROVAL_REQUIRED.of("Access to this host was denied");
+            case TIMEOUT:
+                throw TerminowAiError.APPROVAL_REQUIRED.of("No approval before the request timed out; ask again");
+            case CANCELLED:
+            default:
+                throw TerminowAiError.CANCELLED.of("The approval was cancelled before access was granted");
+        }
+        // Re-validate against the live state: access or credentials may have changed while we waited.
+        return TerminowStore.resolve(staticChecks(caller.envKey, hostUuid, capability), mDeps.identities());
     }
 
     // ---------------------------------------------------------------------------------------
@@ -345,8 +508,8 @@ public final class TerminowAiBridge {
      * returned; the result only says what happened.
      */
     @NonNull
-    public JSONObject sshTest(@NonNull String envKey, @NonNull String hostUuid) throws TerminowAiError.Exception {
-        TerminowStore.Host host = authorize(envKey, hostUuid, TerminowStore.AiAccess.CAP_TEST_CONNECTION);
+    public JSONObject sshTest(@NonNull Caller caller, @NonNull String hostUuid) throws TerminowAiError.Exception {
+        TerminowStore.Host host = authorize(caller, hostUuid, TerminowStore.AiAccess.CAP_TEST_CONNECTION, null);
         if (host.telnet || !host.isTerminal())
             throw TerminowAiError.BAD_REQUEST.of("This host is not an SSH connection");
         TestPrompts prompts = new TestPrompts(hostUuid);
@@ -390,10 +553,10 @@ public final class TerminowAiBridge {
      * timeout. No secret is returned.
      */
     @NonNull
-    public JSONObject sshExec(@NonNull String envKey, @NonNull String hostUuid, @NonNull String command, int timeoutSeconds)
+    public JSONObject sshExec(@NonNull Caller caller, @NonNull String hostUuid, @NonNull String command, int timeoutSeconds)
             throws TerminowAiError.Exception {
         if (command.trim().isEmpty()) throw TerminowAiError.BAD_REQUEST.of("The command is empty");
-        TerminowStore.Host host = authorize(envKey, hostUuid, TerminowStore.AiAccess.CAP_RUN_COMMAND);
+        TerminowStore.Host host = authorize(caller, hostUuid, TerminowStore.AiAccess.CAP_RUN_COMMAND, command);
         if (host.telnet || !host.isTerminal()) throw TerminowAiError.BAD_REQUEST.of("This host is not an SSH connection");
         int timeout = timeoutSeconds <= 0 ? EXEC_TIMEOUT_DEFAULT_S : Math.min(timeoutSeconds, EXEC_TIMEOUT_MAX_S);
         TestPrompts prompts = new TestPrompts(hostUuid);
