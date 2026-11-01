@@ -56,7 +56,7 @@
     <string name="terminow_bridge_connect_test_desc">Install the helper, authenticate, and verify MCP tools</string>
     <string name="terminow_bridge_diagnose_desc">Layer-by-layer report, with Copy</string>
     <string name="terminow_bridge_working">Working…</string>
-    <string name="terminow_bridge_tap_test">Allowed · tap to test from Claude</string>
+    <string name="terminow_bridge_tap_test">Access enabled · tap to test from Claude</string>
     <string name="terminow_bridge_host_result">%1$s: %2$s</string>
     <string name="terminow_bridge_no_hosts">No authorized hosts</string>
     <string name="terminow_bridge_no_hosts_desc">Allow local AI access on a host in AI settings</string>
@@ -64,4 +64,32 @@
     <string name="terminow_bridge_tool_desc">Set up, diagnose and let Claude Code here use your hosts</string>
     <string name="terminow_bridge_shell">shell: %1$s</string>
     <string name="terminow_bridge_scope_env">Available to Claude sessions in this Ubuntu environment</string>
+
+    <!-- Verification success popup (shown only after a manual Connect &amp; Test passes). -->
+    <string name="terminow_ai_ready_title">AI Bridge is ready</string>
+    <string name="terminow_ai_ready_message">%1$s is connected to TermiNow. Choose which hosts your AI can use. Verification confirms the on-device connection, authentication and MCP tools; it does not test remote SSH connectivity to your servers.</string>
+    <string name="terminow_ai_ready_choose">Choose hosts</string>
+    <string name="terminow_ai_ready_done">Done</string>
+
+    <!-- Actionable approval prompt. -->
+    <string name="terminow_ai_approval_title">Allow AI access?</string>
+    <string name="terminow_ai_approval_client">Client</string>
+    <string name="terminow_ai_approval_session">Session</string>
+    <string name="terminow_ai_approval_host">Host</string>
+    <string name="terminow_ai_approval_capability">Request</string>
+    <string name="terminow_ai_approval_cap_test">Test the SSH connection</string>
+    <string name="terminow_ai_approval_cap_run">Run a command over SSH</string>
+    <string name="terminow_ai_approval_command_label">Command</string>
+    <string name="terminow_ai_approval_allow_once">Allow once</string>
+    <string name="terminow_ai_approval_allow_session">Allow for this session</string>
+    <string name="terminow_ai_approval_deny">Deny</string>
+    <string name="terminow_ai_approval_session_unavailable">This session can\'t be identified reliably, so a session-wide allowance isn\'t available. Allow once instead.</string>
+    <string name="terminow_ai_approval_notification_title">AI access needs approval</string>
+    <string name="terminow_ai_approval_notification_text">%1$s wants to use %2$s</string>
+    <string name="terminow_ai_approval_notification_channel">AI access approvals</string>
+
+    <!-- Bridge status wording (kept distinct so "access enabled" never reads as "no approval needed"). -->
+    <string name="terminow_ai_status_awaiting">Request awaiting approval</string>
+    <string name="terminow_ai_status_listening">Listening</string>
+    <string name="terminow_ai_status_attention">Needs attention</string>
 </resources>

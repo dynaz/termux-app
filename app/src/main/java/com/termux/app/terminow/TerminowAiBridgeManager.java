@@ -66,6 +66,7 @@ public final class TerminowAiBridgeManager {
     private final TerminowAiSession mSession;
     private final TerminowAiBridge mBridge;
     private final TerminowAiBridgeServer mServer;
+    private final TerminowAiApprovals mApprovals = new TerminowAiApprovals();
 
     public TerminowAiBridgeManager(@NonNull Context context, @NonNull TerminowStore store, @NonNull TerminowMcpTargets targets,
                                    @NonNull Unlocked unlocked) {
@@ -92,6 +93,10 @@ public final class TerminowAiBridgeManager {
             }
             @NonNull @Override public File sshHome() { return mSshHome; }
         });
+
+        // An authorize() that reaches a host needing approval parks the request in mApprovals and
+        // blocks until the user decides (or it times out / is cancelled). The UI drives mApprovals.
+        mBridge.setApprovalGate(mApprovals::await);
 
         mServer = new TerminowAiBridgeServer(mSession,
             (env, clientId) -> new TerminowAiMcpServer(mBridge, env, clientId, this::secrets, BuildConfig.VERSION_NAME));
@@ -189,6 +194,7 @@ public final class TerminowAiBridgeManager {
             return new SetupResult(true, "The bridge is listening on " + mServer.boundHostAddress() + ":" + mServer.getPort());
         }
         mStore.setAiBridgeEnabled(false);
+        mApprovals.cancelAll();
         mServer.stop();
         return new SetupResult(true, "The bridge is off");
     }
@@ -220,25 +226,47 @@ public final class TerminowAiBridgeManager {
         return status;
     }
 
-    /** Stop every connection and forget every token and grant. */
+    /** Stop every connection and forget every token and grant, and cancel every pending approval. */
     public synchronized void revokeAll() {
+        mApprovals.cancelAll();
         mBridge.revokeAll();
         for (String env : new HashSet<>(mStore.getAiTokens().keySet())) mServer.closeConnectionsOf(env);
         mSession.revokeAll();
     }
 
-    /** A host was saved: let the bridge drop grants that no longer match its endpoint or credentials. */
+    /**
+     * A host was saved: drop grants that no longer match its endpoint or credentials. If AI access
+     * was turned off, also cancel any approval still waiting for it (a clear revocation). A credential
+     * change is caught by the re-validation after a decision, so a benign save does not cancel.
+     */
     public void onHostSaved(@NonNull TerminowStore.Host host) {
         mBridge.onHostSaved(host);
+        if (!host.aiAccess.enabled) mApprovals.cancelForHost(host.uuid);
     }
 
     public void onHostRemoved(@NonNull String hostUuid) {
+        mApprovals.cancelForHost(hostUuid);
         mBridge.onHostRemoved(hostUuid);
     }
 
-    /** Grant an environment a host for a while, from the approval UI ("allow for this session"). */
+    /** Grant an environment a host for a running managed task (env-wide, both capabilities, TTL). */
     public void grant(@NonNull String environmentKey, @NonNull TerminowStore.Host host, long ttlMillis) {
-        mBridge.grant(environmentKey, host, ttlMillis);
+        mBridge.grantEnv(environmentKey, host, ttlMillis);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Interactive approvals (the popup flow)
+    // ---------------------------------------------------------------------------------------
+
+    /** The pending-approval registry, so the UI can list requests, decide them, and be told of changes. */
+    @NonNull
+    public TerminowAiApprovals approvals() {
+        return mApprovals;
+    }
+
+    /** Resolve a pending approval by id, from the popup. Idempotent; a double tap is a no-op. */
+    public boolean decideApproval(@NonNull String requestId, @NonNull TerminowAiApprovals.Decision decision) {
+        return mApprovals.decide(requestId, decision);
     }
 
     // ---------------------------------------------------------------------------------------
@@ -301,6 +329,8 @@ public final class TerminowAiBridgeManager {
     @NonNull
     public synchronized SetupResult disconnectClaude(@NonNull String environmentKey, @NonNull String user) {
         TerminowMcpTargets.Container container = mTargets.getContainer(environmentKey);
+        mApprovals.cancelForEnv(environmentKey);
+        mBridge.revokeEnv(environmentKey);
         mSession.revoke(environmentKey);
         mServer.closeConnectionsOf(environmentKey);
         if (container == null) return new SetupResult(true, "The token was revoked");

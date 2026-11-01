@@ -546,6 +546,9 @@ public class TerminowHome {
         mAiBridge = TerminowAiBridgeManager.getInstance(activity.getApplicationContext(), mStore,
             new TerminowMcpTargets(new File(TermuxConstants.TERMUX_PREFIX_DIR_PATH), new File(TermuxConstants.TERMUX_HOME_DIR_PATH)));
         mAiBridge.startIfEnabled();
+        // Surfaces the Local AI Bridge approval prompt (foreground) or a notification (backgrounded)
+        // when a tool call reaches a host that needs the user's agreement, and resumes the call.
+        mAiApprovalController = new TerminowAiApprovalController(activity, mAiBridge);
         mAiPage = new TerminowAiSettings(activity, mAiBridge, mStore, activity.findViewById(R.id.terminow_ai));
         // The MCP Bridge: external AI clients reaching shared managed sessions through the relay.
         mMcpBridge = TerminowMcpBridgeManager.getInstance(activity.getApplicationContext(), mStore,
@@ -2284,6 +2287,7 @@ public class TerminowHome {
     /** The SFTP tabs that show the files of their host, like Termius, instead of the sftp command line. */
     private TerminowSftpBrowser mSftpBrowser;
     private TerminowAiBridgeManager mAiBridge;
+    private TerminowAiApprovalController mAiApprovalController;
     private TerminowMcpBridgeManager mMcpBridge;
 
     /** The session that is shown if it is an sftp session that is still running, otherwise {@code null}. */
@@ -3005,6 +3009,12 @@ public class TerminowHome {
     /** The app goes to the background, where Android may end it: save the tabs and their output now. */
     public void onStop() {
         mWorkspace.saveNow();
+        if (mAiApprovalController != null) mAiApprovalController.onPause();
+    }
+
+    /** Open the hosts page (the AI-access picker), from the "AI Bridge is ready" popup's primary action. */
+    public void showAiHosts() {
+        setPage(PAGE_AI);
     }
 
     /**
@@ -3195,6 +3205,7 @@ public class TerminowHome {
         }
         mExplorer.onResume();
         mVaultsUi.onResume();
+        if (mAiApprovalController != null) mAiApprovalController.onResume();
         // A purchase whose check failed, or a renewal or expiry that the server found, is picked up
         mSettings.recoverPurchases(() -> {
             updateItems();

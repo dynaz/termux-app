@@ -142,14 +142,25 @@ android {
         manifestPlaceholders.TERMUX_TASKER_APP_NAME = "Termux:Tasker"
         manifestPlaceholders.TERMUX_WIDGET_APP_NAME = "Termux:Widget"
 
+        // Whether this build splits the APK per ABI (one APK per architecture). The same condition
+        // drives the splits block below. When splits are on, splits.abi.include restricts the
+        // packaged ABIs and AGP forbids also setting ndk.abiFilters ("abiFilters cannot be present
+        // when splits abi filters are set"), so the packaging filter is only applied when splits are
+        // off (e.g. the universal APK).
+        def abiSplitsEnabled = (gradle.startParameter.taskNames.any { it.contains("Debug") } && splitAPKsForDebugBuilds == "1") ||
+            (gradle.startParameter.taskNames.any { it.contains("Release") } && splitAPKsForReleaseBuilds == "1")
+
         // Package native libraries only for the architectures TermiNow fully supports (set in
         // terminow-bootstrap.properties). This applies to prebuilt libraries too — e.g. the RDP engine
         // ships an x86_64 variant, but without a matching bootstrap archive, proot loader and terminal
         // JNI an x86_64 (or 32-bit x86) build is non-functional and would crash — so no release
         // advertises or serves a broken ABI split. Adding a real x86_64 bootstrap to the properties
-        // widens this automatically.
+        // widens this automatically. When ABI splits are on, splits.abi.include does the same filtering,
+        // so this packaging filter is only set when splits are off.
         ndk {
-            abiFilters(*terminowAbis)
+            if (!abiSplitsEnabled) {
+                abiFilters(*terminowAbis)
+            }
         }
 
         externalNativeBuild {
@@ -162,8 +173,7 @@ android {
 
         splits {
             abi {
-                enable ((gradle.startParameter.taskNames.any { it.contains("Debug") } && splitAPKsForDebugBuilds == "1") ||
-                    (gradle.startParameter.taskNames.any { it.contains("Release") } && splitAPKsForReleaseBuilds == "1"))
+                enable (abiSplitsEnabled)
                 reset ()
                 include(*terminowAbis)
                 universalApk false
@@ -251,6 +261,53 @@ android {
                 outputFileName = new File("termux-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "release") + "_" + variant.flavorName + "_" + (abi ? abi : "universal") + ".apk")
             }
         }
+
+        // Guard: every packaged APK must actually contain the native libraries the app needs, for each
+        // ABI it carries. A build that silently dropped them (an NDK build that did not run, a broken or
+        // stale jniLibs merge) produces an APK that installs but has no working terminal, so it must
+        // never be mistaken for a usable build. This finalizes assemble and fails it, naming the APK and
+        // the missing library, so an invalid APK is never reported as a usable artifact. Set
+        // -PterminowSkipNativeLibCheck=true only for a deliberate libs-less build.
+        def requiredNativeLibs = ["libtermux.so", "libtermux-bootstrap.so", "libproot-loader.so"]
+        def targetAbis = terminowAbis as List
+        def verify = tasks.register("verify${variant.name.capitalize()}NativeLibraries") {
+            onlyIf { !project.hasProperty("terminowSkipNativeLibCheck") || project.property("terminowSkipNativeLibCheck") != "true" }
+            doLast {
+                variant.outputs.each { output ->
+                    def apk = output.outputFile
+                    if (apk == null || !apk.name.endsWith(".apk") || !apk.exists()) return
+                    def libsByAbi = [:].withDefault { [] as Set }
+                    new java.util.zip.ZipFile(apk).withCloseable { zip ->
+                        for (entry in zip.entries()) {
+                            def m = (entry.name =~ '^lib/([^/]+)/([^/]+\\.so)$')
+                            if (m.find()) libsByAbi[m.group(1)] << m.group(2)
+                        }
+                    }
+                    // The ABIs this APK must fully provide: the split's ABI for a per-ABI APK, else every
+                    // supported ABI for a universal APK. Each must carry the full set of required libraries.
+                    def splitAbi = output.getFilter(com.android.build.OutputFile.ABI)
+                    def carried = splitAbi ? [splitAbi] : targetAbis
+                    carried.each { abi ->
+                        def present = libsByAbi[abi]
+                        def missing = requiredNativeLibs.findAll { !present.contains(it) }
+                        if (missing)
+                            throw new GradleException("${apk.name} [${abi}] is missing native libraries ${missing} " +
+                                "(present: ${present.sort()}). The APK is not a usable build; it would install but have no working terminal.")
+                    }
+                    // A partly built ABI (some required libs but not all) is a broken split even if it is
+                    // not a target of this build; it would crash on a device of that ABI.
+                    libsByAbi.each { abi, present ->
+                        def have = requiredNativeLibs.findAll { present.contains(it) }
+                        def missing = requiredNativeLibs.findAll { !present.contains(it) }
+                        if (!have.isEmpty() && !missing.isEmpty())
+                            throw new GradleException("${apk.name} [${abi}] is a partial native build, missing ${missing} " +
+                                "(present: ${present.sort()}). The APK is not a usable build.")
+                    }
+                    logger.lifecycle("verify: ${apk.name} has ${requiredNativeLibs} for ${carried}")
+                }
+            }
+        }
+        variant.assembleProvider.configure { finalizedBy(verify) }
     }
 
     // Two distributions, so that the Google Play build never declares All files access:

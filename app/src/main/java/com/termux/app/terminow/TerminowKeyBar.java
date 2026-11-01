@@ -10,6 +10,7 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -84,8 +85,13 @@ public class TerminowKeyBar {
     /** The cells built for the current mode: the keys, then the arrows (kept together). */
     private final java.util.List<View> mKeyCells = new java.util.ArrayList<>();
     private final java.util.List<View> mArrowCells = new java.util.ArrayList<>();
-    /** The tools, in order; the secondary ones may move to the More overflow when space is tight. */
-    @Nullable private View mClipboardCell, mQuickCutCell, mCommandsCell, mMoreCell;
+    /** The tools, in order; the secondary ones may move to the More overflow when space is tight.
+     *  Snippet and AI Bridge are direct-access and never overflow (they scroll instead). */
+    @Nullable private View mClipboardCell, mQuickCutCell, mCommandsCell, mSnippetCell, mBridgeCell, mMoreCell;
+    /** The small status dot on the AI Bridge cell; recoloured from the live bridge status. */
+    @Nullable private View mBridgeDot;
+    /** The AI Bridge button itself, so its accessibility description can carry the live status. */
+    @Nullable private ImageButton mBridgeButton;
     private boolean mUserKeysShown;
     /** Which secondary tools did not fit in two rows and were moved to the More sheet. */
     private boolean mQuickCutOverflow, mCommandsOverflow;
@@ -150,6 +156,96 @@ public class TerminowKeyBar {
         new TerminowQuickCutUi(mActivity).showPicker(session);
     }
 
+    /**
+     * Open the existing Snippet picker for the active terminal (the same screen the More sheet uses).
+     * It only inserts/runs through its own confirmation; this button never executes a command itself.
+     */
+    private void openSnippets() {
+        TerminowHome home = mActivity.getTerminowHome();
+        if (home == null) return;
+        home.showSnippetsPicker();
+    }
+
+    /**
+     * The AI Bridge cell: the shield icon (its own colours, not tinted) with a small status dot in the
+     * corner. Tapping opens the existing bridge bottom sheet for the current session's environment,
+     * reusing its access-control rules. The dot is refreshed from the live bridge status.
+     */
+    @NonNull
+    private View bridgeCell() {
+        ImageButton button = iconCap(R.drawable.ic_terminow_ai, R.string.terminow_bridge_title, this::showBridge);
+        button.setImageTintList(null);   // keep the shield's green→cyan gradient, don't flatten to text colour
+        mBridgeButton = button;
+        FrameLayout cell = new FrameLayout(mActivity);
+        cell.addView(button, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        View dot = new View(mActivity);
+        int size = dp(9);
+        FrameLayout.LayoutParams dotParams = new FrameLayout.LayoutParams(size, size, Gravity.TOP | Gravity.END);
+        dotParams.setMargins(0, dp(8), dp(8), 0);
+        cell.addView(dot, dotParams);
+        mBridgeDot = dot;
+        mBridgeDotState = Integer.MIN_VALUE;   // force the first paint of this fresh dot
+        // Live status without a manager callback: poll on a gentle cadence, but only while the cell is
+        // attached to the window. Detaching (bar hidden, Activity gone, cell rebuilt) stops the ticks.
+        cell.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+            @Override public void onViewAttachedToWindow(@NonNull View v) { startBridgeStatusUpdates(); }
+            @Override public void onViewDetachedFromWindow(@NonNull View v) { stopBridgeStatusUpdates(); }
+        });
+        refreshBridgeStatus();
+        return cell;
+    }
+
+    private static final int BRIDGE_DOT_OFF = -1, BRIDGE_DOT_OK = 0, BRIDGE_DOT_WARN = 1;
+    private int mBridgeDotState = Integer.MIN_VALUE;
+    /** Re-reads the live bridge status while the AI Bridge cell is on screen; self-cancels off screen. */
+    private final Runnable mBridgeStatusTick = new Runnable() {
+        @Override public void run() {
+            refreshBridgeStatus();
+            mHandler.postDelayed(this, 2500);
+        }
+    };
+
+    private void startBridgeStatusUpdates() {
+        mHandler.removeCallbacks(mBridgeStatusTick);
+        mHandler.post(mBridgeStatusTick);
+    }
+
+    private void stopBridgeStatusUpdates() {
+        mHandler.removeCallbacks(mBridgeStatusTick);
+    }
+
+    /**
+     * Colour the AI Bridge status dot from the live bridge status (green listening, amber needs
+     * attention), or hide it when the bridge is off. Repaints only on a real change, so the poll is
+     * cheap, and mirrors the state into the button's accessibility description.
+     */
+    private void refreshBridgeStatus() {
+        View dot = mBridgeDot;
+        if (dot == null) return;
+        int state = BRIDGE_DOT_OFF;
+        TerminowHome home = mActivity.getTerminowHome();
+        TerminowAiBridgeManager manager = home != null ? home.getAiBridge() : null;
+        if (manager != null) {
+            TerminowAiBridgeManager.Status status = manager.status();
+            if (status.enabled) state = (status.listening && status.error == null) ? BRIDGE_DOT_OK : BRIDGE_DOT_WARN;
+        }
+        if (state == mBridgeDotState) return;   // unchanged: nothing to repaint
+        mBridgeDotState = state;
+        if (state == BRIDGE_DOT_OFF) {
+            dot.setVisibility(View.GONE);
+            if (mBridgeButton != null) ViewCompat.setStateDescription(mBridgeButton, "");
+            return;
+        }
+        GradientDrawable shape = new GradientDrawable();
+        shape.setShape(GradientDrawable.OVAL);
+        shape.setColor(color(state == BRIDGE_DOT_OK ? R.color.terminow_panel_accent : R.color.terminow_mcp_warn));
+        shape.setStroke(dp(1), 0xFF1C1C1E);   // a thin dark ring so it reads on the keycap in either theme
+        dot.setBackground(shape);
+        dot.setVisibility(View.VISIBLE);
+        if (mBridgeButton != null) ViewCompat.setStateDescription(mBridgeButton, mActivity.getString(
+            state == BRIDGE_DOT_OK ? R.string.terminow_ai_status_listening : R.string.terminow_ai_status_attention));
+    }
+
     /** The keys for the tab that is shown, after it changed, ended or what it runs changed. */
     public void refresh() {
         TerminalSession session = mActivity.getCurrentSession();
@@ -168,6 +264,7 @@ public class TerminowKeyBar {
         if (mRow != null && (mode != mShownMode || userKeys != mShownUserKeys)) fillRow(mode, userKeys);
         mShownMode = mode;
         mShownUserKeys = userKeys;
+        refreshBridgeStatus();   // keep the AI Bridge dot current without rebuilding the row
     }
 
     /**
@@ -211,6 +308,10 @@ public class TerminowKeyBar {
         mQuickCutCell = iconCap(R.drawable.ic_terminow_quickcut, R.string.terminow_quickcut_title, this::openQuickCut);
         boolean ai = TerminowKeyBarModel.isAi(mode);
         mCommandsCell = iconCap(iconOf(mode), ai ? R.string.terminow_keybar_ai_shortcuts : R.string.terminow_keybar_commands, this::showCommands);
+        // Direct-access Snippet and AI Bridge, placed just before More. Both reuse the existing
+        // screens/handlers; tapping Snippet opens the picker (it never runs a command on its own).
+        mSnippetCell = iconCap(R.drawable.ic_terminow_snippets, R.string.terminow_keybar_snippets, this::openSnippets);
+        mBridgeCell = bridgeCell();
         mMoreCell = iconCap(R.drawable.ic_terminow_more, R.string.terminow_keybar_more, this::showMore);
 
         mDistributedWidth = -1;
@@ -262,12 +363,16 @@ public class TerminowKeyBar {
         if (mClipboardCell != null) row2Tools.add(mClipboardCell);
         if (mQuickCutCell != null) row2Tools.add(mQuickCutCell);
         if (mCommandsCell != null) row2Tools.add(mCommandsCell);
+        if (mSnippetCell != null) row2Tools.add(mSnippetCell);
+        if (mBridgeCell != null) row2Tools.add(mBridgeCell);
         if (mMoreCell != null) row2Tools.add(mMoreCell);
         row2.addAll(row2Tools);
+        // Only the secondary tools overflow to More; Snippet and AI Bridge stay put as direct-access
+        // and, if the row still cannot fit, the fillViewport HorizontalScrollView scrolls at 48dp.
         while (row2.size() > perRow) {
             if (mCommandsCell != null && row2.remove(mCommandsCell)) mCommandsOverflow = true;
             else if (mQuickCutCell != null && row2.remove(mQuickCutCell)) mQuickCutOverflow = true;
-            else break;   // only core cells remain; the fillViewport scroll is the last-resort fallback
+            else break;   // only core + direct-access cells remain; the scroll is the last-resort fallback
         }
 
         for (View v : row1) keysRow.addView(stretch(v));
@@ -600,6 +705,7 @@ public class TerminowKeyBar {
         String sessionName = home.sessionDisplayName(session);
         String shell = info != null ? info.tool : "";
         new TerminowAiBridgeSheet(mActivity, home.getAiBridge(), home.getStore())
+            .onChooseHosts(home::showAiHosts)
             .open(envKey, user, envLabel, sessionName, shell, session.mHandle);
     }
 

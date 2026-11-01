@@ -399,8 +399,10 @@ public class TerminowQuickLaunch {
         LinearLayout card = card();
         card.addView(cardHeader(iconOf(entry.distroId), null, entry.name, entry.name + " " + entry.version,
             mActivity.getString(R.string.terminow_quick_not_installed), R.color.terminow_quick_idle, false, null));
+        TerminowLinuxCatalog.RootFs rf = entry.rootfsFor(TerminowLinuxUi.deviceArch());
+        long downloadBytes = rf != null ? rf.downloadBytes : entry.downloadBytes;
         card.addView(primaryButton(mActivity.getString(R.string.terminow_quick_install, android.text.format.Formatter.formatShortFileSize(mActivity,
-            entry.downloadBytes)), () -> mLinux.installEntry(entry)));
+            downloadBytes)), () -> mLinux.installEntry(entry)));
         return card;
     }
 
@@ -750,8 +752,9 @@ public class TerminowQuickLaunch {
             if (installing) state = progress.phase;
             else if (present) state = mActivity.getString(R.string.terminow_quick_distro_installed);
             else if (support == TerminowLinuxCatalog.Support.AVAILABLE) {
+                TerminowLinuxCatalog.RootFs rf = entry.rootfsFor(arch);
                 state = mActivity.getString(R.string.terminow_quick_distro_download,
-                    android.text.format.Formatter.formatShortFileSize(mActivity, entry.downloadBytes));
+                    android.text.format.Formatter.formatShortFileSize(mActivity, rf != null ? rf.downloadBytes : entry.downloadBytes));
                 can = !TerminowLinuxUi.isBusy();
             } else if (support == TerminowLinuxCatalog.Support.UNSUPPORTED_ARCH) {
                 state = mActivity.getString(R.string.terminow_linux_compat_arch, arch);

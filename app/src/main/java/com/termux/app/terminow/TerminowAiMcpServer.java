@@ -170,14 +170,14 @@ public final class TerminowAiMcpServer implements TerminowAiBridgeServer.Handler
                     return toolContent(new JSONObject().put("hosts", mBridge.hostsList(mEnvKey)));
                 case "ssh_test": {
                     String hostId = mBridge.resolveHostId(mEnvKey, mClientId, args.optString("host_id"));
-                    return toolContent(mBridge.sshTest(mEnvKey, hostId));
+                    return toolContent(mBridge.sshTest(caller(), hostId));
                 }
                 case "ssh_exec": {
                     String command = args.optString("command");
                     if (command.isEmpty()) return toolError(TerminowAiError.BAD_REQUEST, "command is required");
                     String hostId = mBridge.resolveHostId(mEnvKey, mClientId, args.optString("host_id"));
                     int timeout = args.optInt("timeout_seconds", TerminowAiBridge.EXEC_TIMEOUT_DEFAULT_S);
-                    return toolContent(mBridge.sshExec(mEnvKey, hostId, command, timeout));
+                    return toolContent(mBridge.sshExec(caller(), hostId, command, timeout));
                 }
                 case "select_host": {
                     String hostId = args.optString("host_id");
@@ -198,6 +198,22 @@ public final class TerminowAiMcpServer implements TerminowAiBridgeServer.Handler
     }
 
     // ---------------------------------------------------------------------------------------
+
+    /**
+     * The authenticated caller for authorization and the approval prompt. The environment is proven
+     * by the session token; the client type is Claude Code (the only client), and the session is the
+     * environment plus the per-process client id when the peer sent one. The session is identified
+     * (so a "for this session" grant can be bound) exactly when a non-empty client id is present.
+     */
+    @NonNull
+    private TerminowAiBridge.Caller caller() {
+        boolean identified = mClientId != null && !mClientId.isEmpty();
+        String shortId = identified ? mClientId.substring(0, Math.min(8, mClientId.length())) : "";
+        String sessionLabel = identified
+            ? mEnvKey + " · session " + shortId
+            : mEnvKey + " · session not identified";
+        return new TerminowAiBridge.Caller(mEnvKey, mClientId, "Claude Code", sessionLabel);
+    }
 
     @NonNull
     private JSONObject toolContent(@NonNull JSONObject payload) throws JSONException {

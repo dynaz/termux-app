@@ -83,7 +83,12 @@ jobs:
           force-avd-creation: true
           disable-animations: true
           emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu swiftshader_indirect -camera-back none -camera-front none
-          script: bash .github/scripts/x86_64_smoke.sh "$APK_PATH"
+          script: |
+            bash .github/scripts/x86_64_smoke.sh "$APK_PATH"
+            # Deeper runtime validation against the same booted emulator (the app is already
+            # installed and its bootstrap extracted, so this is called without an APK argument):
+            # shell, pkg/apt, concurrent sessions, SSH, the AI Bridge runtime and Ubuntu.
+            bash .github/scripts/x86_64_runtime.sh
 
       - name: Upload smoke-test logs
         if: ${{ always() && !inputs.preflight_only }}
@@ -94,4 +99,5 @@ jobs:
             logcat.txt
             bash.bin
             smoke-result.txt
+            runtime.txt
           if-no-files-found: ignore

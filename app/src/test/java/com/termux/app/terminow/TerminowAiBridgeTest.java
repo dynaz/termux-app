@@ -38,6 +38,10 @@ public class TerminowAiBridgeTest {
         return h;
     }
 
+    private static TerminowAiBridge.Caller caller(String env, String clientId) {
+        return new TerminowAiBridge.Caller(env, clientId, "Claude Code", env + " · session");
+    }
+
     @Before
     public void setUp() {
         hosts.clear();
@@ -49,6 +53,8 @@ public class TerminowAiBridgeTest {
             @Override public String savedPassphrase(String keyName) { return null; }
             @Override public File sshHome() { return new File("/tmp"); }
         }, () -> now);
+        // Default: no interactive approval granted (fail closed), like a build with no popup.
+        bridge.setApprovalGate(spec -> TerminowAiApprovals.Decision.DENY);
     }
 
     @Test
@@ -61,7 +67,6 @@ public class TerminowAiBridgeTest {
         assertEquals("a", a.optString("host_id"));
         assertEquals("Server A", a.optString("alias"));
         assertTrue(a.optBoolean("credential_available"));
-        // The serialized host never carries the password or key material
         assertFalse(a.toString().contains("s3cret"));
     }
 
@@ -77,21 +82,30 @@ public class TerminowAiBridgeTest {
     @Test
     public void authorizeDeniesUnknownOrDisabledHost() {
         hosts.add(host("a", "A", false, TerminowStore.AiAccess.CAP_TEST_CONNECTION));
-        assertCode(TerminowAiError.HOST_NOT_AUTHORIZED, "ubuntu", "a");
-        assertCode(TerminowAiError.HOST_NOT_AUTHORIZED, "ubuntu", "missing");
+        assertCode(TerminowAiError.HOST_NOT_AUTHORIZED, caller("ubuntu", "c1"), "a");
+        assertCode(TerminowAiError.HOST_NOT_AUTHORIZED, caller("ubuntu", "c1"), "missing");
     }
 
     @Test
     public void authorizeDeniesMissingCapability() {
         hosts.add(host("a", "A", true)); // enabled, but no test_connection capability
-        assertCode(TerminowAiError.CAPABILITY_DENIED, "ubuntu", "a");
+        assertCode(TerminowAiError.CAPABILITY_DENIED, caller("ubuntu", "c1"), "a");
     }
 
     @Test
     public void authorizeReportsLockedKeychain() {
         hosts.add(host("a", "A", true, TerminowStore.AiAccess.CAP_TEST_CONNECTION));
         unlocked = false;
-        assertCode(TerminowAiError.KEYCHAIN_LOCKED, "ubuntu", "a");
+        assertCode(TerminowAiError.KEYCHAIN_LOCKED, caller("ubuntu", "c1"), "a");
+    }
+
+    @Test
+    public void rulesPolicyNeedsNoGrant() throws Exception {
+        TerminowStore.Host h = host("a", "A", true, TerminowStore.AiAccess.CAP_TEST_CONNECTION);
+        h.aiAccess.approvalPolicy = "rules";
+        hosts.add(h);
+        assertEquals("root", bridge.authorize(caller("ubuntu", "c1"), "a",
+            TerminowStore.AiAccess.CAP_TEST_CONNECTION, null).username);
     }
 
     @Test
@@ -99,24 +113,97 @@ public class TerminowAiBridgeTest {
         TerminowStore.Host h = host("a", "A", true, TerminowStore.AiAccess.CAP_TEST_CONNECTION);
         h.aiAccess.approvalPolicy = "ask";
         hosts.add(h);
-        assertCode(TerminowAiError.APPROVAL_REQUIRED, "ubuntu", "a");
-        bridge.grant("ubuntu", h, 60_000);
-        // Now authorized
-        assertEquals("root", bridge.authorize("ubuntu", "a", TerminowStore.AiAccess.CAP_TEST_CONNECTION).username);
-        // After it expires, it needs approval again
-        now += 61_000;
-        assertCode(TerminowAiError.APPROVAL_REQUIRED, "ubuntu", "a");
+        // No grant and the gate denies -> approval required.
+        assertCode(TerminowAiError.APPROVAL_REQUIRED, caller("ubuntu", "c1"), "a");
+        bridge.grantSession("ubuntu", "c1", h, TerminowStore.AiAccess.CAP_TEST_CONNECTION, 60_000);
+        assertEquals("root", bridge.authorize(caller("ubuntu", "c1"), "a",
+            TerminowStore.AiAccess.CAP_TEST_CONNECTION, null).username);
+        now += 61_000; // the grant expires
+        assertCode(TerminowAiError.APPROVAL_REQUIRED, caller("ubuntu", "c1"), "a");
     }
 
     @Test
-    public void changingCredentialsRevokesGrantsAndNeedsApprovalAgain() throws Exception {
+    public void allowOnceAuthorizesOnlyThisCallAndStoresNoGrant() throws Exception {
         TerminowStore.Host h = host("a", "A", true, TerminowStore.AiAccess.CAP_TEST_CONNECTION);
         h.aiAccess.approvalPolicy = "ask";
         hosts.add(h);
-        bridge.grant("ubuntu", h, 60_000);
+        bridge.setApprovalGate(spec -> TerminowAiApprovals.Decision.ALLOW_ONCE);
+        assertEquals("root", bridge.authorize(caller("ubuntu", "c1"), "a",
+            TerminowStore.AiAccess.CAP_TEST_CONNECTION, null).username);
+        // Nothing remembered: a one-time allow leaves no grant behind.
+        assertEquals(0, bridge.activeGrantCount());
+    }
+
+    @Test
+    public void allowSessionRemembersForThatClientOnly() throws Exception {
+        TerminowStore.Host h = host("a", "A", true, TerminowStore.AiAccess.CAP_TEST_CONNECTION);
+        h.aiAccess.approvalPolicy = "session";
+        hosts.add(h);
+        final int[] prompts = {0};
+        bridge.setApprovalGate(spec -> { prompts[0]++; return TerminowAiApprovals.Decision.ALLOW_SESSION; });
+        // First call prompts and is granted.
+        bridge.authorize(caller("ubuntu", "c1"), "a", TerminowStore.AiAccess.CAP_TEST_CONNECTION, null);
+        // Second call from the same client reuses the grant: no new prompt.
+        bridge.authorize(caller("ubuntu", "c1"), "a", TerminowStore.AiAccess.CAP_TEST_CONNECTION, null);
+        assertEquals(1, prompts[0]);
+        // A different client/session is NOT authorized by c1's grant: it prompts again.
+        bridge.authorize(caller("ubuntu", "c2"), "a", TerminowStore.AiAccess.CAP_TEST_CONNECTION, null);
+        assertEquals(2, prompts[0]);
+    }
+
+    @Test
+    public void grantIsScopedToTheCapabilityItWasApprovedFor() throws Exception {
+        TerminowStore.Host h = host("a", "A", true,
+            TerminowStore.AiAccess.CAP_TEST_CONNECTION, TerminowStore.AiAccess.CAP_RUN_COMMAND);
+        h.aiAccess.approvalPolicy = "session";
+        hosts.add(h);
+        bridge.grantSession("ubuntu", "c1", h, TerminowStore.AiAccess.CAP_TEST_CONNECTION, 60_000);
+        // test_connection is now allowed without a prompt...
+        assertEquals("root", bridge.authorize(caller("ubuntu", "c1"), "a",
+            TerminowStore.AiAccess.CAP_TEST_CONNECTION, null).username);
+        // ...but run_command still needs its own approval (the gate denies here).
+        assertCodeCap(TerminowAiError.APPROVAL_REQUIRED, caller("ubuntu", "c1"), "a",
+            TerminowStore.AiAccess.CAP_RUN_COMMAND, "whoami");
+    }
+
+    @Test
+    public void deniedApprovalThrowsApprovalRequired() {
+        TerminowStore.Host h = host("a", "A", true, TerminowStore.AiAccess.CAP_TEST_CONNECTION);
+        h.aiAccess.approvalPolicy = "ask";
+        hosts.add(h);
+        bridge.setApprovalGate(spec -> TerminowAiApprovals.Decision.DENY);
+        assertCode(TerminowAiError.APPROVAL_REQUIRED, caller("ubuntu", "c1"), "a");
+    }
+
+    @Test
+    public void cancelledApprovalThrowsCancelled() {
+        TerminowStore.Host h = host("a", "A", true, TerminowStore.AiAccess.CAP_TEST_CONNECTION);
+        h.aiAccess.approvalPolicy = "ask";
+        hosts.add(h);
+        bridge.setApprovalGate(spec -> TerminowAiApprovals.Decision.CANCELLED);
+        assertCodeCap(TerminowAiError.CANCELLED, caller("ubuntu", "c1"), "a",
+            TerminowStore.AiAccess.CAP_TEST_CONNECTION, null);
+    }
+
+    @Test
+    public void approvalIsRevalidatedBeforeItProceeds() {
+        TerminowStore.Host h = host("a", "A", true, TerminowStore.AiAccess.CAP_TEST_CONNECTION);
+        h.aiAccess.approvalPolicy = "ask";
+        hosts.add(h);
+        // The gate "allows", but while it waited the host's AI access was turned off.
+        bridge.setApprovalGate(spec -> { h.aiAccess.enabled = false; return TerminowAiApprovals.Decision.ALLOW_ONCE; });
+        assertCodeCap(TerminowAiError.HOST_NOT_AUTHORIZED, caller("ubuntu", "c1"), "a",
+            TerminowStore.AiAccess.CAP_TEST_CONNECTION, null);
+    }
+
+    @Test
+    public void changingCredentialsRevokesGrantsAndNeedsApprovalAgain() {
+        TerminowStore.Host h = host("a", "A", true, TerminowStore.AiAccess.CAP_TEST_CONNECTION);
+        h.aiAccess.approvalPolicy = "ask";
+        hosts.add(h);
+        bridge.grantSession("ubuntu", "c1", h, TerminowStore.AiAccess.CAP_TEST_CONNECTION, 60_000);
         assertEquals(1, bridge.activeGrantCount());
-        // The user edits the address and saves: the grant no longer matches
-        h.address = "10.9.9.9";
+        h.address = "10.9.9.9"; // the user edits the address and saves
         bridge.onHostSaved(h);
         assertEquals(0, bridge.activeGrantCount());
     }
@@ -126,14 +213,29 @@ public class TerminowAiBridgeTest {
         TerminowStore.Host h = host("a", "A", true, TerminowStore.AiAccess.CAP_TEST_CONNECTION);
         h.aiAccess.approvalPolicy = "ask";
         hosts.add(h);
-        bridge.grant("ubuntu", h, 60_000);
+        bridge.grantSession("ubuntu", "c1", h, TerminowStore.AiAccess.CAP_TEST_CONNECTION, 60_000);
         h.aiAccess.enabled = false;
         bridge.onHostSaved(h);
         assertEquals(0, bridge.activeGrantCount());
-        // And removal clears any that remain
         h.aiAccess.enabled = true;
-        bridge.grant("ubuntu", h, 60_000);
+        bridge.grantSession("ubuntu", "c1", h, TerminowStore.AiAccess.CAP_TEST_CONNECTION, 60_000);
         bridge.onHostRemoved("a");
+        assertEquals(0, bridge.activeGrantCount());
+    }
+
+    @Test
+    public void envGrantAuthorizesAnyClientAndIsCredentialBound() throws Exception {
+        TerminowStore.Host h = host("a", "A", true,
+            TerminowStore.AiAccess.CAP_TEST_CONNECTION, TerminowStore.AiAccess.CAP_RUN_COMMAND);
+        h.aiAccess.approvalPolicy = "ask";
+        hosts.add(h);
+        bridge.grantEnv("ubuntu", h, 60_000); // a managed task grant
+        // Any client of the env may use either capability without a prompt.
+        assertEquals("root", bridge.authorize(caller("ubuntu", "cX"), "a",
+            TerminowStore.AiAccess.CAP_RUN_COMMAND, "ls").username);
+        // A credential change drops it.
+        h.address = "10.9.9.9";
+        bridge.onHostSaved(h);
         assertEquals(0, bridge.activeGrantCount());
     }
 
@@ -144,7 +246,7 @@ public class TerminowAiBridgeTest {
         h.label = "Renamed";
         h.group = "Prod";
         h.tags.add("x");
-        assertEquals(base, TerminowStore.aiFingerprint(h)); // rename/move does not change identity
+        assertEquals(base, TerminowStore.aiFingerprint(h));
         h.port = 2222;
         assertNotEquals(base, TerminowStore.aiFingerprint(h));
         TerminowStore.Host h2 = host("a", "A", true);
@@ -152,9 +254,14 @@ public class TerminowAiBridgeTest {
         assertNotEquals(TerminowStore.aiFingerprint(host("a", "A", true)), TerminowStore.aiFingerprint(h2));
     }
 
-    private void assertCode(TerminowAiError expected, String env, String uuid) {
+    private void assertCode(TerminowAiError expected, TerminowAiBridge.Caller caller, String uuid) {
+        assertCodeCap(expected, caller, uuid, TerminowStore.AiAccess.CAP_TEST_CONNECTION, null);
+    }
+
+    private void assertCodeCap(TerminowAiError expected, TerminowAiBridge.Caller caller, String uuid,
+                               String capability, String command) {
         try {
-            bridge.authorize(env, uuid, TerminowStore.AiAccess.CAP_TEST_CONNECTION);
+            bridge.authorize(caller, uuid, capability, command);
             fail("Expected " + expected);
         } catch (TerminowAiError.Exception e) {
             assertEquals(expected, e.error);
@@ -195,7 +302,6 @@ public class TerminowAiBridgeTest {
     public void selectionIsNeverSharedAcrossClients() throws Exception {
         hosts.add(host("a", "A", true, TerminowStore.AiAccess.CAP_RUN_COMMAND));
         bridge.selectHost("ubuntu", "c1", "a");
-        // A different client in the same environment has no selection and must not inherit c1's.
         try {
             bridge.resolveHostId("ubuntu", "c2", "");
             fail("Expected BAD_REQUEST for the other client");
@@ -210,10 +316,10 @@ public class TerminowAiBridgeTest {
         hosts.add(host("a", "A", true, TerminowStore.AiAccess.CAP_RUN_COMMAND));
         bridge.selectHost("ubuntu", "c1", "a");
         now += TerminowAiBridge.SELECTION_TTL_MS / 2;
-        assertEquals("a", bridge.resolveHostId("ubuntu", "c1", "")); // within TTL, refreshes it
-        now += TerminowAiBridge.SELECTION_TTL_MS / 2 + 1; // < TTL since the refresh, so still valid
         assertEquals("a", bridge.resolveHostId("ubuntu", "c1", ""));
-        now += TerminowAiBridge.SELECTION_TTL_MS + 1; // now idle past the TTL
+        now += TerminowAiBridge.SELECTION_TTL_MS / 2 + 1;
+        assertEquals("a", bridge.resolveHostId("ubuntu", "c1", ""));
+        now += TerminowAiBridge.SELECTION_TTL_MS + 1;
         try {
             bridge.resolveHostId("ubuntu", "c1", "");
             fail("Expected expiry");
@@ -248,7 +354,7 @@ public class TerminowAiBridgeTest {
 
     @Test
     public void selectHostRejectsAHostNotAvailableToTheEnvironment() {
-        hosts.add(host("a", "A", false, TerminowStore.AiAccess.CAP_RUN_COMMAND)); // AI access off
+        hosts.add(host("a", "A", false, TerminowStore.AiAccess.CAP_RUN_COMMAND));
         try {
             bridge.selectHost("ubuntu", "c1", "a");
             fail("Expected HOST_NOT_AUTHORIZED");
@@ -269,9 +375,7 @@ public class TerminowAiBridgeTest {
         assertNull(bridge.selectedHostIdFor("ubuntu"));
         bridge.selectHost("ubuntu", "c1", "a");
         assertEquals("a", bridge.selectedHostIdFor("ubuntu"));
-        // Scoped to the environment: another environment sees nothing.
         assertNull(bridge.selectedHostIdFor("debian"));
-        // Expires with the selection.
         now += TerminowAiBridge.SELECTION_TTL_MS + 1;
         assertNull(bridge.selectedHostIdFor("ubuntu"));
     }
