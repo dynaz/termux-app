@@ -556,7 +556,10 @@ public class TerminowLauncher {
     TerminalSession launchAiInNewTab(@NonNull Environment environment, @NonNull TerminowToolInstaller.Tool tool,
                                      @NonNull String[] args) {
         String binary = TerminowAiAgentsModel.binaryOf(tool);
-        String script = TerminowLaunchPlan.READY_SIGN + "PATH=\"$HOME/.local/bin:$PATH\"; export PATH; exec " + binary + " \"$@\"";
+        // Same guest bin dirs as detection/verification, so Open finds a tool wherever its installer
+        // put it (e.g. OpenCode's ~/.opencode/bin), not only ~/.local/bin.
+        String script = TerminowLaunchPlan.READY_SIGN + "PATH=\"" + TerminowToolInstaller.GUEST_BIN_DIRS
+            + ":$PATH\"; export PATH; exec " + binary + " \"$@\"";
         String user = getUser(environment);
         String folder = getFolder(environment);
         String executable;

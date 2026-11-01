@@ -68,6 +68,7 @@
     <string name="terminow_install_fail_installer">the installer ended with exit code %1$d. See the log.</string>
     <string name="terminow_install_fail_path">~/.bashrc could not be changed to add ~/.local/bin to the PATH.</string>
     <string name="terminow_install_fail_verify">it was installed, but --version did not run. See the log.</string>
+    <string name="terminow_install_fail_not_found">it was installed, but the program could not be found afterward. See the log.</string>
     <string name="terminow_install_fail_cancelled">it was cancelled.</string>
     <string name="terminow_install_fail_start">the environment did not start.</string>
     <string name="terminow_install_fail_exit">it ended with exit code %1$d. See the log.</string>

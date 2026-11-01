@@ -1470,6 +1470,7 @@ final class TerminowToolSheet {
             case INSTALLER: return mActivity.getString(R.string.terminow_install_fail_installer, job.getExitCode());
             case PATH: return mActivity.getString(R.string.terminow_install_fail_path);
             case VERIFY: return mActivity.getString(R.string.terminow_install_fail_verify);
+            case NOT_FOUND: return mActivity.getString(R.string.terminow_install_fail_not_found);
             case CANCELLED: return mActivity.getString(R.string.terminow_install_fail_cancelled);
             case START: return mActivity.getString(R.string.terminow_install_fail_start);
             default: return mActivity.getString(R.string.terminow_install_fail_exit, job.getExitCode());

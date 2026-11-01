@@ -104,7 +104,7 @@ public final class TerminowToolInstaller {
 
     /** Why an install failed, from its TERMINOW_FAILED line, or how the process ended. */
     public enum Failure {
-        NO_APT, NO_SUDO, SUDO_PASSWORD, UNSUPPORTED_ARCH, NEEDS_CLAUDE, APT_UPDATE, APT_INSTALL, NETWORK, INSTALLER, PATH, VERIFY,
+        NO_APT, NO_SUDO, SUDO_PASSWORD, UNSUPPORTED_ARCH, NEEDS_CLAUDE, APT_UPDATE, APT_INSTALL, NETWORK, INSTALLER, PATH, VERIFY, NOT_FOUND,
         CANCELLED, START, EXIT;
 
         @NonNull
@@ -121,6 +121,7 @@ public final class TerminowToolInstaller {
                 case "installer": return INSTALLER;
                 case "path": return PATH;
                 case "verify": return VERIFY;
+                case "not-found": return NOT_FOUND;
                 default: return EXIT;
             }
         }
@@ -303,9 +304,19 @@ public final class TerminowToolInstaller {
      * of TermiNow (Android programs under /data) at the end, so without this, the git and curl of
      * TermiNow were reported as installed in Ubuntu, and were used, before Ubuntu had its own.
      */
+    /**
+     * The directories, under $HOME, where TermiNow's tool installers place executables, as a shell
+     * PATH fragment. Tools do not all install into ~/.local/bin: OpenCode's official installer
+     * hardcodes ~/.opencode/bin and adds it only to an interactive shell's .bashrc, so a
+     * non-interactive install/verify/launch shell never sees it. Prepending these dirs in one place
+     * lets detection, verification and launch find a tool wherever its installer put it. Keep in step
+     * with {@code resolve_bin} in {@link #RESOLVE_BIN}.
+     */
+    public static final String GUEST_BIN_DIRS = "$HOME/.local/bin:$HOME/.opencode/bin:$HOME/.bun/bin";
+
     static final String OWN_PATH =
         "p=; IFS=:; for d in $PATH; do case $d in /data/*) ;; *) p=\"$p${p:+:}$d\";; esac; done; unset IFS\n" +
-        "PATH=\"$HOME/.local/bin:$p\"; export PATH\n";
+        "PATH=\"" + GUEST_BIN_DIRS + ":$p\"; export PATH\n";
 
     /**
      * What the user has: its uid, the CPU, apt and sudo, and the version of each tool. Claude
@@ -343,6 +354,69 @@ public final class TerminowToolInstaller {
      * comes from its official installer. Plugins, the arguments after {@code plugins}, are
      * installed from the official marketplace with Claude Code, which is added if it is not there.
      */
+
+    /**
+     * Pins an installed npm tool to the managed Node without ever writing through npm's launcher
+     * symlink. It reads the symlink's resolved target (the package's JS entry point) but replaces
+     * only the launcher link itself, atomically, with a separate regular launcher file — redirecting
+     * output to the symlink path would follow it and overwrite the package's JS entry point, which
+     * made {@code gemini --version} fail with "SyntaxError: Unexpected string". The managed Node is
+     * referenced through the version-independent {@code ~/.terminow/node/current} link so the
+     * launcher survives a Node upgrade. Part of {@link #INSTALL_SCRIPT}; a {@code fail} function must
+     * be defined before it. Exposed for {@code TerminowToolInstallerTest}.
+     */
+    static final String BIND_NODE_BIN =
+        "bind_node_bin() {\n" +
+        "  [ -n \"$NODE_HOME\" ] || return 0\n" +
+        "  b=\"$HOME/.local/bin/$1\"\n" +
+        // Only ever rewrite npm's launcher symlink; leave a regular file (a real binary or a
+        // launcher we already wrote) untouched so reruns are idempotent.
+        "  [ -L \"$b\" ] || return 0\n" +
+        // The package's JS entry point the launcher points at. Read only: never written to.
+        "  real=$(readlink -f \"$b\" 2>/dev/null)\n" +
+        "  [ -n \"$real\" ] && [ -f \"$real\" ] || return 0\n" +
+        "  node=\"$HOME/.terminow/node/current/bin/node\"\n" +
+        "  [ -x \"$node\" ] || node=\"$NODE_HOME/bin/node\"\n" +
+        // Build the launcher in a sibling temp file, then swap it in: the symlink target is never opened for writing.
+        "  tmp=\"$b.launch.$$\"\n" +
+        "  { printf '#!/bin/sh\\n'; printf 'exec \"%s\" \"%s\" \"$@\"\\n' \"$node\" \"$real\"; } > \"$tmp\" || fail path 31\n" +
+        "  chmod +x \"$tmp\" || { rm -f \"$tmp\"; fail path 31; }\n" +
+        "  rm -f \"$b\" || { rm -f \"$tmp\"; fail path 31; }\n" +   // unlink only the launcher symlink (its target is left intact)
+        "  mv -f \"$tmp\" \"$b\" || fail path 31\n" +              // atomically put a separate regular launcher in its place
+        "}\n";
+
+    /**
+     * Recovers an npm tool install that is absent or was corrupted by the pre-fix launcher (which
+     * wrote through npm's symlink and clobbered the package's JS entry point). Given the bin name
+     * ($1) and npm package ($2), it removes any launcher and the package tree so a following
+     * {@code npm install -g} restores the JS entry point and a clean symlink. It never touches the
+     * tool's settings or credentials, which live under {@code $HOME} outside {@code node_modules}
+     * (e.g. {@code ~/.gemini}, {@code ~/.codex}). Part of {@link #INSTALL_SCRIPT}; exposed for tests.
+     */
+    static final String RESET_NPM_BIN =
+        "reset_npm_bin() {\n" +
+        "  rm -f \"$HOME/.local/bin/$1\" \"$HOME/.local/bin/$1.real\" 2>/dev/null || true\n" +
+        "  rm -rf \"$HOME/.local/lib/node_modules/$2\" 2>/dev/null || true\n" +
+        "}\n";
+
+    /**
+     * Resolves an installed tool's executable to an absolute path, across the dirs TermiNow installers
+     * use ({@link #GUEST_BIN_DIRS}) and an optional explicit dir ($2), without trusting a login shell's
+     * PATH. {@code resolve_bin NAME [DIR]} prints the path and returns 0, or prints nothing and returns
+     * 1. {@code add_to_path DIR} prepends a dir to the current process PATH once. Part of
+     * {@link #INSTALL_SCRIPT}; exposed for {@code TerminowToolInstallerTest}.
+     */
+    static final String RESOLVE_BIN =
+        "add_to_path() { case \":$PATH:\" in *\":$1:\"*) ;; *) PATH=\"$1:$PATH\"; export PATH;; esac; }\n" +
+        "resolve_bin() {\n" +
+        "  for d in ${2:+\"$2\"} \"$HOME/.local/bin\" \"$HOME/.opencode/bin\" \"$HOME/.bun/bin\"; do\n" +
+        "    [ -x \"$d/$1\" ] && { printf '%s\\n' \"$d/$1\"; return 0; }\n" +
+        "  done\n" +
+        "  c=$(command -v \"$1\" 2>/dev/null) || c=\n" +
+        "  [ -n \"$c\" ] && [ -x \"$c\" ] && { printf '%s\\n' \"$c\"; return 0; }\n" +
+        "  return 1\n" +
+        "}\n";
+
     static final String INSTALL_SCRIPT =
         "stage() { echo \"TERMINOW_STAGE=$1\"; }\n" +
         "fail() { echo \"TERMINOW_FAILED=$1\"; exit \"${2:-1}\"; }\n" +
@@ -396,7 +470,7 @@ public final class TerminowToolInstaller {
         "    *) fail unsupported-arch 15;;\n" +
         "  esac\n" +
         "  md=\"$HOME/.terminow/node/node-$NODE_VER-linux-$narch\"\n" +
-        "  if [ -x \"$md/bin/node\" ] && [ \"$(\"$md/bin/node\" --version 2>/dev/null)\" = \"$NODE_VER\" ]; then NODE_HOME=\"$md\"; return 0; fi\n" +
+        "  if [ -x \"$md/bin/node\" ] && [ \"$(\"$md/bin/node\" --version 2>/dev/null)\" = \"$NODE_VER\" ]; then ln -sfn \"$md\" \"$HOME/.terminow/node/current\" 2>/dev/null || true; NODE_HOME=\"$md\"; return 0; fi\n" +
         "  if command -v node >/dev/null 2>&1; then\n" +
         "    m=$(node -e 'process.stdout.write(String(process.versions.node.split(\".\")[0]))' 2>/dev/null)\n" +
         "    case \"$m\" in ''|*[!0-9]*) m=0;; esac\n" +
@@ -413,19 +487,14 @@ public final class TerminowToolInstaller {
         "  tar -xzf \"$dl\" -C \"$md\" --strip-components=1 || { rm -f \"$dl\"; rm -rf \"$md\"; fail installer 32; }\n" +
         "  rm -f \"$dl\"\n" +
         "  [ -x \"$md/bin/node\" ] || fail installer 32\n" +
+        "  ln -sfn \"$md\" \"$HOME/.terminow/node/current\" 2>/dev/null || true\n" +
         "  NODE_HOME=\"$md\"\n" +
         "}\n" +
-        // Pin an installed npm bin's launcher to the managed Node, so opening the tool later does not
-        // fall back to the system node on the PATH. A no-op when a suitable system node is used.
-        "bind_node_bin() {\n" +
-        "  [ -n \"$NODE_HOME\" ] || return 0\n" +
-        "  b=\"$HOME/.local/bin/$1\"\n" +
-        "  [ -e \"$b\" ] || return 0\n" +
-        "  real=$(readlink -f \"$b\" 2>/dev/null) || real=\"$b\"\n" +
-        "  if [ \"$real\" = \"$b\" ]; then mv \"$b\" \"$b.real\" || fail path 31; real=\"$b.real\"; fi\n" +
-        "  { printf '#!/bin/sh\\n'; printf 'exec \"%s/bin/node\" \"%s\" \"$@\"\\n' \"$NODE_HOME\" \"$real\"; } > \"$b\" || fail path 31\n" +
-        "  chmod +x \"$b\" || fail path 31\n" +
-        "}\n" +
+        // Pin an installed npm bin to the managed Node (see BIND_NODE_BIN), so opening the tool later
+        // does not fall back to the system node on the PATH. A no-op when a suitable system node is used.
+        // reset_npm_bin recovers a broken/corrupted npm tool before reinstalling it (see RESET_NPM_BIN).
+        BIND_NODE_BIN +
+        RESET_NPM_BIN +
         // Install a global npm package into ~/.local (no sudo), using a Node >= 20 runtime (managed if needed)
         "npm_install() {\n" +
         "  ensure_node\n" +
@@ -436,6 +505,7 @@ public final class TerminowToolInstaller {
         "  npm install -g \"$1\" || fail installer 36\n" +
         "}\n" +
         "native_arch() { case \"$(uname -m)\" in aarch64|arm64|x86_64|amd64) ;; *) fail unsupported-arch 15;; esac; }\n" +
+        RESOLVE_BIN +
         "case \"$tool\" in\n" +
         "  claude)\n" +
         "    if v=$(claude --version 2>/dev/null) && [ -n \"$v\" ]; then\n" +
@@ -483,6 +553,11 @@ public final class TerminowToolInstaller {
         "    stage dependencies\n" +
         "    ensure_node\n" +
         "    stage installing\n" +
+        // Recovery: we only reach here when "$bin" --version failed above, so the install is absent
+        // or an older build corrupted the package's JS entry point by writing through npm's symlink.
+        // reset_npm_bin drops any launcher and the package tree so the reinstall restores the JS
+        // entry point and a clean symlink; settings and credentials are preserved (see RESET_NPM_BIN).
+        "    reset_npm_bin \"$bin\" \"$pkg\"\n" +
         "    npm_install \"$pkg\"\n" +
         "    bind_node_bin \"$bin\"\n" +
         "    persist_path\n" +
@@ -491,20 +566,24 @@ public final class TerminowToolInstaller {
         "    [ -n \"$v\" ] || fail verify 30\n" +
         "    echo \"TERMINOW_VERSION=$(first \"$v\")\"\n" +
         "    ;;\n" +
-        // OpenCode, from its official install script, into ~/.local/bin
+        // OpenCode, from its official install script. Its installer hardcodes ~/.opencode/bin and adds
+        // it only to an interactive shell's .bashrc (OPENCODE_INSTALL_DIR is not honoured), so the
+        // binary is resolved by path, not by trusting `opencode` on this non-interactive PATH.
         "  opencode)\n" +
-        "    if v=$(opencode --version 2>/dev/null) && [ -n \"$v\" ]; then\n" +
-        "      echo TERMINOW_ALREADY=1; persist_path; stage verifying; echo \"TERMINOW_VERSION=$(first \"$v\")\"; exit 0\n" +
+        "    if oc=$(resolve_bin opencode \"$OPENCODE_INSTALL_DIR\") && v=$(\"$oc\" --version 2>/dev/null) && [ -n \"$v\" ]; then\n" +
+        "      echo TERMINOW_ALREADY=1; add_to_path \"$(dirname \"$oc\")\"; persist_path; stage verifying\n" +
+        "      echo \"TermiNow: found opencode at $oc\"; echo \"TERMINOW_VERSION=$(first \"$v\")\"; exit 0\n" +
         "    fi\n" +
         "    native_arch\n" +
         "    stage dependencies\n" +
         "    apt_install curl ca-certificates\n" +
         "    stage installing\n" +
-        "    export OPENCODE_INSTALL_DIR=\"$HOME/.local/bin\"\n" +
         "    run_installer https://opencode.ai/install\n" +
-        "    persist_path\n" +
         "    stage verifying\n" +
-        "    v=$(opencode --version 2>&1) || { echo \"$v\"; fail verify 30; }\n" +
+        "    oc=$(resolve_bin opencode \"$OPENCODE_INSTALL_DIR\") || fail not-found 30\n" +
+        "    add_to_path \"$(dirname \"$oc\")\"; persist_path\n" +
+        "    echo \"TermiNow: verifying $oc\"\n" +
+        "    v=$(\"$oc\" --version 2>&1) || { echo \"$v\"; fail verify 30; }\n" +
         "    [ -n \"$v\" ] || fail verify 30\n" +
         "    echo \"TERMINOW_VERSION=$(first \"$v\")\"\n" +
         "    ;;\n" +
@@ -832,14 +911,34 @@ public final class TerminowToolInstaller {
     private static void readLines(@NonNull InputStream stream, @NonNull LineSink sink) {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
             String line;
-            // apt and curl draw progress with carriage returns: only the last state of a line is kept
             while ((line = reader.readLine()) != null) {
-                int cr = line.lastIndexOf('\r', line.length() - 2);
-                sink.line(cr >= 0 ? line.substring(cr + 1).replace("\r", "") : line.replace("\r", ""));
+                sink.line(cleanLine(line));
             }
         } catch (IOException ignored) {
             // The process ended or was stopped
         }
+    }
+
+    private static final java.util.regex.Pattern ANSI = java.util.regex.Pattern.compile(
+        "\u001b\\[[0-9;?]*[ -/]*[@-~]" +        // CSI (colour, cursor): ESC [ ... final byte
+        "|\u001b\\][^\u0007\u001b]*(?:\u0007|\u001b\\\\)" + // OSC (title etc.): ESC ] ... BEL or ESC \
+        "|\u001b[@-Z\\\\-_]");                  // other two-byte escapes: ESC + one char
+
+    /** Remove ANSI colour and cursor escape sequences (OpenCode's installer colours its output). */
+    static String stripAnsi(@NonNull String s) {
+        return s.indexOf('\u001b') < 0 ? s : ANSI.matcher(s).replaceAll("");
+    }
+
+    /**
+     * Clean one line of installer/detection output for the log and parsing: keep only the last state
+     * of a carriage-return progress line (apt, curl, download bars) so it does not become hundreds of
+     * lines, and strip ANSI escapes so they do not show as garbage in the Tools Library log.
+     */
+    static String cleanLine(@NonNull String line) {
+        int cr = line.lastIndexOf('\r', line.length() - 2);
+        String s = cr >= 0 ? line.substring(cr + 1) : line;
+        if (s.indexOf('\r') >= 0) s = s.replace("\r", "");
+        return stripAnsi(s);
     }
 
     /** Find out what is installed, blocking, for the sheet when it opens and after an install. */

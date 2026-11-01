@@ -11,6 +11,7 @@ import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.FrameLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
@@ -215,8 +216,12 @@ final class TerminowAiApprovalController implements TerminowAiApprovals.Listener
 
         ScrollView outer = new ScrollView(mActivity);
         outer.addView(card);
-        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(Math.min(widthPx(), dp(480)),
+        // card is the ScrollView's child, so its params must be FrameLayout.LayoutParams, not
+        // LinearLayout.LayoutParams — ScrollView (a FrameLayout) casts its child's params and would
+        // otherwise crash with ClassCastException.
+        FrameLayout.LayoutParams cardParams = new FrameLayout.LayoutParams(Math.min(widthPx(), dp(480)),
             ViewGroup.LayoutParams.WRAP_CONTENT);
+        cardParams.gravity = Gravity.CENTER_HORIZONTAL;
         cardParams.setMargins(dp(16), dp(16), dp(16), dp(16));
         card.setLayoutParams(cardParams);
         root.addView(outer, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
