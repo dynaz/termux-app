@@ -343,6 +343,51 @@ public final class TerminowToolInstaller {
      * comes from its official installer. Plugins, the arguments after {@code plugins}, are
      * installed from the official marketplace with Claude Code, which is added if it is not there.
      */
+
+    /**
+     * Pins an installed npm tool to the managed Node without ever writing through npm's launcher
+     * symlink. It reads the symlink's resolved target (the package's JS entry point) but replaces
+     * only the launcher link itself, atomically, with a separate regular launcher file — redirecting
+     * output to the symlink path would follow it and overwrite the package's JS entry point, which
+     * made {@code gemini --version} fail with "SyntaxError: Unexpected string". The managed Node is
+     * referenced through the version-independent {@code ~/.terminow/node/current} link so the
+     * launcher survives a Node upgrade. Part of {@link #INSTALL_SCRIPT}; a {@code fail} function must
+     * be defined before it. Exposed for {@code TerminowToolInstallerTest}.
+     */
+    static final String BIND_NODE_BIN =
+        "bind_node_bin() {\n" +
+        "  [ -n \"$NODE_HOME\" ] || return 0\n" +
+        "  b=\"$HOME/.local/bin/$1\"\n" +
+        // Only ever rewrite npm's launcher symlink; leave a regular file (a real binary or a
+        // launcher we already wrote) untouched so reruns are idempotent.
+        "  [ -L \"$b\" ] || return 0\n" +
+        // The package's JS entry point the launcher points at. Read only: never written to.
+        "  real=$(readlink -f \"$b\" 2>/dev/null)\n" +
+        "  [ -n \"$real\" ] && [ -f \"$real\" ] || return 0\n" +
+        "  node=\"$HOME/.terminow/node/current/bin/node\"\n" +
+        "  [ -x \"$node\" ] || node=\"$NODE_HOME/bin/node\"\n" +
+        // Build the launcher in a sibling temp file, then swap it in: the symlink target is never opened for writing.
+        "  tmp=\"$b.launch.$$\"\n" +
+        "  { printf '#!/bin/sh\\n'; printf 'exec \"%s\" \"%s\" \"$@\"\\n' \"$node\" \"$real\"; } > \"$tmp\" || fail path 31\n" +
+        "  chmod +x \"$tmp\" || { rm -f \"$tmp\"; fail path 31; }\n" +
+        "  rm -f \"$b\" || { rm -f \"$tmp\"; fail path 31; }\n" +   // unlink only the launcher symlink (its target is left intact)
+        "  mv -f \"$tmp\" \"$b\" || fail path 31\n" +              // atomically put a separate regular launcher in its place
+        "}\n";
+
+    /**
+     * Recovers an npm tool install that is absent or was corrupted by the pre-fix launcher (which
+     * wrote through npm's symlink and clobbered the package's JS entry point). Given the bin name
+     * ($1) and npm package ($2), it removes any launcher and the package tree so a following
+     * {@code npm install -g} restores the JS entry point and a clean symlink. It never touches the
+     * tool's settings or credentials, which live under {@code $HOME} outside {@code node_modules}
+     * (e.g. {@code ~/.gemini}, {@code ~/.codex}). Part of {@link #INSTALL_SCRIPT}; exposed for tests.
+     */
+    static final String RESET_NPM_BIN =
+        "reset_npm_bin() {\n" +
+        "  rm -f \"$HOME/.local/bin/$1\" \"$HOME/.local/bin/$1.real\" 2>/dev/null || true\n" +
+        "  rm -rf \"$HOME/.local/lib/node_modules/$2\" 2>/dev/null || true\n" +
+        "}\n";
+
     static final String INSTALL_SCRIPT =
         "stage() { echo \"TERMINOW_STAGE=$1\"; }\n" +
         "fail() { echo \"TERMINOW_FAILED=$1\"; exit \"${2:-1}\"; }\n" +
@@ -396,7 +441,7 @@ public final class TerminowToolInstaller {
         "    *) fail unsupported-arch 15;;\n" +
         "  esac\n" +
         "  md=\"$HOME/.terminow/node/node-$NODE_VER-linux-$narch\"\n" +
-        "  if [ -x \"$md/bin/node\" ] && [ \"$(\"$md/bin/node\" --version 2>/dev/null)\" = \"$NODE_VER\" ]; then NODE_HOME=\"$md\"; return 0; fi\n" +
+        "  if [ -x \"$md/bin/node\" ] && [ \"$(\"$md/bin/node\" --version 2>/dev/null)\" = \"$NODE_VER\" ]; then ln -sfn \"$md\" \"$HOME/.terminow/node/current\" 2>/dev/null || true; NODE_HOME=\"$md\"; return 0; fi\n" +
         "  if command -v node >/dev/null 2>&1; then\n" +
         "    m=$(node -e 'process.stdout.write(String(process.versions.node.split(\".\")[0]))' 2>/dev/null)\n" +
         "    case \"$m\" in ''|*[!0-9]*) m=0;; esac\n" +
@@ -413,19 +458,14 @@ public final class TerminowToolInstaller {
         "  tar -xzf \"$dl\" -C \"$md\" --strip-components=1 || { rm -f \"$dl\"; rm -rf \"$md\"; fail installer 32; }\n" +
         "  rm -f \"$dl\"\n" +
         "  [ -x \"$md/bin/node\" ] || fail installer 32\n" +
+        "  ln -sfn \"$md\" \"$HOME/.terminow/node/current\" 2>/dev/null || true\n" +
         "  NODE_HOME=\"$md\"\n" +
         "}\n" +
-        // Pin an installed npm bin's launcher to the managed Node, so opening the tool later does not
-        // fall back to the system node on the PATH. A no-op when a suitable system node is used.
-        "bind_node_bin() {\n" +
-        "  [ -n \"$NODE_HOME\" ] || return 0\n" +
-        "  b=\"$HOME/.local/bin/$1\"\n" +
-        "  [ -e \"$b\" ] || return 0\n" +
-        "  real=$(readlink -f \"$b\" 2>/dev/null) || real=\"$b\"\n" +
-        "  if [ \"$real\" = \"$b\" ]; then mv \"$b\" \"$b.real\" || fail path 31; real=\"$b.real\"; fi\n" +
-        "  { printf '#!/bin/sh\\n'; printf 'exec \"%s/bin/node\" \"%s\" \"$@\"\\n' \"$NODE_HOME\" \"$real\"; } > \"$b\" || fail path 31\n" +
-        "  chmod +x \"$b\" || fail path 31\n" +
-        "}\n" +
+        // Pin an installed npm bin to the managed Node (see BIND_NODE_BIN), so opening the tool later
+        // does not fall back to the system node on the PATH. A no-op when a suitable system node is used.
+        // reset_npm_bin recovers a broken/corrupted npm tool before reinstalling it (see RESET_NPM_BIN).
+        BIND_NODE_BIN +
+        RESET_NPM_BIN +
         // Install a global npm package into ~/.local (no sudo), using a Node >= 20 runtime (managed if needed)
         "npm_install() {\n" +
         "  ensure_node\n" +
@@ -483,6 +523,11 @@ public final class TerminowToolInstaller {
         "    stage dependencies\n" +
         "    ensure_node\n" +
         "    stage installing\n" +
+        // Recovery: we only reach here when "$bin" --version failed above, so the install is absent
+        // or an older build corrupted the package's JS entry point by writing through npm's symlink.
+        // reset_npm_bin drops any launcher and the package tree so the reinstall restores the JS
+        // entry point and a clean symlink; settings and credentials are preserved (see RESET_NPM_BIN).
+        "    reset_npm_bin \"$bin\" \"$pkg\"\n" +
         "    npm_install \"$pkg\"\n" +
         "    bind_node_bin \"$bin\"\n" +
         "    persist_path\n" +

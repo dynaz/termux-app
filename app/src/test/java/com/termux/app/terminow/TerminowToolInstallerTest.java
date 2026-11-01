@@ -10,6 +10,7 @@ import java.io.File;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -375,5 +376,221 @@ public class TerminowToolInstallerTest {
         TerminowToolInstaller.Job again = installAndWait(runner, "root", TerminowToolInstaller.Tool.FISH);
         assertEquals(TerminowToolInstaller.State.SUCCEEDED, again.getState());
         assertFalse(calls(), calls().contains("apt-get"));
+    }
+
+    /** Runs just the bind_node_bin function against the given HOME and managed Node, asserting it exits 0. */
+    private String runBindNodeBin(File home, File nodeHome) throws Exception {
+        String body = "fail() { echo \"FAIL $*\"; exit 1; }\n"
+            + TerminowToolInstaller.BIND_NODE_BIN
+            + "NODE_HOME=\"" + nodeHome.getPath() + "\"\n"
+            + "bind_node_bin gemini\n";
+        ProcessBuilder builder = new ProcessBuilder("/bin/sh", "-c", body).redirectErrorStream(true);
+        builder.environment().put("HOME", home.getPath());
+        Process p = builder.start();
+        String out = new String(readAll(p.getInputStream()), StandardCharsets.UTF_8);
+        assertTrue("bind_node_bin did not finish", p.waitFor(30, TimeUnit.SECONDS));
+        assertEquals("bind_node_bin failed: " + out, 0, p.exitValue());
+        return out;
+    }
+
+    /**
+     * Regression for the Gemini/Codex/Grok launcher bug: bind_node_bin must never write through the
+     * npm executable symlink. It replaces only the launcher link with a separate regular launcher
+     * file and leaves the package's JS entry point (the symlink's resolved target) unchanged.
+     */
+    @Test
+    public void bindNodeBinNeverWritesThroughTheNpmSymlink() throws Exception {
+        assumeTrue(new File("/bin/sh").exists());
+        File home = new File(temp.getRoot(), "h");
+
+        // npm's layout: ~/.local/bin/gemini is a relative symlink to the package's JS entry point.
+        File entry = new File(home, ".local/lib/node_modules/@google/gemini-cli/bundle/gemini.js");
+        assertTrue(entry.getParentFile().mkdirs());
+        String js = "#!/usr/bin/env node\nconsole.log('gemini 1.2.3');\n";
+        Files.write(entry.toPath(), js.getBytes(StandardCharsets.UTF_8));
+        File bin = new File(home, ".local/bin");
+        assertTrue(bin.mkdirs());
+        File link = new File(bin, "gemini");
+        Files.createSymbolicLink(link.toPath(),
+            Paths.get("../lib/node_modules/@google/gemini-cli/bundle/gemini.js"));
+        assertTrue(Files.isSymbolicLink(link.toPath()));
+
+        // A managed Node with the version-independent "current" link ensure_node maintains.
+        File nodeDir = new File(home, ".terminow/node/node-v22.23.4-linux-arm64");
+        File node = new File(nodeDir, "bin/node");
+        assertTrue(node.getParentFile().mkdirs());
+        Files.write(node.toPath(), "#!/bin/sh\nexit 0\n".getBytes(StandardCharsets.UTF_8));
+        assertTrue(node.setExecutable(true));
+        Files.createSymbolicLink(new File(home, ".terminow/node/current").toPath(), nodeDir.toPath());
+
+        runBindNodeBin(home, nodeDir);
+
+        // The package's JS entry point is byte-for-byte unchanged.
+        assertEquals("the package JS entry point must not be modified",
+            js, new String(Files.readAllBytes(entry.toPath()), StandardCharsets.UTF_8));
+        // The npm symlink is replaced by a separate, regular, executable launcher.
+        assertFalse("the launcher must no longer be a symlink", Files.isSymbolicLink(link.toPath()));
+        assertTrue("the launcher must be a regular file", link.isFile());
+        assertTrue("the launcher must be executable", link.canExecute());
+        String launcher = new String(Files.readAllBytes(link.toPath()), StandardCharsets.UTF_8);
+        assertTrue(launcher, launcher.startsWith("#!/bin/sh\n"));
+        assertTrue(launcher, launcher.contains("/.terminow/node/current/bin/node"));
+        assertTrue(launcher, launcher.contains(entry.getCanonicalPath()));
+        assertTrue(launcher, launcher.trim().endsWith("\"$@\""));
+
+        // Idempotent: a second run leaves the regular launcher untouched (only symlinks are rewritten),
+        // and still never touches the JS entry point.
+        runBindNodeBin(home, nodeDir);
+        assertFalse(Files.isSymbolicLink(link.toPath()));
+        assertEquals("the launcher must be unchanged on a rerun",
+            launcher, new String(Files.readAllBytes(link.toPath()), StandardCharsets.UTF_8));
+        assertEquals("the JS entry point must still be unchanged",
+            js, new String(Files.readAllBytes(entry.toPath()), StandardCharsets.UTF_8));
+    }
+
+    /** The package JS entry point npm would install; prints {@code version} on --version. */
+    private static String geminiJs(String version) {
+        return "#!/usr/bin/env node\n"
+            + "if (process.argv.slice(2).includes('--version')) { console.log('" + version + "'); process.exit(0); }\n"
+            + "console.log('gemini', '" + version + "');\n";
+    }
+
+    /** Recreates npm's layout under home (package JS entry + a fresh bin symlink), as a (re)install/upgrade would. */
+    private File npmInstall(File home, String version) throws Exception {
+        File entry = new File(home, ".local/lib/node_modules/@google/gemini-cli/bundle/gemini.js");
+        if (!entry.getParentFile().isDirectory()) assertTrue(entry.getParentFile().mkdirs());
+        Files.write(entry.toPath(), geminiJs(version).getBytes(StandardCharsets.UTF_8));
+        File bin = new File(home, ".local/bin");
+        if (!bin.isDirectory()) assertTrue(bin.mkdirs());
+        File link = new File(bin, "gemini");
+        Files.deleteIfExists(link.toPath());
+        Files.createSymbolicLink(link.toPath(), Paths.get("../lib/node_modules/@google/gemini-cli/bundle/gemini.js"));
+        return entry;
+    }
+
+    /** Points ~/.terminow/node/current at a managed Node whose bin/node is the host node; returns the node dir. */
+    private File managedNode(File home) throws Exception {
+        File nodeDir = new File(home, ".terminow/node/node-v22.23.4-linux-arm64");
+        File node = new File(nodeDir, "bin/node");
+        if (!node.getParentFile().isDirectory()) assertTrue(node.getParentFile().mkdirs());
+        Files.deleteIfExists(node.toPath());
+        Files.createSymbolicLink(node.toPath(), Paths.get("/usr/bin/node"));
+        File current = new File(home, ".terminow/node/current");
+        Files.deleteIfExists(current.toPath());
+        Files.createSymbolicLink(current.toPath(), nodeDir.toPath());
+        return nodeDir;
+    }
+
+    /** Runs just the reset_npm_bin function (the installer's recovery step) for the given bin + package. */
+    private void runResetNpmBin(File home, String bin, String pkg) throws Exception {
+        String body = TerminowToolInstaller.RESET_NPM_BIN + "reset_npm_bin '" + bin + "' '" + pkg + "'\n";
+        ProcessBuilder builder = new ProcessBuilder("/bin/sh", "-c", body).redirectErrorStream(true);
+        builder.environment().put("HOME", home.getPath());
+        Process p = builder.start();
+        String out = new String(readAll(p.getInputStream()), StandardCharsets.UTF_8);
+        assertTrue("reset_npm_bin did not finish", p.waitFor(30, TimeUnit.SECONDS));
+        assertEquals("reset_npm_bin failed: " + out, 0, p.exitValue());
+    }
+
+    /**
+     * Launcher behaviour only (not Gemini CLI compatibility): with the host node as a stand-in for the
+     * managed Node and NO node on PATH — the app's Open environment — the generated launcher still runs
+     * the tool through the managed Node. Real Gemini CLI compatibility needs Node 22 on a device.
+     */
+    @Test
+    public void geminiLauncherRunsWithNodeAbsentFromPath() throws Exception {
+        assumeTrue(new File("/bin/sh").exists() && new File("/usr/bin/node").exists());
+        File home = new File(temp.getRoot(), "h2");
+        File entry = npmInstall(home, "9.9.9");
+        File nodeDir = managedNode(home);
+        runBindNodeBin(home, nodeDir);
+
+        File link = new File(home, ".local/bin/gemini");
+        File binDir = new File(home, ".local/bin");
+        assertFalse("the test PATH must not contain node", new File(binDir, "node").exists());
+        ProcessBuilder pb = new ProcessBuilder(link.getPath(), "--version").redirectErrorStream(true);
+        pb.environment().clear();
+        pb.environment().put("PATH", binDir.getPath());   // only ~/.local/bin, no node anywhere on PATH
+        pb.environment().put("HOME", home.getPath());
+        Process p = pb.start();
+        String out = new String(readAll(p.getInputStream()), StandardCharsets.UTF_8).trim();
+        assertTrue("launcher did not finish", p.waitFor(30, TimeUnit.SECONDS));
+        assertEquals("launcher output: " + out, 0, p.exitValue());
+        assertEquals("the launcher must run the tool via the managed node with no node on PATH", "9.9.9", out);
+        assertEquals("the JS entry point must be unchanged", geminiJs("9.9.9"),
+            new String(Files.readAllBytes(entry.toPath()), StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Across a first install, a retry (same version re-linked), and an upgrade (new version re-linked),
+     * pinning never alters the package JS entry point, and each launcher is a complete regular file with
+     * no half-written temp left behind (atomic creation).
+     */
+    @Test
+    public void jsEntryPointSurvivesInstallRetryAndUpgrade() throws Exception {
+        assumeTrue(new File("/bin/sh").exists());
+        File home = new File(temp.getRoot(), "h3");
+        File nodeDir = managedNode(home);
+        File entry = new File(home, ".local/lib/node_modules/@google/gemini-cli/bundle/gemini.js");
+        File binDir = new File(home, ".local/bin");
+        File link = new File(binDir, "gemini");
+        for (String version : new String[] {"1.0.0", "1.0.0", "2.5.1"}) {
+            npmInstall(home, version);                                   // npm (re)creates the entry + a symlink
+            assertTrue("npm relinks the bin as a symlink", Files.isSymbolicLink(link.toPath()));
+            runBindNodeBin(home, nodeDir);
+            assertEquals("pinning must not modify the JS entry point", geminiJs(version),
+                new String(Files.readAllBytes(entry.toPath()), StandardCharsets.UTF_8));
+            assertFalse("the launcher is a regular file, not a symlink", Files.isSymbolicLink(link.toPath()));
+            assertTrue(link.isFile() && link.canExecute());
+            String launcher = new String(Files.readAllBytes(link.toPath()), StandardCharsets.UTF_8);
+            assertTrue(launcher, launcher.startsWith("#!/bin/sh\n") && launcher.trim().endsWith("\"$@\""));
+            assertTrue(launcher, launcher.contains(entry.getCanonicalPath()));
+            File[] temps = binDir.listFiles((d, n) -> n.startsWith("gemini.launch."));
+            assertTrue("atomic creation leaves no temp launcher", temps == null || temps.length == 0);
+        }
+    }
+
+    /**
+     * A corrupted install (the pre-fix launcher written through the symlink, clobbering gemini.js) is
+     * recovered by reset_npm_bin: the launcher and package tree are removed so a reinstall restores a
+     * clean entry point, while user settings and credentials under ~/.gemini are preserved.
+     */
+    @Test
+    public void recoversACorruptedInstallPreservingSettingsAndCredentials() throws Exception {
+        assumeTrue(new File("/bin/sh").exists());
+        File home = new File(temp.getRoot(), "h4");
+        File entry = npmInstall(home, "3.0.0");
+        File link = new File(home, ".local/bin/gemini");
+
+        // Reproduce the old bug: writing through the symlink clobbers the package's JS entry point.
+        String junk = "#!/bin/sh\nexec \"/x/node\" \"" + entry.getCanonicalPath() + "\" \"$@\"\n";
+        Files.write(entry.toPath(), junk.getBytes(StandardCharsets.UTF_8));
+        assertTrue(new String(Files.readAllBytes(entry.toPath()), StandardCharsets.UTF_8).startsWith("#!/bin/sh"));
+
+        // Settings + credentials live outside node_modules.
+        File settings = new File(home, ".gemini/settings.json");
+        assertTrue(settings.getParentFile().mkdirs());
+        Files.write(settings.toPath(), "{\"theme\":\"dark\"}".getBytes(StandardCharsets.UTF_8));
+        File creds = new File(home, ".gemini/oauth_creds.json");
+        Files.write(creds.toPath(), "{\"token\":\"secret\"}".getBytes(StandardCharsets.UTF_8));
+
+        runResetNpmBin(home, "gemini", "@google/gemini-cli");
+
+        assertFalse("the launcher must be removed", link.exists() || Files.isSymbolicLink(link.toPath()));
+        assertFalse("the corrupted package tree must be removed",
+            new File(home, ".local/lib/node_modules/@google/gemini-cli").exists());
+        assertTrue("settings must be preserved", settings.exists());
+        assertEquals("{\"theme\":\"dark\"}", new String(Files.readAllBytes(settings.toPath()), StandardCharsets.UTF_8));
+        assertTrue("credentials must be preserved", creds.exists());
+        assertEquals("{\"token\":\"secret\"}", new String(Files.readAllBytes(creds.toPath()), StandardCharsets.UTF_8));
+
+        // A reinstall (npm restores files + symlink) then pinning yields a clean, uncorrupted launcher.
+        File restored = npmInstall(home, "3.0.0");
+        File nodeDir = managedNode(home);
+        runBindNodeBin(home, nodeDir);
+        assertEquals("the reinstalled JS entry point is clean", geminiJs("3.0.0"),
+            new String(Files.readAllBytes(restored.toPath()), StandardCharsets.UTF_8));
+        assertFalse(Files.isSymbolicLink(link.toPath()));
+        assertTrue(link.isFile());
     }
 }
