@@ -11,6 +11,7 @@ import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.FrameLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
@@ -188,9 +189,13 @@ final class TerminowAiBridgeSheet {
         background.setCornerRadius(dp(20));
         card.setBackground(background);
         card.setPadding(dp(20), dp(18), dp(20), dp(14));
-        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
+        // card is the ScrollView's child (see outer below), so its params must be
+        // FrameLayout.LayoutParams, not LinearLayout.LayoutParams — ScrollView (a FrameLayout) casts
+        // its child's params and would otherwise crash with ClassCastException.
+        FrameLayout.LayoutParams cardParams = new FrameLayout.LayoutParams(
             Math.min(mActivity.getResources().getDisplayMetrics().widthPixels, dp(480)),
             ViewGroup.LayoutParams.WRAP_CONTENT);
+        cardParams.gravity = Gravity.CENTER_HORIZONTAL;
         cardParams.setMargins(dp(16), dp(16), dp(16), dp(16));
         card.setLayoutParams(cardParams);
 
