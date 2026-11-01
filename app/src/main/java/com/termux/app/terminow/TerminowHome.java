@@ -2138,8 +2138,27 @@ public class TerminowHome {
         addMenuItem(menu, popup, R.drawable.ic_terminow_agent,
             mActivity.getString(R.string.terminow_agent_menu), mActivity.getString(R.string.terminow_agent_menu_summary),
             this::showAgent);
+        // The AI Bridge shield is a full-colour icon, so it is shown untinted (tintIcon = false).
+        addMenuItem(menu, popup, R.drawable.ic_terminow_ai,
+            mActivity.getString(R.string.terminow_bridge_title), mActivity.getString(R.string.terminow_bridge_open_desc),
+            false, this::showBridge);
 
         popup.showAsDropDown(anchor, 0, dp(4));
+    }
+
+    /** Open the AI Bridge, scoped to the current session's environment when there is one. */
+    private void showBridge() {
+        TerminalSession session = mActivity.getCurrentSession();
+        TerminowLauncher.SessionInfo info = session != null ? mLauncher.infoOf(session) : null;
+        String envKey = info != null ? info.environmentKey : null;
+        String user = info != null ? info.user : "";
+        String envLabel = info != null ? info.environmentLabel : "";
+        String sessionName = session != null ? sessionDisplayName(session) : "";
+        String shell = info != null ? info.tool : "";
+        String handle = session != null ? session.mHandle : "";
+        new TerminowAiBridgeSheet(mActivity, getAiBridge(), getStore())
+            .onChooseHosts(this::showAiHosts)
+            .open(envKey, user, envLabel, sessionName, shell, handle);
     }
 
     /** Open Network Discovery, wired to the existing connect and Save-as-Host flows. */
@@ -6339,6 +6358,11 @@ public class TerminowHome {
 
     private void addMenuItem(@NonNull LinearLayout menu, @NonNull PopupWindow popup, int iconRes, @NonNull CharSequence title,
                              @Nullable CharSequence subtitle, @NonNull Runnable onClick) {
+        addMenuItem(menu, popup, iconRes, title, subtitle, true, onClick);
+    }
+
+    private void addMenuItem(@NonNull LinearLayout menu, @NonNull PopupWindow popup, int iconRes, @NonNull CharSequence title,
+                             @Nullable CharSequence subtitle, boolean tintIcon, @NonNull Runnable onClick) {
         LinearLayout item = new LinearLayout(mActivity);
         item.setOrientation(LinearLayout.HORIZONTAL);
         item.setGravity(Gravity.CENTER_VERTICAL);
@@ -6349,7 +6373,9 @@ public class TerminowHome {
 
         ImageView iconView = new ImageView(mActivity);
         iconView.setImageResource(iconRes);
-        iconView.setColorFilter(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary), PorterDuff.Mode.SRC_IN);
+        // Full-colour icons (the AI Bridge shield) are shown as-is; the monochrome glyphs are tinted to the row colour.
+        if (tintIcon)
+            iconView.setColorFilter(ContextCompat.getColor(mActivity, R.color.terminow_text_secondary), PorterDuff.Mode.SRC_IN);
         item.addView(iconView, new LinearLayout.LayoutParams(dp(22), dp(22)));
 
         LinearLayout texts = new LinearLayout(mActivity);
