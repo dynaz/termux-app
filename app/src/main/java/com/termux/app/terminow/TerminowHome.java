@@ -2367,6 +2367,29 @@ public class TerminowHome {
         com.termux.app.terminow.rdp.TerminowRdpActivity.show(mActivity, com.termux.app.terminow.rdp.TerminowRdpSession.start(mActivity, target));
     }
 
+    /** The built-in VNC desktop of a host: resume an open one for this host, or start a new one. */
+    private void openVnc(@NonNull TerminowStore.Host host) {
+        for (com.termux.app.terminow.vnc.TerminowVncSession session : com.termux.app.terminow.vnc.TerminowVncSession.open()) {
+            if (!session.target.hostKey.equals(host.getKey())) continue;
+            new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setTitle(host.getTitle())
+                .setMessage(R.string.terminow_vnc_open_already)
+                .setPositiveButton(R.string.terminow_rdp_resume, (d, w) -> com.termux.app.terminow.vnc.TerminowVncActivity.show(mActivity, session))
+                .setNeutralButton(R.string.terminow_rdp_new_connection, (d, w) -> startVnc(host))
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+            return;
+        }
+        startVnc(host);
+    }
+
+    private void startVnc(@NonNull TerminowStore.Host host) {
+        com.termux.app.terminow.vnc.TerminowVncSession.Target target = com.termux.app.terminow.vnc.TerminowVncBridge.vncTarget(host);
+        mStore.addRecentConnection(host, false);
+        com.termux.app.terminow.vnc.TerminowVncActivity.show(mActivity,
+            com.termux.app.terminow.vnc.TerminowVncSession.start(target));
+    }
+
     /** The open remote desktops or consoles of a Windows host. */
     private static int windowsSessions(@NonNull TerminowStore.Host host) {
         int count = 0;
@@ -3370,6 +3393,10 @@ public class TerminowHome {
             openWinrm(host);
             return;
         }
+        if (host.isVnc()) {
+            openVnc(host);
+            return;
+        }
         if (!startConnecting(host, false)) return;
         TerminalSession session = addSession(host.getTitle());
         if (session == null) {
@@ -4071,8 +4098,11 @@ public class TerminowHome {
         View sshRow = dialog.findViewById(R.id.terminow_host_ssh_row);
         View moshRow = dialog.findViewById(R.id.terminow_host_mosh_row);
         View keyRowView = dialog.findViewById(R.id.terminow_host_key_row);
-        String[] protocols = {TerminowStore.Host.PROTOCOL_SSH, TerminowStore.Host.PROTOCOL_RDP, TerminowStore.Host.PROTOCOL_WINRM};
-        int[] protocolLabels = {R.string.terminow_host_protocol_ssh, R.string.terminow_host_protocol_rdp, R.string.terminow_host_protocol_winrm};
+        View vncOptions = dialog.findViewById(R.id.terminow_host_vnc_options);
+        CheckBox vncViewOnlyView = dialog.findViewById(R.id.terminow_host_vnc_view_only);
+        if (existingHost != null) vncViewOnlyView.setChecked(existingHost.vncViewOnly);
+        String[] protocols = {TerminowStore.Host.PROTOCOL_SSH, TerminowStore.Host.PROTOCOL_RDP, TerminowStore.Host.PROTOCOL_WINRM, TerminowStore.Host.PROTOCOL_VNC};
+        int[] protocolLabels = {R.string.terminow_host_protocol_ssh, R.string.terminow_host_protocol_rdp, R.string.terminow_host_protocol_winrm, R.string.terminow_host_protocol_vnc};
         List<TextView> protocolChips = new ArrayList<>();
         Runnable[] showKind = new Runnable[1];
         for (int i = 0; i < protocols.length; i++) {
@@ -4095,7 +4125,10 @@ public class TerminowHome {
         showKind[0] = () -> {
             boolean rdp = TerminowStore.Host.PROTOCOL_RDP.equals(protocol[0]);
             boolean winrm = TerminowStore.Host.PROTOCOL_WINRM.equals(protocol[0]);
+            boolean vnc = TerminowStore.Host.PROTOCOL_VNC.equals(protocol[0]);
             boolean windows = rdp || winrm;
+            // Neither a terminal nor SSH-based: RDP, WinRM and VNC all hide the terminal-only rows.
+            boolean desktop = windows || vnc;
             for (TextView chip : protocolChips) {
                 boolean selected = chip.getTag().equals(protocol[0]);
                 GradientDrawable shape = new GradientDrawable();
@@ -4107,22 +4140,23 @@ public class TerminowHome {
             windowsCard.setVisibility(windows ? View.VISIBLE : View.GONE);
             rdpOptions.setVisibility(rdp ? View.VISIBLE : View.GONE);
             winrmOptions.setVisibility(winrm ? View.VISIBLE : View.GONE);
-            sshRow.setVisibility(windows ? View.GONE : View.VISIBLE);
-            moshRow.setVisibility(windows ? View.GONE : View.VISIBLE);
-            dialog.findViewById(R.id.terminow_host_mosh_options).setVisibility(!windows && moshView.isChecked() ? View.VISIBLE : View.GONE);
-            telnetCard.setVisibility(windows ? View.GONE : View.VISIBLE);
-            keyRowView.setVisibility(windows ? View.GONE : View.VISIBLE);
-            // RDP keeps only the jump host of the session options: its SSH tunnel
-            sessionCard.setVisibility(winrm ? View.GONE : View.VISIBLE);
+            vncOptions.setVisibility(vnc ? View.VISIBLE : View.GONE);
+            sshRow.setVisibility(desktop ? View.GONE : View.VISIBLE);
+            moshRow.setVisibility(desktop ? View.GONE : View.VISIBLE);
+            dialog.findViewById(R.id.terminow_host_mosh_options).setVisibility(!desktop && moshView.isChecked() ? View.VISIBLE : View.GONE);
+            telnetCard.setVisibility(desktop ? View.GONE : View.VISIBLE);
+            keyRowView.setVisibility(desktop ? View.GONE : View.VISIBLE);
+            // RDP keeps only the jump host of the session options (its SSH tunnel); WinRM and VNC hide the card.
+            sessionCard.setVisibility(winrm || vnc ? View.GONE : View.VISIBLE);
             ViewGroup sessionGroup = (ViewGroup) sessionCard;
             for (int c = 0; c < sessionGroup.getChildCount(); c++) {
                 View child = sessionGroup.getChildAt(c);
                 boolean jump = child == jumpView || (child instanceof ViewGroup && ((ViewGroup) child).indexOfChild(jumpView) >= 0);
                 child.setVisibility(!rdp || jump ? View.VISIBLE : View.GONE);
             }
-            sshCard.setAlpha(!windows && telnetView.isChecked() ? 0.5f : 1f);
+            sshCard.setAlpha(!desktop && telnetView.isChecked() ? 0.5f : 1f);
             portView.setHint(rdp ? "3389" : winrm ? (winrmHttpsView.isChecked() ? "5986" : "5985") :
-                mActivity.getString(R.string.terminow_host_port_default));
+                vnc ? "5900" : mActivity.getString(R.string.terminow_host_port_default));
         };
         winrmHttpsView.setOnCheckedChangeListener((b, checked) -> showKind[0].run());
 
@@ -4256,9 +4290,10 @@ public class TerminowHome {
             String username = usernameView.getText().toString().trim();
             boolean rdp = TerminowStore.Host.PROTOCOL_RDP.equals(protocol[0]);
             boolean winrm = TerminowStore.Host.PROTOCOL_WINRM.equals(protocol[0]);
+            boolean vnc = TerminowStore.Host.PROTOCOL_VNC.equals(protocol[0]);
             boolean windows = rdp || winrm;
-            String keyPath = windows ? "" : keyView.getText().toString().trim();
-            int port = parsePort(portView.getText().toString(), rdp ? 3389 : winrm ? (winrmHttpsView.isChecked() ? 5986 : 5985) : 22);
+            String keyPath = windows || vnc ? "" : keyView.getText().toString().trim();
+            int port = parsePort(portView.getText().toString(), rdp ? 3389 : winrm ? (winrmHttpsView.isChecked() ? 5986 : 5985) : vnc ? 5900 : 22);
             int telnetPort = parsePort(telnetPortView.getText().toString(), 23);
             String domain = domainView.getText().toString().trim();
             if (windows && !TerminowStore.isValidDomain(domain)) {
@@ -4333,6 +4368,22 @@ public class TerminowHome {
             host.identity = host.telnet ? "" : draft.identity;
             host.protocol = protocol[0];
             host.domain = windows ? domain : "";
+            host.vncViewOnly = vnc && vncViewOnlyView.isChecked();
+            if (vnc) {
+                // A VNC host is a screen, not a shell: none of the SSH-only options apply.
+                host.telnet = false;
+                host.mosh = false;
+                host.moshServer = "";
+                host.agentForwarding = false;
+                host.remoteTmux = false;
+                host.startupSnippet = "";
+                host.proxyType = "";
+                host.proxyHost = "";
+                host.proxyPort = 0;
+                host.colorScheme = "";
+                host.jumpHost = "";
+                host.identity = "";
+            }
             if (windows) {
                 // What only SSH has is not kept for a Windows host
                 host.telnet = false;
@@ -4820,6 +4871,7 @@ public class TerminowHome {
     private static String protocolKey(@NonNull TerminowStore.Host host) {
         if (host.isRdp()) return "rdp";
         if (host.isWinrm()) return "winrm";
+        if (host.isVnc()) return "vnc";
         String p = host.protocol == null ? "" : host.protocol;
         if (p.isEmpty() || TerminowStore.Host.PROTOCOL_SSH.equals(p)) return "ssh";
         return "other";   // an unrecognized protocol value: shown in Other, data left untouched
@@ -4839,6 +4891,7 @@ public class TerminowHome {
     private int protocolIconRes(@NonNull String protocol) {
         switch (protocol) {
             case "rdp":   return R.drawable.ic_terminow_desktop;
+            case "vnc":   return R.drawable.ic_terminow_desktop;
             case "winrm": return R.drawable.ic_terminow_terminal;
             default:      return R.drawable.ic_terminow_hosts;
         }
@@ -4847,6 +4900,7 @@ public class TerminowHome {
     private int protocolColorRes(@NonNull String protocol) {
         switch (protocol) {
             case "rdp":   return R.color.terminow_host_rdp;
+            case "vnc":   return R.color.terminow_host_vnc;
             case "winrm": return R.color.terminow_host_winrm;
             default:      return R.color.terminow_host_ssh;
         }

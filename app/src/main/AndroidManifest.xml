@@ -118,6 +118,17 @@
             android:theme="@android:style/Theme.Material.NoActionBar"
             android:windowSoftInputMode="adjustResize|stateHidden" />
 
+        <!-- The built-in VNC viewer. Like the remote desktop, it owns its connection across
+             configuration changes so rotation or folding never drops the session. -->
+        <activity
+            android:name=".app.terminow.vnc.TerminowVncActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|smallestScreenSize|density|screenLayout|keyboard|keyboardHidden|navigation|uiMode"
+            android:label="@string/terminow_vnc_title"
+            android:resizeableActivity="true"
+            android:theme="@android:style/Theme.Material.NoActionBar"
+            android:windowSoftInputMode="adjustResize|stateHidden" />
+
         <!-- The PowerShell console of WinRM hosts, through the Ubuntu environment. -->
         <activity
             android:name=".app.terminow.winrm.TerminowWinrmActivity"

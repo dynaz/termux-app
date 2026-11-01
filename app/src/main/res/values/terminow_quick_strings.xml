@@ -124,6 +124,7 @@
     <string name="terminow_connpick_group_ssh">SSH</string>
     <string name="terminow_connpick_group_rdp">RDP</string>
     <string name="terminow_connpick_group_winrm">WinRM</string>
+    <string name="terminow_connpick_group_vnc">VNC</string>
     <string name="terminow_connpick_type_local">TermiNow local shell</string>
     <string name="terminow_connpick_type_distro">Linux</string>
     <string name="terminow_connpick_type_session">Session</string>

@@ -270,16 +270,17 @@ final class TerminowConnectPicker {
 
     private void buildHosts() {
         List<TerminowStore.Host> hosts = mStore.getHosts();
-        // Group by connection type; empty groups are hidden. SFTP/VNC are not saved-host protocols in
-        // TermiNow (SFTP is a mode of an SSH host; VNC is not supported), so those groups never appear.
-        List<TerminowStore.Host> ssh = new ArrayList<>(), rdp = new ArrayList<>(), winrm = new ArrayList<>();
+        // Group by connection type; empty groups are hidden. SFTP is a mode of an SSH host, not a
+        // group of its own. VNC is a saved-host protocol with its own group.
+        List<TerminowStore.Host> ssh = new ArrayList<>(), rdp = new ArrayList<>(), winrm = new ArrayList<>(), vnc = new ArrayList<>();
         for (TerminowStore.Host h : hosts) {
             if (!matchesHost(h)) continue;
             if (h.isRdp()) rdp.add(h);
             else if (h.isWinrm()) winrm.add(h);
+            else if (h.isVnc()) vnc.add(h);
             else ssh.add(h);
         }
-        boolean any = !ssh.isEmpty() || !rdp.isEmpty() || !winrm.isEmpty();
+        boolean any = !ssh.isEmpty() || !rdp.isEmpty() || !winrm.isEmpty() || !vnc.isEmpty();
         if (hosts.isEmpty()) {
             note(mActivity.getString(R.string.terminow_connpick_no_hosts));
             addAction(mActivity.getString(R.string.terminow_connpick_add_host), () -> { mDialog.dismiss(); mHosts.addHost(); });
@@ -289,6 +290,7 @@ final class TerminowConnectPicker {
         group(R.string.terminow_connpick_group_ssh, ssh);
         group(R.string.terminow_connpick_group_rdp, rdp);
         group(R.string.terminow_connpick_group_winrm, winrm);
+        group(R.string.terminow_connpick_group_vnc, vnc);
         addAction(mActivity.getString(R.string.terminow_connpick_add_host), () -> { mDialog.dismiss(); mHosts.addHost(); });
     }
 
@@ -296,7 +298,7 @@ final class TerminowConnectPicker {
         if (hosts.isEmpty()) return;   // hide empty groups
         section(mActivity.getString(labelRes));
         for (TerminowStore.Host h : hosts) {
-            int icon = h.isRdp() || h.isWinrm() ? R.drawable.ic_terminow_desktop : R.drawable.ic_terminow_hosts;
+            int icon = h.isRdp() || h.isWinrm() || h.isVnc() ? R.drawable.ic_terminow_desktop : R.drawable.ic_terminow_hosts;
             // Never show secrets: only address, username and port.
             String sub = (h.username.isEmpty() ? "" : h.username + "@") + h.address + (h.port > 0 ? ":" + h.port : "");
             addRow(icon, true, h.getTitle(), sub, R.color.terminow_text_secondary, () -> {

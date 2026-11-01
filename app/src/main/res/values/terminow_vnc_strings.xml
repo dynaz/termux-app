@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_host_protocol_vnc">VNC</string>
+    <string name="terminow_host_vnc_view_only">View only (never send input)</string>
+    <string name="terminow_host_vnc_note">Opens in the built-in VNC viewer of TermiNow over a direct connection to the host and port. The password is stored encrypted on this device. An SSH tunnel for VNC is not offered yet.</string>
+
+    <string name="terminow_vnc_title">VNC</string>
+    <string name="terminow_vnc_tools">Tools</string>
+    <string name="terminow_vnc_hide_tools">Hide tools</string>
+    <string name="terminow_vnc_back">Back</string>
+    <string name="terminow_vnc_keyboard">Keyboard</string>
+    <string name="terminow_vnc_paste">Paste</string>
+    <string name="terminow_vnc_fit">Fit screen</string>
+    <string name="terminow_vnc_disconnect">Disconnect</string>
+    <string name="terminow_vnc_close">Close</string>
+    <string name="terminow_vnc_reconnect">Reconnect</string>
+
+    <string name="terminow_vnc_mode_pointer">Trackpad</string>
+    <string name="terminow_vnc_mode_touch">Touch</string>
+    <string name="terminow_vnc_mode_pointer_help">Trackpad mode: drag to move the pointer, tap to click, long-press to drag, two fingers scroll.</string>
+    <string name="terminow_vnc_mode_touch_help">Touch mode: tap where you want to click, long-press for a right click, drag to drag, two fingers scroll or pan.</string>
+
+    <string name="terminow_vnc_connecting">Connecting to %1$s…</string>
+    <string name="terminow_vnc_authenticating">Authenticating…</string>
+    <string name="terminow_vnc_failed">Could not connect</string>
+    <string name="terminow_vnc_disconnected">Disconnected</string>
+    <string name="terminow_vnc_disconnected_text">The connection ended.</string>
+    <string name="terminow_vnc_gone">That VNC connection is no longer available — the app was restarted.</string>
+    <string name="terminow_vnc_still_connected">Still connected — resume it from Quick Launch.</string>
+    <string name="terminow_vnc_disconnect_confirm">Disconnect from %1$s?</string>
+    <string name="terminow_vnc_open_already">This host already has an open VNC connection.</string>
+    <string name="terminow_vnc_host_gone">That host is no longer saved.</string>
+    <string name="terminow_vnc_view_only_note">This connection is view only.</string>
+    <string name="terminow_vnc_clipboard_empty">The clipboard is empty.</string>
+    <string name="terminow_vnc_clipboard_sent">Typed the clipboard to the desktop.</string>
+</resources>

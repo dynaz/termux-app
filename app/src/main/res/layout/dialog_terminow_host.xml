@@ -399,6 +399,35 @@
                     </LinearLayout>
                 </LinearLayout>
 
+                <!-- VNC options -->
+                <LinearLayout
+                    android:id="@+id/terminow_host_vnc_options"
+                    style="@style/TerminowPanelCard"
+                    android:layout_marginTop="12dp"
+                    android:visibility="gone">
+
+                    <LinearLayout style="@style/TerminowPanelToggleRow">
+
+                        <TextView
+                            style="@style/TerminowPanelToggleTitle"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:text="@string/terminow_host_vnc_view_only" />
+
+                        <CheckBox
+                            android:id="@+id/terminow_host_vnc_view_only"
+                            style="@style/TerminowPanelCheck" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/terminow_host_vnc_note"
+                        android:textColor="@color/terminow_text_secondary"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
                 <!-- Credentials -->
                 <LinearLayout
                     style="@style/TerminowPanelCard"

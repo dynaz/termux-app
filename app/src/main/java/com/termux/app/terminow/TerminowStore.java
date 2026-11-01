@@ -118,10 +118,13 @@ public class TerminowStore {
         /** WinRM: HTTPS (port 5986) rather than HTTP (5985), and its certificate verified. */
         public boolean winrmHttps = true;
         public boolean winrmVerify = true;
+        /** VNC: connect for viewing only — never send pointer or keyboard input to the server. */
+        public boolean vncViewOnly;
 
         public static final String PROTOCOL_SSH = "ssh";
         public static final String PROTOCOL_RDP = "rdp";
         public static final String PROTOCOL_WINRM = "winrm";
+        public static final String PROTOCOL_VNC = "vnc";
 
         public boolean isRdp() {
             return PROTOCOL_RDP.equals(protocol);
@@ -131,9 +134,13 @@ public class TerminowStore {
             return PROTOCOL_WINRM.equals(protocol);
         }
 
-        /** Whether it opens a terminal with ssh, mosh or telnet, not a desktop or a PowerShell console. */
+        public boolean isVnc() {
+            return PROTOCOL_VNC.equals(protocol);
+        }
+
+        /** Whether it opens a terminal with ssh, mosh or telnet, not a desktop, PowerShell or VNC screen. */
         public boolean isTerminal() {
-            return !isRdp() && !isWinrm();
+            return !isRdp() && !isWinrm() && !isVnc();
         }
 
         /**
@@ -1158,6 +1165,7 @@ public class TerminowStore {
         object.put("rdpHeight", host.rdpHeight);
         object.put("winrmHttps", host.winrmHttps);
         object.put("winrmVerify", host.winrmVerify);
+        object.put("vncViewOnly", host.vncViewOnly);
         if (!host.deviceType.isEmpty()) object.put("deviceType", host.deviceType);
         if (!host.webAdminUrl.isEmpty()) object.put("webAdminUrl", host.webAdminUrl);
         return object;
@@ -1204,6 +1212,7 @@ public class TerminowStore {
         host.rdpHeight = object.optInt("rdpHeight");
         host.winrmHttps = object.optBoolean("winrmHttps", true);
         host.winrmVerify = object.optBoolean("winrmVerify", true);
+        host.vncViewOnly = object.optBoolean("vncViewOnly");
         host.deviceType = object.optString("deviceType");
         host.webAdminUrl = object.optString("webAdminUrl");
         return host;
@@ -1270,7 +1279,7 @@ public class TerminowStore {
         if (!host.proxyType.isEmpty() && (!(Host.PROXY_SOCKS5.equals(host.proxyType) || Host.PROXY_HTTP.equals(host.proxyType)) ||
             !isValidAddress(host.proxyHost) || !isValidPort(host.proxyPort))) return false;
         if (!host.identity.isEmpty() && !isValidIdentityId(host.identity)) return false;
-        if (!Host.PROTOCOL_SSH.equals(host.protocol) && !host.isRdp() && !host.isWinrm()) return false;
+        if (!Host.PROTOCOL_SSH.equals(host.protocol) && !host.isRdp() && !host.isWinrm() && !host.isVnc()) return false;
         if (!isValidDomain(host.domain) || !isValidDesktopSize(host.rdpWidth, host.rdpHeight)) return false;
         // The jump host is looked up by key among the saved hosts, which are validated themselves
         return host.jumpHost.isEmpty() || host.jumpHost.length() <= 300;
