@@ -20,7 +20,8 @@ echo "apt-get \$*" >> "$S/calls"
 case "\$*" in *install*) for a in "\$@"; do case "\$a" in -*|install|DPkg*) ;; *) echo "\$a" >> "$S/installed"
  case "\$a" in git) printf '#!/bin/sh\necho git version 2.43.0\n' > "$S/bin/git";; tmux) printf '#!/bin/sh\necho tmux 3.4\n' > "$S/bin/tmux";;
   fish) printf '#!/bin/sh\necho fish, version 3.7.0\n' > "$S/bin/fish";;
-  curl) printf '#!/bin/sh\nexec "$S/real/curl" "\$@"\n' > "$S/bin/curl";; esac; chmod +x "$S/bin/"* 2>/dev/null;; esac; done;; esac
+  curl) printf '#!/bin/sh\nexec "$S/real/curl" "\$@"\n' > "$S/bin/curl";;
+  *) printf '#!/bin/sh\necho "%s 1.0"\n' "\$a" > "$S/bin/\$a";; esac; chmod +x "$S/bin/"* 2>/dev/null;; esac; done;; esac
 exit 0
 X
 if [ "$sudo" != none ]; then cat > "$S/bin/sudo" <<X

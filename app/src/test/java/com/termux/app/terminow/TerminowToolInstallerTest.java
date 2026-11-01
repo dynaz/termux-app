@@ -108,6 +108,35 @@ public class TerminowToolInstallerTest {
         return job;
     }
 
+    /** Install a catalog package and wait for the job to end. */
+    private TerminowToolInstaller.Job installPackageAndWait(TerminowToolInstaller.Runner runner, String user, String pkgId,
+                                                            String bin, List<String> pkgs) throws Exception {
+        CountDownLatch ended = new CountDownLatch(1);
+        Runnable listener = () -> {
+            TerminowToolInstaller.Job job = TerminowToolInstaller.packageJobOf("ubuntu", user, pkgId);
+            if (job != null && job.getState() != TerminowToolInstaller.State.RUNNING) ended.countDown();
+        };
+        TerminowToolInstaller.addListener(listener);
+        TerminowToolInstaller.Job job = TerminowToolInstaller.installPackage(runner, "ubuntu", user, pkgId, pkgId, bin, pkgs);
+        assertNotNull(job);
+        assertTrue("the package install did not end", ended.await(60, TimeUnit.SECONDS));
+        TerminowToolInstaller.removeListener(listener);
+        return job;
+    }
+
+    @Test
+    public void securityPackageInstallsOnlyItsOwnPackageAndVerifies() throws Exception {
+        TerminowToolInstaller.Runner runner = environment("0", "none", "", "ok");
+        TerminowToolInstaller.Job job = installPackageAndWait(runner, "root", "nmap", "nmap", Arrays.asList("nmap"));
+        assertEquals(job.getLog(), TerminowToolInstaller.State.SUCCEEDED, job.getState());
+        assertEquals("nmap 1.0", job.getVersion());
+        String calls = calls();
+        assertTrue(calls, calls.contains("install -y --no-install-recommends nmap"));
+        // Only the one package the user chose — never a metapackage or a second tool.
+        assertFalse(calls, calls.contains("kali-linux"));
+        assertFalse(calls, calls.contains("nikto"));
+    }
+
     @Test
     public void rootInstallsWithAptItselfAndNeverWithSudo() throws Exception {
         TerminowToolInstaller.Runner runner = environment("0", "none", "", "ok");
@@ -384,20 +413,27 @@ public class TerminowToolInstallerTest {
             new ProcessBuilder("/bin/sh", "-c", "while [ ! -e '" + gate + "' ]; do sleep 0.05; done; echo TERMINOW_VERSION=1; exit 0").start();
         TerminowToolInstaller.Job first = TerminowToolInstaller.install(slow, "ubuntu", "root", TerminowToolInstaller.Tool.GIT);
         assertNotNull(first);
+        // A second tap on the same tool gets the same job, never a duplicate.
         assertSame(first, TerminowToolInstaller.install(slow, "ubuntu", "root", TerminowToolInstaller.Tool.GIT));
-        assertNull(TerminowToolInstaller.install(slow, "ubuntu", "root", TerminowToolInstaller.Tool.TMUX));
-        assertNull(TerminowToolInstaller.install(slow, "ubuntu", "dev", TerminowToolInstaller.Tool.CURL));
-        // Another environment has its own apt
+        // Other installs in the same environment share apt, so they queue behind the running one.
+        TerminowToolInstaller.Job queued = TerminowToolInstaller.install(slow, "ubuntu", "root", TerminowToolInstaller.Tool.TMUX);
+        assertEquals(TerminowToolInstaller.State.QUEUED, queued.getState());
+        TerminowToolInstaller.Job queued2 = TerminowToolInstaller.install(slow, "ubuntu", "dev", TerminowToolInstaller.Tool.CURL);
+        assertEquals(TerminowToolInstaller.State.QUEUED, queued2.getState());
+        // Another environment has its own apt and runs in parallel.
         TerminowToolInstaller.Job other = TerminowToolInstaller.install(slow, "debian", "root", TerminowToolInstaller.Tool.TMUX);
         assertNotNull(other);
         assertSame(first, TerminowToolInstaller.runningIn("ubuntu"));
         assertTrue(gate.createNewFile());
         long until = System.currentTimeMillis() + 20000;
-        while ((first.getState() == TerminowToolInstaller.State.RUNNING || other.getState() == TerminowToolInstaller.State.RUNNING)
-            && System.currentTimeMillis() < until) Thread.sleep(50);
+        while ((first.getState() == TerminowToolInstaller.State.RUNNING || queued.getState() == TerminowToolInstaller.State.RUNNING
+            || queued.getState() == TerminowToolInstaller.State.QUEUED || queued2.getState() != TerminowToolInstaller.State.SUCCEEDED
+            || other.getState() == TerminowToolInstaller.State.RUNNING) && System.currentTimeMillis() < until) Thread.sleep(50);
         assertEquals(TerminowToolInstaller.State.SUCCEEDED, first.getState());
+        // The queued installs ran one after another once apt was free, not in parallel.
+        assertEquals(TerminowToolInstaller.State.SUCCEEDED, queued.getState());
+        assertEquals(TerminowToolInstaller.State.SUCCEEDED, queued2.getState());
         assertNull(TerminowToolInstaller.runningIn("ubuntu"));
-        assertNotNull(TerminowToolInstaller.install(slow, "ubuntu", "root", TerminowToolInstaller.Tool.TMUX));
     }
 
     @Test

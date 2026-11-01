@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_sec_title">เครื่องมือความปลอดภัย</string>
+    <string name="terminow_sec_subtitle">ติดตั้งเครื่องมือความปลอดภัยทีละตัวลงในสภาพแวดล้อม Linux นี้ ติดตั้งเฉพาะเครื่องมือที่คุณเลือกเท่านั้น</string>
+    <string name="terminow_sec_premium_what">ติดตั้งเครื่องมือความปลอดภัย</string>
+
+    <string name="terminow_sec_info_title">ใช้สำหรับการทดสอบที่ได้รับอนุญาตเท่านั้น</string>
+    <string name="terminow_sec_info_message">เครื่องมือเหล่านี้มีความสามารถสูง มีไว้สำหรับการทดสอบความปลอดภัยที่ได้รับอนุญาตและเพื่อการศึกษาเท่านั้น สแกน ตรวจสอบ หรือโจมตีเฉพาะระบบที่คุณเป็นเจ้าของหรือได้รับอนุญาตเป็นลายลักษณ์อักษรอย่างชัดเจนให้ทดสอบเท่านั้น คุณมีหน้าที่ปฏิบัติตามกฎหมายและนโยบายที่เกี่ยวข้องทั้งหมด\n\nTermiNow จะติดตั้งเฉพาะเครื่องมือที่คุณเลือกลงในสภาพแวดล้อม Linux ของคุณ — จะไม่ติดตั้ง metapackage ขนาดใหญ่ และจะไม่รันการสแกนหรือการโจมตีใด ๆ ด้วยตัวเอง</string>
+
+    <string name="terminow_sec_cat_all">ทั้งหมด</string>
+    <string name="terminow_sec_cat_recon">สำรวจ</string>
+    <string name="terminow_sec_cat_web">เว็บ</string>
+    <string name="terminow_sec_cat_password">รหัสผ่าน</string>
+    <string name="terminow_sec_cat_wireless">ไร้สาย</string>
+    <string name="terminow_sec_cat_capture">จับแพ็กเก็ต</string>
+
+    <string name="terminow_sec_checking">กำลังตรวจสอบสิ่งที่ติดตั้งไว้…</string>
+    <string name="terminow_sec_none">ไม่มีเครื่องมือในหมวดนี้</string>
+    <string name="terminow_sec_installed">ติดตั้งแล้ว · %1$s</string>
+    <string name="terminow_sec_installing">กำลังติดตั้ง · %1$s</string>
+    <string name="terminow_sec_queued">อยู่ในคิว · %1$s</string>
+    <string name="terminow_sec_failed">ติดตั้งไม่สำเร็จ</string>
+    <string name="terminow_sec_retry">ลองใหม่</string>
+    <string name="terminow_sec_logs">บันทึก</string>
+    <string name="terminow_sec_install">ติดตั้ง</string>
+    <string name="terminow_sec_install_premium">ติดตั้ง (พรีเมียม)</string>
+    <string name="terminow_sec_waiting">มีการติดตั้งอื่นกำลังทำงานอยู่ (%1$s) รายการนี้จะเริ่มถัดไป</string>
+    <string name="terminow_sec_no_log">ยังไม่มีผลลัพธ์</string>
+    <string name="terminow_sec_bad_entry">รายการเครื่องมือนี้ไม่ถูกต้อง</string>
+    <string name="terminow_sec_gui_badge">ต้องมีจอแสดงผล</string>
+    <string name="terminow_sec_stage_deps">การพึ่งพา</string>
+    <string name="terminow_sec_stage_installing">กำลังติดตั้ง</string>
+    <string name="terminow_sec_stage_verifying">กำลังตรวจสอบ</string>
+    <string name="terminow_sec_stage_checking">กำลังตรวจ</string>
+
+    <!-- Packet capture -->
+    <string name="terminow_cap_title">จับแพ็กเก็ต</string>
+    <string name="terminow_cap_premium_what">จับและวิเคราะห์แพ็กเก็ต</string>
+    <string name="terminow_cap_mode_capture">จับ</string>
+    <string name="terminow_cap_mode_analyze">วิเคราะห์</string>
+    <string name="terminow_cap_info_title">จับเฉพาะที่ได้รับอนุญาตเท่านั้น</string>
+    <string name="terminow_cap_info_message">จับแพ็กเก็ตเฉพาะบนเครือข่ายและอินเทอร์เฟซที่คุณเป็นเจ้าของหรือได้รับอนุญาตให้ทดสอบอย่างชัดเจนเท่านั้น การจับจะถูกจำกัดทั้งเวลาและขนาด และบันทึกลงไฟล์ในสภาพแวดล้อม Linux นี้ — จะไม่มีการอัปโหลดไปที่ใดโดยอัตโนมัติ และ TermiNow จะไม่ส่งเนื้อหาการจับไปยัง AI หรือบริการของบุคคลที่สามใด ๆ\n\nการจับแบบสดต้องใช้เครื่องมือ tcpdump และการวิเคราะห์ต้องใช้ TShark หากยังไม่มี ให้ติดตั้งจากเครื่องมือความปลอดภัย การจับบนอินเทอร์เฟซจริงมักต้องใช้สิทธิ์ root ในสภาพแวดล้อม</string>
+    <string name="terminow_cap_need_tcpdump">ยังไม่ได้ติดตั้ง tcpdump ให้ติดตั้งจากเครื่องมือความปลอดภัยก่อน</string>
+    <string name="terminow_cap_need_tshark">ยังไม่ได้ติดตั้ง TShark ให้ติดตั้งจากเครื่องมือความปลอดภัยก่อน</string>
+    <string name="terminow_cap_iface">อินเทอร์เฟซ</string>
+    <string name="terminow_cap_iface_hint">any</string>
+    <string name="terminow_cap_filter">ตัวกรองการจับ (BPF, ไม่บังคับ)</string>
+    <string name="terminow_cap_filter_hint">tcp port 443</string>
+    <string name="terminow_cap_duration">ระยะเวลา (วินาที, 1–3600)</string>
+    <string name="terminow_cap_size">ขนาดสูงสุด (MB, 1–1024)</string>
+    <string name="terminow_cap_start">เริ่มจับ</string>
+    <string name="terminow_cap_start_premium">เริ่มจับ (พรีเมียม)</string>
+    <string name="terminow_cap_stop">หยุด</string>
+    <string name="terminow_cap_running">กำลังจับไปที่ %1$s…</string>
+    <string name="terminow_cap_done">จับเสร็จแล้ว · %1$s</string>
+    <string name="terminow_cap_failed">จับไม่สำเร็จ ดูบันทึกด้านล่าง</string>
+    <string name="terminow_cap_bad_input">ตรวจสอบอินเทอร์เฟซ ตัวกรอง และขีดจำกัด</string>
+    <string name="terminow_cap_file">ไฟล์การจับ (.pcap / .pcapng)</string>
+    <string name="terminow_cap_file_hint">/root/.terminow/captures/cap.pcap</string>
+    <string name="terminow_cap_display_filter">ตัวกรองการแสดงผล (ไม่บังคับ)</string>
+    <string name="terminow_cap_display_filter_hint">http.request</string>
+    <string name="terminow_cap_summary">สรุปโปรโตคอล</string>
+    <string name="terminow_cap_packets">รายการแพ็กเก็ต (%1$d รายการแรก)</string>
+    <string name="terminow_cap_export">ส่งออก</string>
+    <string name="terminow_cap_export_done">ส่งออกแล้ว · %1$s</string>
+    <string name="terminow_cap_format">รูปแบบ</string>
+    <string name="terminow_cap_wireshark">เปิดใน Wireshark</string>
+    <string name="terminow_cap_wireshark_nodisplay">Wireshark ต้องใช้จอแสดงผลแบบกราฟิก ซึ่งสภาพแวดล้อมนี้ไม่มี ใช้การวิเคราะห์ด้วย TShark แทน</string>
+    <string name="terminow_cap_analyze_this">วิเคราะห์การจับนี้</string>
+    <string name="terminow_cap_bad_file">กรอกเส้นทาง .pcap หรือ .pcapng ที่ถูกต้องในสภาพแวดล้อมนี้</string>
+    <string name="terminow_cap_running_other">มีการจับหรือวิเคราะห์กำลังทำงานอยู่ หยุดก่อน</string>
+    <string name="terminow_cap_clear">ล้าง</string>
+    <string name="terminow_cap_log_empty">ผลลัพธ์จะปรากฏที่นี่</string>
+    <string name="terminow_cap_deferred">ยังไม่มีตัวแสดงแพ็กเก็ตในแอป การวิเคราะห์ทำผ่าน TShark และ Wireshark</string>
+</resources>

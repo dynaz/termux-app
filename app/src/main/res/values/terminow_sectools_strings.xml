@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="terminow_sec_title">Security tools</string>
+    <string name="terminow_sec_subtitle">Install individual security tools into this Linux environment. Only the tool you choose is installed.</string>
+    <string name="terminow_sec_premium_what">install security tools</string>
+
+    <string name="terminow_sec_info_title">Authorized testing only</string>
+    <string name="terminow_sec_info_message">These are powerful security tools, provided for authorised testing and education only. Only scan, probe or attack systems you own or have explicit written permission to test. You are responsible for following all applicable laws and policies.\n\nTermiNow installs the exact tool you choose into your Linux environment — it never installs a large metapackage and never runs any scan or attack by itself.</string>
+
+    <string name="terminow_sec_cat_all">All</string>
+    <string name="terminow_sec_cat_recon">Recon</string>
+    <string name="terminow_sec_cat_web">Web</string>
+    <string name="terminow_sec_cat_password">Password</string>
+    <string name="terminow_sec_cat_wireless">Wireless</string>
+    <string name="terminow_sec_cat_capture">Capture</string>
+
+    <string name="terminow_sec_checking">Checking what is installed…</string>
+    <string name="terminow_sec_none">No tools in this category.</string>
+    <string name="terminow_sec_installed">Installed · %1$s</string>
+    <string name="terminow_sec_installing">Installing · %1$s</string>
+    <string name="terminow_sec_queued">Queued · %1$s</string>
+    <string name="terminow_sec_failed">Install failed</string>
+    <string name="terminow_sec_retry">Retry</string>
+    <string name="terminow_sec_logs">Logs</string>
+    <string name="terminow_sec_install">Install</string>
+    <string name="terminow_sec_install_premium">Install (Premium)</string>
+    <string name="terminow_sec_waiting">Another install is running (%1$s). This one will start next.</string>
+    <string name="terminow_sec_no_log">No output yet.</string>
+    <string name="terminow_sec_bad_entry">This tool entry is not valid.</string>
+    <string name="terminow_sec_gui_badge">needs display</string>
+    <string name="terminow_sec_stage_deps">dependencies</string>
+    <string name="terminow_sec_stage_installing">installing</string>
+    <string name="terminow_sec_stage_verifying">verifying</string>
+    <string name="terminow_sec_stage_checking">checking</string>
+
+    <!-- Packet capture -->
+    <string name="terminow_cap_title">Packet capture</string>
+    <string name="terminow_cap_premium_what">capture and analyse packets</string>
+    <string name="terminow_cap_mode_capture">Capture</string>
+    <string name="terminow_cap_mode_analyze">Analyse</string>
+    <string name="terminow_cap_info_title">Authorized capture only</string>
+    <string name="terminow_cap_info_message">Capture only on networks and interfaces you own or are explicitly authorised to test. Captures are bounded in time and size and are written to a file in this Linux environment — nothing is uploaded anywhere automatically, and no capture content is ever sent to AI or any third-party service by TermiNow.\n\nLive capture needs the tcpdump tool, and analysis needs TShark; install them from Security tools if they are missing. Capturing on a real interface usually needs root in the environment.</string>
+    <string name="terminow_cap_need_tcpdump">tcpdump is not installed. Install it from Security tools first.</string>
+    <string name="terminow_cap_need_tshark">TShark is not installed. Install it from Security tools first.</string>
+    <string name="terminow_cap_iface">Interface</string>
+    <string name="terminow_cap_iface_hint">any</string>
+    <string name="terminow_cap_filter">Capture filter (BPF, optional)</string>
+    <string name="terminow_cap_filter_hint">tcp port 443</string>
+    <string name="terminow_cap_duration">Duration (seconds, 1–3600)</string>
+    <string name="terminow_cap_size">Max size (MB, 1–1024)</string>
+    <string name="terminow_cap_start">Start capture</string>
+    <string name="terminow_cap_start_premium">Start capture (Premium)</string>
+    <string name="terminow_cap_stop">Stop</string>
+    <string name="terminow_cap_running">Capturing to %1$s…</string>
+    <string name="terminow_cap_done">Capture finished · %1$s</string>
+    <string name="terminow_cap_failed">Capture failed. See the log below.</string>
+    <string name="terminow_cap_bad_input">Check the interface, filter and limits.</string>
+    <string name="terminow_cap_file">Capture file (.pcap / .pcapng)</string>
+    <string name="terminow_cap_file_hint">/root/.terminow/captures/cap.pcap</string>
+    <string name="terminow_cap_display_filter">Display filter (optional)</string>
+    <string name="terminow_cap_display_filter_hint">http.request</string>
+    <string name="terminow_cap_summary">Protocol summary</string>
+    <string name="terminow_cap_packets">Packet list (first %1$d)</string>
+    <string name="terminow_cap_export">Export</string>
+    <string name="terminow_cap_export_done">Exported · %1$s</string>
+    <string name="terminow_cap_format">Format</string>
+    <string name="terminow_cap_wireshark">Open in Wireshark</string>
+    <string name="terminow_cap_wireshark_nodisplay">Wireshark needs a graphical display, which this environment has none; use TShark analysis instead.</string>
+    <string name="terminow_cap_analyze_this">Analyse this capture</string>
+    <string name="terminow_cap_bad_file">Enter a valid .pcap or .pcapng path in this environment.</string>
+    <string name="terminow_cap_running_other">A capture or analysis is already running. Stop it first.</string>
+    <string name="terminow_cap_clear">Clear</string>
+    <string name="terminow_cap_log_empty">Output appears here.</string>
+    <string name="terminow_cap_deferred">An in-app packet viewer is not included yet; analysis is through TShark and Wireshark.</string>
+</resources>

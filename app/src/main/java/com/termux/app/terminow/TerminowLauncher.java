@@ -492,6 +492,36 @@ public class TerminowLauncher {
 
     @Nullable private TerminowToolSheet mToolSheet;
     @Nullable private TerminowRemoteTools mRemoteTools;
+    @Nullable private TerminowSecuritySheet mSecuritySheet;
+    @Nullable private TerminowCaptureSheet mCaptureSheet;
+
+    /**
+     * The apt-capable Linux distro environment for the current tab (a proot container), or {@code null}
+     * for the Termux prefix or a plain SSH tab. Security-tool installs use {@code apt} inside a distro,
+     * so the Security tools action is offered only when this resolves to a container.
+     */
+    @Nullable
+    private Environment aptEnvironmentForTab() {
+        TerminalSession session = mActivity.getCurrentSession();
+        SessionInfo info = session != null ? mInfo.get(session) : null;
+        // A plain/host SSH tab has no local apt context here.
+        if (info != null && info.environmentKey == null && ("ssh".equals(info.tool) || "mosh".equals(info.tool))) return null;
+        Environment environment = info != null && info.environmentKey != null ? environmentFor(info.environmentKey) : null;
+        if (environment == null) environment = currentEnvironment();
+        return environment != null && !environment.isLocal() ? environment : null;
+    }
+
+    /** Open the Security tools screen for a distro environment, installing one apt tool at a time. */
+    void showSecurityTools(@NonNull Environment environment) {
+        if (mSecuritySheet == null) mSecuritySheet = new TerminowSecuritySheet(mActivity, mTargets.getPrefixDir());
+        mSecuritySheet.show(environment.key, getUser(environment));
+    }
+
+    /** Open the Packet capture screen for a distro environment (bounded tcpdump capture + tshark analysis). */
+    void showPacketCapture(@NonNull Environment environment) {
+        if (mCaptureSheet == null) mCaptureSheet = new TerminowCaptureSheet(mActivity, mTargets.getPrefixDir());
+        mCaptureSheet.show(environment.key, getUser(environment));
+    }
 
     /** Install tools into the environment of the tab, as its user. */
     void showInstallTools() {
@@ -2778,6 +2808,13 @@ public class TerminowLauncher {
         final TerminowStore.Host sshHost = hostForCurrentSshSession();
         if (sshHost != null) menu.getMenu().add(0, 6, 4, R.string.terminow_folder_tracking_enable);
         menu.getMenu().add(0, 5, 5, R.string.terminow_launch_diagnostics_title);
+        // Security tools install apt packages into a Linux distro environment (never over a plain SSH
+        // tab, nor the Termux prefix, which have no apt context here), so offer them only for a distro.
+        final Environment secEnv = aptEnvironmentForTab();
+        if (secEnv != null) {
+            menu.getMenu().add(0, 7, 6, R.string.terminow_sec_title);
+            menu.getMenu().add(0, 8, 7, R.string.terminow_cap_title);
+        }
         menu.setOnMenuItemClickListener(item -> {
             switch (item.getItemId()) {
                 case 5: showLaunchDiagnostics(); return true;
@@ -2786,6 +2823,8 @@ public class TerminowLauncher {
                 case 3: mProfiles.showManager(); return true;
                 case 4: copyFolder(); return true;
                 case 6: if (sshHost != null) enableFolderTracking(sshHost); return true;
+                case 7: if (secEnv != null) showSecurityTools(secEnv); return true;
+                case 8: if (secEnv != null) showPacketCapture(secEnv); return true;
                 default: return false;
             }
         });

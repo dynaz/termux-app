@@ -54,7 +54,9 @@ public final class TerminowToolInstaller {
         /** Plugins of the official marketplace, the names given to {@link #install}. */
         PLUGINS("plugins", "https://github.com/anthropics/claude-plugins-official"),
         /** A plan the built-in AI produced for a GitHub repository, run by {@link #installPlan}. */
-        GITHUB("github", "https://docs.github.com/en");
+        GITHUB("github", "https://docs.github.com/en"),
+        /** A single apt package chosen from a catalog (e.g. a security tool), run by {@link #installPackage}. */
+        PACKAGE("package", "");
 
         public final String id;
         /**
@@ -137,6 +139,8 @@ public final class TerminowToolInstaller {
         /** For a {@link Tool#GITHUB} job: the exact script to run, and a display name. Null otherwise. */
         @Nullable final String planScript;
         @Nullable public final String planLabel;
+        /** For a {@link Tool#PACKAGE} job: the catalog id this install is keyed on. Null otherwise. */
+        @Nullable public final String pkgId;
         private volatile Stage mStage = Stage.CHECKING;
         private volatile State mState = State.RUNNING;
         @Nullable private volatile Failure mFailure;
@@ -160,6 +164,7 @@ public final class TerminowToolInstaller {
             this.args = java.util.Collections.unmodifiableList(Arrays.asList(args));
             this.planScript = null;
             this.planLabel = null;
+            this.pkgId = null;
         }
 
         Job(@NonNull String alias, @NonNull String user, @NonNull String planLabel, @NonNull String planScript) {
@@ -169,6 +174,18 @@ public final class TerminowToolInstaller {
             this.args = java.util.Collections.emptyList();
             this.planScript = planScript;
             this.planLabel = planLabel;
+            this.pkgId = null;
+        }
+
+        /** A package install: {@code args} is the binary name followed by the apt packages to install. */
+        Job(@NonNull String alias, @NonNull String user, @NonNull String pkgId, @NonNull String label, @NonNull List<String> args) {
+            this.alias = alias;
+            this.user = user;
+            this.tool = Tool.PACKAGE;
+            this.args = java.util.Collections.unmodifiableList(new ArrayList<>(args));
+            this.planScript = null;
+            this.planLabel = label;
+            this.pkgId = pkgId;
         }
 
         @NonNull public Stage getStage() { return mStage; }
@@ -690,6 +707,26 @@ public final class TerminowToolInstaller {
         "    [ -n \"$v\" ] || fail verify 30\n" +
         "    echo \"TERMINOW_VERSION=$(first \"$v\")\"\n" +
         "    ;;\n" +
+        // A single apt package from a catalog (e.g. a security tool). $2 is the binary to verify,
+        // the rest are the apt packages. Only the one package the user chose is installed; no
+        // metapackage. Args arrive as positional parameters (never interpolated), so a package name
+        // can only ever be passed to apt as one argument.
+        "  package)\n" +
+        "    bin=\"$2\"; shift 2\n" +
+        "    [ -n \"$bin\" ] || fail not-found 40\n" +
+        "    if command -v \"$bin\" >/dev/null 2>&1; then\n" +
+        "      echo TERMINOW_ALREADY=1; stage verifying\n" +
+        "      v=$(\"$bin\" --version 2>/dev/null | head -n1); [ -n \"$v\" ] || v=\"$bin\"\n" +
+        "      echo \"TERMINOW_VERSION=$(first \"$v\")\"; exit 0\n" +
+        "    fi\n" +
+        "    stage dependencies\n" +
+        "    stage installing\n" +
+        "    apt_install \"$@\"\n" +
+        "    stage verifying\n" +
+        "    command -v \"$bin\" >/dev/null 2>&1 || fail verify 30\n" +
+        "    v=$(\"$bin\" --version 2>/dev/null | head -n1); [ -n \"$v\" ] || v=\"$bin\"\n" +
+        "    echo \"TERMINOW_VERSION=$(first \"$v\")\"\n" +
+        "    ;;\n" +
         "  *) echo \"TermiNow: unknown tool $tool\"; exit 2;;\n" +
         "esac\n";
 
@@ -832,6 +869,53 @@ public final class TerminowToolInstaller {
         }
         startThread(next);
         changed();
+    }
+
+    @NonNull
+    private static String keyForPackage(@NonNull String alias, @NonNull String user, @NonNull String pkgId) {
+        return alias + "|" + user + "|package:" + pkgId;
+    }
+
+    /** The last install of this catalog package in the environment as the user, running or ended, or {@code null}. */
+    @Nullable
+    public static synchronized Job packageJobOf(@NonNull String alias, @NonNull String user, @NonNull String pkgId) {
+        return sJobs.get(keyForPackage(alias, user, pkgId));
+    }
+
+    /** Forget an ended package job, so a changed environment is checked again. */
+    public static synchronized void forgetPackage(@NonNull String alias, @NonNull String user, @NonNull String pkgId) {
+        Job job = sJobs.get(keyForPackage(alias, user, pkgId));
+        if (job != null && job.mState != State.RUNNING) sJobs.remove(keyForPackage(alias, user, pkgId));
+    }
+
+    /**
+     * Install a single catalog package (e.g. a security tool) in the environment as the user, through
+     * the same background manager, queue and progress as every other install: one apt job per
+     * environment, shown in the floating progress card, cancellable, with its log kept. {@code binName}
+     * is what verifies success; {@code aptPackages} are installed with {@code apt-get} — only these,
+     * never a metapackage. Returns the existing job if one is already running or queued for this package.
+     */
+    @Nullable
+    public static Job installPackage(@NonNull Runner runner, @NonNull String alias, @NonNull String user,
+                                     @NonNull String pkgId, @NonNull String label, @NonNull String binName,
+                                     @NonNull List<String> aptPackages) {
+        Job job;
+        synchronized (TerminowToolInstaller.class) {
+            Job same = sJobs.get(keyForPackage(alias, user, pkgId));
+            if (same != null && (same.mState == State.RUNNING || same.mState == State.QUEUED)) return same;
+            boolean busy = runningIn(alias) != null;
+            List<String> args = new ArrayList<>();
+            args.add(binName);
+            args.addAll(aptPackages);
+            job = new Job(alias, user, pkgId, label, args);
+            job.mRunner = runner;
+            job.mSeq = ++sSeq;
+            job.mState = busy ? State.QUEUED : State.RUNNING;
+            sJobs.put(keyForPackage(alias, user, pkgId), job);
+        }
+        if (job.mState == State.RUNNING) startThread(job);
+        changed();
+        return job;
     }
 
     /**

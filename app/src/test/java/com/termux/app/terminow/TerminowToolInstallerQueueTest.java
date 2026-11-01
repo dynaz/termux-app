@@ -93,6 +93,22 @@ public class TerminowToolInstallerQueueTest {
         assertTrue("queued job should start after the running one ends", waitState(b, TerminowToolInstaller.State.RUNNING, 5000));
     }
 
+    @Test public void packageInstallIsKeyedPerPackageAndQueuesBehindAnyInstall() {
+        java.util.List<String> nmapPkgs = java.util.Arrays.asList("nmap");
+        java.util.List<String> niktoPkgs = java.util.Arrays.asList("nikto");
+        TerminowToolInstaller.Job git = TerminowToolInstaller.install(runner, "env1", "root", TerminowToolInstaller.Tool.GIT);
+        TerminowToolInstaller.Job nmap = TerminowToolInstaller.installPackage(runner, "env1", "root", "nmap", "Nmap", "nmap", nmapPkgs);
+        assertEquals(TerminowToolInstaller.State.RUNNING, git.getState());
+        // A package install shares apt with the running tool install, so it queues, not runs.
+        assertEquals(TerminowToolInstaller.State.QUEUED, nmap.getState());
+        // Same package again returns the same job (no duplicate), a different package is a new job.
+        assertSame(nmap, TerminowToolInstaller.installPackage(runner, "env1", "root", "nmap", "Nmap", "nmap", nmapPkgs));
+        TerminowToolInstaller.Job nikto = TerminowToolInstaller.installPackage(runner, "env1", "root", "nikto", "Nikto", "nikto", niktoPkgs);
+        assertNotSame(nmap, nikto);
+        assertSame(nmap, TerminowToolInstaller.packageJobOf("env1", "root", "nmap"));
+        assertEquals("Nmap", TerminowToolInstaller.jobLabel(nmap));
+    }
+
     @Test public void cancellingAQueuedJobLeavesTheQueue() {
         TerminowToolInstaller.install(runner, "env1", "root", TerminowToolInstaller.Tool.GIT);
         TerminowToolInstaller.Job b = TerminowToolInstaller.install(runner, "env1", "root", TerminowToolInstaller.Tool.CURL);
