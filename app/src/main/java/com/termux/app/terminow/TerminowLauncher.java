@@ -1149,7 +1149,7 @@ public class TerminowLauncher {
                 .show());
     }
 
-    private void tmuxActions(@NonNull Environment environment, @NonNull TerminowTmux.Session session) {
+    void tmuxActions(@NonNull Environment environment, @NonNull TerminowTmux.Session session) {
         CharSequence[] actions = {mActivity.getString(R.string.terminow_tools_tmux_detach), mActivity.getString(R.string.terminow_tools_tmux_rename),
             mActivity.getString(R.string.terminow_tools_tmux_end)};
         new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
@@ -2217,7 +2217,7 @@ public class TerminowLauncher {
     }
 
     /** Open a tmux session of an environment in a new tab, creating it if it is gone. */
-    private void launchTmux(@NonNull Environment environment, @NonNull String name) {
+    void launchTmux(@NonNull Environment environment, @NonNull String name) {
         TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.TMUX, 0, () -> {
             String user = getUser(environment);
             launchPlan("tmux|" + environment.key + "|" + user + "|" + name, environment, user, getFolder(environment),

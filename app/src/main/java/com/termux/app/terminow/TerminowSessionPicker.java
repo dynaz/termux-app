@@ -88,6 +88,7 @@ class TerminowSessionPicker {
      * stay one tap apart. When nothing is installed it offers to install a distribution.
      */
     void showLocalLinux() {
+        dismissKeyboard();
         List<TerminowLauncher.Environment> distros = mLauncher.installedDistros();
         if (distros.isEmpty()) {
             Sheet empty = new Sheet(mActivity.getString(R.string.terminow_local_linux_title));
@@ -145,6 +146,24 @@ class TerminowSessionPicker {
             sheet.section(R.string.terminow_local_linux_sessions);
             for (TerminalSession session : sessions)
                 sheet.content.addView(localSessionRow(sheet, session, session == current));
+        }
+
+        // tmux sessions discovered inside the selected distro, kept separate from the app's terminal
+        // tabs above. Discovery and all actions reuse the launcher's existing tmux manager; this only
+        // renders them here. The check is Premium-gated and async, so it is a no-op for Free users and
+        // refreshes the list for the next time the sheet opens.
+        mLauncher.listTmux(env, false);
+        TerminowTmux.State tmux = mLauncher.tmuxOf(env);
+        boolean hasTmuxSessions = tmux != null && tmux.isInstalled() && !tmux.sessions.isEmpty();
+        if (mLauncher.usesTmux(env) || hasTmuxSessions) {
+            sheet.section(R.string.terminow_local_linux_tmux_sessions);
+            if (hasTmuxSessions) {
+                for (TerminowTmux.Session s : tmux.sessions) sheet.content.addView(tmuxSessionRow(sheet, env, s));
+            } else if (tmux == null || mLauncher.isTmuxChecking(env)) {
+                sheet.note(mActivity.getString(R.string.terminow_tools_tmux_checking));
+            } else {
+                sheet.note(mActivity.getString(R.string.terminow_tools_tmux_none));
+            }
         }
 
         // Recently closed sessions of this distribution, in a compact collapsible list.
@@ -332,12 +351,94 @@ class TerminowSessionPicker {
         toggle.setOnCheckedChangeListener(listener);
     }
 
+    /** Hide the soft keyboard before the sheet opens, so it does not cover the sheet or fight its layout. */
+    private void dismissKeyboard() {
+        try {
+            android.view.inputmethod.InputMethodManager imm =
+                (android.view.inputmethod.InputMethodManager) mActivity.getSystemService(android.content.Context.INPUT_METHOD_SERVICE);
+            View focus = mActivity.getCurrentFocus();
+            if (imm != null && focus != null) imm.hideSoftInputFromWindow(focus.getWindowToken(), 0);
+        } catch (RuntimeException ignored) {
+            // Best-effort; never block opening the sheet on an input-method quirk.
+        }
+    }
+
     private void showTmuxInfo() {
         new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
             .setTitle(R.string.terminow_tmux_info_title)
             .setMessage(R.string.terminow_tmux_info_body)
             .setPositiveButton(android.R.string.ok, null)
             .show();
+    }
+
+    /**
+     * A discovered tmux-session row (separate from the app-terminal-tab rows above): the session name,
+     * its window count and Attached/Detached state, a tap to attach, and an overflow for rename / detach
+     * / end. Attaching and the actions reuse the launcher's tmux manager — nothing is reimplemented here.
+     */
+    @NonNull
+    private View tmuxSessionRow(@NonNull Sheet sheet, @NonNull TerminowLauncher.Environment env,
+                                @NonNull TerminowTmux.Session session) {
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(14), dp(10), dp(6), dp(10));
+        row.setMinimumHeight(dp(56));
+        GradientDrawable shape = new GradientDrawable();
+        shape.setColor(color(R.color.terminow_quick_card));
+        shape.setCornerRadius(dp(12));
+        shape.setStroke(Math.max(1, dp(1)), color(R.color.terminow_quick_border));
+        row.setBackground(shape);
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        rowParams.topMargin = dp(8);
+        row.setLayoutParams(rowParams);
+
+        ImageView icon = new ImageView(mActivity);
+        icon.setImageResource(R.drawable.ic_terminow_terminal);
+        icon.setColorFilter(color(R.color.terminow_panel_accent));
+        icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        row.addView(icon, new LinearLayout.LayoutParams(dp(24), dp(24)));
+
+        LinearLayout texts = new LinearLayout(mActivity);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        texts.setPadding(dp(14), 0, dp(4), 0);
+        TextView nameView = text(session.name, 15, R.color.terminow_text);
+        nameView.setTypeface(Typeface.MONOSPACE);
+        texts.addView(nameView);
+        boolean attached = session.attached > 0;
+        String state = mActivity.getString(attached ? R.string.terminow_tools_tmux_attached : R.string.terminow_tools_tmux_detached,
+            String.valueOf(session.windows));
+        texts.addView(text(state, 13, R.color.terminow_text_secondary));
+        row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+        boolean manageable = TerminowLaunchPlan.isValidTmuxName(session.name);
+        row.setContentDescription(session.name + ". " + state);
+        if (manageable) {
+            row.setClickable(true);
+            row.setFocusable(true);
+            row.setOnClickListener(v -> attachTmux(sheet, env, session));
+            ImageView overflow = overflowButton(mActivity.getString(R.string.terminow_local_linux_session_menu, session.name),
+                () -> mLauncher.tmuxActions(env, session));
+            row.addView(overflow, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        } else {
+            texts.addView(text(mActivity.getString(R.string.terminow_tools_tmux_by_hand), 12, R.color.terminow_text_secondary));
+        }
+        return row;
+    }
+
+    /** Attach to a tmux session; if it is already attached elsewhere, explain the shared-view behaviour first. */
+    private void attachTmux(@NonNull Sheet sheet, @NonNull TerminowLauncher.Environment env,
+                            @NonNull TerminowTmux.Session session) {
+        Runnable open = () -> { sheet.dialog.dismiss(); mLauncher.launchTmux(env, session.name); };
+        if (session.attached > 0) {
+            new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                .setTitle(session.name)
+                .setMessage(R.string.terminow_tmux_attach_shared)
+                .setPositiveButton(R.string.terminow_tools_tmux_attach, (d, w) -> open.run())
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+        } else {
+            open.run();
+        }
     }
 
     /**

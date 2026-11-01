@@ -178,6 +178,8 @@
     <string name="terminow_select_os_search">Search distributions</string>
     <string name="terminow_select_os_running">%1$d running</string>
     <string name="terminow_select_os_selected">Selected</string>
+    <string name="terminow_local_linux_tmux_sessions">tmux sessions</string>
+    <string name="terminow_tmux_attach_shared">This tmux session is attached elsewhere. Opening it here adds another view that shares the same session — the other terminal stays connected and is not detached. To take it over instead, detach the other client first.</string>
     <string name="terminow_local_linux_recent">Recently closed</string>
     <string name="terminow_local_linux_recent_note">Opens a new shell. Previous processes are not restored.</string>
     <!-- SSH host picker (Connect) -->

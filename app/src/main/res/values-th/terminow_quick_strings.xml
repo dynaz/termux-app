@@ -175,6 +175,8 @@
     <string name="terminow_select_os_search">ค้นหาดิสทริบิวชัน</string>
     <string name="terminow_select_os_running">กำลังทำงาน %1$d</string>
     <string name="terminow_select_os_selected">เลือกอยู่</string>
+    <string name="terminow_local_linux_tmux_sessions">เซสชัน tmux</string>
+    <string name="terminow_tmux_attach_shared">เซสชัน tmux นี้ถูกเชื่อมต่ออยู่ที่อื่น การเปิดที่นี่จะเพิ่มอีกมุมมองที่ใช้เซสชันเดียวกันร่วมกัน เทอร์มินัลอีกตัวจะยังเชื่อมต่ออยู่และไม่ถูกถอด หากต้องการเข้าควบคุมแทน ให้ถอด (detach) ไคลเอนต์อีกตัวก่อน</string>
     <string name="terminow_local_linux_recent">ปิดไปล่าสุด</string>
     <string name="terminow_local_linux_recent_note">เปิดเชลล์ใหม่ ไม่กู้คืนโปรเซสเดิม</string>
     <!-- SSH host picker (Connect) -->
