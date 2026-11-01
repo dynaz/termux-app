@@ -71,6 +71,22 @@ if [ -n "$APK" ]; then
 fi
 say "APK dir: ${APKDIR:-<unknown>}   proot loader dir: ${NLD:-<unknown>}"
 
+# Optionally point ONLY this test emulator's apt at an isolated staging repository, by swapping the
+# production base URL in the bootstrap's sources.list for the staging base. Production app sources on
+# disk (the committed bootstrap) are unchanged; only this throwaway emulator is reconfigured. The
+# staging repo is signed by the same key the bootstrap already trusts, so signatures still verify.
+if [ -n "${TERMINOW_STAGING_BASE:-}" ]; then
+    hr; say "[staging] Pointing the emulator apt at the staging repository: $TERMINOW_STAGING_BASE"
+    OUT="$(run_bash '
+        for f in "$PREFIX/etc/apt/sources.list" "$PREFIX/etc/apt/sources.list.d"/*.list; do
+            [ -f "$f" ] || continue
+            sed -i "s#https\?://dynaz.github.io/terminow-package/apt#'"$TERMINOW_STAGING_BASE"'#g" "$f"
+            echo "--- $f ---"; cat "$f"
+        done
+    ')"
+    say "$OUT"
+fi
+
 # --- 1. shell command execution -----------------------------------------------------------------
 hr; say "[1] Shell command execution (coreutils; shell is x86_64 ELF)"
 OUT="$(run_bash 'echo MARK_SH $(uname -m) uid=$(id -u) bins=$(ls -1 "$PREFIX/bin" | wc -l); echo "ls: $(ls -1 "$PREFIX/bin" | head -1) ... ok"; file "$PREFIX/bin/bash" 2>/dev/null | head -1')"
