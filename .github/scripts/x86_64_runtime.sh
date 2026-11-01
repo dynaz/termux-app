@@ -2,16 +2,21 @@
 # Deeper x86_64 runtime validation, run inside the android-emulator-runner against a booted x86_64
 # emulator, after the app is installed. It drives the app's own bootstrap through `run-as` (a debug
 # build, so the app's private files are reachable) with the Termux environment, and records every
-# command and its result. Covers what can be driven without the terminal UI:
-#   1. shell command execution (coreutils; the shell is x86_64),
-#   2. pkg/apt update and installing a package from the TermiNow apt repository,
-#   3. several concurrent shell sessions (independent processes),
-#   4. SSH: install openssh, run sshd, connect over the loopback and run a command,
-#   5. AI Bridge: the bridge runtime (node) runs in the bootstrap (end-to-end pairing needs the UI),
-#   6. Ubuntu through proot-distro on x86_64: install, first login, shell + networking, restart.
+# command and its result. Scope and honest limits of each check:
+#   1. shell  - shell command execution; coreutils; the shell is an x86_64 ELF.
+#   2. apt    - pkg/apt update AND installing a real repository package (proot-distro). Needs the
+#               TermiNow apt repository to publish x86_64 packages.
+#   3. sessions - several CONCURRENT SHELL PROCESSES are independent. This is NOT the terminal
+#               multi-session UI (tabs/switching), which needs manual QA on a device.
+#   4. ssh    - SSH over the LOOPBACK (sshd + connect on 127.0.0.1). This is NOT a real remote SSH
+#               test to another host, which needs a second machine / manual QA.
+#   5. bridge - the AI Bridge RUNTIME (node executes). This is NOT full AI Bridge pairing with a
+#               host and a client, which needs the UI and a paired device (manual QA).
+#   6. ubuntu - Ubuntu through proot-distro on x86_64, as five REQUIRED sub-checks: install, login,
+#               command execution, networking, restart. x86_64 Ubuntu is validated only if ALL pass.
 #
-# Core checks (1-2) gate the job. The rest are reported PASS/FAIL/SKIP with their output so one run
-# yields a full evidence table; read the printed summary and the uploaded log.
+# The job is gated on the REQUIRED checks: shell, apt, and every Ubuntu sub-check. sessions, ssh and
+# bridge are reported with their output as evidence. Read the printed summary and the uploaded log.
 set -uo pipefail
 
 PKG=com.terminow
@@ -28,31 +33,10 @@ say()  { echo "$@" | tee -a "$LOG"; }
 hr()   { say "======================================================================"; }
 mark() { RESULT["$1"]="$2"; }
 
-# --- 0. install the APK (if given), launch, and wait for the bootstrap to extract ----------------
-adb wait-for-device
-adb shell input keyevent 82 >/dev/null 2>&1 || true
-if [ -n "$APK" ]; then
-    hr; say "[0] Install + launch + bootstrap extraction"
-    say "Installing $APK"
-    adb install -r -g "$APK" 2>&1 | tail -2 | tee -a "$LOG"
-    adb shell am start -W -n "$PKG/$ACT" 2>&1 | tail -3 | tee -a "$LOG"
-    for i in $(seq 1 24); do
-        adb shell run-as "$PKG" ls files/usr/bin/bash >/dev/null 2>&1 && break
-        sleep 5
-    done
-    if adb shell run-as "$PKG" ls files/usr/bin/bash >/dev/null 2>&1; then
-        say "bootstrap extracted: files/usr/bin/bash present"
-    else
-        say "bootstrap did NOT extract in time; checks will likely fail"
-    fi
-fi
-
 # The app's extracted native library directory, where the proot loader lives (proot can not execute
 # it from the app data directory). Derived from the installed APK path.
 APKDIR="$(adb shell pm path "$PKG" 2>/dev/null | sed -n 's|package:\(.*\)/base.apk|\1|p' | tr -d '\r' | head -1)"
 NLD=""; [ -n "$APKDIR" ] && NLD="$APKDIR/lib/x86_64"
-say "APK dir: ${APKDIR:-<unknown>}"
-say "Native library dir (proot loader): ${NLD:-<unknown>}"
 
 # Run a script in the bootstrap with the Termux environment, as the app uid. The whole device-side
 # script (environment set-up plus the payload, which bash runs from a quoted heredoc so it is taken
@@ -75,45 +59,57 @@ EOF
     adb shell "echo $b64 | base64 -d | run-as $PKG sh" 2>&1
 }
 
+# --- 0. install the APK (if given), launch, and wait for the bootstrap to extract ----------------
+adb wait-for-device
+adb shell input keyevent 82 >/dev/null 2>&1 || true
+if [ -n "$APK" ]; then
+    hr; say "[0] Install + launch + bootstrap extraction"
+    adb install -r -g "$APK" 2>&1 | tail -2 | tee -a "$LOG"
+    adb shell am start -W -n "$PKG/$ACT" 2>&1 | tail -3 | tee -a "$LOG"
+    for i in $(seq 1 24); do adb shell run-as "$PKG" ls files/usr/bin/bash >/dev/null 2>&1 && break; sleep 5; done
+    adb shell run-as "$PKG" ls files/usr/bin/bash >/dev/null 2>&1 && say "bootstrap extracted" || say "bootstrap did NOT extract in time"
+fi
+say "APK dir: ${APKDIR:-<unknown>}   proot loader dir: ${NLD:-<unknown>}"
+
 # --- 1. shell command execution -----------------------------------------------------------------
-hr; say "[1] Shell command execution"
-OUT="$(run_bash 'echo MARK_SH $(uname -m) uid=$(id -u) bins=$(ls -1 "$PREFIX/bin" | wc -l); ls -1 / >/dev/null && echo "coreutils ls: $(ls --version 2>/dev/null | head -1)"; file "$PREFIX/bin/bash" 2>/dev/null | head -1')"
+hr; say "[1] Shell command execution (coreutils; shell is x86_64 ELF)"
+OUT="$(run_bash 'echo MARK_SH $(uname -m) uid=$(id -u) bins=$(ls -1 "$PREFIX/bin" | wc -l); echo "ls: $(ls -1 "$PREFIX/bin" | head -1) ... ok"; file "$PREFIX/bin/bash" 2>/dev/null | head -1')"
 say "$OUT"
 echo "$OUT" | grep -q "MARK_SH x86_64" && mark shell PASS || mark shell FAIL
 
-# --- 2. pkg/apt update + install a package ------------------------------------------------------
-# Installs nodejs from the TermiNow apt repository: it is a repository package (so not already in the
-# pruned bootstrap) and is also the AI Bridge runtime, so this one install covers check 5 too.
-hr; say "[2] pkg/apt update and package installation (nodejs from the TermiNow repo)"
-OUT="$(run_bash 'echo "--- apt update ---"; apt-get update 2>&1 | tail -15; echo "--- install nodejs ---"; pkg install -y nodejs 2>&1 | tail -25; echo "--- run ---"; command -v node && node -v 2>&1 | head -1')"
+# --- 2. pkg/apt update + install a repository package -------------------------------------------
+# Installs proot-distro (a repository package, also the Ubuntu runtime). Requires the TermiNow apt
+# repository to carry x86_64 packages.
+hr; say "[2] pkg/apt update and package installation (proot-distro from the TermiNow repo)"
+OUT="$(run_bash 'echo "--- apt update ---"; apt-get update 2>&1 | tail -12; echo "--- install proot-distro proot ---"; pkg install -y proot-distro proot 2>&1 | tail -25; echo "--- verify ---"; command -v proot-distro && command -v proot && proot --version 2>&1 | head -1')"
 say "$OUT"
-APT_UPDATED=0; echo "$OUT" | grep -qiE "Reading package lists|Fetched|Hit |Get:" && APT_UPDATED=1
-echo "$OUT" | grep -qiE "^v[0-9]+\.[0-9]+" && [ "$APT_UPDATED" = 1 ] && mark apt PASS || mark apt FAIL
+APT_UPDATED=0; echo "$OUT" | grep -qiE "Reading package lists|Fetched|Hit:|Get:" && APT_UPDATED=1
+APT_INSTALLED=0; echo "$OUT" | grep -q "/proot-distro" && echo "$OUT" | grep -qiE "proot .*[0-9]" && APT_INSTALLED=1
+{ [ "$APT_UPDATED" = 1 ] && [ "$APT_INSTALLED" = 1 ]; } && mark apt PASS || mark apt FAIL
 
-# --- 3. multiple concurrent shell sessions ------------------------------------------------------
-hr; say "[3] Multiple concurrent shell sessions"
+# --- 3. multiple concurrent shell processes (NOT the multi-session UI) --------------------------
+hr; say "[3] Multiple concurrent shell PROCESSES (not the terminal multi-session UI)"
 OUT="$(run_bash '
     rm -f "$TMPDIR"/sess_*.txt
     for i in 1 2 3; do ( for j in 1 2 3; do echo "session $i tick $j pid $BASHPID"; sleep 0.3; done > "$TMPDIR/sess_$i.txt" ) & done
     wait
-    for i in 1 2 3; do echo "== session $i =="; cat "$TMPDIR/sess_$i.txt"; done
+    for i in 1 2 3; do echo "== process $i =="; cat "$TMPDIR/sess_$i.txt"; done
     echo "distinct_pids=$(sed -n "s/.*pid //p" "$TMPDIR"/sess_*.txt | sort -u | wc -l)"
 ')"
 say "$OUT"
 PIDS="$(echo "$OUT" | sed -n 's/distinct_pids=//p' | tr -d ' \r')"
 { [ "${PIDS:-0}" -ge 2 ] && echo "$OUT" | grep -q "session 3 tick 3"; } && mark sessions PASS || mark sessions FAIL
 
-# --- 4. SSH over the loopback -------------------------------------------------------------------
-hr; say "[4] SSH (openssh, sshd, loopback connect)"
+# --- 4. SSH over the loopback (NOT a real remote host) ------------------------------------------
+hr; say "[4] SSH over the LOOPBACK 127.0.0.1 (not a remote host)"
 OUT="$(run_bash '
-    pkg install -y openssh 2>&1 | tail -8
+    command -v sshd >/dev/null || pkg install -y openssh 2>&1 | tail -6
     mkdir -p "$HOME/.ssh"; chmod 700 "$HOME/.ssh"
     [ -f "$HOME/.ssh/id_ed25519" ] || ssh-keygen -t ed25519 -N "" -f "$HOME/.ssh/id_ed25519" >/dev/null 2>&1
     cp "$HOME/.ssh/id_ed25519.pub" "$HOME/.ssh/authorized_keys"; chmod 600 "$HOME/.ssh/authorized_keys"
     ssh-keygen -A >/dev/null 2>&1 || true
     pkill -f "sshd.*8022" 2>/dev/null || true
-    "$PREFIX/bin/sshd" -p 8022 \
-        -o "PidFile=$TMPDIR/sshd.pid" -o "StrictModes=no" -o "UsePAM=no" \
+    "$PREFIX/bin/sshd" -p 8022 -o "PidFile=$TMPDIR/sshd.pid" -o "StrictModes=no" \
         -o "PasswordAuthentication=no" -o "AuthorizedKeysFile=$HOME/.ssh/authorized_keys" 2>&1 | tail -3
     sleep 2
     ssh -p 8022 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
@@ -122,42 +118,57 @@ OUT="$(run_bash '
 say "$OUT"
 echo "$OUT" | grep -q "SSH_OK on x86_64" && mark ssh PASS || mark ssh FAIL
 
-# --- 5. AI Bridge runtime -----------------------------------------------------------------------
-hr; say "[5] AI Bridge runtime (node in the bootstrap; end-to-end pairing needs the UI, see note)"
-OUT="$(run_bash 'if command -v node >/dev/null; then node -e "console.log(\"NODE_OK\", process.arch, process.version)"; else echo "node not installed (pkg install nodejs)"; fi')"
+# --- 5. AI Bridge runtime (node executes; NOT full pairing) -------------------------------------
+hr; say "[5] AI Bridge RUNTIME: node executes (not full AI Bridge pairing with a host/client)"
+OUT="$(run_bash 'command -v node >/dev/null || pkg install -y nodejs 2>&1 | tail -6; if command -v node >/dev/null; then node -e "console.log(\"NODE_OK\", process.arch, process.version)"; else echo "node unavailable"; fi')"
 say "$OUT"
-echo "$OUT" | grep -q "NODE_OK" && mark bridge PASS || mark bridge SKIP
+echo "$OUT" | grep -q "NODE_OK x64" && mark bridge PASS || mark bridge SKIP
 
-# --- 6. Ubuntu via proot-distro on x86_64 -------------------------------------------------------
-hr; say "[6] Ubuntu via proot-distro on x86_64 (install, login, shell, networking, restart)"
+# --- 6. Ubuntu via proot-distro on x86_64: five REQUIRED sub-checks ------------------------------
+hr; say "[6] Ubuntu via proot-distro on x86_64 (install, login, command, networking, restart)"
+UB_INSTALL=FAIL; UB_LOGIN=FAIL; UB_CMD=FAIL; UB_NET=FAIL; UB_RESTART=FAIL
 if [ -z "$NLD" ]; then
-    say "Native library dir for the proot loader is unknown; skipping."
-    mark ubuntu SKIP
+    say "proot loader dir unknown; all Ubuntu sub-checks FAIL"
+elif ! run_bash 'command -v proot-distro >/dev/null && echo PD_OK' | grep -q PD_OK; then
+    say "proot-distro is not installed (needs the x86_64 apt repository); all Ubuntu sub-checks FAIL"
 else
     OUT="$(run_bash '
-        command -v proot-distro >/dev/null || { echo "proot-distro missing"; exit 0; }
-        echo "=== proot self-test ==="; proot --version 2>&1 | head -2
-        echo "=== install ubuntu ==="; proot-distro install ubuntu 2>&1 | tail -20
-        echo "=== first login: os-release + arch ==="
-        proot-distro login ubuntu -- /bin/sh -c "head -2 /etc/os-release; echo ARCH=\$(uname -m); echo WHOAMI=\$(id -un)" 2>&1 | tail -10
-        echo "=== networking (apt-get update) ==="
-        proot-distro login ubuntu -- /bin/sh -c "apt-get update 2>&1 | tail -6" 2>&1 | tail -8
-        echo "=== restart (second login) ==="
-        proot-distro login ubuntu -- /bin/sh -c "echo RELOGIN_OK on \$(uname -m)" 2>&1 | tail -3
+        echo "=== UB install ==="; proot-distro install ubuntu 2>&1 | tail -20
+        proot-distro list --installed 2>/dev/null | grep -qi ubuntu && echo UB_INSTALL_OK
+        echo "=== UB login ==="; proot-distro login ubuntu -- /bin/true 2>&1 && echo UB_LOGIN_OK
+        echo "=== UB command ==="; proot-distro login ubuntu -- /bin/sh -c ". /etc/os-release; echo UB_CMD id=\$ID arch=\$(uname -m) hello=\$(echo hi)" 2>&1 | tail -4
+        echo "=== UB networking ==="; proot-distro login ubuntu -- /bin/sh -c "apt-get update 2>&1 | tail -4; getent hosts archive.ubuntu.com >/dev/null 2>&1 && echo UB_NET_OK || (apt-get update 2>&1 | grep -qiE \"Fetched|Hit|Get:\" && echo UB_NET_OK)" 2>&1 | tail -6
+        echo "=== UB restart (fresh login after the previous exited) ==="; proot-distro login ubuntu -- /bin/sh -c "echo UB_RESTART_OK on \$(uname -m)" 2>&1 | tail -3
     ')"
     say "$OUT"
-    { echo "$OUT" | grep -q "ARCH=x86_64" && echo "$OUT" | grep -q "RELOGIN_OK on x86_64"; } && mark ubuntu PASS || mark ubuntu FAIL
+    echo "$OUT" | grep -q "UB_INSTALL_OK" && UB_INSTALL=PASS
+    echo "$OUT" | grep -q "UB_LOGIN_OK" && UB_LOGIN=PASS
+    echo "$OUT" | grep -q "UB_CMD id=ubuntu arch=x86_64" && UB_CMD=PASS
+    echo "$OUT" | grep -q "UB_NET_OK" && UB_NET=PASS
+    echo "$OUT" | grep -q "UB_RESTART_OK on x86_64" && UB_RESTART=PASS
 fi
+say "  ubuntu.install   $UB_INSTALL"
+say "  ubuntu.login     $UB_LOGIN"
+say "  ubuntu.command   $UB_CMD"
+say "  ubuntu.network   $UB_NET"
+say "  ubuntu.restart   $UB_RESTART"
+{ [ "$UB_INSTALL" = PASS ] && [ "$UB_LOGIN" = PASS ] && [ "$UB_CMD" = PASS ] && [ "$UB_NET" = PASS ] && [ "$UB_RESTART" = PASS ]; } && mark ubuntu PASS || mark ubuntu FAIL
 
 # --- summary ------------------------------------------------------------------------------------
 hr; say "SUMMARY (x86_64 runtime validation)"
-for k in shell apt sessions ssh bridge ubuntu; do say "  $(printf '%-9s' "$k") ${RESULT[$k]:-?}"; done
+say "  shell     ${RESULT[shell]:-?}   (shell command execution)"
+say "  apt       ${RESULT[apt]:-?}   (pkg/apt update + install a repo package)"
+say "  sessions  ${RESULT[sessions]:-?}   (concurrent shell PROCESSES; not the multi-session UI)"
+say "  ssh       ${RESULT[ssh]:-?}   (LOOPBACK 127.0.0.1; not a remote host)"
+say "  bridge    ${RESULT[bridge]:-?}   (node runtime executes; not full AI Bridge pairing)"
+say "  ubuntu    ${RESULT[ubuntu]:-?}   (install=$UB_INSTALL login=$UB_LOGIN command=$UB_CMD network=$UB_NET restart=$UB_RESTART)"
 cp "$LOG" "${GITHUB_WORKSPACE:-.}/runtime.txt" 2>/dev/null || true
 
-if [ "${RESULT[shell]:-FAIL}" = PASS ] && [ "${RESULT[apt]:-FAIL}" = PASS ]; then
-    say "CORE OK (shell + apt)."
+# Gate on the REQUIRED checks: shell, apt, and every Ubuntu sub-check.
+if [ "${RESULT[shell]:-FAIL}" = PASS ] && [ "${RESULT[apt]:-FAIL}" = PASS ] && [ "${RESULT[ubuntu]:-FAIL}" = PASS ]; then
+    say "REQUIRED CHECKS PASSED (shell + apt + Ubuntu install/login/command/networking/restart)."
     exit 0
 else
-    say "CORE FAILED (shell and/or apt)."
+    say "REQUIRED CHECKS FAILED. See the per-check output above."
     exit 1
 fi
