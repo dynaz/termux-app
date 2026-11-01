@@ -145,4 +145,51 @@
     <!-- Scheduled backups -->
     <string name="terminow_backup_schedule_channel">Scheduled backups</string>
     <string name="terminow_backup_schedule_notification_title">TermiNow backup</string>
+
+    <!-- Cloud (S3) -->
+    <string name="terminow_cloud_menu">Cloud backup (S3)</string>
+    <string name="terminow_cloud_backup_now">Back up now to cloud</string>
+    <string name="terminow_cloud_backup_now_setup">Set up cloud storage…</string>
+    <string name="terminow_cloud_restore">Restore from cloud</string>
+    <string name="terminow_cloud_schedule">Scheduled backups</string>
+    <string name="terminow_cloud_settings">Cloud storage settings</string>
+    <string name="terminow_cloud_settings_hint">S3 or an S3-compatible store (AWS S3, MinIO, Backblaze B2, Wasabi). Credentials are stored encrypted on this device.</string>
+    <string name="terminow_cloud_endpoint">Endpoint (e.g. s3.amazonaws.com)</string>
+    <string name="terminow_cloud_region">Region (e.g. us-east-1)</string>
+    <string name="terminow_cloud_bucket">Bucket</string>
+    <string name="terminow_cloud_access_key">Access key ID</string>
+    <string name="terminow_cloud_secret_key">Secret access key</string>
+    <string name="terminow_cloud_encrypt_password">Backup password (optional)</string>
+    <string name="terminow_cloud_encrypt_password_hint">If set, backups to this storage are encrypted with this password. Keep it safe — it cannot be recovered.</string>
+    <string name="terminow_cloud_tls">Use HTTPS</string>
+    <string name="terminow_cloud_path_style">Path-style URLs (needed for MinIO/B2/Wasabi)</string>
+    <string name="terminow_cloud_test_save">Test &amp; save</string>
+    <string name="terminow_cloud_remove">Remove</string>
+    <string name="terminow_cloud_removed">Cloud storage removed</string>
+    <string name="terminow_cloud_incomplete">Fill in the endpoint, region, bucket, access key and secret key</string>
+    <string name="terminow_cloud_testing">Testing the connection…</string>
+    <string name="terminow_cloud_test_failed">Could not connect: %1$s</string>
+    <string name="terminow_cloud_saved">Cloud storage saved</string>
+    <string name="terminow_cloud_save_failed">Could not save the credentials securely on this device</string>
+    <string name="terminow_cloud_listing">Loading backups…</string>
+    <string name="terminow_cloud_list_failed">Could not list backups: %1$s</string>
+    <string name="terminow_cloud_none">No backups found in this storage</string>
+    <string name="terminow_cloud_downloading">Downloading the backup…</string>
+    <string name="terminow_cloud_download_failed">Could not download: %1$s</string>
+    <string name="terminow_cloud_schedule_hint">Automatic full backups of %1$s to the cloud storage.</string>
+    <string name="terminow_cloud_schedule_enable">Back up on a schedule</string>
+    <string name="terminow_cloud_daily">Daily</string>
+    <string name="terminow_cloud_weekly">Weekly</string>
+    <string name="terminow_cloud_hour">Hour (0–23)</string>
+    <string name="terminow_cloud_minute">Minute (0–59)</string>
+    <string name="terminow_cloud_retain">Keep the newest N backups</string>
+    <string name="terminow_cloud_wifi_only">Only on Wi-Fi (unmetered)</string>
+    <string name="terminow_cloud_charging">Only while charging</string>
+    <string name="terminow_cloud_skip_active">Skip when the environment is in use</string>
+    <string name="terminow_cloud_schedule_note">Android decides exactly when scheduled jobs run and may delay them to save battery, so the time is approximate.</string>
+    <string name="terminow_cloud_last_failure">Last attempt: %1$s</string>
+    <string name="terminow_cloud_save_schedule">Save schedule</string>
+    <string name="terminow_cloud_schedule_needs_storage">Set up cloud storage first</string>
+    <string name="terminow_cloud_scheduled">Scheduled. Next run about %1$s</string>
+    <string name="terminow_cloud_schedule_off">Scheduled backups turned off</string>
 </resources>
