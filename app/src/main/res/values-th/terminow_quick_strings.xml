@@ -165,6 +165,16 @@
     <string name="terminow_local_linux_choose_distro">เลือกดิสโทร ตอนนี้คือ %1$s</string>
     <string name="terminow_local_linux_current">ปัจจุบัน</string>
     <string name="terminow_local_linux_session_menu">ตัวเลือกเพิ่มเติมสำหรับ %1$s</string>
+    <string name="terminow_tmux_use">ใช้ tmux</string>
+    <string name="terminow_tmux_use_summary">เชื่อมต่อกลับไปยังเซสชันเทอร์มินัลขณะที่สภาพแวดล้อมในเครื่องยังทำงานอยู่</string>
+    <string name="terminow_tmux_info_title">เกี่ยวกับ tmux</string>
+    <string name="terminow_tmux_info_body">tmux จะรักษาเชลล์ให้ทำงานอยู่ในสภาพแวดล้อม Linux ภายใต้เซสชันที่มีชื่อ เทอร์มินัลสามารถถอด (detach) จากเซสชันและกลับมาเชื่อมต่อ (attach) ใหม่ได้ ทำให้คุณกลับไปยังเชลล์ โปรแกรมที่กำลังรัน และ scroll-back เดิม ตราบใดที่สภาพแวดล้อมยังทำงานอยู่\n\nการตั้งค่านี้ใช้กับเซสชันใหม่ของดิสโทรนี้เท่านั้น จะไม่เปลี่ยนเซสชันที่เปิดอยู่แล้ว การปิดจะกลับไปเริ่มเชลล์ธรรมดา\n\nเซสชันไม่ได้คงอยู่ตลอดไป: หาก Android หยุดแอปหรือโพรเซส คุณบังคับปิดแอป อุปกรณ์รีบูต หรือปิดสภาพแวดล้อม Linux เซิร์ฟเวอร์ tmux จะสิ้นสุดและเซสชันจะหายไป</string>
+    <string name="terminow_select_os_title">เลือก OS</string>
+    <string name="terminow_select_os_installed">ติดตั้งแล้ว</string>
+    <string name="terminow_select_os_add">เพิ่มดิสทริบิวชัน</string>
+    <string name="terminow_select_os_search">ค้นหาดิสทริบิวชัน</string>
+    <string name="terminow_select_os_running">กำลังทำงาน %1$d</string>
+    <string name="terminow_select_os_selected">เลือกอยู่</string>
     <string name="terminow_local_linux_recent">ปิดไปล่าสุด</string>
     <string name="terminow_local_linux_recent_note">เปิดเชลล์ใหม่ ไม่กู้คืนโปรเซสเดิม</string>
     <!-- SSH host picker (Connect) -->

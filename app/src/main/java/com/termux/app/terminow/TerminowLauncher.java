@@ -430,6 +430,20 @@ public class TerminowLauncher {
         return TerminowLaunchPlan.TMUX_ATTACH.equals(value) ? value : TerminowLaunchPlan.TMUX_OFF;
     }
 
+    /** Whether this environment's new terminals start in tmux (the per-distro "Use tmux" preference). */
+    boolean usesTmux(@NonNull Environment environment) {
+        return TerminowLaunchPlan.TMUX_ATTACH.equals(tmuxPreferenceOf(environment));
+    }
+
+    /**
+     * Set the per-distro "Use tmux" preference without touching the saved user or folder. Only the
+     * environment's own {@code tmux:<key>} value changes, so it affects that distribution's future new
+     * sessions only; existing sessions are never altered.
+     */
+    void setTmuxPreference(@NonNull Environment environment, boolean on) {
+        putPref("tmux:" + environment.key, on ? TerminowLaunchPlan.TMUX_ATTACH : TerminowLaunchPlan.TMUX_OFF);
+    }
+
     void setLaunchSettings(@NonNull Environment environment, @NonNull String user, @NonNull String folder, @NonNull String tmux) {
         if (environment.container != null) putPref("user:" + environment.key, user);
         putPref("folder:" + environment.key, folder);

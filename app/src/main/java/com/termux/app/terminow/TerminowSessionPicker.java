@@ -11,9 +11,11 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.widget.CheckBox;
+import android.widget.CompoundButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.Switch;
 import android.widget.TextView;
 
 import androidx.annotation.DrawableRes;
@@ -104,6 +106,7 @@ class TerminowSessionPicker {
 
         Sheet sheet = new Sheet(mActivity.getString(R.string.terminow_local_linux_title));
         sheet.content.addView(distroSelector(sheet, env, distros));
+        sheet.content.addView(tmuxToggleRow(env));
 
         // The default action is a new session; Open in current tab is tucked into an overflow beside it.
         LinearLayout actions = new LinearLayout(mActivity);
@@ -231,11 +234,15 @@ class TerminowSessionPicker {
         LinearLayout texts = new LinearLayout(mActivity);
         texts.setOrientation(LinearLayout.VERTICAL);
         texts.setPadding(dp(14), 0, dp(8), 0);
-        TextView name = text(env.label, 16, R.color.terminow_text);
+        TextView name = text(env.shortName(), 16, R.color.terminow_text);
         name.setTypeface(Typeface.DEFAULT_BOLD);
         texts.addView(name);
+        // Subtitle is the detected installed version only, so the name is not repeated (no
+        // "Ubuntu 24.04.5 LTS · Ubuntu 24.04"); fall back to the full label when no version is known.
         String version = mLauncher.environmentVersion(env);
-        texts.addView(text(version.isEmpty() ? env.shortName() : env.shortName() + " " + version, 13, R.color.terminow_text_secondary));
+        String subtitle = !version.isEmpty() ? version
+            : (env.label.equals(env.shortName()) ? "" : env.label);
+        if (!subtitle.isEmpty()) texts.addView(text(subtitle, 13, R.color.terminow_text_secondary));
         row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         row.addView(tierChip(mLauncher.environmentDistroId(env)));
 
@@ -256,21 +263,190 @@ class TerminowSessionPicker {
         return row;
     }
 
-    /** Pick another installed distribution, then re-open the picker on it. */
-    private void pickDistro(@NonNull List<TerminowLauncher.Environment> distros) {
-        CharSequence[] labels = new CharSequence[distros.size()];
-        for (int i = 0; i < distros.size(); i++) {
-            TerminowLauncher.Environment e = distros.get(i);
-            String version = mLauncher.environmentVersion(e);
-            labels[i] = version.isEmpty() ? e.label : e.label + " · " + e.shortName() + " " + version;
-        }
+    /**
+     * The per-distro "Use tmux" settings row: a terminal icon, the title and subtitle, an info button,
+     * and an adaptive toggle bound to the environment's saved {@code tmux:<key>} preference. The toggle
+     * affects that distribution's <b>new</b> sessions only; it never touches a running session. Turning
+     * it on is gated by Premium (Feature.TMUX), exactly like launching into tmux.
+     */
+    private View tmuxToggleRow(@NonNull TerminowLauncher.Environment env) {
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(14), dp(10), dp(6), dp(10));
+        row.setMinimumHeight(dp(56));
+        GradientDrawable shape = new GradientDrawable();
+        shape.setColor(color(R.color.terminow_quick_card));
+        shape.setCornerRadius(dp(12));
+        shape.setStroke(Math.max(1, dp(1)), color(R.color.terminow_quick_border));
+        row.setBackground(shape);
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        rowParams.topMargin = dp(10);
+        row.setLayoutParams(rowParams);
+
+        ImageView icon = new ImageView(mActivity);
+        icon.setImageResource(R.drawable.ic_terminow_terminal);
+        icon.setColorFilter(color(R.color.terminow_text));
+        icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        row.addView(icon, new LinearLayout.LayoutParams(dp(24), dp(24)));
+
+        LinearLayout texts = new LinearLayout(mActivity);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        texts.setPadding(dp(14), 0, dp(4), 0);
+        TextView title = text(mActivity.getString(R.string.terminow_tmux_use), 15, R.color.terminow_text);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        texts.addView(title);
+        texts.addView(text(mActivity.getString(R.string.terminow_tmux_use_summary), 13, R.color.terminow_text_secondary));
+        row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+        ImageView info = overflowButton(mActivity.getString(R.string.terminow_tmux_info_title), this::showTmuxInfo);
+        info.setImageResource(R.drawable.ic_terminow_info);
+        info.setColorFilter(color(R.color.terminow_text_secondary));
+        row.addView(info, new LinearLayout.LayoutParams(dp(48), dp(48)));
+
+        final Switch toggle = new Switch(mActivity);
+        toggle.setChecked(mLauncher.usesTmux(env));
+        toggle.setContentDescription(mActivity.getString(R.string.terminow_tmux_use));
+        toggle.setMinimumHeight(dp(48));
+        final CompoundButton.OnCheckedChangeListener[] listener = new CompoundButton.OnCheckedChangeListener[1];
+        listener[0] = (btn, checked) -> {
+            if (checked && !TerminowAccountUi.isPremium(mStore)) {
+                // Not Premium: revert the visual state without re-entering this listener, then offer upgrade.
+                setCheckedSilently(toggle, listener[0], false);
+                TerminowPremiumGate.require(mActivity, mStore, TerminowPremiumGate.Feature.TMUX, 0, () -> {
+                    mLauncher.setTmuxPreference(env, true);
+                    setCheckedSilently(toggle, listener[0], true);
+                });
+                return;
+            }
+            mLauncher.setTmuxPreference(env, checked);
+        };
+        toggle.setOnCheckedChangeListener(listener[0]);
+        row.addView(toggle, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        return row;
+    }
+
+    private static void setCheckedSilently(@NonNull Switch toggle,
+                                           @NonNull CompoundButton.OnCheckedChangeListener listener, boolean checked) {
+        toggle.setOnCheckedChangeListener(null);
+        toggle.setChecked(checked);
+        toggle.setOnCheckedChangeListener(listener);
+    }
+
+    private void showTmuxInfo() {
         new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
-            .setTitle(R.string.terminow_local_linux_title)
-            .setItems(labels, (d, w) -> {
-                mStore.setLastLocalEnvironment(distros.get(w).key);
-                showLocalLinux();
-            })
+            .setTitle(R.string.terminow_tmux_info_title)
+            .setMessage(R.string.terminow_tmux_info_body)
+            .setPositiveButton(android.R.string.ok, null)
             .show();
+    }
+
+    /**
+     * The branded "Select OS" picker: one card per installed distribution (logo, short name, detected
+     * version, Free/Premium badge, running-session count, selected checkmark), an "Installed" section,
+     * and an "Add distribution" action. Selecting a distribution only re-opens the session manager on
+     * it — it never launches a terminal — and its saved tmux preference follows the distribution.
+     */
+    private void pickDistro(@NonNull List<TerminowLauncher.Environment> distros) {
+        String selectedKey = mStore.getLastLocalEnvironment();
+        Sheet sheet = new Sheet(mActivity.getString(R.string.terminow_select_os_title));
+
+        // Search only when the list is long enough to need it.
+        final LinearLayout listHolder = new LinearLayout(mActivity);
+        listHolder.setOrientation(LinearLayout.VERTICAL);
+        if (distros.size() > 8) {
+            final android.widget.EditText search = new android.widget.EditText(mActivity);
+            search.setHint(R.string.terminow_select_os_search);
+            search.setSingleLine(true);
+            search.setMinHeight(dp(48));
+            LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            sp.bottomMargin = dp(8);
+            sheet.content.addView(search, sp);
+            search.addTextChangedListener(new android.text.TextWatcher() {
+                @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+                @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
+                @Override public void afterTextChanged(android.text.Editable s) {
+                    fillDistroCards(listHolder, distros, selectedKey, sheet, s.toString().trim().toLowerCase(java.util.Locale.ROOT));
+                }
+            });
+        }
+        sheet.section(R.string.terminow_select_os_installed);
+        sheet.content.addView(listHolder);
+        fillDistroCards(listHolder, distros, selectedKey, sheet, "");
+
+        sheet.section(R.string.terminow_select_os_add);
+        sheet.option(R.drawable.ic_terminow_add, mActivity.getString(R.string.terminow_local_linux_install),
+            mActivity.getString(R.string.terminow_local_linux_install_summary), () -> { sheet.dialog.dismiss(); mLauncher.browseLinux(); });
+        sheet.show();
+    }
+
+    private void fillDistroCards(@NonNull LinearLayout holder, @NonNull List<TerminowLauncher.Environment> distros,
+                                 @Nullable String selectedKey, @NonNull Sheet sheet, @NonNull String filter) {
+        holder.removeAllViews();
+        for (TerminowLauncher.Environment e : distros) {
+            if (!filter.isEmpty()
+                && !e.shortName().toLowerCase(java.util.Locale.ROOT).contains(filter)
+                && !e.label.toLowerCase(java.util.Locale.ROOT).contains(filter)) continue;
+            holder.addView(distroCard(sheet, e, e.key.equals(selectedKey)));
+        }
+    }
+
+    /** One branded, selectable card in the "Select OS" picker. */
+    @NonNull
+    private View distroCard(@NonNull Sheet sheet, @NonNull TerminowLauncher.Environment env, boolean selected) {
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(14), dp(12), dp(12), dp(12));
+        row.setMinimumHeight(dp(56));
+        GradientDrawable shape = new GradientDrawable();
+        shape.setColor(color(R.color.terminow_quick_card));
+        shape.setCornerRadius(dp(14));
+        shape.setStroke(Math.max(1, dp(selected ? 2 : 1)), color(selected ? R.color.terminow_panel_accent : R.color.terminow_quick_border));
+        row.setBackground(shape);
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        rowParams.topMargin = dp(8);
+        row.setLayoutParams(rowParams);
+
+        ImageView icon = new ImageView(mActivity);
+        icon.setImageResource(distroIcon(mLauncher.environmentDistroId(env)));
+        icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        row.addView(icon, new LinearLayout.LayoutParams(dp(28), dp(28)));
+
+        LinearLayout texts = new LinearLayout(mActivity);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        texts.setPadding(dp(14), 0, dp(8), 0);
+        TextView name = text(env.shortName(), 16, R.color.terminow_text);
+        name.setTypeface(Typeface.DEFAULT_BOLD);
+        texts.addView(name);
+        String version = mLauncher.environmentVersion(env);
+        int running = mLauncher.sessionsOf(env).size();
+        StringBuilder sub = new StringBuilder(version);
+        if (running > 0) {
+            if (sub.length() > 0) sub.append(" · ");
+            sub.append(mActivity.getString(R.string.terminow_select_os_running, running));
+        }
+        if (sub.length() > 0) texts.addView(text(sub.toString(), 13, R.color.terminow_text_secondary));
+        row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+        row.addView(tierChip(mLauncher.environmentDistroId(env)));
+        if (selected) {
+            TextView check = text("✓", 18, R.color.terminow_panel_accent);
+            check.setTypeface(Typeface.DEFAULT_BOLD);
+            check.setPadding(dp(10), 0, dp(4), 0);
+            row.addView(check);
+        }
+
+        String desc = env.shortName() + (version.isEmpty() ? "" : " " + version)
+            + (selected ? ". " + mActivity.getString(R.string.terminow_select_os_selected) : "");
+        row.setContentDescription(desc);
+        row.setClickable(true);
+        row.setFocusable(true);
+        row.setOnClickListener(v -> {
+            // Selecting a distribution switches the manager to it; it does NOT launch a terminal.
+            mStore.setLastLocalEnvironment(env.key);
+            sheet.dialog.dismiss();
+            showLocalLinux();
+        });
+        return row;
     }
 
     /** A live-session row: its name, folder and state; a tap focuses it; an overflow renames it. */

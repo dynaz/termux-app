@@ -168,6 +168,16 @@
     <string name="terminow_local_linux_choose_distro">Choose a distribution, currently %1$s</string>
     <string name="terminow_local_linux_current">Current</string>
     <string name="terminow_local_linux_session_menu">More options for %1$s</string>
+    <string name="terminow_tmux_use">Use tmux</string>
+    <string name="terminow_tmux_use_summary">Reconnect to terminal sessions while the local environment is running</string>
+    <string name="terminow_tmux_info_title">About tmux</string>
+    <string name="terminow_tmux_info_body">tmux keeps a shell running inside the Linux environment under a named session. A terminal can detach from a session and later attach to it again, so you return to the same shell, running programs and scroll-back — as long as the environment itself is still running.\n\nThis preference applies to new sessions of this distribution only; it never changes a session that is already open. Turning it off starts plain shells again.\n\nSessions do not survive everything: if Android stops the app or its process, you force-stop it, the device reboots, or the Linux environment is shut down, the tmux server ends and its sessions are gone.</string>
+    <string name="terminow_select_os_title">Select OS</string>
+    <string name="terminow_select_os_installed">Installed</string>
+    <string name="terminow_select_os_add">Add distribution</string>
+    <string name="terminow_select_os_search">Search distributions</string>
+    <string name="terminow_select_os_running">%1$d running</string>
+    <string name="terminow_select_os_selected">Selected</string>
     <string name="terminow_local_linux_recent">Recently closed</string>
     <string name="terminow_local_linux_recent_note">Opens a new shell. Previous processes are not restored.</string>
     <!-- SSH host picker (Connect) -->
