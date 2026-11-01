@@ -53,5 +53,27 @@ public class TerminowDiscoveredDeviceTest {
         assertEquals("", d.mac);
         assertEquals("", d.vendor);
         assertTrue(d.openPorts.isEmpty());
+        assertEquals(TerminowDiscoveredDevice.Kind.UNKNOWN, d.kind());
+    }
+
+    @Test public void kindIsInferredFromPortsAndGatewayFlag() {
+        assertEquals(TerminowDiscoveredDevice.Kind.SERVER, dev("s", "10.0.0.1", 1, 22).kind());
+        assertEquals(TerminowDiscoveredDevice.Kind.PRINTER, dev("s", "10.0.0.1", 1, 9100).kind());
+        assertEquals(TerminowDiscoveredDevice.Kind.WEB, dev("s", "10.0.0.1", 1, 80).kind());
+        TerminowDiscoveredDevice nas = dev("s", "10.0.0.1", 1, 445, 5000);
+        assertEquals(TerminowDiscoveredDevice.Kind.NAS, nas.kind());
+        TerminowDiscoveredDevice gw = dev("s", "10.0.0.1", 1, 80);
+        gw.isGateway = true;
+        assertEquals("gateway flag wins over port heuristics", TerminowDiscoveredDevice.Kind.GATEWAY, gw.kind());
+    }
+
+    @Test public void mergePreservesReachabilityAndGatewayFlags() {
+        TerminowDiscoveredDevice a = dev("s", "10.0.0.1", 1, 22);
+        TerminowDiscoveredDevice b = dev("s", "10.0.0.1", 2);
+        b.respondsToPing = true;
+        b.isGateway = true;
+        a.mergeFrom(b);
+        assertTrue(a.respondsToPing);
+        assertTrue(a.isGateway);
     }
 }

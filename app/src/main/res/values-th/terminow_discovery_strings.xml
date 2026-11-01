@@ -18,4 +18,29 @@
     <string name="terminow_discovery_open_web">เปิดเว็บ</string>
     <string name="terminow_discovery_save_host">บันทึกเป็นโฮสต์</string>
     <string name="terminow_discovery_copy_ip">คัดลอก IP</string>
+
+    <!-- Network info header -->
+    <string name="terminow_discovery_ip_gateway">IP (เกตเวย์): %1$s (%2$s)</string>
+    <string name="terminow_discovery_broadcast">บรอดคาสต์ (ซับเน็ต): %1$s (%2$s)</string>
+    <string name="terminow_discovery_hosts_count">อุปกรณ์: %1$d</string>
+
+    <!-- Inferred device types -->
+    <string name="terminow_discovery_kind_gateway">เกตเวย์ / เราเตอร์</string>
+    <string name="terminow_discovery_kind_printer">เครื่องพิมพ์</string>
+    <string name="terminow_discovery_kind_nas">แชร์ไฟล์ / NAS</string>
+    <string name="terminow_discovery_kind_server">เซิร์ฟเวอร์</string>
+    <string name="terminow_discovery_kind_web">อุปกรณ์เว็บ</string>
+    <string name="terminow_discovery_kind_desktop">คอมพิวเตอร์</string>
+
+    <!-- Device detail -->
+    <string name="terminow_discovery_detail_name">ชื่ออุปกรณ์</string>
+    <string name="terminow_discovery_detail_type">ประเภทอุปกรณ์</string>
+    <string name="terminow_discovery_detail_ip">IP อุปกรณ์</string>
+    <string name="terminow_discovery_detail_vendor">ผู้ผลิต</string>
+    <string name="terminow_discovery_vendor_unknown">ไม่ทราบ</string>
+    <string name="terminow_discovery_open_ports">พอร์ตที่เปิด %1$d</string>
+    <string name="terminow_discovery_port">พอร์ต %1$d</string>
+    <string name="terminow_discovery_port_svc">พอร์ต %1$d · %2$s</string>
+    <string name="terminow_discovery_ping_only">ไม่พบพอร์ต TCP ที่เปิด แต่ตอบสนองต่อ ping</string>
+    <string name="terminow_discovery_no_ports">ไม่พบพอร์ตที่เปิด</string>
 </resources>

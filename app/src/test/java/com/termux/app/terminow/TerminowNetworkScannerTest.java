@@ -81,4 +81,42 @@ public class TerminowNetworkScannerTest {
             (ip, port, t) -> ProbeResult.TIMEOUT, new AtomicBoolean(false), r);
         assertEquals(4, r.progressCalls); // 2 addresses x 2 ports
     }
+
+    @Test public void pingOnlyHostIsDiscoveredEvenWithNoOpenPorts() {
+        // Every TCP port times out, but the host answers the reachability sweep: it is still a device.
+        TerminowNetworkScanner.Prober ports = (ip, port, t) -> ProbeResult.TIMEOUT;
+        TerminowNetworkScanner.ReachProber reach = (ip, t) -> ip.equals("10.0.0.7");
+        Recorder r = new Recorder();
+        TerminowNetworkScanner.scan(config(Arrays.asList("10.0.0.7", "10.0.0.8"), Arrays.asList(22, 80)),
+            ports, reach, new AtomicBoolean(false), r);
+        assertEquals(Status.COMPLETED, r.status);
+        assertEquals(1, r.finalDevices.size());
+        TerminowDiscoveredDevice d = r.finalDevices.get(0);
+        assertEquals("10.0.0.7", d.ip);
+        assertTrue("marked reachable by ping", d.respondsToPing);
+        assertTrue("no open port recorded", d.openPorts.isEmpty());
+    }
+
+    @Test public void pingAndOpenPortMergeIntoOneDevice() {
+        TerminowNetworkScanner.Prober ports = (ip, port, t) ->
+            ip.equals("10.0.0.7") && port == 22 ? ProbeResult.OPEN : ProbeResult.TIMEOUT;
+        TerminowNetworkScanner.ReachProber reach = (ip, t) -> ip.equals("10.0.0.7");
+        Recorder r = new Recorder();
+        TerminowNetworkScanner.scan(config(Arrays.asList("10.0.0.7"), Arrays.asList(22, 80)),
+            ports, reach, new AtomicBoolean(false), r);
+        assertEquals(1, r.finalDevices.size());
+        TerminowDiscoveredDevice d = r.finalDevices.get(0);
+        assertTrue(d.respondsToPing);
+        assertTrue(d.openPorts.contains(22));
+        // total probes = 1 address x (2 ports + 1 ping) = 3
+        assertEquals(3, r.progressCalls);
+    }
+
+    @Test public void failedPingIsInconclusiveAndFindsNothing() {
+        Recorder r = new Recorder();
+        TerminowNetworkScanner.scan(config(Arrays.asList("10.0.0.9"), Arrays.asList(22)),
+            (ip, port, t) -> ProbeResult.TIMEOUT, (ip, t) -> false, new AtomicBoolean(false), r);
+        assertEquals(Status.COMPLETED, r.status);
+        assertTrue(r.finalDevices.isEmpty());
+    }
 }

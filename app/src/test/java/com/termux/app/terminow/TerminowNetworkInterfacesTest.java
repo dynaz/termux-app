@@ -29,4 +29,21 @@ public class TerminowNetworkInterfacesTest {
         // Enumeration is environment-dependent; it must at least return a non-null list without throwing.
         assertNotNull(TerminowNetworkInterfaces.list());
     }
+
+    @Test public void netmaskAndBroadcastFollowThePrefix() {
+        Iface a = new Iface("wlan0", "192.168.1.207", 24);
+        assertEquals("255.255.255.0", a.netmask());
+        assertEquals("192.168.1.255", a.broadcast());
+        Iface b = new Iface("eth0", "10.1.2.3", 8);
+        assertEquals("255.0.0.0", b.netmask());
+        assertEquals("10.255.255.255", b.broadcast());
+        Iface c = new Iface("eth1", "172.16.47.9", 20);
+        assertEquals("255.255.240.0", c.netmask());
+        assertEquals("172.16.47.255", c.broadcast());
+    }
+
+    @Test public void defaultGatewayDoesNotCrash() {
+        // Reading /proc/net/route is environment- and Android-version-dependent; must never throw.
+        TerminowNetworkInterfaces.defaultGateway();
+    }
 }

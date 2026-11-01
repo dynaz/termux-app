@@ -29,8 +29,35 @@ public final class TerminowDiscoveredDevice {
     /** Only set when actually observed; never guessed. */
     @NonNull public String mac = "";
     @NonNull public String vendor = "";
+    /** True when the host answered an ICMP reachability check (it may still have no open TCP port). */
+    public boolean respondsToPing;
+    /** True when this address is the network's default gateway (set by the UI, not the scanner). */
+    public boolean isGateway;
     public long firstSeenMs;
     public long lastSeenMs;
+
+    /**
+     * A coarse, best-effort device <b>type</b>, inferred only from the open ports and hostname (and the
+     * gateway flag). It is a hint for an icon and a label, never a claim of fact: the ports are what was
+     * observed, the type is a guess from them, so it stays {@link Kind#UNKNOWN} when nothing points to a
+     * particular kind.
+     */
+    public enum Kind { GATEWAY, PRINTER, NAS, SERVER, WEB, DESKTOP, UNKNOWN }
+
+    @NonNull
+    public Kind kind() {
+        if (isGateway) return Kind.GATEWAY;
+        boolean p = openPorts.contains(9100) || openPorts.contains(515) || openPorts.contains(631);
+        if (p) return Kind.PRINTER;
+        boolean smb = openPorts.contains(445) || openPorts.contains(139);
+        if ((openPorts.contains(5000) || openPorts.contains(5001)) && smb) return Kind.NAS;
+        String h = hostname.toLowerCase(java.util.Locale.ROOT);
+        if (h.contains("nas") || h.contains("synology") || h.contains("diskstation")) return Kind.NAS;
+        if (openPorts.contains(22)) return Kind.SERVER;
+        if (openPorts.contains(3389) || openPorts.contains(5900) || smb) return Kind.DESKTOP;
+        if (openPorts.contains(80) || openPorts.contains(443) || openPorts.contains(8080)) return Kind.WEB;
+        return Kind.UNKNOWN;
+    }
 
     public TerminowDiscoveredDevice(@NonNull String scopeId, @NonNull String ip) {
         this.scopeId = scopeId;
@@ -49,6 +76,8 @@ public final class TerminowDiscoveredDevice {
         if (!other.hostname.isEmpty()) hostname = other.hostname;
         if (!other.mac.isEmpty()) mac = other.mac;
         if (!other.vendor.isEmpty()) vendor = other.vendor;
+        respondsToPing |= other.respondsToPing;
+        isGateway |= other.isGateway;
         if (other.firstSeenMs != 0 && (firstSeenMs == 0 || other.firstSeenMs < firstSeenMs)) firstSeenMs = other.firstSeenMs;
         if (other.lastSeenMs > lastSeenMs) lastSeenMs = other.lastSeenMs;
     }

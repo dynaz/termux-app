@@ -36,6 +36,52 @@ public final class TerminowNetworkInterfaces {
             TerminowCidr.Cidr c = TerminowCidr.parse(ipv4 + "/" + prefix);
             return c == null ? null : c.baseAddress() + "/" + c.prefix;
         }
+
+        /** The subnet mask in dotted form, e.g. {@code 255.255.255.0}. */
+        @NonNull
+        public String netmask() {
+            int mask = prefix == 0 ? 0 : (int) (0xFFFFFFFFL << (32 - prefix));
+            return TerminowCidr.toDotted(mask);
+        }
+
+        /** The broadcast address of this network, e.g. {@code 192.168.1.255}, or null if invalid. */
+        @Nullable
+        public String broadcast() {
+            TerminowCidr.Cidr c = TerminowCidr.parse(ipv4 + "/" + prefix);
+            if (c == null) return null;
+            int mask = prefix == 0 ? 0 : (int) (0xFFFFFFFFL << (32 - prefix));
+            return TerminowCidr.toDotted(c.base | ~mask);
+        }
+    }
+
+    /**
+     * The IPv4 default gateway, read from {@code /proc/net/route} (the row whose destination is
+     * {@code 0.0.0.0}). Best-effort: returns null when the file is unreadable or has no default route.
+     * The gateway address is stored little-endian hex in that file.
+     */
+    @Nullable
+    public static String defaultGateway() {
+        java.io.BufferedReader r = null;
+        try {
+            r = new java.io.BufferedReader(new java.io.FileReader("/proc/net/route"));
+            String line;
+            boolean header = true;
+            while ((line = r.readLine()) != null) {
+                if (header) { header = false; continue; }
+                String[] f = line.split("\\s+");
+                if (f.length < 3) continue;
+                if (!"00000000".equalsIgnoreCase(f[1])) continue;       // not the default route
+                if ("00000000".equalsIgnoreCase(f[2])) continue;        // no gateway
+                long g = Long.parseLong(f[2], 16);
+                int be = Integer.reverseBytes((int) g);                 // file is little-endian
+                return TerminowCidr.toDotted(be);
+            }
+        } catch (Exception e) {
+            // Unreadable on some Android versions; the header just omits the gateway line.
+        } finally {
+            if (r != null) try { r.close(); } catch (java.io.IOException ignored) {}
+        }
+        return null;
     }
 
     /** The up, non-loopback IPv4 interfaces of this device, each with its real prefix length. */

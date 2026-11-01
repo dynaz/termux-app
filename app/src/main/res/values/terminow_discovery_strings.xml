@@ -18,4 +18,29 @@
     <string name="terminow_discovery_open_web">Open Web</string>
     <string name="terminow_discovery_save_host">Save as Host</string>
     <string name="terminow_discovery_copy_ip">Copy IP</string>
+
+    <!-- Network info header -->
+    <string name="terminow_discovery_ip_gateway">IP (Gateway): %1$s (%2$s)</string>
+    <string name="terminow_discovery_broadcast">Broadcast (Submask): %1$s (%2$s)</string>
+    <string name="terminow_discovery_hosts_count">Hosts: %1$d</string>
+
+    <!-- Inferred device types (hints from open ports/hostname, not verified facts) -->
+    <string name="terminow_discovery_kind_gateway">Gateway / router</string>
+    <string name="terminow_discovery_kind_printer">Printer</string>
+    <string name="terminow_discovery_kind_nas">File share / NAS</string>
+    <string name="terminow_discovery_kind_server">Server</string>
+    <string name="terminow_discovery_kind_web">Web device</string>
+    <string name="terminow_discovery_kind_desktop">Computer</string>
+
+    <!-- Device detail -->
+    <string name="terminow_discovery_detail_name">Device Name</string>
+    <string name="terminow_discovery_detail_type">Device Type</string>
+    <string name="terminow_discovery_detail_ip">Device IP</string>
+    <string name="terminow_discovery_detail_vendor">Vendor Name</string>
+    <string name="terminow_discovery_vendor_unknown">Unknown</string>
+    <string name="terminow_discovery_open_ports">Open Ports %1$d</string>
+    <string name="terminow_discovery_port">Port %1$d</string>
+    <string name="terminow_discovery_port_svc">Port %1$d · %2$s</string>
+    <string name="terminow_discovery_ping_only">No open TCP ports found; reachable by ping.</string>
+    <string name="terminow_discovery_no_ports">No open ports found.</string>
 </resources>

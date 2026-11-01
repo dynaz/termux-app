@@ -1,6 +1,5 @@
 package com.termux.app.terminow;
 
-import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.Context;
 import android.graphics.Typeface;
@@ -46,6 +45,7 @@ public class TerminowDiscoveryUi {
 
     private static final int BG = 0xFF14161C, CARD = 0xFF1A1D25, ROW = 0xFF222631;
     private static final int TEXT = 0xFFF5F7FA, SECONDARY = 0xFFA8B0BF, ACCENT = 0xFF21C17A, WARN = 0xFFF2C14E;
+    private static final int ORANGE = 0xFFF2A14E, WEBBLUE = 0xFF5AA0F2;
     private static final int MAX_ADDRESSES = 1024;
 
     private final TermuxActivity mActivity;
@@ -56,6 +56,8 @@ public class TerminowDiscoveryUi {
     @Nullable private TextView mStatus;
     @Nullable private TextView mButton;
     @Nullable private LinearLayout mResults;
+    @Nullable private TextView mHostsHeader;
+    @Nullable private String mGatewayIp;
     private boolean mScanning;
 
     public TerminowDiscoveryUi(@NonNull TermuxActivity activity, @NonNull TerminowStore store, @NonNull Actions actions) {
@@ -81,6 +83,19 @@ public class TerminowDiscoveryUi {
         title.setPadding(0, 0, 0, dp(4));
         text(root, mActivity.getString(R.string.terminow_discovery_source_this_device), 13, SECONDARY, false);
 
+        // Network info header (this device / gateway / broadcast+submask), read from the first interface.
+        List<TerminowNetworkInterfaces.Iface> ifaces = TerminowNetworkInterfaces.list();
+        TerminowNetworkInterfaces.Iface primary = null;
+        for (TerminowNetworkInterfaces.Iface i : ifaces) { if (i.cidr() != null) { primary = i; break; } }
+        mGatewayIp = TerminowNetworkInterfaces.defaultGateway();
+        if (primary != null) {
+            String gw = mGatewayIp != null ? mGatewayIp : "—";
+            TextView ipLine = text(root, mActivity.getString(R.string.terminow_discovery_ip_gateway, primary.ipv4, gw), 12, SECONDARY, false);
+            ipLine.setPadding(0, dp(6), 0, 0);
+            String bc = primary.broadcast() != null ? primary.broadcast() : "—";
+            text(root, mActivity.getString(R.string.terminow_discovery_broadcast, bc, primary.netmask()), 12, SECONDARY, false);
+        }
+
         // Editable CIDR, prefilled from the first detected interface (its real prefix, not /24).
         final EditText cidr = new EditText(mActivity);
         cidr.setTextColor(TEXT);
@@ -90,11 +105,7 @@ public class TerminowDiscoveryUi {
         cidr.setBackground(rounded(ROW, dp(10)));
         cidr.setPadding(dp(14), dp(12), dp(14), dp(12));
         cidr.setHint("192.168.1.0/24");
-        List<TerminowNetworkInterfaces.Iface> ifaces = TerminowNetworkInterfaces.list();
-        for (TerminowNetworkInterfaces.Iface i : ifaces) {
-            String c = i.cidr();
-            if (c != null) { cidr.setText(c); break; }
-        }
+        if (primary != null && primary.cidr() != null) cidr.setText(primary.cidr());
         LinearLayout.LayoutParams cidrLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         cidrLp.topMargin = dp(10);
         root.addView(cidr, cidrLp);
@@ -107,6 +118,10 @@ public class TerminowDiscoveryUi {
 
         mStatus = text(root, mActivity.getString(R.string.terminow_discovery_initial), 13, SECONDARY, false);
         mStatus.setPadding(0, dp(12), 0, dp(8));
+
+        mHostsHeader = text(root, "", 14, ACCENT, true);
+        mHostsHeader.setPadding(0, dp(4), 0, dp(4));
+        mHostsHeader.setVisibility(View.GONE);
 
         ScrollView scroll = new ScrollView(mActivity);
         mResults = new LinearLayout(mActivity);
@@ -133,6 +148,7 @@ public class TerminowDiscoveryUi {
         final List<String> addresses = cidr.addresses(MAX_ADDRESSES);
         final String scope = "local:" + cidr.baseAddress() + "/" + cidr.prefix;
         if (mResults != null) mResults.removeAllViews();
+        updateHostsHeader(0);
         mScanning = true;
         mCancel = new AtomicBoolean(false);
         if (mButton != null) mButton.setText(mActivity.getString(R.string.terminow_discovery_stop));
@@ -141,7 +157,8 @@ public class TerminowDiscoveryUi {
 
         TerminowNetworkScanner.Config config = new TerminowNetworkScanner.Config(
             scope, addresses, TerminowNetworkScanner.defaultPorts(), 64, 600, 120_000);
-        new Thread(() -> TerminowNetworkScanner.scan(config, TerminowNetworkScanner.socketProber(), cancel,
+        new Thread(() -> TerminowNetworkScanner.scan(config, TerminowNetworkScanner.socketProber(),
+            TerminowNetworkScanner.icmpReachProber(), cancel,
             new TerminowNetworkScanner.Listener() {
                 @Override public void onDevice(@NonNull TerminowDiscoveredDevice device) {
                     mActivity.runOnUiThread(() -> { if (cancel == mCancel) showDevice(device); });
@@ -149,6 +166,7 @@ public class TerminowDiscoveryUi {
                 @Override public void onProgress(int probed, int total, int found) {
                     mActivity.runOnUiThread(() -> {
                         if (cancel != mCancel) return;
+                        updateHostsHeader(found);
                         long secs = (System.currentTimeMillis() - started) / 1000;
                         setStatus(mActivity.getString(R.string.terminow_discovery_scanning, probed, total, found, secs), SECONDARY);
                     });
@@ -159,6 +177,7 @@ public class TerminowDiscoveryUi {
                         mScanning = false;
                         if (mButton != null) mButton.setText(mActivity.getString(R.string.terminow_discovery_start));
                         int n = devices.size();
+                        updateHostsHeader(n);
                         String msg = status == TerminowNetworkScanner.Status.CANCELLED
                             ? mActivity.getString(R.string.terminow_discovery_stopped, n)
                             : n == 0 ? mActivity.getString(R.string.terminow_discovery_none)
@@ -178,6 +197,7 @@ public class TerminowDiscoveryUi {
     /** Add or refresh a device row (icon + name/IP + service chips + chevron). On the UI thread. */
     private void showDevice(@NonNull TerminowDiscoveredDevice device) {
         if (mResults == null) return;
+        if (mGatewayIp != null && mGatewayIp.equals(device.ip)) device.isGateway = true;
         // One row per IP: replace if it already exists (ports may have grown).
         View existing = mResults.findViewWithTag(device.ip);
         if (existing != null) mResults.removeView(existing);
@@ -192,10 +212,11 @@ public class TerminowDiscoveryUi {
         rowLp.topMargin = dp(8);
         row.setLayoutParams(rowLp);
 
-        // Generic device icon with a green "reachable" dot (the device type is not claimed from ports).
+        // Icon by inferred device type, with a green "reachable" dot. The type is a hint from the open
+        // ports/hostname, not a verified fact; the ports themselves are shown as chips.
         FrameLayout iconFrame = new FrameLayout(mActivity);
         ImageView icon = new ImageView(mActivity);
-        icon.setImageResource(R.drawable.ic_terminow_hosts);
+        icon.setImageResource(kindIcon(device.kind()));
         icon.setColorFilter(SECONDARY);
         iconFrame.addView(icon, new FrameLayout.LayoutParams(dp(26), dp(26)));
         View dot = new View(mActivity);
@@ -209,15 +230,19 @@ public class TerminowDiscoveryUi {
         iconLp.rightMargin = dp(12);
         row.addView(iconFrame, iconLp);
 
-        // Name + IP
+        // IP (primary, green) · name or inferred type (orange) · vendor if actually known (gray).
         LinearLayout col = new LinearLayout(mActivity);
         col.setOrientation(LinearLayout.VERTICAL);
-        String name = !device.hostname.isEmpty() ? device.hostname : mActivity.getString(R.string.terminow_discovery_unknown_device);
-        TextView nameView = textPlain(name, 15, TEXT, true);
-        nameView.setSingleLine(true);
-        nameView.setEllipsize(TextUtils.TruncateAt.END);
-        col.addView(nameView);
-        col.addView(textPlain(device.ip, 12, SECONDARY, false));
+        TextView ipView = textPlain(device.ip, 15, ACCENT, true);
+        ipView.setSingleLine(true);
+        ipView.setEllipsize(TextUtils.TruncateAt.END);
+        col.addView(ipView);
+        String subtitle = !device.hostname.isEmpty() ? device.hostname : kindLabel(device.kind());
+        TextView subView = textPlain(subtitle, 12, ORANGE, false);
+        subView.setSingleLine(true);
+        subView.setEllipsize(TextUtils.TruncateAt.END);
+        col.addView(subView);
+        if (!device.vendor.isEmpty()) col.addView(textPlain(device.vendor, 11, SECONDARY, false));
         row.addView(col, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         // Service chips (and a Saved chip), then a chevron
@@ -232,7 +257,7 @@ public class TerminowDiscoveryUi {
         chevron.setPadding(dp(6), 0, 0, 0);
         row.addView(chevron);
 
-        row.setOnClickListener(v -> deviceActions(device));
+        row.setOnClickListener(v -> showDeviceDetail(device));
         mResults.addView(row);
     }
 
@@ -284,34 +309,202 @@ public class TerminowDiscoveryUi {
         return t;
     }
 
-    private void deviceActions(@NonNull TerminowDiscoveredDevice device) {
-        boolean web = device.openPorts.contains(80) || device.openPorts.contains(443);
-        List<String> labels = new java.util.ArrayList<>();
-        List<Runnable> runs = new java.util.ArrayList<>();
-        if (device.openPorts.contains(22)) {
-            labels.add(mActivity.getString(R.string.terminow_discovery_connect_ssh));
-            runs.add(() -> mActions.connectSsh(TerminowDiscoveryHosts.prefill(device)));
-        }
-        if (web) {
-            boolean https = device.openPorts.contains(443);
-            String url = (https ? "https://" : "http://") + device.ip;
-            labels.add(mActivity.getString(R.string.terminow_discovery_open_web));
-            runs.add(() -> mActions.openWeb(url));
-        }
-        labels.add(mActivity.getString(R.string.terminow_discovery_save_host));
-        runs.add(() -> mActions.saveAsHost(TerminowDiscoveryHosts.prefill(device)));
-        labels.add(mActivity.getString(R.string.terminow_discovery_copy_ip));
-        runs.add(() -> mActions.copyText("IP", device.ip));
+    /**
+     * The device detail screen: identity (name / inferred type / IP / vendor), the open ports with
+     * their likely service, and the existing connection actions. Unknown fields are shown as Unknown,
+     * never invented, and a port is labelled by its number and well-known service, not a verified product.
+     */
+    private void showDeviceDetail(@NonNull TerminowDiscoveredDevice device) {
+        Dialog dialog = new Dialog(mActivity, android.R.style.Theme_DeviceDefault_NoActionBar);
+        if (dialog.getWindow() != null) dialog.getWindow().requestFeature(Window.FEATURE_NO_TITLE);
 
-        final Runnable[] actions = runs.toArray(new Runnable[0]);
-        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
-            .setTitle(device.ip)
-            .setItems(labels.toArray(new CharSequence[0]), (d, which) -> actions[which].run())
-            .show();
+        LinearLayout root = new LinearLayout(mActivity);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(BG);
+        root.setPadding(dp(16), dp(16), dp(16), dp(16));
+
+        // Header: back · IP (green) · copy.
+        LinearLayout header = new LinearLayout(mActivity);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        ImageView back = new ImageView(mActivity);
+        back.setImageResource(R.drawable.ic_terminow_back);
+        back.setColorFilter(TEXT);
+        back.setOnClickListener(v -> dialog.dismiss());
+        LinearLayout.LayoutParams backLp = new LinearLayout.LayoutParams(dp(24), dp(24));
+        backLp.rightMargin = dp(12);
+        header.addView(back, backLp);
+        TextView ipTitle = textPlain(device.ip, 19, ACCENT, true);
+        ipTitle.setGravity(Gravity.CENTER);
+        header.addView(ipTitle, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        ImageView copy = new ImageView(mActivity);
+        copy.setImageResource(R.drawable.ic_terminow_copy);
+        copy.setColorFilter(ACCENT);
+        copy.setOnClickListener(v -> mActions.copyText("IP", device.ip));
+        header.addView(copy, new LinearLayout.LayoutParams(dp(24), dp(24)));
+        root.addView(header);
+
+        ScrollView scroll = new ScrollView(mActivity);
+        LinearLayout body = new LinearLayout(mActivity);
+        body.setOrientation(LinearLayout.VERTICAL);
+        scroll.addView(body); // ScrollView's child: no explicit LinearLayout params (FrameLayout host).
+
+        // Identity card.
+        LinearLayout card = new LinearLayout(mActivity);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackground(rounded(CARD, dp(12)));
+        card.setPadding(dp(14), dp(12), dp(14), dp(12));
+        String name = !device.hostname.isEmpty() ? device.hostname : kindLabel(device.kind());
+        detailRow(card, mActivity.getString(R.string.terminow_discovery_detail_name), name, TEXT);
+        detailRow(card, mActivity.getString(R.string.terminow_discovery_detail_type), kindLabel(device.kind()), TEXT);
+        detailRow(card, mActivity.getString(R.string.terminow_discovery_detail_ip), device.ip, ACCENT);
+        String vendor = !device.vendor.isEmpty() ? device.vendor : mActivity.getString(R.string.terminow_discovery_vendor_unknown);
+        detailRow(card, mActivity.getString(R.string.terminow_discovery_detail_vendor), vendor, TEXT);
+        LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        cardLp.topMargin = dp(12);
+        body.addView(card, cardLp);
+
+        // Open ports.
+        TextView portsHeader = textPlain(mActivity.getString(R.string.terminow_discovery_open_ports, device.openPorts.size()), 15, ACCENT, true);
+        LinearLayout.LayoutParams phLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        phLp.topMargin = dp(16); phLp.bottomMargin = dp(6);
+        body.addView(portsHeader, phLp);
+        if (device.openPorts.isEmpty()) {
+            String why = device.respondsToPing
+                ? mActivity.getString(R.string.terminow_discovery_ping_only)
+                : mActivity.getString(R.string.terminow_discovery_no_ports);
+            body.addView(textPlain(why, 12, SECONDARY, false));
+        } else {
+            for (int p : device.openPorts) body.addView(portRow(device, p, dialog));
+        }
+
+        // Actions, reusing the existing connect / save / copy flows.
+        if (device.openPorts.contains(22)) {
+            body.addView(actionButton(mActivity.getString(R.string.terminow_discovery_connect_ssh), ACCENT, 0xFF0B1F17,
+                () -> { dialog.dismiss(); mActions.connectSsh(TerminowDiscoveryHosts.prefill(device)); }));
+        }
+        if (device.openPorts.contains(80) || device.openPorts.contains(443) || device.openPorts.contains(8080)) {
+            boolean https = device.openPorts.contains(443);
+            int port = https ? 443 : device.openPorts.contains(80) ? 80 : 8080;
+            final String url = (https ? "https://" : "http://") + device.ip + (port == 80 || port == 443 ? "" : ":" + port);
+            body.addView(actionButton(mActivity.getString(R.string.terminow_discovery_open_web), ROW, TEXT,
+                () -> { dialog.dismiss(); mActions.openWeb(url); }));
+        }
+        body.addView(actionButton(mActivity.getString(R.string.terminow_discovery_save_host), ROW, TEXT,
+            () -> { dialog.dismiss(); mActions.saveAsHost(TerminowDiscoveryHosts.prefill(device)); }));
+        body.addView(actionButton(mActivity.getString(R.string.terminow_discovery_copy_ip), ROW, TEXT,
+            () -> mActions.copyText("IP", device.ip)));
+
+        LinearLayout.LayoutParams scrollLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+        scrollLp.topMargin = dp(4);
+        root.addView(scroll, scrollLp);
+
+        dialog.setContentView(root);
+        dialog.show();
+    }
+
+    private void detailRow(@NonNull LinearLayout parent, @NonNull String label, @NonNull String value, int valueColor) {
+        LinearLayout r = new LinearLayout(mActivity);
+        r.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams rLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        rLp.topMargin = dp(4); rLp.bottomMargin = dp(4);
+        r.setLayoutParams(rLp);
+        TextView l = textPlain(label, 13, SECONDARY, false);
+        r.addView(l, new LinearLayout.LayoutParams(dp(120), ViewGroup.LayoutParams.WRAP_CONTENT));
+        TextView v = textPlain(value, 13, valueColor, false);
+        v.setEllipsize(TextUtils.TruncateAt.END);
+        r.addView(v, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        parent.addView(r);
+    }
+
+    private View portRow(@NonNull TerminowDiscoveredDevice device, int port, @NonNull Dialog dialog) {
+        LinearLayout r = new LinearLayout(mActivity);
+        r.setOrientation(LinearLayout.HORIZONTAL);
+        r.setGravity(Gravity.CENTER_VERTICAL);
+        r.setBackground(rounded(CARD, dp(10)));
+        r.setPadding(dp(12), dp(10), dp(12), dp(10));
+        LinearLayout.LayoutParams rLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        rLp.topMargin = dp(6);
+        r.setLayoutParams(rLp);
+        String svc = serviceName(port);
+        String label = svc.isEmpty() ? mActivity.getString(R.string.terminow_discovery_port, port)
+            : mActivity.getString(R.string.terminow_discovery_port_svc, port, svc);
+        TextView t = textPlain(label, 14, TEXT, true);
+        r.addView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        if (port == 80 || port == 443 || port == 8080) {
+            boolean https = port == 443;
+            final String url = (https ? "https://" : "http://") + device.ip + (port == 80 || port == 443 ? "" : ":" + port);
+            TextView open = textPlain(mActivity.getString(R.string.terminow_discovery_open_web), 12, WEBBLUE, true);
+            open.setPadding(dp(10), dp(4), dp(4), dp(4));
+            open.setOnClickListener(v -> { dialog.dismiss(); mActions.openWeb(url); });
+            r.addView(open);
+        }
+        return r;
+    }
+
+    private TextView actionButton(@NonNull String label, int bg, int fg, @NonNull Runnable action) {
+        TextView b = pill(label, bg, fg);
+        b.setOnClickListener(v -> action.run());
+        return b;
     }
 
     private void setStatus(@NonNull String text, int color) {
         if (mStatus != null) { mStatus.setText(text); mStatus.setTextColor(color); }
+    }
+
+    private void updateHostsHeader(int n) {
+        if (mHostsHeader == null) return;
+        if (n <= 0) { mHostsHeader.setVisibility(View.GONE); return; }
+        mHostsHeader.setVisibility(View.VISIBLE);
+        mHostsHeader.setText(mActivity.getString(R.string.terminow_discovery_hosts_count, n));
+    }
+
+    private static int kindIcon(@NonNull TerminowDiscoveredDevice.Kind k) {
+        switch (k) {
+            case GATEWAY: return R.drawable.ic_terminow_lab_router;
+            case NAS: return R.drawable.ic_terminow_folder;
+            case DESKTOP: return R.drawable.ic_terminow_desktop;
+            case WEB: return R.drawable.ic_terminow_cloud;
+            case PRINTER: case SERVER: case UNKNOWN: default: return R.drawable.ic_terminow_hosts;
+        }
+    }
+
+    @NonNull
+    private String kindLabel(@NonNull TerminowDiscoveredDevice.Kind k) {
+        int id;
+        switch (k) {
+            case GATEWAY: id = R.string.terminow_discovery_kind_gateway; break;
+            case PRINTER: id = R.string.terminow_discovery_kind_printer; break;
+            case NAS: id = R.string.terminow_discovery_kind_nas; break;
+            case SERVER: id = R.string.terminow_discovery_kind_server; break;
+            case WEB: id = R.string.terminow_discovery_kind_web; break;
+            case DESKTOP: id = R.string.terminow_discovery_kind_desktop; break;
+            default: id = R.string.terminow_discovery_unknown_device; break;
+        }
+        return mActivity.getString(id);
+    }
+
+    /** A port's well-known service name (a hint from the port number, not verified). */
+    @NonNull
+    private static String serviceName(int p) {
+        switch (p) {
+            case 21: return "ftp";
+            case 22: return "ssh";
+            case 23: return "telnet";
+            case 53: return "dns";
+            case 80: return "http";
+            case 139: return "netbios";
+            case 443: return "https";
+            case 445: return "smb";
+            case 515: return "printer";
+            case 631: return "ipp";
+            case 3389: return "rdp";
+            case 5000: case 5001: return "upnp";
+            case 5900: return "vnc";
+            case 8080: return "http-alt";
+            case 9100: return "jetdirect";
+            default: return "";
+        }
     }
 
     private TextView text(@NonNull LinearLayout parent, @NonNull String s, float size, int color, boolean bold) {
