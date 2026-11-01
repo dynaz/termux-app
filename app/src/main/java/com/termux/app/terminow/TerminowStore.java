@@ -1810,6 +1810,53 @@ public class TerminowStore {
         mPreferences.edit().putString(KEY_UBUNTU_LAUNCH, behavior).apply();
     }
 
+    // ---------------------------------------------------------------------------------------
+    // Cloud backup: the S3 config (its JSON encrypted at rest with the Keystore), and the schedule.
+
+    private static final String KEY_BACKUP_S3 = "backup_s3_config";
+    private static final String KEY_BACKUP_SCHEDULE = "backup_schedule";
+
+    /** The saved S3 config, or {@code null} if none is set or it cannot be read (e.g. app data cleared). */
+    @Nullable
+    public TerminowS3Config getS3Config() {
+        String blob = mPreferences.getString(KEY_BACKUP_S3, null);
+        if (blob == null || blob.isEmpty()) return null;
+        try {
+            return TerminowS3Config.fromJson(TerminowSecret.unwrap(blob));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Save the S3 config, encrypting the whole JSON (so the secret key is never stored in the clear). */
+    public boolean setS3Config(@Nullable TerminowS3Config config) {
+        if (config == null) {
+            mPreferences.edit().remove(KEY_BACKUP_S3).apply();
+            return true;
+        }
+        try {
+            String wrapped = TerminowSecret.wrap(config.toJson().toString());
+            mPreferences.edit().putString(KEY_BACKUP_S3, wrapped).apply();
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    @NonNull
+    public TerminowBackupSchedule getBackupSchedule() {
+        String json = mPreferences.getString(KEY_BACKUP_SCHEDULE, null);
+        return json == null ? new TerminowBackupSchedule() : TerminowBackupSchedule.fromJson(json);
+    }
+
+    public void setBackupSchedule(@NonNull TerminowBackupSchedule schedule) {
+        try {
+            mPreferences.edit().putString(KEY_BACKUP_SCHEDULE, schedule.toJson().toString()).apply();
+        } catch (JSONException e) {
+            // Leaves the previous schedule; a save that cannot serialize is dropped.
+        }
+    }
+
     private static final String KEY_LAST_LOCAL_ENV = "last_local_environment";
 
     /** The key of the local Linux environment chosen last, so the picker defaults to it. "" if none. */

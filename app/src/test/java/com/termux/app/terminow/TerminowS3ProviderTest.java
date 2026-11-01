@@ -36,8 +36,11 @@ public class TerminowS3ProviderTest {
     private ServerSocket mSocket;
     private Thread mAccept;
     private final ConcurrentHashMap<String, byte[]> mStore = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Long> mModified = new ConcurrentHashMap<>();
+    private final java.util.concurrent.atomic.AtomicLong mClock = new java.util.concurrent.atomic.AtomicLong(1_700_000_000_000L);
     private final AtomicInteger mPutAttempts = new AtomicInteger();
     private volatile int mFailFirstPuts = 0;
+    private volatile int mListSizeDelta = 0;   // when non-zero, list reports a wrong Size (to test verify)
     private volatile String mListXmlPage1, mListXmlPage2;
 
     @Before
@@ -106,11 +109,13 @@ public class TerminowS3ProviderTest {
             if ("PUT".equals(method)) {
                 int attempt = mPutAttempts.incrementAndGet();
                 if (attempt <= mFailFirstPuts) { code = 500; responseBody = "<Error>slow down</Error>".getBytes(); }
-                else { mStore.put(path, body); code = 200; }
+                else { mStore.put(path, body); mModified.put(path, mClock.addAndGet(1000)); code = 200; }
             } else if ("GET".equals(method) && query.contains("list-type=2")) {
                 boolean page2 = query.contains("continuation-token=");
                 code = 200;
-                responseBody = (page2 ? mListXmlPage2 : mListXmlPage1).getBytes(StandardCharsets.UTF_8);
+                // Canned XML drives the pagination test; otherwise list reflects what is actually stored.
+                String xml = mListXmlPage1 != null ? (page2 ? mListXmlPage2 : mListXmlPage1) : listXmlFromStore();
+                responseBody = xml.getBytes(StandardCharsets.UTF_8);
             } else if ("GET".equals(method)) {
                 byte[] stored = mStore.get(path);
                 if (stored == null) { code = 404; responseBody = "<Error>NoSuchKey</Error>".getBytes(); }
@@ -124,6 +129,23 @@ public class TerminowS3ProviderTest {
             writeResponse(out, code, responseBody);
         } catch (IOException | RuntimeException ignored) {
         }
+    }
+
+    /** Build a ListObjectsV2 body from what is actually stored under /mybucket/terminow-backups/. */
+    private String listXmlFromStore() {
+        StringBuilder xml = new StringBuilder("<?xml version=\"1.0\"?><ListBucketResult><IsTruncated>false</IsTruncated>");
+        String prefix = "/mybucket/" + TerminowBackupProvider.PREFIX;
+        java.text.SimpleDateFormat iso = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT);
+        iso.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+        for (java.util.Map.Entry<String, byte[]> e : mStore.entrySet()) {
+            if (!e.getKey().startsWith(prefix)) continue;
+            String key = e.getKey().substring("/mybucket/".length());
+            long modified = mModified.getOrDefault(e.getKey(), 0L);
+            xml.append("<Contents><Key>").append(key).append("</Key><Size>").append(e.getValue().length + mListSizeDelta)
+               .append("</Size><LastModified>").append(iso.format(new java.util.Date(modified)))
+               .append("</LastModified></Contents>");
+        }
+        return xml.append("</ListBucketResult>").toString();
     }
 
     private static String readLine(InputStream in) throws IOException {
@@ -232,6 +254,47 @@ public class TerminowS3ProviderTest {
         mStore.put("/mybucket/" + key, new byte[10]);
         provider().delete(key);
         assertTrue(!mStore.containsKey("/mybucket/" + key));
+    }
+
+    @Test
+    public void cloudPipelineUploadsVerifiesAndTrimsToRetain() throws Exception {
+        TerminowS3Provider provider = provider();
+        // Three earlier backups already in the bucket (oldest to newest by upload order).
+        for (String n : new String[]{"backup-1.tar.gz", "backup-2.tar.gz", "backup-3.tar.gz"}) {
+            File f = File.createTempFile(n, "");
+            Files.write(f.toPath(), ("content of " + n).getBytes());
+            provider.upload(TerminowCloudBackup.keyFor("ubuntu", n), f, TerminowBackupProvider.Progress.NONE);
+        }
+        // A fresh backup goes up through the real pipeline, keeping only the newest 2.
+        File fresh = File.createTempFile("backup-4.tar.gz", "");
+        Files.write(fresh.toPath(), "the newest backup".getBytes());
+        String freshKey = TerminowCloudBackup.keyFor("ubuntu", "backup-4.tar.gz");
+        List<String> deleted = TerminowCloudBackup.uploadVerifyTrim(provider, freshKey, fresh, 2, TerminowBackupProvider.Progress.NONE);
+
+        assertEquals("two oldest trimmed", 2, deleted.size());
+        assertTrue(deleted.contains(TerminowCloudBackup.keyFor("ubuntu", "backup-1.tar.gz")));
+        assertTrue(deleted.contains(TerminowCloudBackup.keyFor("ubuntu", "backup-2.tar.gz")));
+        // The fresh one and the next-newest survive; the fresh one is never a deletion candidate.
+        assertTrue(mStore.containsKey("/mybucket/" + freshKey));
+        assertTrue(mStore.containsKey("/mybucket/" + TerminowCloudBackup.keyFor("ubuntu", "backup-3.tar.gz")));
+        assertTrue(!deleted.contains(freshKey));
+    }
+
+    @Test
+    public void cloudPipelineFailsVerifyWhenTheStoredSizeDisagrees() throws Exception {
+        mListSizeDelta = 1;   // the storage reports a size one byte off from what we sent
+        File f = File.createTempFile("backup", ".bin");
+        Files.write(f.toPath(), new byte[2048]);
+        String key = TerminowCloudBackup.keyFor("ubuntu", "only.tar.gz");
+        try {
+            TerminowCloudBackup.uploadVerifyTrim(provider(), key, f, 5, TerminowBackupProvider.Progress.NONE);
+            fail("verify should reject a size mismatch");
+        } catch (IOException expected) {
+            assertTrue(expected.getMessage().toLowerCase(Locale.ROOT).contains("size")
+                || expected.getMessage().toLowerCase(Locale.ROOT).contains("bytes"));
+        }
+        // The object is still there (it uploaded fine) but nothing was trimmed because verify failed.
+        assertTrue(mStore.containsKey("/mybucket/" + key));
     }
 
     @Test

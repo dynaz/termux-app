@@ -58,7 +58,7 @@ final class TerminowPhoneBackup {
 
     enum Kind { BACKUP_FULL, BACKUP_FOLDERS, INSPECT, RESTORE_FULL, RESTORE_FOLDERS }
 
-    enum Stage { CHECKING, ARCHIVING, VERIFYING, PREPARING, RESTORING, FINISHING }
+    enum Stage { CHECKING, ARCHIVING, VERIFYING, UPLOADING, DOWNLOADING, PREPARING, RESTORING, FINISHING }
 
     enum State { RUNNING, SUCCEEDED, FAILED, CANCELLED }
 
@@ -95,6 +95,16 @@ final class TerminowPhoneBackup {
          * which is how every backup made before this feature (and any unencrypted one) is read.
          */
         @Nullable char[] password;
+        /**
+         * A cloud backup: when {@code localFile} is set the archive is written there (a cache file)
+         * instead of to the picked folder, and when {@code provider} is set it is uploaded there after
+         * it is verified, then {@code retain} old backups are trimmed. All {@code null}/0 for the
+         * ordinary phone backup, whose behaviour is unchanged.
+         */
+        @Nullable java.io.File localFile;
+        @Nullable TerminowBackupProvider provider;
+        String remoteKey = "";
+        int retain;
     }
 
     static final class Job {
@@ -241,7 +251,7 @@ final class TerminowPhoneBackup {
         }
         if (job.state == State.RUNNING) job.state = State.SUCCEEDED;
         // A backup is only kept when it was read through and found good
-        if (job.isBackup() && job.state != State.SUCCEEDED && job.written != null) delete(context, job.written);
+        if (job.isBackup() && job.state != State.SUCCEEDED && job.written != null && job.request.localFile == null) delete(context, job.written);
         job.endedAt = System.currentTimeMillis();
         notifyProgress(context, job);
         changed();
@@ -254,12 +264,19 @@ final class TerminowPhoneBackup {
                                @NonNull Job job) throws Exception {
         Request request = job.request;
         boolean full = request.kind == Kind.BACKUP_FULL;
-        if (request.tree == null) throw new IOException("No folder to save the backup in was picked");
+        boolean toCloud = request.localFile != null;
+        if (!toCloud && request.tree == null) throw new IOException("No folder to save the backup in was picked");
         if (!full && (request.sources.isEmpty() || TerminowBackupArchive.normalizeSources(request.sources) == null))
             throw new IOException("The folders to back up are not allowed");
-        Uri parent = DocumentsContract.buildDocumentUriUsingTree(request.tree, DocumentsContract.getTreeDocumentId(request.tree));
-        Uri file = DocumentsContract.createDocument(context.getContentResolver(), parent, "application/gzip", request.fileName);
-        if (file == null) throw new IOException("The backup file could not be made in the folder that was picked");
+        // A cloud backup writes to a cache file (uploaded later); a phone backup to the picked folder.
+        Uri file;
+        if (toCloud) {
+            file = Uri.fromFile(request.localFile);
+        } else {
+            Uri parent = DocumentsContract.buildDocumentUriUsingTree(request.tree, DocumentsContract.getTreeDocumentId(request.tree));
+            file = DocumentsContract.createDocument(context.getContentResolver(), parent, "application/gzip", request.fileName);
+            if (file == null) throw new IOException("The backup file could not be made in the folder that was picked");
+        }
         job.written = file;
 
         stage(context, job, Stage.ARCHIVING, request.estimate);
@@ -276,7 +293,8 @@ final class TerminowPhoneBackup {
         job.process = process;
         process.getOutputStream().close();
         Thread errors = readErrorsInBackground(process, job, lines);
-        OutputStream file0 = context.getContentResolver().openOutputStream(file, "w");
+        OutputStream file0 = toCloud ? new java.io.FileOutputStream(request.localFile)
+            : context.getContentResolver().openOutputStream(file, "w");
         if (file0 == null) throw new IOException("The backup file could not be opened");
         // When a password is set the whole gzip(manifest+tar) stream is encrypted; sink.close() writes
         // the final GCM chunk and closes the file. Without a password the bytes are exactly as before.
@@ -331,6 +349,27 @@ final class TerminowPhoneBackup {
             return;
         }
         job.inspection = inspection;
+
+        // Cloud: upload the verified cache file, confirm it landed, and trim old backups.
+        if (toCloud && request.provider != null) {
+            stage(context, job, Stage.UPLOADING, request.localFile.length());
+            TerminowBackupProvider.Progress p = new TerminowBackupProvider.Progress() {
+                @Override public void onProgress(long sent, long total) {
+                    job.bytes = sent;
+                    job.total = total;
+                    told(context, job, 0);
+                }
+                @Override public boolean cancelled() {
+                    return job.state != State.RUNNING;
+                }
+            };
+            try {
+                TerminowCloudBackup.uploadVerifyTrim(request.provider, request.remoteKey, request.localFile, request.retain, p);
+            } catch (IOException e) {
+                job.error = "The backup was made but could not be uploaded: " + e.getMessage();
+                job.state = State.FAILED;
+            }
+        }
     }
 
     @NonNull
