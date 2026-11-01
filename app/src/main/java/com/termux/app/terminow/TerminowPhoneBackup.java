@@ -89,6 +89,12 @@ final class TerminowPhoneBackup {
         boolean overwrite;
         /** For a full restore: the bytes that the environment will take, from its inspection. */
         long contentBytes;
+        /**
+         * The password for an encrypted backup: on a backup, when set, the file is encrypted; on a
+         * restore or inspect, the password to read an encrypted file. {@code null} means no encryption,
+         * which is how every backup made before this feature (and any unencrypted one) is read.
+         */
+        @Nullable char[] password;
     }
 
     static final class Job {
@@ -270,9 +276,14 @@ final class TerminowPhoneBackup {
         job.process = process;
         process.getOutputStream().close();
         Thread errors = readErrorsInBackground(process, job, lines);
-        try (OutputStream file0 = context.getContentResolver().openOutputStream(file, "w")) {
-            if (file0 == null) throw new IOException("The backup file could not be opened");
-            GZIPOutputStream out = new GZIPOutputStream(file0, 1 << 16);
+        OutputStream file0 = context.getContentResolver().openOutputStream(file, "w");
+        if (file0 == null) throw new IOException("The backup file could not be opened");
+        // When a password is set the whole gzip(manifest+tar) stream is encrypted; sink.close() writes
+        // the final GCM chunk and closes the file. Without a password the bytes are exactly as before.
+        boolean encrypted = request.password != null;
+        OutputStream sink = encrypted ? TerminowBackupCrypto.encryptingStream(file0, request.password) : file0;
+        try {
+            GZIPOutputStream out = new GZIPOutputStream(sink, 1 << 16);
             TerminowBackupArchive.Manifest manifest = new TerminowBackupArchive.Manifest();
             manifest.type = full ? TerminowBackupArchive.TYPE_FULL : TerminowBackupArchive.TYPE_FOLDERS;
             manifest.alias = request.alias;
@@ -291,6 +302,8 @@ final class TerminowPhoneBackup {
             copy(gzipped ? new GZIPInputStream(archive, 1 << 16) : archive, out, job, context);
             out.finish();
             out.flush();
+        } finally {
+            sink.close();   // flushes gzip's trailer and, if encrypted, the final GCM chunk, then closes the file
         }
         int exit = process.waitFor();
         errors.join(2000);
@@ -305,7 +318,7 @@ final class TerminowPhoneBackup {
 
         // Read the file back, through gzip's checksum and every tar header, before it is called good
         stage(context, job, Stage.VERIFYING, 0);
-        TerminowBackupArchive.Inspection inspection = inspectFile(context, file, job);
+        TerminowBackupArchive.Inspection inspection = inspectFile(context, file, job, request.password);
         if (job.state != State.RUNNING) return;
         String problem = inspection.problem;
         if (problem == null && (inspection.manifest == null || !manifest(inspection).equals(full ? TerminowBackupArchive.TYPE_FULL :
@@ -333,7 +346,7 @@ final class TerminowPhoneBackup {
         Uri file = job.request.file;
         if (file == null) throw new IOException("No file was picked");
         stage(context, job, Stage.CHECKING, job.request.fileSize);
-        TerminowBackupArchive.Inspection inspection = inspectFile(context, file, job);
+        TerminowBackupArchive.Inspection inspection = inspectFile(context, file, job, job.request.password);
         job.inspection = inspection;
         if (job.state == State.RUNNING && inspection.problem != null) {
             job.error = inspection.problem;
@@ -342,7 +355,8 @@ final class TerminowPhoneBackup {
     }
 
     @NonNull
-    private static TerminowBackupArchive.Inspection inspectFile(@NonNull Context context, @NonNull Uri file, @NonNull Job job) throws IOException {
+    private static TerminowBackupArchive.Inspection inspectFile(@NonNull Context context, @NonNull Uri file, @NonNull Job job,
+                                                                @Nullable char[] password) throws IOException {
         try (InputStream raw = context.getContentResolver().openInputStream(file)) {
             if (raw == null) throw new IOException("The file could not be opened");
             // The progress is of the file as it is, whose size is known
@@ -355,7 +369,7 @@ final class TerminowPhoneBackup {
                     return n;
                 }
             };
-            BufferedInputStream in = new BufferedInputStream(counted, 1 << 16);
+            BufferedInputStream in = new BufferedInputStream(decryptIfNeeded(counted, password), 1 << 16);
             in.mark(2);
             boolean gzipped = in.read() == 0x1f && in.read() == 0x8b;
             in.reset();
@@ -367,6 +381,47 @@ final class TerminowPhoneBackup {
                 // What follows the end of the archive is padding
             }
             return inspection;
+        }
+    }
+
+    /**
+     * Peek the first bytes of {@code in} and, if they are the encrypted-backup magic, wrap it so that
+     * reading decrypts with {@code password}. An encrypted file with no password is refused with a
+     * clear message. A backup with no magic (every one made before this feature, and any unencrypted
+     * one) is returned unchanged, so old backups read exactly as before.
+     */
+    @NonNull
+    private static InputStream decryptIfNeeded(@NonNull InputStream in, @Nullable char[] password) throws IOException {
+        BufferedInputStream buffered = new BufferedInputStream(in, 1 << 16);
+        int magic = TerminowBackupCrypto.MAGIC.length;
+        buffered.mark(magic);
+        byte[] head = new byte[magic];
+        int read = 0;
+        while (read < magic) {
+            int n = buffered.read(head, read, magic - read);
+            if (n < 0) break;
+            read += n;
+        }
+        buffered.reset();
+        if (!TerminowBackupCrypto.looksEncrypted(java.util.Arrays.copyOf(head, read))) return buffered;
+        if (password == null) throw new IOException("This backup is encrypted. Enter the password to read it.");
+        return TerminowBackupCrypto.decryptingStream(buffered, password);
+    }
+
+    /** Whether the picked file is an encrypted backup, so the UI knows to ask for a password first. */
+    static boolean isEncrypted(@NonNull Context context, @NonNull Uri file) {
+        try (InputStream in = context.getContentResolver().openInputStream(file)) {
+            if (in == null) return false;
+            byte[] head = new byte[TerminowBackupCrypto.MAGIC.length];
+            int read = 0;
+            while (read < head.length) {
+                int n = in.read(head, read, head.length - read);
+                if (n < 0) break;
+                read += n;
+            }
+            return TerminowBackupCrypto.looksEncrypted(java.util.Arrays.copyOf(head, read));
+        } catch (IOException e) {
+            return false;
         }
     }
 
@@ -400,7 +455,7 @@ final class TerminowPhoneBackup {
         job.process = process;
         process.getInputStream().close();
         Thread errors = readErrorsInBackground(process, job, lines);
-        IOException readError = feed(context, file, process, job, false);
+        IOException readError = feed(context, file, process, job, false, request.password);
         int exit = process.waitFor();
         errors.join(2000);
         // The restored environment is only kept, and the one that was there only removed, once it looks whole
@@ -461,7 +516,7 @@ final class TerminowPhoneBackup {
         process.getInputStream().close();
         Thread errors = readErrorsInBackground(process, job, lines);
         // tar can not tell gzip on a pipe: it gets the archive unpacked
-        IOException readError = feed(context, file, process, job, true);
+        IOException readError = feed(context, file, process, job, true, request.password);
         int exit = process.waitFor();
         errors.join(2000);
         if (job.state != State.RUNNING) return;
@@ -479,7 +534,8 @@ final class TerminowPhoneBackup {
      * or unpacked. Returns a read error. The progress is of the file as it is.
      */
     @Nullable
-    private static IOException feed(@NonNull Context context, @NonNull Uri file, @NonNull Process process, @NonNull Job job, boolean unpack) {
+    private static IOException feed(@NonNull Context context, @NonNull Uri file, @NonNull Process process, @NonNull Job job,
+                                    boolean unpack, @Nullable char[] password) {
         IOException readError = null;
         try (InputStream raw = context.getContentResolver().openInputStream(file); OutputStream out = process.getOutputStream()) {
             if (raw == null) return new IOException("The file could not be opened");
@@ -491,7 +547,15 @@ final class TerminowPhoneBackup {
                     return n;
                 }
             };
-            BufferedInputStream buffered = new BufferedInputStream(counted, 1 << 16);
+            InputStream decrypted;
+            try {
+                decrypted = decryptIfNeeded(counted, password);
+            } catch (IOException e) {
+                // Encrypted without a password, a wrong header, etc.: surface it, do not feed the program.
+                if (job.pid > 0) android.os.Process.sendSignal(job.pid, 2);
+                return e;
+            }
+            BufferedInputStream buffered = new BufferedInputStream(decrypted, 1 << 16);
             buffered.mark(2);
             boolean gzipped = buffered.read() == 0x1f && buffered.read() == 0x8b;
             buffered.reset();

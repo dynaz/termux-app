@@ -130,4 +130,15 @@
     <string name="terminow_debug_cleared">The debug log was cleared</string>
     <string name="terminow_debug_saved">The debug log was saved</string>
     <string name="terminow_debug_copy">Copy</string>
+
+    <!-- Backup encryption -->
+    <string name="terminow_backup_encrypt_option">Encrypt this backup with a password</string>
+    <string name="terminow_backup_encrypt_hint">Password</string>
+    <string name="terminow_backup_encrypt_confirm_hint">Confirm password</string>
+    <string name="terminow_backup_encrypt_warning">If you lose this password the backup cannot be opened. TermiNow cannot recover it.</string>
+    <string name="terminow_backup_encrypt_mismatch">The passwords do not match</string>
+    <string name="terminow_backup_encrypt_empty">Enter a password</string>
+    <string name="terminow_backup_encrypt_show">Show password</string>
+    <string name="terminow_backup_encrypt_restore_title">Encrypted backup</string>
+    <string name="terminow_backup_encrypt_restore_message">“%1$s” is encrypted. Enter its password to read and restore it.</string>
 </resources>

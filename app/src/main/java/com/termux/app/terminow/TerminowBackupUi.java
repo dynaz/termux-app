@@ -420,17 +420,52 @@ final class TerminowBackupUi {
         if (!form.folders && !sessions.isEmpty())
             text.append("\n\n").append(mActivity.getResources().getQuantityString(R.plurals.terminow_backup_summary_close_tabs,
                 sessions.size(), sessions.size(), form.title));
-        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+        Context context = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog).getContext();
+        LinearLayout box = vertical(context);
+        box.setPadding(dp(24), dp(6), dp(24), 0);
+        box.addView(label(context, text.toString(), false));
+
+        CheckBox encrypt = new CheckBox(context);
+        encrypt.setText(R.string.terminow_backup_encrypt_option);
+        box.addView(encrypt);
+        LinearLayout passwordBox = vertical(context);
+        EditText password = passwordField(context, mActivity.getString(R.string.terminow_backup_encrypt_hint));
+        EditText confirm = passwordField(context, mActivity.getString(R.string.terminow_backup_encrypt_confirm_hint));
+        passwordBox.addView(password);
+        passwordBox.addView(confirm);
+        passwordBox.addView(label(context, mActivity.getString(R.string.terminow_backup_encrypt_warning), true));
+        passwordBox.setVisibility(View.GONE);
+        box.addView(passwordBox);
+        encrypt.setOnCheckedChangeListener((b, checked) -> passwordBox.setVisibility(checked ? View.VISIBLE : View.GONE));
+
+        ScrollView scroll = new ScrollView(context);
+        scroll.addView(box);
+        AlertDialog dialog = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
             .setTitle(R.string.terminow_backup_summary_title)
-            .setMessage(text.toString())
-            .setPositiveButton(R.string.terminow_backup_start, (d, w) -> startBackup(form, name, estimate))
+            .setView(scroll)
+            .setPositiveButton(R.string.terminow_backup_start, null)
             .setNegativeButton(android.R.string.cancel, null)
-            .show();
+            .create();
+        dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            char[] chosen = null;
+            if (encrypt.isChecked()) {
+                CharSequence p = password.getText(), c = confirm.getText();
+                if (p.length() == 0) { password.setError(mActivity.getString(R.string.terminow_backup_encrypt_empty)); return; }
+                if (!p.toString().equals(c.toString())) { confirm.setError(mActivity.getString(R.string.terminow_backup_encrypt_mismatch)); return; }
+                chosen = new char[p.length()];
+                for (int i = 0; i < p.length(); i++) chosen[i] = p.charAt(i);
+            }
+            dialog.dismiss();
+            startBackup(form, name, estimate, chosen);
+        }));
+        dialog.show();
     }
 
-    private void startBackup(@NonNull Form form, @NonNull String name, long estimate) {
+    private void startBackup(@NonNull Form form, @NonNull String name, long estimate, @Nullable char[] password) {
         TerminowPhoneBackup.Request request = new TerminowPhoneBackup.Request();
         request.kind = form.folders ? TerminowPhoneBackup.Kind.BACKUP_FOLDERS : TerminowPhoneBackup.Kind.BACKUP_FULL;
+        request.password = password;
+        if (password != null && !name.endsWith(".enc")) name = name + ".enc";
         request.alias = form.env.alias;
         request.title = form.title;
         request.distro = form.env.distroId + (form.env.version.isEmpty() ? "" : " " + form.env.version);
@@ -577,9 +612,17 @@ final class TerminowBackupUi {
 
     /** Read the whole file and find out what it is, before anything is restored. */
     private void inspect(@NonNull Uri file) {
+        if (TerminowPhoneBackup.isEncrypted(mActivity, file))
+            promptRestorePassword(displayNameOf(file), password -> inspectWith(file, password));
+        else
+            inspectWith(file, null);
+    }
+
+    private void inspectWith(@NonNull Uri file, @Nullable char[] password) {
         TerminowPhoneBackup.Request request = new TerminowPhoneBackup.Request();
         request.kind = TerminowPhoneBackup.Kind.INSPECT;
         request.file = file;
+        request.password = password;
         request.title = displayNameOf(file);
         request.fileLabel = request.title;
         try (android.database.Cursor cursor = mActivity.getContentResolver().query(file, new String[]{OpenableColumns.SIZE}, null, null, null)) {
@@ -674,6 +717,7 @@ final class TerminowBackupUi {
                     request.alias = alias;
                     request.title = title;
                     request.file = inspected.request.file;
+                    request.password = inspected.request.password;
                     request.fileLabel = inspected.request.fileLabel;
                     request.fileSize = inspected.request.fileSize;
                     request.contentBytes = inspection.contentBytes;
@@ -784,6 +828,7 @@ final class TerminowBackupUi {
                     request.alias = target[0].alias;
                     request.title = target[0].getTitle();
                     request.file = inspected.request.file;
+                    request.password = inspected.request.password;
                     request.fileLabel = inspected.request.fileLabel;
                     request.fileSize = inspected.request.fileSize;
                     request.destination = into;
@@ -1028,5 +1073,57 @@ final class TerminowBackupUi {
 
     private int dp(float dp) {
         return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, dp, mActivity.getResources().getDisplayMetrics());
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Encryption password entry
+
+    /** A masked password field with a "show" toggle. */
+    @NonNull
+    private EditText passwordField(@NonNull Context context, @NonNull String hint) {
+        EditText field = new EditText(context);
+        field.setHint(hint);
+        field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        field.setSingleLine(true);
+        return field;
+    }
+
+    /**
+     * Ask for the password of an encrypted backup (restore/inspect). The password is handed to the
+     * callback as a {@code char[]}; the caller is responsible for it from there.
+     */
+    private void promptRestorePassword(@NonNull String fileName, @NonNull Consumer<char[]> onOk) {
+        Context context = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog).getContext();
+        LinearLayout box = vertical(context);
+        box.setPadding(dp(24), dp(8), dp(24), 0);
+        box.addView(label(context, mActivity.getString(R.string.terminow_backup_encrypt_restore_message, fileName), false));
+        EditText field = passwordField(context, mActivity.getString(R.string.terminow_backup_encrypt_hint));
+        box.addView(field);
+        CheckBox show = new CheckBox(context);
+        show.setText(R.string.terminow_backup_encrypt_show);
+        show.setOnCheckedChangeListener((b, checked) -> {
+            int base = InputType.TYPE_CLASS_TEXT;
+            field.setInputType(checked ? base | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD : base | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+            field.setSelection(field.getText().length());
+        });
+        box.addView(show);
+        AlertDialog dialog = new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_backup_encrypt_restore_title)
+            .setView(box)
+            .setPositiveButton(android.R.string.ok, null)
+            .setNegativeButton(android.R.string.cancel, null)
+            .create();
+        dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            CharSequence entered = field.getText();
+            if (entered.length() == 0) {
+                field.setError(mActivity.getString(R.string.terminow_backup_encrypt_empty));
+                return;
+            }
+            char[] password = new char[entered.length()];
+            for (int i = 0; i < entered.length(); i++) password[i] = entered.charAt(i);
+            dialog.dismiss();
+            onOk.accept(password);
+        }));
+        dialog.show();
     }
 }
