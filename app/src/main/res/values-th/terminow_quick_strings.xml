@@ -177,6 +177,9 @@
     <string name="terminow_select_os_selected">เลือกอยู่</string>
     <string name="terminow_local_linux_tmux_sessions">เซสชัน tmux</string>
     <string name="terminow_tmux_attach_shared">เซสชัน tmux นี้ถูกเชื่อมต่ออยู่ที่อื่น การเปิดที่นี่จะเพิ่มอีกมุมมองที่ใช้เซสชันเดียวกันร่วมกัน เทอร์มินัลอีกตัวจะยังเชื่อมต่ออยู่และไม่ถูกถอด หากต้องการเข้าควบคุมแทน ให้ถอด (detach) ไคลเอนต์อีกตัวก่อน</string>
+    <string name="terminow_tmux_missing_title">ยังไม่ได้ติดตั้ง tmux</string>
+    <string name="terminow_tmux_missing_new">เปิด \"ใช้ tmux\" สำหรับ %1$s อยู่ แต่ยังไม่ได้ติดตั้ง tmux ในนั้น ติดตั้ง tmux ตอนนี้ หรือเปิดเชลล์ธรรมดาครั้งนี้โดยไม่ใช้ tmux — TermiNow จะไม่เริ่มเชลล์โดยไม่มี tmux เอง</string>
+    <string name="terminow_tmux_open_without">เปิดโดยไม่ใช้ tmux</string>
     <string name="terminow_local_linux_recent">ปิดไปล่าสุด</string>
     <string name="terminow_local_linux_recent_note">เปิดเชลล์ใหม่ ไม่กู้คืนโปรเซสเดิม</string>
     <!-- SSH host picker (Connect) -->

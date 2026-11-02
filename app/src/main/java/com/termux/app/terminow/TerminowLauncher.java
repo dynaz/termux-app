@@ -1948,6 +1948,30 @@ public class TerminowLauncher {
     }
 
     /**
+     * A new shell tab that ignores the environment's "Use tmux" preference for this one launch,
+     * without changing the saved preference. Used by the session manager's explicit "Open without
+     * tmux" choice when tmux is on but not installed, so there is never a silent fall-back to a
+     * plain shell: the user picks it.
+     */
+    void openInNewTabWithoutTmux(@NonNull Environment environment) {
+        if (distroLocked(environment)) { promptDistroUpgrade(() -> openInNewTabWithoutTmux(environment)); return; }
+        String user = getUser(environment);
+        launchPlan("quick|" + environment.key + "|" + System.nanoTime(), environment, user, getFolder(environment),
+            TerminowLaunchPlan.TOOL_SHELL, "", TerminowLaunchPlan.TMUX_OFF, newTabTmuxName(environment),
+            mActivity.getString(R.string.terminow_launcher_tab, environment.shortName(), shellNameOf(environment)), true, "bash");
+    }
+
+    /** Offer to install tmux into an environment (the confirm-and-install flow of the tmux tools card). */
+    void promptInstallTmux(@NonNull Environment environment) {
+        String command = installTmuxCommand(environment);
+        if (command.isEmpty()) {
+            showFailure(environment.label, mActivity.getString(R.string.terminow_tools_tmux_missing_env, environment.label));
+            return;
+        }
+        confirmInstallTmux(environment, command);
+    }
+
+    /**
      * Use the tab that is open: show it if it already runs the environment; go into the
      * environment in its own terminal if it is an idle TermiNow shell; otherwise say what runs
      * there and offer a new tab. Nothing is typed into ssh, another environment, tmux or a

@@ -114,10 +114,7 @@ class TerminowSessionPicker {
         actions.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout.LayoutParams actionsParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         actionsParams.topMargin = dp(12);
-        TextView newSession = primaryButton(mActivity.getString(R.string.terminow_local_linux_new_session), () -> {
-            sheet.dialog.dismiss();
-            mLauncher.openInNewTab(env);
-        });
+        TextView newSession = primaryButton(mActivity.getString(R.string.terminow_local_linux_new_session), () -> newSession(sheet, env));
         actions.addView(newSession, new LinearLayout.LayoutParams(0, dp(48), 1f));
         ImageView more = overflowButton(mActivity.getString(R.string.terminow_local_linux_more), () -> {
             new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
@@ -176,6 +173,37 @@ class TerminowSessionPicker {
         sheet.option(R.drawable.ic_terminow_add, mActivity.getString(R.string.terminow_local_linux_install),
             mActivity.getString(R.string.terminow_local_linux_install_summary), mLauncher::browseLinux);
         sheet.show();
+    }
+
+    /**
+     * Start a new session for the distribution. When "Use tmux" is on but tmux is known to be missing
+     * in that distro, offer an explicit choice — Install tmux, or open a plain shell this once — instead
+     * of silently falling back to a non-tmux shell. When the tmux state is not known yet (still checking,
+     * or never checked), the launch proceeds as usual; the launch script reports the missing tmux and
+     * points to Install, and nothing claims a tmux session that was not created.
+     */
+    private void newSession(@NonNull Sheet sheet, @NonNull TerminowLauncher.Environment env) {
+        if (mLauncher.usesTmux(env) && !mLauncher.isTmuxChecking(env)) {
+            TerminowTmux.State state = mLauncher.tmuxOf(env);
+            if (state != null && state.error == null && !state.isInstalled()) {
+                new android.app.AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+                    .setTitle(R.string.terminow_tmux_missing_title)
+                    .setMessage(mActivity.getString(R.string.terminow_tmux_missing_new, env.label))
+                    .setPositiveButton(R.string.terminow_tools_tmux_install, (d, w) -> {
+                        sheet.dialog.dismiss();
+                        mLauncher.promptInstallTmux(env);
+                    })
+                    .setNeutralButton(R.string.terminow_tmux_open_without, (d, w) -> {
+                        sheet.dialog.dismiss();
+                        mLauncher.openInNewTabWithoutTmux(env);
+                    })
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
+                return;
+            }
+        }
+        sheet.dialog.dismiss();
+        mLauncher.openInNewTab(env);
     }
 
     /** A collapsible "Recently closed" list; tapping a row opens a NEW shell (no process is resumed). */
