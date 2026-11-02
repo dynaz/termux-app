@@ -27,12 +27,8 @@ import com.termux.R;
 import com.termux.app.TermuxActivity;
 import com.termux.shared.termux.TermuxConstants;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -56,6 +52,9 @@ public final class TerminowCaptureSheet {
 
     private static final int PACKET_LIST_LIMIT = 500;
     private static final int MAX_LOG_CHARS = 120_000;
+    /** A safety bound for a single run: longer than the longest allowed capture, so it never kills a
+     *  legitimate run (Stop destroys early), but a process that never exits cannot wedge the worker. */
+    private static final long LAUNCH_TIMEOUT_MS = (TerminowCapture.DURATION_MAX + 120L) * 1000L;
     private static final Pattern USER = Pattern.compile("[a-z_][a-z0-9_-]*");
 
     private final TermuxActivity mActivity;
@@ -607,18 +606,11 @@ public final class TerminowCaptureSheet {
             try {
                 process = mRunner.start(alias, user, script, args);
                 mRun = process;
-                final Process p = process;
-                Thread err = new Thread(() -> drain(p.getErrorStream()));
-                err.setDaemon(true);
-                err.start();
-                drain(process.getInputStream());   // this thread drains stdout to completion
-                err.join(2000);
-                code = process.waitFor();
+                // Bounded, concurrently-drained run: stdout and stderr each drain on their own thread so
+                // neither pipe can deadlock, and the timeout + Stop (which destroys mRun) both end it.
+                code = TerminowCapture.runBounded(process, LAUNCH_TIMEOUT_MS, this::appendLine);
             } catch (IOException | RuntimeException e) {
                 appendLine("error: " + e.getMessage());
-                code = -1;
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
                 code = -1;
             } finally {
                 if (process != null && mRun == process) mRun = null;
@@ -630,15 +622,6 @@ public final class TerminowCaptureSheet {
                 render();
             });
         });
-    }
-
-    private void drain(@NonNull InputStream stream) {
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) appendLine(line);
-        } catch (IOException ignored) {
-            // the process ended
-        }
     }
 
     private void appendLine(@NonNull String line) {
@@ -708,22 +691,18 @@ public final class TerminowCaptureSheet {
         });
     }
 
-    /** Run the capture-privilege probe once and return its full output (empty on any failure). */
+    /**
+     * Run the capture-privilege probe once and return its full output (empty on any failure). Uses the
+     * bounded, concurrently-drained runner so the open-time capability check can never hang the worker.
+     */
     @NonNull
     private String runProbe(@NonNull String alias, @NonNull String user) {
         try {
             Process p = mRunner.start(alias, user, TerminowCapture.probeScript(mIface));
             StringBuilder out = new StringBuilder();
-            Thread err = new Thread(() -> drainQuiet(p.getErrorStream()));
-            err.setDaemon(true);
-            err.start();
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) out.append(line).append('\n');
-            }
-            if (!p.waitFor(12, java.util.concurrent.TimeUnit.SECONDS)) { p.destroy(); return out.toString(); }
+            TerminowCapture.runBounded(p, 12_000, line -> out.append(line).append('\n'));
             return out.toString();
-        } catch (IOException | RuntimeException | InterruptedException e) {
+        } catch (IOException | RuntimeException e) {
             return "";
         }
     }
@@ -732,24 +711,14 @@ public final class TerminowCaptureSheet {
         try {
             Process p = mRunner.start(alias, user, "printf %s \"${DISPLAY:-}${WAYLAND_DISPLAY:-}\"\n");
             StringBuilder out = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
-                int c;
-                while ((c = reader.read()) != -1) { out.append((char) c); if (out.length() > 256) break; }
-            }
-            Thread err = new Thread(() -> drainQuiet(p.getErrorStream()));
-            err.setDaemon(true);
-            err.start();
-            if (!p.waitFor(8, java.util.concurrent.TimeUnit.SECONDS)) { p.destroy(); return false; }
+            // Concurrent stdout+stderr drains with a hard timeout — the previous version read stdout to
+            // the end before draining stderr and before its timeout, so a child that never closed stdout
+            // (or filled stderr) wedged the single worker thread and froze the whole screen.
+            TerminowCapture.runBounded(p, 8_000, line -> { if (out.length() < 256) out.append(line); });
             return out.toString().trim().length() > 0;
-        } catch (IOException | RuntimeException | InterruptedException e) {
+        } catch (IOException | RuntimeException e) {
             return false;
         }
-    }
-
-    private static void drainQuiet(@NonNull InputStream stream) {
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
-            while (reader.readLine() != null) { /* discard */ }
-        } catch (IOException ignored) { }
     }
 
     private void showInfo() {

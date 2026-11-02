@@ -3,8 +3,15 @@ package com.termux.app.terminow;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
 /**
@@ -272,5 +279,59 @@ public final class TerminowCapture {
     @NonNull
     static String sq(@NonNull String value) {
         return "'" + value.replace("'", "'\\''") + "'";
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Bounded, deadlock-free process execution (shared by every capture-screen probe/run)
+
+    /**
+     * Run a process to completion without dead-locking or hanging the caller's thread. {@code stdout}
+     * and {@code stderr} are each drained on their own daemon thread, so a full pipe on one can never
+     * block the other (the bug this replaces read stdout to the end <i>before</i> draining stderr, so a
+     * child that filled stderr — or never closed stdout — hung forever). The whole run is bounded by
+     * {@code timeoutMs}: if the process has not exited by then it is destroyed, which closes its streams
+     * and unblocks the drains. Each stdout line is passed to {@code onLine} (on the drain thread).
+     *
+     * @return the exit code, or {@code -1} if it timed out, was interrupted, or is still alive.
+     */
+    public static int runBounded(@NonNull Process process, long timeoutMs, @Nullable Consumer<String> onLine) {
+        Thread out = new Thread(() -> drainInto(process.getInputStream(), onLine));
+        Thread err = new Thread(() -> drainInto(process.getErrorStream(), null));
+        out.setDaemon(true);
+        err.setDaemon(true);
+        out.start();
+        err.start();
+        boolean finished = false;
+        try {
+            finished = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        if (!finished) process.destroy();
+        try {
+            out.join(2000);
+            err.join(2000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        if (process.isAlive()) {
+            process.destroy();
+            return -1;
+        }
+        try {
+            return process.exitValue();
+        } catch (IllegalThreadStateException e) {
+            return -1;
+        }
+    }
+
+    /** Read a stream line by line to EOF, handing each line to {@code onLine} (ignored when null). */
+    static void drainInto(@NonNull InputStream stream, @Nullable Consumer<String> onLine) {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) if (onLine != null) onLine.accept(line);
+        } catch (IOException ignored) {
+            // the process ended or the stream was closed by destroy()
+        }
     }
 }
