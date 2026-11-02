@@ -98,6 +98,30 @@ public class TerminowCaptureRunTest {
     }
 
     @Test
+    public void capabilityStateReflectsTheProbe() {
+        assertEquals(TerminowCapture.CaptureState.CHECKING, TerminowCapture.capabilityState(null, null));
+        assertEquals(TerminowCapture.CaptureState.UNSUPPORTED, TerminowCapture.capabilityState(false, null));
+        assertEquals(TerminowCapture.CaptureState.CHECKING, TerminowCapture.capabilityState(true, null));
+        assertEquals(TerminowCapture.CaptureState.UNSUPPORTED,
+            TerminowCapture.capabilityState(true, TerminowCapture.CapturePrivilege.DENIED));
+        assertEquals(TerminowCapture.CaptureState.READY,
+            TerminowCapture.capabilityState(true, TerminowCapture.CapturePrivilege.OK));
+        // NO_DEVICE / UNKNOWN stay READY: another interface may work, so Start is left enabled.
+        assertEquals(TerminowCapture.CaptureState.READY,
+            TerminowCapture.capabilityState(true, TerminowCapture.CapturePrivilege.NO_DEVICE));
+        assertEquals(TerminowCapture.CaptureState.READY,
+            TerminowCapture.capabilityState(true, TerminowCapture.CapturePrivilege.UNKNOWN));
+    }
+
+    @Test
+    public void captureTimeoutExitCountsAsSuccess() {
+        assertTrue(TerminowCapture.isCaptureSuccess(0));     // clean exit (size cap hit)
+        assertTrue(TerminowCapture.isCaptureSuccess(124));   // timeout stopped tcpdump at the duration cap
+        assertFalse(TerminowCapture.isCaptureSuccess(1));
+        assertFalse(TerminowCapture.isCaptureSuccess(-1));
+    }
+
+    @Test
     public void nullOnLineDrainsWithoutError() {
         FinishedProcess p = new FinishedProcess("ignored stdout\n", "ignored stderr\n", 3);
         int code = TerminowCapture.runBounded(p, 2_000, null);

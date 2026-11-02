@@ -16,6 +16,8 @@
 
     <string name="terminow_sec_checking">กำลังตรวจสอบสิ่งที่ติดตั้งไว้…</string>
     <string name="terminow_sec_none">ไม่มีเครื่องมือในหมวดนี้</string>
+    <string name="terminow_sec_no_match">ไม่พบเครื่องมือที่ตรงกับคำค้นหา</string>
+    <string name="terminow_sec_search_hint">ค้นหาเครื่องมือ…</string>
     <string name="terminow_sec_installed">ติดตั้งแล้ว · %1$s</string>
     <string name="terminow_sec_installing">กำลังติดตั้ง · %1$s</string>
     <string name="terminow_sec_queued">อยู่ในคิว · %1$s</string>
@@ -82,6 +84,15 @@
 
     <!-- Packet capture -->
     <string name="terminow_cap_title">จับแพ็กเก็ต</string>
+    <string name="terminow_cap_state_prefix">สถานะ: %1$s</string>
+    <string name="terminow_cap_state_idle">ว่าง</string>
+    <string name="terminow_cap_state_checking">กำลังตรวจสอบสภาพแวดล้อม…</string>
+    <string name="terminow_cap_state_ready">พร้อมใช้งาน</string>
+    <string name="terminow_cap_state_unsupported">ใช้งานไม่ได้ที่นี่</string>
+    <string name="terminow_cap_state_starting">กำลังเริ่ม…</string>
+    <string name="terminow_cap_state_capturing">กำลังจับแพ็กเก็ต</string>
+    <string name="terminow_cap_state_stopping">กำลังหยุด…</string>
+    <string name="terminow_cap_state_failed">ล้มเหลว</string>
     <string name="terminow_cap_premium_what">จับและวิเคราะห์แพ็กเก็ต</string>
     <string name="terminow_cap_mode_capture">จับ</string>
     <string name="terminow_cap_mode_analyze">วิเคราะห์</string>

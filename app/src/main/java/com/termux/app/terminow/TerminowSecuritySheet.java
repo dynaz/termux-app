@@ -83,6 +83,8 @@ public final class TerminowSecuritySheet {
     private boolean mDetecting;
     /** -1 = All; otherwise an ordinal into {@link #CATEGORIES}. */
     private int mCategory = -1;
+    /** The live search query (tool name or description), empty when not filtering. */
+    private String mQuery = "";
 
     public TerminowSecuritySheet(@NonNull TermuxActivity activity, @NonNull File prefixDir) {
         this(activity, prefixDir, null);
@@ -174,6 +176,7 @@ public final class TerminowSecuritySheet {
         subtitle.setPadding(0, dp(2), 0, dp(8));
         sheet.addView(subtitle, matchWrap());
 
+        sheet.addView(searchBox(), matchWrap());
         sheet.addView(categoryChips(), matchWrap());
 
         // The scrolling list fills the rest of the sheet. A NestedScrollView cooperates with the
@@ -389,14 +392,19 @@ public final class TerminowSecuritySheet {
         if (mDetecting && mInstalled == null) {
             content.addView(text(mActivity.getString(R.string.terminow_sec_checking), 14, R.color.terminow_text_secondary), matchWrap());
         }
+        String q = mQuery.trim().toLowerCase(java.util.Locale.ROOT);
         int shown = 0;
         for (TerminowSecurityTools.Tool tool : TerminowSecurityTools.catalog()) {
             if (mCategory >= 0 && tool.category.ordinal() != mCategory) continue;
+            if (!q.isEmpty()
+                && !tool.label.toLowerCase(java.util.Locale.ROOT).contains(q)
+                && !tool.description.toLowerCase(java.util.Locale.ROOT).contains(q)) continue;
             recordIfTermiNowInstalled(tool);
             content.addView(toolCard(tool), matchWrap());
             shown++;
         }
-        if (shown == 0) content.addView(text(mActivity.getString(R.string.terminow_sec_none), 14, R.color.terminow_text_secondary), matchWrap());
+        if (shown == 0) content.addView(text(mActivity.getString(
+            q.isEmpty() ? R.string.terminow_sec_none : R.string.terminow_sec_no_match), 14, R.color.terminow_text_secondary), matchWrap());
     }
 
     /** A one-line banner with the detected environment: distro, CPU and whether apt is present. */
@@ -432,6 +440,18 @@ public final class TerminowSecuritySheet {
         LinearLayout top = new LinearLayout(mActivity);
         top.setOrientation(LinearLayout.HORIZONTAL);
         top.setGravity(Gravity.CENTER_VERTICAL);
+        // Leading round monogram for a compact, scannable row.
+        String initial = tool.label.isEmpty() ? "?" : tool.label.substring(0, 1).toUpperCase(java.util.Locale.ROOT);
+        TextView icon = text(initial, 15, R.color.terminow_text);
+        icon.setTypeface(Typeface.DEFAULT_BOLD);
+        icon.setGravity(Gravity.CENTER);
+        GradientDrawable iconBg = new GradientDrawable();
+        iconBg.setShape(GradientDrawable.OVAL);
+        iconBg.setColor(color(R.color.terminow_panel_button));
+        icon.setBackground(iconBg);
+        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(dp(34), dp(34));
+        iconLp.setMarginEnd(dp(10));
+        top.addView(icon, iconLp);
         TextView name = text(tool.label, 16, R.color.terminow_text);
         name.setTypeface(Typeface.DEFAULT_BOLD);
         top.addView(name, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
@@ -813,6 +833,29 @@ public final class TerminowSecuritySheet {
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(20), dp(8), dp(20), dp(4));
         return box;
+    }
+
+    /** The header search box: filters the list by tool name or description as the user types. It lives
+     *  in the fixed header (not the scrolling content render() rebuilds), so it keeps focus and text. */
+    private View searchBox() {
+        EditText search = field(mActivity.getString(R.string.terminow_sec_search_hint), InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        search.setText(mQuery);
+        search.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(color(R.color.terminow_panel_card));
+        bg.setCornerRadius(dp(12));
+        search.setBackground(bg);
+        search.setPadding(dp(12), dp(8), dp(12), dp(8));
+        search.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);
+        search.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void afterTextChanged(android.text.Editable e) { mQuery = e.toString(); render(); }
+        });
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.bottomMargin = dp(8);
+        search.setLayoutParams(lp);
+        return search;
     }
 
     private EditText field(@NonNull String hint, int inputType) {

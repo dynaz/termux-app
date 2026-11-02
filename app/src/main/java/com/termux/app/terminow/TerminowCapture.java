@@ -115,6 +115,39 @@ public final class TerminowCapture {
             + "exit 0\n";
     }
 
+    /**
+     * The explicit lifecycle of the capture screen, shown to the user so a long check or run never
+     * looks like a freeze. IDLE/CHECKING/READY/UNSUPPORTED describe the environment before a run (and
+     * are derived purely by {@link #capabilityState}); STARTING/CAPTURING/STOPPING/FAILED describe a
+     * run in progress and are driven by the screen as the process starts, streams, is stopped, or ends.
+     */
+    public enum CaptureState { IDLE, CHECKING, READY, UNSUPPORTED, STARTING, CAPTURING, STOPPING, FAILED }
+
+    /**
+     * The capability state of the environment, from the probe results alone: CHECKING until both tcpdump
+     * presence and (when tcpdump is present) the capture-privilege probe are known, UNSUPPORTED when
+     * capture cannot work here (no tcpdump, or the kernel denies the capture socket), and READY once a
+     * capture could be attempted. NO_DEVICE and UNKNOWN stay READY because another interface may still
+     * work, so Start is left enabled. Pure, so it is unit-tested.
+     */
+    @NonNull
+    public static CaptureState capabilityState(@Nullable Boolean hasTcpdump, @Nullable CapturePrivilege privilege) {
+        if (hasTcpdump == null) return CaptureState.CHECKING;
+        if (!hasTcpdump) return CaptureState.UNSUPPORTED;
+        if (privilege == CapturePrivilege.DENIED || privilege == CapturePrivilege.NO_TCPDUMP) return CaptureState.UNSUPPORTED;
+        if (privilege == null) return CaptureState.CHECKING;   // tcpdump present, privilege still probing
+        return CaptureState.READY;                             // OK, NO_DEVICE (recoverable), UNKNOWN
+    }
+
+    /**
+     * Whether a {@code timeout tcpdump} capture exit code means the capture ended normally. {@code 0} is
+     * a clean exit (e.g. the size cap was hit); {@code 124} is {@code timeout} stopping tcpdump at the
+     * duration cap — the usual, successful end of a time-bounded capture, not a failure.
+     */
+    public static boolean isCaptureSuccess(int exitCode) {
+        return exitCode == 0 || exitCode == 124;
+    }
+
     /** Parse {@link #probeScript} output into a {@link CapturePrivilege}; UNKNOWN if no marker is seen. */
     @NonNull
     public static CapturePrivilege parseCapturePrivilege(@NonNull String output) {

@@ -95,6 +95,14 @@ public final class TerminowCaptureSheet {
     @Nullable private TerminowCapture.CapturePrivilege mPrivilege;
     private String mProbeDetail = "";
 
+    // Explicit capture lifecycle, shown so a long check or run never looks like a freeze.
+    private TerminowCapture.CaptureState mPhase = TerminowCapture.CaptureState.IDLE;
+    private boolean mCaptureRun;          // the active run is a live capture (drives the phase label)
+    private boolean mLastCaptureFailed;   // the most recent capture ended in failure
+    private long mCaptureStartMs;         // when the current capture started, for the elapsed timer
+    @Nullable private TextView mStateLabel;
+    @Nullable private Runnable mElapsedTick;
+
     // Capture form fields (kept so a mode switch preserves typed values).
     private String mIface = "any", mFilter = "", mDuration = "60", mSize = "10", mAnalyzeFile = "", mDisplayFilter = "";
     // Live references to the inputs currently on screen, so typed-but-unsaved values survive a rebuild.
@@ -234,7 +242,7 @@ public final class TerminowCaptureSheet {
         dialog.setOnDismissListener(d -> {
             // Leaving never stops a running capture — it is time/size bounded and finishes writing its
             // file. Only the Stop action ends it. We just stop updating a view that is gone.
-            if (mDialog == dialog) { mDialog = null; mLogView = null; mLogScroll = null; mStatus = null; mForm = null; }
+            if (mDialog == dialog) { mDialog = null; mLogView = null; mLogScroll = null; mStatus = null; mStateLabel = null; mForm = null; cancelElapsed(); }
         });
         renderForm();
         dialog.show();
@@ -284,6 +292,7 @@ public final class TerminowCaptureSheet {
         mLogView = null;
         mLogScroll = null;
         mStatus = null;
+        mStateLabel = null;
         mIfaceField = mFilterField = mDurationField = mSizeField = mFileField = mDisplayFilterField = null;
 
         if (mCaptureMode) renderCapture(form); else renderAnalyze(form);
@@ -322,10 +331,20 @@ public final class TerminowCaptureSheet {
         deferred.setPadding(0, dp(8), 0, 0);
         form.addView(deferred, matchWrap());
 
-        render();
+        // Restore the log into the freshly-built view and show the current state. This must NOT call
+        // render(): render() rebuilds the form by calling renderForm(), so calling it here recursed
+        // (renderForm -> render -> renderForm ...) and crashed the screen on open with a StackOverflow.
+        refreshLog();
+        updateStateLabel();
     }
 
     private void renderCapture(@NonNull LinearLayout form) {
+        TextView state = text("", 13, R.color.terminow_text_secondary);
+        state.setTypeface(Typeface.DEFAULT_BOLD);
+        state.setPadding(0, 0, 0, dp(4));
+        mStateLabel = state;
+        form.addView(state, matchWrap());
+
         boolean canStart = true;
         if (Boolean.FALSE.equals(mHasTcpdump)) {
             form.addView(hint(mActivity.getString(R.string.terminow_cap_need_tcpdump)), matchWrap());
@@ -472,11 +491,16 @@ public final class TerminowCaptureSheet {
         }
         TerminowPremiumGate.require(mActivity, new TerminowStore(mActivity), TerminowPremiumGate.Feature.PACKET_CAPTURE, 0, () -> {
             clearLog();
+            mCaptureRun = true;
+            mLastCaptureFailed = false;
+            mPhase = TerminowCapture.CaptureState.STARTING;
             setStatus(mActivity.getString(R.string.terminow_cap_running, outFile));
             mLastCapture = outFile;
             // The capture dir is created first (as its own positional arg), then the bounded argv runs.
             runStreaming(captureDir(), argv, code -> {
-                if (code == 0) setStatus(mActivity.getString(R.string.terminow_cap_done, outFile));
+                // timeout stopping tcpdump at the duration cap (124) is the normal, successful end of a
+                // time-bounded capture — not a failure.
+                if (TerminowCapture.isCaptureSuccess(code)) setStatus(mActivity.getString(R.string.terminow_cap_done, outFile));
                 else setStatus(mActivity.getString(R.string.terminow_cap_failed));
             });
             render();
@@ -565,7 +589,10 @@ public final class TerminowCaptureSheet {
 
     private void stopRun() {
         Process run = mRun;
-        if (run != null) run.destroy();
+        if (run != null) {
+            if (mCaptureRun) { mPhase = TerminowCapture.CaptureState.STOPPING; updateStateLabel(); }
+            run.destroy();
+        }
     }
 
     // ---------------------------------------------------------------------------------------
@@ -606,6 +633,12 @@ public final class TerminowCaptureSheet {
             try {
                 process = mRunner.start(alias, user, script, args);
                 mRun = process;
+                if (mCaptureRun) mHandler.post(() -> {
+                    mPhase = TerminowCapture.CaptureState.CAPTURING;
+                    mCaptureStartMs = System.currentTimeMillis();
+                    updateStateLabel();
+                    scheduleElapsed();
+                });
                 // Bounded, concurrently-drained run: stdout and stderr each drain on their own thread so
                 // neither pipe can deadlock, and the timeout + Stop (which destroys mRun) both end it.
                 code = TerminowCapture.runBounded(process, LAUNCH_TIMEOUT_MS, this::appendLine);
@@ -618,6 +651,12 @@ public final class TerminowCaptureSheet {
             final int exit = code;
             mHandler.post(() -> {
                 mBusy = false;
+                if (mCaptureRun) {
+                    cancelElapsed();
+                    mLastCaptureFailed = !TerminowCapture.isCaptureSuccess(exit);
+                    mPhase = TerminowCapture.CaptureState.IDLE;
+                    mCaptureRun = false;
+                }
                 onExit.onExit(exit);
                 render();
             });
@@ -649,6 +688,65 @@ public final class TerminowCaptureSheet {
 
     private void setStatus(@NonNull String message) {
         mHandler.post(() -> { if (mStatus != null) mStatus.setText(message); });
+    }
+
+    /** The lifecycle state to show: a run phase while a capture is live, else the environment capability. */
+    @NonNull
+    private TerminowCapture.CaptureState displayState() {
+        if (mPhase == TerminowCapture.CaptureState.STOPPING) return mPhase;
+        if (mBusy && mCaptureRun && mPhase != TerminowCapture.CaptureState.IDLE) return mPhase;
+        if (!mBusy && mLastCaptureFailed) return TerminowCapture.CaptureState.FAILED;
+        return TerminowCapture.capabilityState(mHasTcpdump, mPrivilege);
+    }
+
+    private void updateStateLabel() {
+        TextView v = mStateLabel;
+        if (v == null) return;
+        TerminowCapture.CaptureState s = displayState();
+        int color;
+        switch (s) {
+            case READY: color = 0xFF34A853; break;                 // green: capture can be attempted
+            case UNSUPPORTED: case FAILED: color = 0xFFE53935; break;   // red: cannot / did not work
+            case IDLE: color = color(R.color.terminow_text_secondary); break;
+            default: color = color(R.color.terminow_accent); break;     // checking / starting / capturing / stopping
+        }
+        String label = mActivity.getString(R.string.terminow_cap_state_prefix, mActivity.getString(stateStringRes(s)));
+        if (s == TerminowCapture.CaptureState.CAPTURING && mCaptureStartMs > 0) {
+            long secs = Math.max(0, (System.currentTimeMillis() - mCaptureStartMs) / 1000);
+            label = label + "  " + String.format(java.util.Locale.US, "%02d:%02d", secs / 60, secs % 60);
+        }
+        v.setText(label);
+        v.setTextColor(color);
+    }
+
+    private static int stateStringRes(@NonNull TerminowCapture.CaptureState s) {
+        switch (s) {
+            case CHECKING: return R.string.terminow_cap_state_checking;
+            case READY: return R.string.terminow_cap_state_ready;
+            case UNSUPPORTED: return R.string.terminow_cap_state_unsupported;
+            case STARTING: return R.string.terminow_cap_state_starting;
+            case CAPTURING: return R.string.terminow_cap_state_capturing;
+            case STOPPING: return R.string.terminow_cap_state_stopping;
+            case FAILED: return R.string.terminow_cap_state_failed;
+            default: return R.string.terminow_cap_state_idle;
+        }
+    }
+
+    /** Tick the elapsed time into the state label once a second while a capture is live. */
+    private void scheduleElapsed() {
+        cancelElapsed();
+        mElapsedTick = new Runnable() {
+            @Override public void run() {
+                if (!mBusy || !mCaptureRun || mPhase != TerminowCapture.CaptureState.CAPTURING) { mElapsedTick = null; return; }
+                updateStateLabel();
+                mHandler.postDelayed(this, 1000);
+            }
+        };
+        mHandler.postDelayed(mElapsedTick, 1000);
+    }
+
+    private void cancelElapsed() {
+        if (mElapsedTick != null) { mHandler.removeCallbacks(mElapsedTick); mElapsedTick = null; }
     }
 
     /** Re-enable/disable action buttons for the current busy state by rebuilding the form. */
