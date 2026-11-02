@@ -66,6 +66,13 @@ public final class TerminowSecuritySheet {
 
     @Nullable private Dialog mDialog;
     @Nullable private LinearLayout mContent;
+    /** The scrolling list area; a horizontal fling over it switches category, a vertical drag scrolls it. */
+    @Nullable private ScrollView mScroll;
+    /** The category strip and its chip row, so a category change restyles chips and scrolls the selected one into view. */
+    @Nullable private HorizontalScrollView mChipStrip;
+    @Nullable private LinearLayout mChipRow;
+    /** Each category's remembered vertical scroll position, so switching back restores where the user was. */
+    private final android.util.SparseIntArray mScrollByCategory = new android.util.SparseIntArray();
     @Nullable private TerminowLauncher.Environment mEnv;
     private String mAlias = "";
     private String mUser = "root";
@@ -149,6 +156,10 @@ public final class TerminowSecuritySheet {
         info.setOnClickListener(v -> showInfo());
         titleRow.addView(info);
         sheet.addView(titleRow, matchWrap());
+        // Drag the handle or the title down to dismiss (collapse → dismiss), with a downward fling; the
+        // list and its buttons are untouched because only these two views carry the drag handler.
+        attachDragToDismiss(dialog, sheet, handle);
+        attachDragToDismiss(dialog, sheet, titleRow);
 
         TextView subtitle = text(mActivity.getString(R.string.terminow_sec_subtitle), 13, R.color.terminow_text_secondary);
         subtitle.setPadding(0, dp(2), 0, dp(8));
@@ -163,6 +174,8 @@ public final class TerminowSecuritySheet {
         content.setPadding(0, dp(8), 0, 0);
         scroll.addView(content);
         mContent = content;
+        mScroll = scroll;
+        attachCategorySwipe(scroll);
         sheet.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         root.addView(sheet, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -190,7 +203,7 @@ public final class TerminowSecuritySheet {
         }
         dialog.setOnDismissListener(d -> {
             TerminowToolInstaller.removeListener(mOnJobs);
-            if (mDialog == dialog) { mDialog = null; mContent = null; }
+            if (mDialog == dialog) { mDialog = null; mContent = null; mScroll = null; mChipStrip = null; mChipRow = null; }
         });
         TerminowToolInstaller.addListener(mOnJobs);
         render();
@@ -201,31 +214,178 @@ public final class TerminowSecuritySheet {
     private HorizontalScrollView categoryChips() {
         HorizontalScrollView scroll = new HorizontalScrollView(mActivity);
         scroll.setHorizontalScrollBarEnabled(false);
+        // The strip scrolls its own chips horizontally; the page-swipe detector is on the content area
+        // only, so dragging the strip never changes category.
         LinearLayout row = new LinearLayout(mActivity);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.addView(chip(mActivity.getString(R.string.terminow_sec_cat_all), -1));
         for (TerminowSecurityTools.Category c : CATEGORIES) row.addView(chip(categoryLabel(c), c.ordinal()));
         scroll.addView(row);
+        mChipStrip = scroll;
+        mChipRow = row;
         return scroll;
     }
 
     private TextView chip(@NonNull String label, int category) {
-        boolean selected = mCategory == category;
-        TextView chip = text(label, 13, selected ? R.color.terminow_bar_home : R.color.terminow_text);
+        TextView chip = text(label, 13, R.color.terminow_text);
         chip.setPadding(dp(14), dp(7), dp(14), dp(7));
+        chip.setMinHeight(dp(40));
+        chip.setGravity(Gravity.CENTER);
         chip.setTypeface(Typeface.DEFAULT_BOLD);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMarginEnd(dp(8));
+        chip.setLayoutParams(lp);
+        chip.setTag(category);
+        styleChip(chip, mCategory == category);
+        chip.setOnClickListener(v -> selectCategory(category));
+        return chip;
+    }
+
+    private void styleChip(@NonNull TextView chip, boolean selected) {
+        chip.setTextColor(color(selected ? R.color.terminow_bar_home : R.color.terminow_text));
         GradientDrawable shape = new GradientDrawable();
         shape.setCornerRadius(dp(16));
         shape.setColor(color(selected ? R.color.terminow_panel_accent : R.color.terminow_panel_button));
         chip.setBackground(shape);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.setMarginEnd(dp(8));
-        chip.setLayoutParams(lp);
-        chip.setOnClickListener(v -> { mCategory = category; if (mDialog != null) open(); });
-        return chip;
+        chip.setSelected(selected);
+    }
+
+    /** The category ids in strip order: All (-1) first, then each catalogue category ordinal. */
+    @NonNull
+    private int[] categoryOrder() {
+        int[] order = new int[CATEGORIES.length + 1];
+        order[0] = -1;
+        for (int i = 0; i < CATEGORIES.length; i++) order[i + 1] = i;
+        return order;
+    }
+
+    /**
+     * Switch the shown category without rebuilding the dialog or re-running detection: remember the
+     * current list scroll, restyle the chips, re-render the filtered list, restore the new category's
+     * scroll, and bring the selected chip into view. Called by a chip tap and by a horizontal swipe.
+     */
+    private void selectCategory(int category) {
+        if (category == mCategory || mContent == null) return;
+        if (mScroll != null) mScrollByCategory.put(mCategory, mScroll.getScrollY());
+        mCategory = category;
+        if (mChipRow != null) {
+            for (int i = 0; i < mChipRow.getChildCount(); i++) {
+                View c = mChipRow.getChildAt(i);
+                if (c instanceof TextView && c.getTag() instanceof Integer)
+                    styleChip((TextView) c, (Integer) c.getTag() == category);
+            }
+        }
+        render();
+        if (mScroll != null) {
+            int y = mScrollByCategory.get(category, 0);
+            mScroll.post(() -> { if (mScroll != null) mScroll.scrollTo(0, y); });
+        }
+        scrollStripToSelected();
+    }
+
+    /** Smoothly bring the selected chip into view, centring it when possible. */
+    private void scrollStripToSelected() {
+        HorizontalScrollView strip = mChipStrip;
+        LinearLayout row = mChipRow;
+        if (strip == null || row == null) return;
+        strip.post(() -> {
+            for (int i = 0; i < row.getChildCount(); i++) {
+                View c = row.getChildAt(i);
+                if (c.getTag() instanceof Integer && (Integer) c.getTag() == mCategory) {
+                    int target = c.getLeft() - (strip.getWidth() - c.getWidth()) / 2;
+                    strip.smoothScrollTo(Math.max(0, target), 0);
+                    return;
+                }
+            }
+        });
+    }
+
+    /** Move one category towards the next (dir +1) or previous (dir -1); stops at the ends, never wraps. */
+    private void stepCategory(int dir) {
+        int[] order = categoryOrder();
+        int at = 0;
+        for (int i = 0; i < order.length; i++) if (order[i] == mCategory) { at = i; break; }
+        int next = at + dir;
+        if (next < 0 || next >= order.length) return;
+        selectCategory(order[next]);
     }
 
     // ---------------------------------------------------------------------------------------
+
+    /**
+     * A horizontal fling over the list switches category by exactly one step (left = next, right =
+     * previous) and never wraps. A touch-slop threshold plus a horizontal-dominance test act as
+     * directional locking, so a vertical scroll or a tap on a card is never read as a page swipe. The
+     * listener returns {@code false} and so consumes nothing: vertical scrolling and every button in
+     * the list keep working, and dragging the chip strip (which has no such listener) only scrolls chips.
+     */
+    private void attachCategorySwipe(@NonNull ScrollView scroll) {
+        android.view.ViewConfiguration vc = android.view.ViewConfiguration.get(mActivity);
+        int slop = vc.getScaledTouchSlop();
+        int minVel = vc.getScaledMinimumFlingVelocity();
+        android.view.GestureDetector detector = new android.view.GestureDetector(mActivity,
+            new android.view.GestureDetector.SimpleOnGestureListener() {
+                @Override public boolean onFling(android.view.MotionEvent e1, android.view.MotionEvent e2, float vx, float vy) {
+                    if (e1 == null || e2 == null) return false;
+                    float dx = e2.getX() - e1.getX(), dy = e2.getY() - e1.getY();
+                    if (Math.abs(dx) < slop * 2 || Math.abs(dx) <= Math.abs(dy) * 1.5f) return false;
+                    if (Math.abs(vx) < minVel || Math.abs(vx) <= Math.abs(vy)) return false;
+                    stepCategory(dx < 0 ? 1 : -1);
+                    return true;
+                }
+            });
+        detector.setIsLongpressEnabled(false);
+        scroll.setOnTouchListener((v, e) -> { detector.onTouchEvent(e); return false; });
+    }
+
+    /**
+     * Let a header view (the handle, or the title row away from the ⓘ button) drag the whole sheet
+     * down and dismiss it on a deliberate downward drag or fling, snapping back otherwise. Only
+     * downward movement moves the sheet; upward is ignored so it settles at rest. The translation
+     * animates through the system animator, which honours the device's animation-duration setting.
+     * Only these two views carry the handler, so the list, its scrolling and its buttons are untouched.
+     */
+    private void attachDragToDismiss(@NonNull Dialog dialog, @NonNull View sheet, @NonNull View handle) {
+        int slop = android.view.ViewConfiguration.get(mActivity).getScaledTouchSlop();
+        final float[] startY = {0f};
+        final boolean[] dragging = {false};
+        final android.view.VelocityTracker[] tracker = {null};
+        handle.setOnTouchListener((v, e) -> {
+            switch (e.getActionMasked()) {
+                case android.view.MotionEvent.ACTION_DOWN:
+                    startY[0] = e.getRawY();
+                    dragging[0] = false;
+                    tracker[0] = android.view.VelocityTracker.obtain();
+                    tracker[0].addMovement(e);
+                    return true;
+                case android.view.MotionEvent.ACTION_MOVE: {
+                    float dy = e.getRawY() - startY[0];
+                    if (!dragging[0] && dy > slop) dragging[0] = true;
+                    if (dragging[0]) sheet.setTranslationY(Math.max(0, dy));
+                    if (tracker[0] != null) tracker[0].addMovement(e);
+                    return true;
+                }
+                case android.view.MotionEvent.ACTION_UP:
+                case android.view.MotionEvent.ACTION_CANCEL: {
+                    float dy = e.getRawY() - startY[0];
+                    float vy = 0f;
+                    if (tracker[0] != null) {
+                        tracker[0].addMovement(e);
+                        tracker[0].computeCurrentVelocity(1000);
+                        vy = tracker[0].getYVelocity();
+                        tracker[0].recycle();
+                        tracker[0] = null;
+                    }
+                    boolean dismiss = e.getActionMasked() == android.view.MotionEvent.ACTION_UP
+                        && (dy > sheet.getHeight() * 0.25f || vy > 1800f);
+                    if (dismiss) sheet.animate().translationY(sheet.getHeight()).setDuration(180).withEndAction(dialog::dismiss).start();
+                    else sheet.animate().translationY(0).setDuration(150).start();
+                    return true;
+                }
+            }
+            return false;
+        });
+    }
 
     private void detect() {
         if (mDetecting) return;
