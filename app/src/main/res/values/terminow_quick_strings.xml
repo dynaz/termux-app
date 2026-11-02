@@ -183,6 +183,11 @@
     <string name="terminow_tmux_missing_title">tmux is not installed</string>
     <string name="terminow_tmux_missing_new">\"Use tmux\" is on for %1$s, but tmux is not installed in it. Install tmux now, or open a plain shell this time without it. TermiNow will not start a shell without tmux on its own.</string>
     <string name="terminow_tmux_open_without">Open without tmux</string>
+    <string name="terminow_local_linux_tmux_refresh">Refresh</string>
+    <string name="terminow_local_linux_tmux_create">Create &amp; Open</string>
+    <string name="terminow_local_linux_tmux_none_yet">No tmux sessions yet</string>
+    <string name="terminow_local_linux_tmux_gone">That tmux session is no longer there; the list was refreshed.</string>
+    <string name="terminow_local_linux_detach">Detach tmux</string>
     <string name="terminow_local_linux_recent">Recently closed</string>
     <string name="terminow_local_linux_recent_note">Opens a new shell. Previous processes are not restored.</string>
     <!-- SSH host picker (Connect) -->

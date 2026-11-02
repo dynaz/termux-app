@@ -180,6 +180,11 @@
     <string name="terminow_tmux_missing_title">ยังไม่ได้ติดตั้ง tmux</string>
     <string name="terminow_tmux_missing_new">เปิด \"ใช้ tmux\" สำหรับ %1$s อยู่ แต่ยังไม่ได้ติดตั้ง tmux ในนั้น ติดตั้ง tmux ตอนนี้ หรือเปิดเชลล์ธรรมดาครั้งนี้โดยไม่ใช้ tmux — TermiNow จะไม่เริ่มเชลล์โดยไม่มี tmux เอง</string>
     <string name="terminow_tmux_open_without">เปิดโดยไม่ใช้ tmux</string>
+    <string name="terminow_local_linux_tmux_refresh">รีเฟรช</string>
+    <string name="terminow_local_linux_tmux_create">สร้างและเปิด</string>
+    <string name="terminow_local_linux_tmux_none_yet">ยังไม่มีเซสชัน tmux</string>
+    <string name="terminow_local_linux_tmux_gone">เซสชัน tmux นั้นไม่มีอยู่แล้ว รายการถูกโหลดใหม่</string>
+    <string name="terminow_local_linux_detach">ถอด tmux (Detach)</string>
     <string name="terminow_local_linux_recent">ปิดไปล่าสุด</string>
     <string name="terminow_local_linux_recent_note">เปิดเชลล์ใหม่ ไม่กู้คืนโปรเซสเดิม</string>
     <!-- SSH host picker (Connect) -->

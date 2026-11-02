@@ -400,6 +400,25 @@ public class TerminowLauncher {
     }
 
     /**
+     * A unique default name for a brand-new tmux session in the manager: the environment's base
+     * name, or base-2/base-3/… when a live tmux session already uses it (from the last listing).
+     * Used only to prefill the create field — the user can change it, and an existing name is
+     * attached rather than duplicated by tmux's {@code new-session -A}.
+     */
+    @NonNull
+    String suggestTmuxName(@NonNull Environment environment) {
+        Set<String> taken = new HashSet<>();
+        TerminowTmux.State state = tmuxOf(environment);
+        if (state != null) for (TerminowTmux.Session s : state.sessions) taken.add(s.name);
+        return freeTmuxName(quickTmuxName(environment), taken);
+    }
+
+    /** Detach every client of a tmux session in the environment; the session keeps running and is not killed. */
+    void detachTmux(@NonNull Environment environment, @NonNull String name) {
+        tmuxOperation(environment, "detach", name, "");
+    }
+
+    /**
      * The tmux session of a new tab: the one of the environment, unless a tab shows it already,
      * then the next free one, like "ubuntu-2". Two tabs on one tmux session show and type the same.
      */
