@@ -18,6 +18,7 @@
     <string name="terminow_sec_none">No tools in this category.</string>
     <string name="terminow_sec_no_match">No tools match your search.</string>
     <string name="terminow_sec_search_hint">Search tools…</string>
+    <string name="terminow_sec_change_env">Change</string>
     <string name="terminow_sec_installed">Installed · %1$s</string>
     <string name="terminow_sec_installing">Installing · %1$s</string>
     <string name="terminow_sec_queued">Queued · %1$s</string>
@@ -93,6 +94,11 @@
     <string name="terminow_cap_state_capturing">Capturing</string>
     <string name="terminow_cap_state_stopping">Stopping…</string>
     <string name="terminow_cap_state_failed">Failed</string>
+    <string name="terminow_cap_pick_file">Import .pcap from device…</string>
+    <string name="terminow_cap_pick_failed">No file picker is available.</string>
+    <string name="terminow_cap_importing">Importing capture…</string>
+    <string name="terminow_cap_import_done">Imported to %1$s</string>
+    <string name="terminow_cap_import_failed">Import failed.</string>
     <string name="terminow_cap_premium_what">capture and analyse packets</string>
     <string name="terminow_cap_mode_capture">Capture</string>
     <string name="terminow_cap_mode_analyze">Analyse</string>

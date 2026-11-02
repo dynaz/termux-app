@@ -176,6 +176,9 @@ public final class TerminowSecuritySheet {
         subtitle.setPadding(0, dp(2), 0, dp(8));
         sheet.addView(subtitle, matchWrap());
 
+        // Which environment the tools install into, with a quick way to switch to another distro.
+        if (mEnv != null && mLauncher != null) sheet.addView(environmentChip(), matchWrap());
+
         sheet.addView(searchBox(), matchWrap());
         sheet.addView(categoryChips(), matchWrap());
 
@@ -833,6 +836,73 @@ public final class TerminowSecuritySheet {
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(20), dp(8), dp(20), dp(4));
         return box;
+    }
+
+    /** A header chip naming the target environment (distro monogram + label) with a Change action. */
+    private View environmentChip() {
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(dp(16));
+        bg.setColor(color(R.color.terminow_panel_card));
+        row.setBackground(bg);
+        row.setPadding(dp(10), dp(6), dp(6), dp(6));
+
+        String label = mEnv != null ? mEnv.label : "";
+        String initial = label.isEmpty() ? "?" : label.substring(0, 1).toUpperCase(java.util.Locale.ROOT);
+        TextView icon = text(initial, 13, R.color.terminow_text);
+        icon.setTypeface(Typeface.DEFAULT_BOLD);
+        icon.setGravity(Gravity.CENTER);
+        GradientDrawable iconBg = new GradientDrawable();
+        iconBg.setShape(GradientDrawable.OVAL);
+        iconBg.setColor(color(R.color.terminow_panel_button));
+        icon.setBackground(iconBg);
+        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(dp(26), dp(26));
+        iconLp.setMarginEnd(dp(8));
+        row.addView(icon, iconLp);
+
+        TextView name = text(label, 13, R.color.terminow_text);
+        name.setTypeface(Typeface.DEFAULT_BOLD);
+        name.setSingleLine(true);
+        name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        row.addView(name, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+        TextView change = text(mActivity.getString(R.string.terminow_sec_change_env), 13, R.color.terminow_accent);
+        change.setTypeface(Typeface.DEFAULT_BOLD);
+        change.setPadding(dp(10), dp(4), dp(10), dp(4));
+        change.setMinHeight(dp(36));
+        change.setGravity(Gravity.CENTER);
+        android.util.TypedValue ripple = new android.util.TypedValue();
+        mActivity.getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true);
+        if (ripple.resourceId != 0) change.setBackgroundResource(ripple.resourceId);
+        change.setOnClickListener(v -> changeEnvironment());
+        row.addView(change);
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.bottomMargin = dp(8);
+        row.setLayoutParams(lp);
+        return row;
+    }
+
+    /** Offer the other installed distros; picking one reopens Security Tools for that environment. */
+    private void changeEnvironment() {
+        if (mLauncher == null) return;
+        List<TerminowLauncher.Environment> envs = mLauncher.installedDistros();
+        if (envs.isEmpty()) return;
+        CharSequence[] items = new CharSequence[envs.size()];
+        for (int i = 0; i < envs.size(); i++) items[i] = envs.get(i).label;
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(R.string.terminow_sec_change_env)
+            .setItems(items, (d, which) -> {
+                TerminowLauncher.Environment chosen = envs.get(which);
+                if (mEnv == null || !chosen.key.equals(mEnv.key)) {
+                    if (mDialog != null) mDialog.dismiss();
+                    mLauncher.showSecurityTools(chosen);
+                }
+            })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
     }
 
     /** The header search box: filters the list by tool name or description as the user types. It lives

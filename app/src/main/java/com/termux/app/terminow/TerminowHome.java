@@ -6614,6 +6614,7 @@ public class TerminowHome {
         if (mExplorer.onActivityResult(requestCode, resultCode, data)) return true;
         if (mSftpBrowser.onActivityResult(requestCode, resultCode, data)) return true;
         if (mFiles.onActivityResult(requestCode, resultCode, data)) return true;
+        if (mLauncher.onActivityResult(requestCode, resultCode, data)) return true;
         if (requestCode == REQUEST_IMPORT_ROOTFS) {
             if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null) {
                 Uri uri = data.getData();

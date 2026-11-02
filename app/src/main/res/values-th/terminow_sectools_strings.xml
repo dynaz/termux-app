@@ -18,6 +18,7 @@
     <string name="terminow_sec_none">ไม่มีเครื่องมือในหมวดนี้</string>
     <string name="terminow_sec_no_match">ไม่พบเครื่องมือที่ตรงกับคำค้นหา</string>
     <string name="terminow_sec_search_hint">ค้นหาเครื่องมือ…</string>
+    <string name="terminow_sec_change_env">เปลี่ยน</string>
     <string name="terminow_sec_installed">ติดตั้งแล้ว · %1$s</string>
     <string name="terminow_sec_installing">กำลังติดตั้ง · %1$s</string>
     <string name="terminow_sec_queued">อยู่ในคิว · %1$s</string>
@@ -93,6 +94,11 @@
     <string name="terminow_cap_state_capturing">กำลังจับแพ็กเก็ต</string>
     <string name="terminow_cap_state_stopping">กำลังหยุด…</string>
     <string name="terminow_cap_state_failed">ล้มเหลว</string>
+    <string name="terminow_cap_pick_file">นำเข้า .pcap จากอุปกรณ์…</string>
+    <string name="terminow_cap_pick_failed">ไม่มีตัวเลือกไฟล์ในระบบ</string>
+    <string name="terminow_cap_importing">กำลังนำเข้าไฟล์จับแพ็กเก็ต…</string>
+    <string name="terminow_cap_import_done">นำเข้าไปที่ %1$s แล้ว</string>
+    <string name="terminow_cap_import_failed">นำเข้าล้มเหลว</string>
     <string name="terminow_cap_premium_what">จับและวิเคราะห์แพ็กเก็ต</string>
     <string name="terminow_cap_mode_capture">จับ</string>
     <string name="terminow_cap_mode_analyze">วิเคราะห์</string>

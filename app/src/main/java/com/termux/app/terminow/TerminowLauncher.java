@@ -563,6 +563,11 @@ public class TerminowLauncher {
         mCaptureSheet.showRemote(host, mRemoteTools);
     }
 
+    /** Forward an activity result to the capture sheet's SAF file picker; true when it was consumed. */
+    public boolean onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
+        return mCaptureSheet != null && mCaptureSheet.onActivityResult(requestCode, resultCode, data);
+    }
+
     /** Install tools into the environment of the tab, as its user. */
     void showInstallTools() {
         TerminalSession session = mActivity.getCurrentSession();

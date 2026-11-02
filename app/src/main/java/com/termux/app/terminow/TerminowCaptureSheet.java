@@ -27,7 +27,12 @@ import com.termux.R;
 import com.termux.app.TermuxActivity;
 import com.termux.shared.termux.TermuxConstants;
 
+import android.content.Intent;
+import android.net.Uri;
+
 import java.io.File;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.IOException;
 import java.util.List;
 import java.util.Locale;
@@ -52,6 +57,11 @@ public final class TerminowCaptureSheet {
 
     private static final int PACKET_LIST_LIMIT = 500;
     private static final int MAX_LOG_CHARS = 120_000;
+    /** Request code for the system .pcap file picker (ACTION_OPEN_DOCUMENT), routed back via the host. */
+    public static final int REQUEST_PICK_PCAP = 2010;
+    /** A hard cap on an imported capture, so a picked file can never fill the environment's storage. */
+    private static final long MAX_IMPORT_BYTES = 2L * 1024 * 1024 * 1024;   // 2 GiB
+    private static final int IMPORT_BUFFER = 64 * 1024;
     /** A safety bound for a single run: longer than the longest allowed capture, so it never kills a
      *  legitimate run (Stop destroys early), but a process that never exits cannot wedge the worker. */
     private static final long LAUNCH_TIMEOUT_MS = (TerminowCapture.DURATION_MAX + 120L) * 1000L;
@@ -398,6 +408,12 @@ public final class TerminowCaptureSheet {
         EditText file = field(R.string.terminow_cap_file, R.string.terminow_cap_file_hint, prefill, InputType.TYPE_CLASS_TEXT, form);
         EditText displayFilter = field(R.string.terminow_cap_display_filter, R.string.terminow_cap_display_filter_hint, mDisplayFilter, InputType.TYPE_CLASS_TEXT, form);
         mFileField = file; mDisplayFilterField = displayFilter;
+
+        // Import a .pcap from the device with the system file picker (local environments only — the
+        // bytes stream into the environment over the shell's stdin, which the SSH exec channel used by
+        // remote hosts does not provide). The picked content:// is never loaded whole into memory.
+        if (!mRemote && !mBusy)
+            form.addView(textButton(mActivity.getString(R.string.terminow_cap_pick_file), false, this::openPcapPicker), matchWrap());
 
         LinearLayout actions = new LinearLayout(mActivity);
         actions.setOrientation(LinearLayout.HORIZONTAL);
@@ -842,6 +858,94 @@ public final class TerminowCaptureSheet {
     private String targetLabel() {
         if (mRemote && mHost != null) return mHost.getTitle() + " · " + mUser;
         return mAlias + " · " + mUser;
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Importing a .pcap from the device (SAF). The picked content:// is streamed into the environment
+    // over the shell's stdin (cat > file) with bounded memory, so no rootfs path mapping is needed and
+    // nothing is loaded whole into app memory.
+
+    private void openPcapPicker() {
+        if (mBusy) { toast(R.string.terminow_cap_running_other); return; }
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");   // many providers report .pcap as octet-stream; filter by extension after
+        try {
+            mActivity.startActivityForResult(intent, REQUEST_PICK_PCAP);
+        } catch (RuntimeException e) {
+            toast(R.string.terminow_cap_pick_failed);
+        }
+    }
+
+    /** Routed from the host activity. Returns true when this request code was ours. */
+    public boolean onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
+        if (requestCode != REQUEST_PICK_PCAP) return false;
+        if (resultCode == android.app.Activity.RESULT_OK && data != null && data.getData() != null && mDialog != null)
+            importPcap(data.getData());
+        return true;
+    }
+
+    /** Stream a picked capture into the environment, then analyse it. Bounded in memory and in size. */
+    private void importPcap(@NonNull Uri uri) {
+        if (mBusy) { toast(R.string.terminow_cap_running_other); return; }
+        String stamp = new java.text.SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new java.util.Date());
+        String dest = captureDir() + "/import-" + stamp + ".pcap";
+        if (!TerminowCapture.isValidCapturePath(dest)) { toast(R.string.terminow_cap_bad_file); return; }
+        mCaptureRun = false;
+        mBusy = true;
+        clearLog();
+        setStatus(mActivity.getString(R.string.terminow_cap_importing));
+        render();
+        String alias = mAlias, user = mUser;
+        mExecutor.execute(() -> {
+            String message;
+            boolean ok = false;
+            Process p = null;
+            try {
+                // $1 = destination; the file's bytes arrive on stdin. mkdir first so the dir always exists.
+                p = mRunner.start(alias, user, "d=\"$1\"; mkdir -p \"$(dirname \"$d\")\" 2>/dev/null; cat > \"$d\"\n", dest);
+                final Process proc = p;
+                // Drain stdout+stderr concurrently so writing stdin can never dead-lock on a full pipe.
+                Thread outT = new Thread(() -> TerminowCapture.drainInto(proc.getInputStream(), null));
+                Thread errT = new Thread(() -> TerminowCapture.drainInto(proc.getErrorStream(), this::appendLine));
+                outT.setDaemon(true); errT.setDaemon(true); outT.start(); errT.start();
+                long total = 0;
+                try (InputStream in = mActivity.getContentResolver().openInputStream(uri);
+                     OutputStream out = p.getOutputStream()) {
+                    if (in == null) throw new IOException("cannot open the selected file");
+                    byte[] buf = new byte[IMPORT_BUFFER];
+                    int n;
+                    while ((n = in.read(buf)) >= 0) {
+                        total += n;
+                        if (total > MAX_IMPORT_BYTES) throw new IOException("file exceeds the " + (MAX_IMPORT_BYTES / (1024 * 1024)) + " MB import limit");
+                        out.write(buf, 0, n);
+                    }
+                    out.flush();
+                }   // closing stdin signals EOF to cat
+                outT.join(2000);
+                errT.join(2000);
+                int code = p.waitFor();
+                ok = code == 0 && total > 0;
+                message = ok ? mActivity.getString(R.string.terminow_cap_import_done, dest)
+                             : mActivity.getString(R.string.terminow_cap_import_failed);
+            } catch (IOException | RuntimeException e) {
+                appendLine("import error: " + e.getMessage());
+                message = mActivity.getString(R.string.terminow_cap_import_failed);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                message = mActivity.getString(R.string.terminow_cap_import_failed);
+            } finally {
+                if (p != null) p.destroy();
+            }
+            final String done = message;
+            final boolean imported = ok;
+            mHandler.post(() -> {
+                mBusy = false;
+                if (imported) { mAnalyzeFile = dest; mCaptureMode = false; }
+                setStatus(done);
+                render();
+            });
+        });
     }
 
     /** The captures directory for the current user inside the environment. */
