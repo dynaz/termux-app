@@ -20,12 +20,12 @@ import android.view.WindowManager;
 import android.widget.EditText;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
+import androidx.core.view.ViewCompat;
 
 import com.termux.R;
 import com.termux.app.TermuxActivity;
@@ -66,8 +66,8 @@ public final class TerminowSecuritySheet {
 
     @Nullable private Dialog mDialog;
     @Nullable private LinearLayout mContent;
-    /** The scrolling list area; a horizontal fling over it switches category, a vertical drag scrolls it. */
-    @Nullable private ScrollView mScroll;
+    /** The scrolling list area; a horizontal fling over it switches category, a vertical drag scrolls it (and, at the top, moves the sheet). */
+    @Nullable private androidx.core.widget.NestedScrollView mScroll;
     /** The category strip and its chip row, so a category change restyles chips and scrolls the selected one into view. */
     @Nullable private HorizontalScrollView mChipStrip;
     @Nullable private LinearLayout mChipRow;
@@ -115,25 +115,23 @@ public final class TerminowSecuritySheet {
 
     private void open() {
         if (mDialog != null && mDialog.isShowing()) mDialog.dismiss();
-        Dialog dialog = new Dialog(mActivity, R.style.TerminowPanelDialog);
+        // A real modal bottom sheet: BottomSheetBehavior gives the peek / half-expanded / expanded
+        // states, native settling and fling, drag-down-to-dismiss and nested scrolling, under the
+        // existing MaterialComponents BottomSheetDialog theme (which works atop the app's base theme).
+        com.google.android.material.bottomsheet.BottomSheetDialog dialog =
+            new com.google.android.material.bottomsheet.BottomSheetDialog(mActivity, R.style.TerminowBottomSheet);
         mDialog = dialog;
-
-        LinearLayout root = new LinearLayout(mActivity);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setGravity(Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        root.setBackgroundColor(color(R.color.terminow_panel_scrim));
-        root.setOnClickListener(v -> dialog.dismiss());
 
         LinearLayout sheet = new LinearLayout(mActivity);
         sheet.setOrientation(LinearLayout.VERTICAL);
-        sheet.setClickable(true);
         GradientDrawable background = new GradientDrawable();
         background.setColor(color(R.color.terminow_panel));
         float radius = dp(24);
         background.setCornerRadii(new float[]{radius, radius, radius, radius, 0, 0, 0, 0});
         sheet.setBackground(background);
-        sheet.setPadding(dp(16), dp(8), dp(16), dp(16));
+        sheet.setPadding(dp(16), dp(8), dp(16), 0);
 
+        // A visible grip; the whole sheet is draggable through the behavior, so no manual drag handler.
         View handle = new View(mActivity);
         GradientDrawable handleShape = new GradientDrawable();
         handleShape.setColor(color(R.color.terminow_text_secondary));
@@ -144,6 +142,8 @@ public final class TerminowSecuritySheet {
         handleParams.bottomMargin = dp(10);
         sheet.addView(handle, handleParams);
 
+        // Fixed header (title + ⓘ + close) stays while the list scrolls; Back and close remain as
+        // non-gesture ways to dismiss, beside the drag.
         LinearLayout titleRow = new LinearLayout(mActivity);
         titleRow.setOrientation(LinearLayout.HORIZONTAL);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -152,14 +152,23 @@ public final class TerminowSecuritySheet {
         titleRow.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         TextView info = text("ⓘ", 20, R.color.terminow_accent);
         info.setPadding(dp(10), dp(4), dp(10), dp(4));
+        info.setMinWidth(dp(44));
+        info.setMinHeight(dp(44));
+        info.setGravity(Gravity.CENTER);
         info.setContentDescription(mActivity.getString(R.string.terminow_sec_info_title));
         info.setOnClickListener(v -> showInfo());
         titleRow.addView(info);
+        TextView close = text("✕", 16, R.color.terminow_text);
+        close.setGravity(Gravity.CENTER);
+        close.setMinWidth(dp(44));
+        close.setMinHeight(dp(44));
+        android.util.TypedValue ripple = new android.util.TypedValue();
+        mActivity.getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true);
+        if (ripple.resourceId != 0) close.setBackgroundResource(ripple.resourceId);
+        close.setContentDescription(mActivity.getString(android.R.string.cancel));
+        close.setOnClickListener(v -> dialog.dismiss());
+        titleRow.addView(close);
         sheet.addView(titleRow, matchWrap());
-        // Drag the handle or the title down to dismiss (collapse → dismiss), with a downward fling; the
-        // list and its buttons are untouched because only these two views carry the drag handler.
-        attachDragToDismiss(dialog, sheet, handle);
-        attachDragToDismiss(dialog, sheet, titleRow);
 
         TextView subtitle = text(mActivity.getString(R.string.terminow_sec_subtitle), 13, R.color.terminow_text_secondary);
         subtitle.setPadding(0, dp(2), 0, dp(8));
@@ -167,40 +176,52 @@ public final class TerminowSecuritySheet {
 
         sheet.addView(categoryChips(), matchWrap());
 
-        ScrollView scroll = new ScrollView(mActivity);
+        // The scrolling list fills the rest of the sheet. A NestedScrollView cooperates with the
+        // behavior: the list scrolls, and only a downward drag while it is at the top moves the sheet.
+        androidx.core.widget.NestedScrollView scroll = new androidx.core.widget.NestedScrollView(mActivity);
         scroll.setVerticalScrollBarEnabled(false);
         LinearLayout content = new LinearLayout(mActivity);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(0, dp(8), 0, 0);
+        content.setPadding(0, dp(8), 0, dp(12));
         scroll.addView(content);
         mContent = content;
         mScroll = scroll;
         attachCategorySwipe(scroll);
-        sheet.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        sheet.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        root.addView(sheet, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        root.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
-            int cap = mActivity.getResources().getConfiguration().screenWidthDp >= 720 ? dp(900) : dp(640);
-            int width = Math.min(r - l, cap);
-            int maxHeight = Math.round((b - t) * 0.90f);
-            ViewGroup.LayoutParams params = sheet.getLayoutParams();
-            ViewGroup.LayoutParams scrollParams = scroll.getLayoutParams();
-            int scrollMax = maxHeight - dp(120);
-            boolean tooTall = content.getHeight() > scrollMax;
-            int scrollHeight = tooTall ? scrollMax : ViewGroup.LayoutParams.WRAP_CONTENT;
-            if (params.width != width || scrollParams.height != scrollHeight) {
-                params.width = width;
-                scrollParams.height = scrollHeight;
-                sheet.post(() -> { sheet.setLayoutParams(params); scroll.setLayoutParams(scrollParams); });
-            }
+        // Keep the last card clear of the navigation bar / keyboard.
+        ViewCompat.setOnApplyWindowInsetsListener(scroll, (v, insets) -> {
+            int navBottom = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars()).bottom;
+            int imeBottom = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime()).bottom;
+            content.setPadding(content.getPaddingLeft(), content.getPaddingTop(), content.getPaddingRight(),
+                dp(12) + Math.max(navBottom, imeBottom));
+            return insets;
         });
 
-        dialog.setContentView(root);
-        Window window = dialog.getWindow();
-        if (window != null) {
-            window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
-            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        dialog.setContentView(sheet);
+        View container = dialog.findViewById(com.google.android.material.R.id.design_bottom_sheet);
+        if (container != null) {
+            container.getLayoutParams().height = ViewGroup.LayoutParams.MATCH_PARENT;
+            if (sheet.getLayoutParams() != null) sheet.getLayoutParams().height = ViewGroup.LayoutParams.MATCH_PARENT;
+            int screenHeight = mActivity.getResources().getDisplayMetrics().heightPixels;
+            com.google.android.material.bottomsheet.BottomSheetBehavior<View> behavior =
+                com.google.android.material.bottomsheet.BottomSheetBehavior.from(container);
+            behavior.setFitToContents(false);
+            behavior.setHalfExpandedRatio(0.6f);                           // partially expanded ~60%
+            behavior.setExpandedOffset(Math.round(screenHeight * 0.05f));  // expanded ~95%
+            behavior.setPeekHeight(Math.round(screenHeight * 0.3f), false);// collapsed target
+            behavior.setHideable(true);                                    // drag down again dismisses
+            behavior.setSkipCollapsed(false);
+            behavior.setDraggable(true);
+            // Cap the width on tablets/large screens; Material centres the sheet when a max width is set.
+            behavior.setMaxWidth(mActivity.getResources().getConfiguration().screenWidthDp >= 720 ? dp(900) : dp(640));
+            behavior.setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_HALF_EXPANDED);
         }
+
+        Window window = dialog.getWindow();
+        if (window != null)
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
+                | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         dialog.setOnDismissListener(d -> {
             TerminowToolInstaller.removeListener(mOnJobs);
             if (mDialog == dialog) { mDialog = null; mContent = null; mScroll = null; mChipStrip = null; mChipRow = null; }
@@ -319,7 +340,7 @@ public final class TerminowSecuritySheet {
      * listener returns {@code false} and so consumes nothing: vertical scrolling and every button in
      * the list keep working, and dragging the chip strip (which has no such listener) only scrolls chips.
      */
-    private void attachCategorySwipe(@NonNull ScrollView scroll) {
+    private void attachCategorySwipe(@NonNull androidx.core.widget.NestedScrollView scroll) {
         android.view.ViewConfiguration vc = android.view.ViewConfiguration.get(mActivity);
         int slop = vc.getScaledTouchSlop();
         int minVel = vc.getScaledMinimumFlingVelocity();
@@ -336,55 +357,6 @@ public final class TerminowSecuritySheet {
             });
         detector.setIsLongpressEnabled(false);
         scroll.setOnTouchListener((v, e) -> { detector.onTouchEvent(e); return false; });
-    }
-
-    /**
-     * Let a header view (the handle, or the title row away from the ⓘ button) drag the whole sheet
-     * down and dismiss it on a deliberate downward drag or fling, snapping back otherwise. Only
-     * downward movement moves the sheet; upward is ignored so it settles at rest. The translation
-     * animates through the system animator, which honours the device's animation-duration setting.
-     * Only these two views carry the handler, so the list, its scrolling and its buttons are untouched.
-     */
-    private void attachDragToDismiss(@NonNull Dialog dialog, @NonNull View sheet, @NonNull View handle) {
-        int slop = android.view.ViewConfiguration.get(mActivity).getScaledTouchSlop();
-        final float[] startY = {0f};
-        final boolean[] dragging = {false};
-        final android.view.VelocityTracker[] tracker = {null};
-        handle.setOnTouchListener((v, e) -> {
-            switch (e.getActionMasked()) {
-                case android.view.MotionEvent.ACTION_DOWN:
-                    startY[0] = e.getRawY();
-                    dragging[0] = false;
-                    tracker[0] = android.view.VelocityTracker.obtain();
-                    tracker[0].addMovement(e);
-                    return true;
-                case android.view.MotionEvent.ACTION_MOVE: {
-                    float dy = e.getRawY() - startY[0];
-                    if (!dragging[0] && dy > slop) dragging[0] = true;
-                    if (dragging[0]) sheet.setTranslationY(Math.max(0, dy));
-                    if (tracker[0] != null) tracker[0].addMovement(e);
-                    return true;
-                }
-                case android.view.MotionEvent.ACTION_UP:
-                case android.view.MotionEvent.ACTION_CANCEL: {
-                    float dy = e.getRawY() - startY[0];
-                    float vy = 0f;
-                    if (tracker[0] != null) {
-                        tracker[0].addMovement(e);
-                        tracker[0].computeCurrentVelocity(1000);
-                        vy = tracker[0].getYVelocity();
-                        tracker[0].recycle();
-                        tracker[0] = null;
-                    }
-                    boolean dismiss = e.getActionMasked() == android.view.MotionEvent.ACTION_UP
-                        && (dy > sheet.getHeight() * 0.25f || vy > 1800f);
-                    if (dismiss) sheet.animate().translationY(sheet.getHeight()).setDuration(180).withEndAction(dialog::dismiss).start();
-                    else sheet.animate().translationY(0).setDuration(150).start();
-                    return true;
-                }
-            }
-            return false;
-        });
     }
 
     private void detect() {
