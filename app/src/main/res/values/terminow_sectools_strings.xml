@@ -33,6 +33,53 @@
     <string name="terminow_sec_stage_verifying">verifying</string>
     <string name="terminow_sec_stage_checking">checking</string>
 
+    <!-- Security category in the Tools Library, capability banner, badges, states -->
+    <string name="terminow_install_cat_security">Security</string>
+    <string name="terminow_sec_details">Details</string>
+    <string name="terminow_sec_unknown">unknown</string>
+    <string name="terminow_sec_caps">%1$s · %2$s · %3$s</string>
+    <string name="terminow_sec_apt_yes">apt</string>
+    <string name="terminow_sec_apt_no">no apt</string>
+    <string name="terminow_sec_badge_cli">CLI</string>
+    <string name="terminow_sec_badge_gui">GUI</string>
+    <string name="terminow_sec_badge_arm64">ARM64</string>
+    <string name="terminow_sec_badge_priv">Requires privileges</string>
+    <string name="terminow_sec_badge_limited">Limited support</string>
+    <string name="terminow_sec_open">Open</string>
+    <string name="terminow_sec_menu">⋯</string>
+    <string name="terminow_sec_unsupported">Unsupported</string>
+    <string name="terminow_sec_update">Update</string>
+    <string name="terminow_sec_uninstall">Uninstall</string>
+    <string name="terminow_sec_confirm_uninstall">Remove %1$s? Only the apt package(s) TermiNow installed are removed; shared dependencies and pre-existing tools are kept.</string>
+    <string name="terminow_sec_doc">View documentation</string>
+    <string name="terminow_sec_authorized">Use only on systems you own or are authorized to test.</string>
+
+    <!-- Command composer (Open) -->
+    <string name="terminow_sec_composer_target">Target (host or IP)</string>
+    <string name="terminow_sec_composer_ports">Ports (optional, e.g. 22,80,443)</string>
+    <string name="terminow_sec_composer_pcap">Capture file path (.pcap / .pcapng) in this environment</string>
+    <string name="terminow_sec_composer_run">Open in terminal</string>
+    <string name="terminow_sec_composer_bad">Enter a valid target and ports — no spaces or shell characters.</string>
+    <string name="terminow_sec_composer_bad_pcap">Enter a valid absolute file path (no shell characters).</string>
+    <string name="terminow_sec_nmap_tcp">TCP connect scan</string>
+    <string name="terminow_sec_tshark_read">Read a capture file</string>
+    <string name="terminow_sec_pcap_note">TShark reads the file; live capture is separate (Packet capture).</string>
+
+    <!-- Reasons for Limited / Unsupported, shown on the card and in details -->
+    <string name="terminow_sec_reason_no_apt">This distro has no apt package manager, so TermiNow cannot install this tool here.</string>
+    <string name="terminow_sec_reason_arch">No package for this CPU architecture (%1$s).</string>
+    <string name="terminow_sec_reason_gui">Needs a graphical display, which this terminal environment does not provide.</string>
+    <string name="terminow_sec_reason_wireless">Wi-Fi monitor mode depends on the kernel, hardware, drivers and privileges, which are not available here.</string>
+    <string name="terminow_sec_reason_raw">Needs raw sockets / elevated capabilities that are not available inside PRoot.</string>
+
+    <!-- Honest capability limitations, shown in the details sheet -->
+    <string name="terminow_sec_lim_nmap">Nmap TCP connect scans (-sT) may work where raw-packet modes (-sS and similar) do not.</string>
+    <string name="terminow_sec_lim_capture">Packet-file analysis and live packet capture have different requirements. Live capture depends on interface access and real capabilities; reading a .pcap file does not.</string>
+    <string name="terminow_sec_lim_wireless">Wi-Fi monitor mode depends on the kernel, hardware, drivers and privileges.</string>
+    <string name="terminow_sec_lim_proot">PRoot root does not grant Android kernel privileges: uid 0 here is a PRoot fake-root, not real system privilege.</string>
+    <string name="terminow_sec_lim_kali">Installing Kali or its tools does not by itself enable raw sockets, live capture or Wi-Fi monitor mode.</string>
+    <string name="terminow_sec_lim_remote">Running security tools on a remote host over SSH is not available in this build; install and run them in a local Linux environment.</string>
+
     <!-- Packet capture -->
     <string name="terminow_cap_title">Packet capture</string>
     <string name="terminow_cap_premium_what">capture and analyse packets</string>

@@ -33,6 +33,53 @@
     <string name="terminow_sec_stage_verifying">กำลังตรวจสอบ</string>
     <string name="terminow_sec_stage_checking">กำลังตรวจ</string>
 
+    <!-- หมวด Security ใน Tools Library, แถบความสามารถ, ป้ายกำกับ, สถานะ -->
+    <string name="terminow_install_cat_security">ความปลอดภัย</string>
+    <string name="terminow_sec_details">รายละเอียด</string>
+    <string name="terminow_sec_unknown">ไม่ทราบ</string>
+    <string name="terminow_sec_caps">%1$s · %2$s · %3$s</string>
+    <string name="terminow_sec_apt_yes">apt</string>
+    <string name="terminow_sec_apt_no">ไม่มี apt</string>
+    <string name="terminow_sec_badge_cli">CLI</string>
+    <string name="terminow_sec_badge_gui">GUI</string>
+    <string name="terminow_sec_badge_arm64">ARM64</string>
+    <string name="terminow_sec_badge_priv">ต้องใช้สิทธิ์พิเศษ</string>
+    <string name="terminow_sec_badge_limited">รองรับจำกัด</string>
+    <string name="terminow_sec_open">เปิด</string>
+    <string name="terminow_sec_menu">⋯</string>
+    <string name="terminow_sec_unsupported">ไม่รองรับ</string>
+    <string name="terminow_sec_update">อัปเดต</string>
+    <string name="terminow_sec_uninstall">ถอนการติดตั้ง</string>
+    <string name="terminow_sec_confirm_uninstall">ลบ %1$s หรือไม่? จะลบเฉพาะแพ็กเกจ apt ที่ TermiNow ติดตั้งเท่านั้น ส่วน dependency ที่ใช้ร่วมและเครื่องมือเดิมจะคงไว้</string>
+    <string name="terminow_sec_doc">ดูเอกสาร</string>
+    <string name="terminow_sec_authorized">ใช้กับระบบที่คุณเป็นเจ้าของหรือได้รับอนุญาตให้ทดสอบเท่านั้น</string>
+
+    <!-- ตัวประกอบคำสั่ง (Open) -->
+    <string name="terminow_sec_composer_target">เป้าหมาย (โฮสต์หรือ IP)</string>
+    <string name="terminow_sec_composer_ports">พอร์ต (ไม่บังคับ เช่น 22,80,443)</string>
+    <string name="terminow_sec_composer_pcap">พาธไฟล์แคปเจอร์ (.pcap / .pcapng) ใน environment นี้</string>
+    <string name="terminow_sec_composer_run">เปิดในเทอร์มินัล</string>
+    <string name="terminow_sec_composer_bad">กรอกเป้าหมายและพอร์ตที่ถูกต้อง — ห้ามมีช่องว่างหรืออักขระพิเศษของเชลล์</string>
+    <string name="terminow_sec_composer_bad_pcap">กรอกพาธไฟล์แบบสัมบูรณ์ที่ถูกต้อง (ห้ามมีอักขระพิเศษของเชลล์)</string>
+    <string name="terminow_sec_nmap_tcp">สแกนแบบ TCP connect</string>
+    <string name="terminow_sec_tshark_read">อ่านไฟล์แคปเจอร์</string>
+    <string name="terminow_sec_pcap_note">TShark อ่านไฟล์; การจับสดแยกต่างหาก (Packet capture)</string>
+
+    <!-- เหตุผล Limited / Unsupported -->
+    <string name="terminow_sec_reason_no_apt">distro นี้ไม่มีตัวจัดการแพ็กเกจ apt จึงติดตั้งเครื่องมือนี้ที่นี่ไม่ได้</string>
+    <string name="terminow_sec_reason_arch">ไม่มีแพ็กเกจสำหรับสถาปัตยกรรม CPU นี้ (%1$s)</string>
+    <string name="terminow_sec_reason_gui">ต้องใช้จอแสดงผลแบบกราฟิก ซึ่ง environment เทอร์มินัลนี้ไม่มี</string>
+    <string name="terminow_sec_reason_wireless">โหมด Wi-Fi monitor ขึ้นกับเคอร์เนล ฮาร์ดแวร์ ไดรเวอร์ และสิทธิ์ ซึ่งไม่มีที่นี่</string>
+    <string name="terminow_sec_reason_raw">ต้องใช้ raw socket / สิทธิ์ยกระดับ ซึ่งไม่มีภายใน PRoot</string>
+
+    <!-- ข้อจำกัดความสามารถตามจริง แสดงในแผ่นรายละเอียด -->
+    <string name="terminow_sec_lim_nmap">การสแกนแบบ TCP connect ของ Nmap (-sT) อาจใช้ได้ ในขณะที่โหมด raw-packet (-sS และอื่น ๆ) อาจใช้ไม่ได้</string>
+    <string name="terminow_sec_lim_capture">การวิเคราะห์ไฟล์แพ็กเก็ตและการจับแพ็กเก็ตสดมีข้อกำหนดต่างกัน การจับสดขึ้นกับการเข้าถึงอินเทอร์เฟซและความสามารถจริง ส่วนการอ่านไฟล์ .pcap ไม่ต้อง</string>
+    <string name="terminow_sec_lim_wireless">โหมด Wi-Fi monitor ขึ้นกับเคอร์เนล ฮาร์ดแวร์ ไดรเวอร์ และสิทธิ์</string>
+    <string name="terminow_sec_lim_proot">สิทธิ์ root ใน PRoot ไม่ได้ให้สิทธิ์เคอร์เนลของ Android: uid 0 ที่นี่เป็น fake-root ของ PRoot ไม่ใช่สิทธิ์ระบบจริง</string>
+    <string name="terminow_sec_lim_kali">การติดตั้ง Kali หรือเครื่องมือของมัน ไม่ได้เปิดใช้ raw socket การจับสด หรือโหมด Wi-Fi monitor ด้วยตัวเอง</string>
+    <string name="terminow_sec_lim_remote">การรันเครื่องมือความปลอดภัยบนโฮสต์ระยะไกลผ่าน SSH ไม่รองรับในรุ่นนี้ ให้ติดตั้งและรันใน environment Linux ในเครื่อง</string>
+
     <!-- Packet capture -->
     <string name="terminow_cap_title">จับแพ็กเก็ต</string>
     <string name="terminow_cap_premium_what">จับและวิเคราะห์แพ็กเก็ต</string>

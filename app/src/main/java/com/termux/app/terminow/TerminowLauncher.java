@@ -527,8 +527,8 @@ public class TerminowLauncher {
 
     /** Open the Security tools screen for a distro environment, installing one apt tool at a time. */
     void showSecurityTools(@NonNull Environment environment) {
-        if (mSecuritySheet == null) mSecuritySheet = new TerminowSecuritySheet(mActivity, mTargets.getPrefixDir());
-        mSecuritySheet.show(environment.key, getUser(environment));
+        if (mSecuritySheet == null) mSecuritySheet = new TerminowSecuritySheet(mActivity, mTargets.getPrefixDir(), this);
+        mSecuritySheet.show(environment, getUser(environment));
     }
 
     /** Open the Packet capture screen for a distro environment (bounded tcpdump capture + tshark analysis). */

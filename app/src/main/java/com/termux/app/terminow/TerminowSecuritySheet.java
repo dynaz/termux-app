@@ -2,16 +2,22 @@ package com.termux.app.terminow;
 
 import android.app.AlertDialog;
 import android.app.Dialog;
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.InputType;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
+import android.widget.EditText;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -25,16 +31,24 @@ import com.termux.R;
 import com.termux.app.TermuxActivity;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * The Security tools screen: a catalogue of individual Kali/Debian security tools the user can
- * install into a Linux environment, one at a time, through the shared background installer
- * ({@link TerminowToolInstaller#installPackage}). It shows what is already present (detected from
- * the environment, not saved UI state), installs only the chosen tool's apt package (never a
- * metapackage), surfaces each install's log and a Cancel, and gates installs behind Premium.
+ * The Security category of the Tools Library: a catalogue of individual Kali/Debian security tools
+ * the user can install into a Linux environment, one at a time, through the shared background
+ * installer ({@link TerminowToolInstaller#installPackage}). It shows what is already present
+ * (detected from the environment, never from saved UI state), the environment's real capabilities
+ * (distro, CPU, apt, PRoot root), installs only the chosen tool's apt package (never a metapackage),
+ * surfaces each install's log, Update/Uninstall for tools TermiNow installed, an "Open" that launches
+ * the tool in the environment's terminal (with a command composer for Nmap and TShark, never an
+ * automatic scan), a details sheet with the honest capability limitations and the official docs link,
+ * and gates installs behind Premium.
  *
  * <p>Leaving this sheet never stops an install — the shared floating progress card keeps showing
  * running jobs. An information button explains that these tools are for authorised testing only.</p>
@@ -44,7 +58,7 @@ public final class TerminowSecuritySheet {
     private static final TerminowSecurityTools.Category[] CATEGORIES = TerminowSecurityTools.Category.values();
 
     private final TermuxActivity mActivity;
-    private final File mPrefixDir;
+    @Nullable private final TerminowLauncher mLauncher;
     private final TerminowToolInstaller.Runner mRunner;
     private final Handler mHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService mExecutor = Executors.newSingleThreadExecutor();
@@ -52,17 +66,25 @@ public final class TerminowSecuritySheet {
 
     @Nullable private Dialog mDialog;
     @Nullable private LinearLayout mContent;
+    @Nullable private TerminowLauncher.Environment mEnv;
     private String mAlias = "";
     private String mUser = "root";
     /** Binary name → version, from the last detection; null while it is being checked. */
     @Nullable private Map<String, String> mInstalled;
+    /** The environment's real capabilities (distro/CPU/apt/root); null while being checked. */
+    @Nullable private TerminowSecurityTools.Capabilities mCaps;
     private boolean mDetecting;
     /** -1 = All; otherwise an ordinal into {@link #CATEGORIES}. */
     private int mCategory = -1;
 
     public TerminowSecuritySheet(@NonNull TermuxActivity activity, @NonNull File prefixDir) {
+        this(activity, prefixDir, null);
+    }
+
+    public TerminowSecuritySheet(@NonNull TermuxActivity activity, @NonNull File prefixDir,
+                                 @Nullable TerminowLauncher launcher) {
         mActivity = activity;
-        mPrefixDir = prefixDir;
+        mLauncher = launcher;
         TerminowClaudeSetup setup = new TerminowClaudeSetup(activity, new TerminowMcpTargets(prefixDir,
             new File(com.termux.shared.termux.TermuxConstants.TERMUX_HOME_DIR_PATH)));
         mRunner = (alias, user, script, args) -> setup.start(TerminowToolInstaller.command(prefixDir, alias, user, script, args));
@@ -70,7 +92,16 @@ public final class TerminowSecuritySheet {
 
     /** Open for an environment as a user (root unless the environment names another). */
     public void show(@NonNull String alias, @NonNull String user) {
+        mEnv = null;
         mAlias = alias;
+        mUser = user.isEmpty() ? "root" : user;
+        open();
+    }
+
+    /** Open for a local Linux environment; keeping the environment lets "Open" launch a terminal in it. */
+    public void show(@NonNull TerminowLauncher.Environment environment, @NonNull String user) {
+        mEnv = environment;
+        mAlias = environment.key;
         mUser = user.isEmpty() ? "root" : user;
         open();
     }
@@ -202,10 +233,16 @@ public final class TerminowSecuritySheet {
         render();
         String alias = mAlias, user = mUser;
         mExecutor.execute(() -> {
+            // Real capabilities (distro, CPU, apt, uid) from the shared detect script, then the
+            // per-tool version check. A local Linux environment always runs under PRoot.
+            TerminowToolInstaller.Detection detection = TerminowToolInstaller.detect(mRunner, alias, user);
+            TerminowSecurityTools.Capabilities caps = detection != null && detection.ran
+                ? TerminowSecurityTools.capabilitiesOf(detection, true) : null;
             Map<String, String> found = TerminowSecurityTools.detect(mRunner, alias, user);
             mHandler.post(() -> {
                 mDetecting = false;
                 if (!alias.equals(mAlias)) return;
+                mCaps = caps;
                 mInstalled = found;
                 render();
             });
@@ -216,19 +253,39 @@ public final class TerminowSecuritySheet {
         LinearLayout content = mContent;
         if (content == null) return;
         content.removeAllViews();
+        content.addView(capabilityBanner(), matchWrap());
         if (mDetecting && mInstalled == null) {
             content.addView(text(mActivity.getString(R.string.terminow_sec_checking), 14, R.color.terminow_text_secondary), matchWrap());
         }
         int shown = 0;
         for (TerminowSecurityTools.Tool tool : TerminowSecurityTools.catalog()) {
             if (mCategory >= 0 && tool.category.ordinal() != mCategory) continue;
+            recordIfTermiNowInstalled(tool);
             content.addView(toolCard(tool), matchWrap());
             shown++;
         }
         if (shown == 0) content.addView(text(mActivity.getString(R.string.terminow_sec_none), 14, R.color.terminow_text_secondary), matchWrap());
     }
 
+    /** A one-line banner with the detected environment: distro, CPU and whether apt is present. */
+    private View capabilityBanner() {
+        String value;
+        if (mCaps == null) {
+            value = mActivity.getString(R.string.terminow_sec_checking);
+        } else {
+            String os = mCaps.os.isEmpty() ? mActivity.getString(R.string.terminow_sec_unknown) : mCaps.os;
+            String arch = mCaps.arch.isEmpty() ? mActivity.getString(R.string.terminow_sec_unknown) : mCaps.arch;
+            String apt = mActivity.getString(mCaps.hasApt ? R.string.terminow_sec_apt_yes : R.string.terminow_sec_apt_no);
+            value = mActivity.getString(R.string.terminow_sec_caps, os, arch, apt);
+        }
+        TextView banner = text(value, 12, R.color.terminow_text_secondary);
+        banner.setPadding(dp(2), 0, dp(2), dp(8));
+        return banner;
+    }
+
     private View toolCard(@NonNull TerminowSecurityTools.Tool tool) {
+        TerminowSecurityTools.Status status = mCaps == null ? null : TerminowSecurityTools.support(tool, mCaps);
+
         LinearLayout card = new LinearLayout(mActivity);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(14), dp(12), dp(14), dp(12));
@@ -246,58 +303,117 @@ public final class TerminowSecuritySheet {
         TextView name = text(tool.label, 16, R.color.terminow_text);
         name.setTypeface(Typeface.DEFAULT_BOLD);
         top.addView(name, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        if (tool.gui) {
-            TextView gui = text(mActivity.getString(R.string.terminow_sec_gui_badge), 11, R.color.terminow_mcp_warn);
-            top.addView(gui);
-        }
+        TextView details = text("ⓘ", 18, R.color.terminow_accent);
+        details.setPadding(dp(10), dp(2), dp(4), dp(2));
+        details.setContentDescription(mActivity.getString(R.string.terminow_sec_details));
+        details.setOnClickListener(v -> showDetails(tool, status));
+        top.addView(details);
         card.addView(top, matchWrap());
 
+        card.addView(badgeRow(tool, status), matchWrap());
+
         TextView desc = text(tool.description, 13, R.color.terminow_text_secondary);
-        desc.setPadding(0, dp(2), 0, dp(8));
+        desc.setPadding(0, dp(4), 0, dp(8));
         card.addView(desc, matchWrap());
 
-        card.addView(actionRow(tool), matchWrap());
+        card.addView(actionRow(tool, status), matchWrap());
         return card;
     }
 
-    private View actionRow(@NonNull TerminowSecurityTools.Tool tool) {
+    /** CLI/GUI, ARM64, Requires-privileges and Limited-support badges, as relevant. */
+    private View badgeRow(@NonNull TerminowSecurityTools.Tool tool, @Nullable TerminowSecurityTools.Status status) {
+        LinearLayout row = new LinearLayout(mActivity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(0, dp(2), 0, 0);
+        row.addView(badge(mActivity.getString(tool.gui ? R.string.terminow_sec_badge_gui : R.string.terminow_sec_badge_cli),
+            R.color.terminow_panel_button, R.color.terminow_text_secondary));
+        if (mCaps != null && mCaps.arm64())
+            row.addView(badge(mActivity.getString(R.string.terminow_sec_badge_arm64), R.color.terminow_panel_button, R.color.terminow_text_secondary));
+        if (tool.privileged)
+            row.addView(badge(mActivity.getString(R.string.terminow_sec_badge_priv), R.color.terminow_panel_button, R.color.terminow_mcp_warn));
+        if (status != null && status.support == TerminowSecurityTools.Support.LIMITED)
+            row.addView(badge(mActivity.getString(R.string.terminow_sec_badge_limited), R.color.terminow_panel_button, R.color.terminow_mcp_warn));
+        return row;
+    }
+
+    private TextView badge(@NonNull String label, int bgColor, int textColor) {
+        TextView badge = text(label, 11, textColor);
+        badge.setTypeface(Typeface.DEFAULT_BOLD);
+        badge.setPadding(dp(8), dp(3), dp(8), dp(3));
+        GradientDrawable shape = new GradientDrawable();
+        shape.setCornerRadius(dp(8));
+        shape.setColor(color(bgColor));
+        badge.setBackground(shape);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMarginEnd(dp(6));
+        badge.setLayoutParams(lp);
+        return badge;
+    }
+
+    private View actionRow(@NonNull TerminowSecurityTools.Tool tool, @Nullable TerminowSecurityTools.Status status) {
         LinearLayout row = new LinearLayout(mActivity);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
 
         String version = mInstalled == null ? null : mInstalled.get(tool.binName);
-        TerminowToolInstaller.Job job = TerminowToolInstaller.packageJobOf(mAlias, mUser, tool.id);
-        boolean running = job != null && (job.getState() == TerminowToolInstaller.State.RUNNING || job.getState() == TerminowToolInstaller.State.QUEUED);
+        TerminowToolInstaller.Job install = TerminowToolInstaller.packageJobOf(mAlias, mUser, tool.id);
+        TerminowToolInstaller.Job update = TerminowToolInstaller.packageActionJobOf(mAlias, mUser, tool.id, TerminowToolInstaller.PkgAction.UPDATE);
+        TerminowToolInstaller.Job remove = TerminowToolInstaller.packageActionJobOf(mAlias, mUser, tool.id, TerminowToolInstaller.PkgAction.REMOVE);
+        TerminowToolInstaller.Job active = running(install) ? install : running(update) ? update : running(remove) ? remove : null;
 
-        TextView status = text("", 13, R.color.terminow_text_secondary);
-        status.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        row.addView(status);
+        TextView status0 = text("", 13, R.color.terminow_text_secondary);
+        status0.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        row.addView(status0);
 
-        if (running) {
-            status.setText(mActivity.getString(job.getState() == TerminowToolInstaller.State.QUEUED
-                ? R.string.terminow_sec_queued : R.string.terminow_sec_installing, stageLabel(job)));
+        if (active != null) {
+            status0.setText(mActivity.getString(active.getState() == TerminowToolInstaller.State.QUEUED
+                ? R.string.terminow_sec_queued : R.string.terminow_sec_installing, stageLabel(active)));
             row.addView(textButton(mActivity.getString(R.string.terminow_sec_logs), false, () -> showLog(tool)));
-            row.addView(textButton(mActivity.getString(android.R.string.cancel), false, () -> { job.cancel(); render(); }));
+            row.addView(textButton(mActivity.getString(android.R.string.cancel), false, () -> { active.cancel(); render(); }));
+            return row;
+        }
+        // Unsupported for installation: no Install, an actionable reason, details still reachable.
+        if (status != null && status.support == TerminowSecurityTools.Support.UNSUPPORTED) {
+            status0.setTextColor(color(R.color.terminow_host_ssh));
+            status0.setText(mActivity.getString(R.string.terminow_sec_unsupported) + " · " + reasonText(status.reason));
             return row;
         }
         if (version != null) {
-            status.setTextColor(color(R.color.terminow_quick_ready));
-            status.setText(mActivity.getString(R.string.terminow_sec_installed, version));
-            if (job != null && !job.getLog().trim().isEmpty())
-                row.addView(textButton(mActivity.getString(R.string.terminow_sec_logs), false, () -> showLog(tool)));
+            status0.setTextColor(color(R.color.terminow_quick_ready));
+            status0.setText(mActivity.getString(R.string.terminow_sec_installed, version));
+            if (canOpen(tool))
+                row.addView(textButton(mActivity.getString(R.string.terminow_sec_open), true, () -> openTool(tool)));
+            row.addView(textButton(mActivity.getString(R.string.terminow_sec_menu), false, () -> showActionMenu(tool)));
             return row;
         }
-        if (job != null && job.getState() == TerminowToolInstaller.State.FAILED) {
-            status.setTextColor(color(R.color.terminow_host_ssh));
-            status.setText(mActivity.getString(R.string.terminow_sec_failed));
+        if ((install != null && install.getState() == TerminowToolInstaller.State.FAILED)
+            || (update != null && update.getState() == TerminowToolInstaller.State.FAILED)
+            || (remove != null && remove.getState() == TerminowToolInstaller.State.FAILED)) {
+            status0.setTextColor(color(R.color.terminow_host_ssh));
+            status0.setText(mActivity.getString(R.string.terminow_sec_failed));
             row.addView(textButton(mActivity.getString(R.string.terminow_sec_logs), false, () -> showLog(tool)));
             row.addView(textButton(mActivity.getString(R.string.terminow_sec_retry), true, () -> install(tool)));
             return row;
+        }
+        if (status != null && status.support == TerminowSecurityTools.Support.LIMITED) {
+            status0.setText(reasonText(status.reason));
         }
         boolean locked = !TerminowAccountUi.isPremium(new TerminowStore(mActivity));
         row.addView(textButton(mActivity.getString(locked ? R.string.terminow_sec_install_premium : R.string.terminow_sec_install), true, () -> install(tool)));
         return row;
     }
+
+    private static boolean running(@Nullable TerminowToolInstaller.Job job) {
+        return job != null && (job.getState() == TerminowToolInstaller.State.RUNNING || job.getState() == TerminowToolInstaller.State.QUEUED);
+    }
+
+    /** "Open" is offered for installed CLI tools in a local environment (not the GUI-only Wireshark). */
+    private boolean canOpen(@NonNull TerminowSecurityTools.Tool tool) {
+        return mEnv != null && mLauncher != null && !tool.gui && tool.composer != TerminowSecurityTools.Composer.NONE;
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Install / update / uninstall
 
     private void install(@NonNull TerminowSecurityTools.Tool tool) {
         if (!TerminowSecurityTools.isValid(tool)) {
@@ -316,8 +432,157 @@ public final class TerminowSecuritySheet {
         });
     }
 
+    /** The overflow menu on an installed tool: Update (always), Uninstall (only if TermiNow installed it). */
+    private void showActionMenu(@NonNull TerminowSecurityTools.Tool tool) {
+        List<String> items = new ArrayList<>();
+        List<Runnable> actions = new ArrayList<>();
+        items.add(mActivity.getString(R.string.terminow_sec_update));
+        actions.add(() -> updateTool(tool));
+        items.add(mActivity.getString(R.string.terminow_sec_logs));
+        actions.add(() -> showLog(tool));
+        if (isTracked(tool.id)) {
+            items.add(mActivity.getString(R.string.terminow_sec_uninstall));
+            actions.add(() -> confirmUninstall(tool));
+        }
+        final Runnable[] arr = actions.toArray(new Runnable[0]);
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(tool.label)
+            .setItems(items.toArray(new CharSequence[0]), (d, which) -> arr[which].run())
+            .show();
+    }
+
+    private void updateTool(@NonNull TerminowSecurityTools.Tool tool) {
+        TerminowPremiumGate.require(mActivity, new TerminowStore(mActivity), TerminowPremiumGate.Feature.SECURITY_TOOLS, 0, () -> {
+            TerminowToolInstaller.Job job = TerminowToolInstaller.packageAction(
+                mRunner, mAlias, mUser, tool.id, tool.label, tool.binName, tool.aptPackages, TerminowToolInstaller.PkgAction.UPDATE);
+            if (job == null) {
+                TerminowToolInstaller.Job busy = TerminowToolInstaller.runningIn(mAlias);
+                mActivity.showToast(mActivity.getString(R.string.terminow_sec_waiting,
+                    busy != null ? TerminowToolInstaller.jobLabel(busy) : ""), false);
+            }
+            render();
+        });
+    }
+
+    private void confirmUninstall(@NonNull TerminowSecurityTools.Tool tool) {
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(tool.label)
+            .setMessage(mActivity.getString(R.string.terminow_sec_confirm_uninstall, tool.label))
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(R.string.terminow_sec_uninstall, (d, w) -> {
+                TerminowToolInstaller.Job job = TerminowToolInstaller.packageAction(
+                    mRunner, mAlias, mUser, tool.id, tool.label, tool.binName, tool.aptPackages, TerminowToolInstaller.PkgAction.REMOVE);
+                if (job == null) {
+                    TerminowToolInstaller.Job busy = TerminowToolInstaller.runningIn(mAlias);
+                    mActivity.showToast(mActivity.getString(R.string.terminow_sec_waiting,
+                        busy != null ? TerminowToolInstaller.jobLabel(busy) : ""), false);
+                } else {
+                    untrack(tool.id);
+                }
+                render();
+            })
+            .show();
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Open — launch the tool in the environment's terminal, never an automatic scan
+
+    private void openTool(@NonNull TerminowSecurityTools.Tool tool) {
+        switch (tool.composer) {
+            case NMAP_TCP: nmapComposer(tool); break;
+            case TSHARK_PCAP: tsharkComposer(tool); break;
+            case HELP: launch(tool, java.util.Collections.singletonList("--help")); break;
+            default: break;
+        }
+    }
+
+    private void nmapComposer(@NonNull TerminowSecurityTools.Tool tool) {
+        LinearLayout box = composerBox();
+        EditText target = field(mActivity.getString(R.string.terminow_sec_composer_target), InputType.TYPE_TEXT_VARIATION_URI);
+        EditText ports = field(mActivity.getString(R.string.terminow_sec_composer_ports), InputType.TYPE_CLASS_TEXT);
+        box.addView(target, matchWrap());
+        box.addView(ports, matchWrap());
+        box.addView(authorizedNote(), matchWrap());
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(tool.label + " — " + mActivity.getString(R.string.terminow_sec_nmap_tcp))
+            .setView(box)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(R.string.terminow_sec_composer_run, (d, w) -> {
+                List<String> args = TerminowSecurityTools.nmapTcpArgs(
+                    target.getText().toString().trim(), ports.getText().toString().trim());
+                if (args == null) { mActivity.showToast(mActivity.getString(R.string.terminow_sec_composer_bad), true); return; }
+                launch(tool, args);
+            })
+            .show();
+    }
+
+    private void tsharkComposer(@NonNull TerminowSecurityTools.Tool tool) {
+        LinearLayout box = composerBox();
+        EditText file = field(mActivity.getString(R.string.terminow_sec_composer_pcap), InputType.TYPE_TEXT_VARIATION_URI);
+        box.addView(file, matchWrap());
+        box.addView(note(mActivity.getString(R.string.terminow_sec_pcap_note)), matchWrap());
+        box.addView(authorizedNote(), matchWrap());
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(tool.label + " — " + mActivity.getString(R.string.terminow_sec_tshark_read))
+            .setView(box)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(R.string.terminow_sec_composer_run, (d, w) -> {
+                List<String> args = TerminowSecurityTools.tsharkReadArgs(file.getText().toString().trim());
+                if (args == null) { mActivity.showToast(mActivity.getString(R.string.terminow_sec_composer_bad_pcap), true); return; }
+                launch(tool, args);
+            })
+            .show();
+    }
+
+    /** Build a safely-quoted command and open a terminal in the environment running it. */
+    private void launch(@NonNull TerminowSecurityTools.Tool tool, @NonNull List<String> args) {
+        if (mEnv == null || mLauncher == null) return;
+        String command = TerminowSecurityTools.launchCommand(tool.binName, args);
+        if (mDialog != null) mDialog.dismiss();
+        mLauncher.openTerminalRunning(mEnv, command);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Details, info, logs
+
+    private void showDetails(@NonNull TerminowSecurityTools.Tool tool, @Nullable TerminowSecurityTools.Status status) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(tool.description).append("\n\n");
+        if (status != null && status.reason != TerminowSecurityTools.Reason.NONE)
+            sb.append("• ").append(reasonText(status.reason)).append("\n");
+        if (tool.composer == TerminowSecurityTools.Composer.NMAP_TCP)
+            sb.append("• ").append(mActivity.getString(R.string.terminow_sec_lim_nmap)).append("\n");
+        if (tool.category == TerminowSecurityTools.Category.CAPTURE)
+            sb.append("• ").append(mActivity.getString(R.string.terminow_sec_lim_capture)).append("\n");
+        if (tool.category == TerminowSecurityTools.Category.WIRELESS)
+            sb.append("• ").append(mActivity.getString(R.string.terminow_sec_lim_wireless)).append("\n");
+        if (tool.privileged)
+            sb.append("• ").append(mActivity.getString(R.string.terminow_sec_lim_proot)).append("\n");
+        sb.append("• ").append(mActivity.getString(R.string.terminow_sec_lim_kali)).append("\n");
+        sb.append("• ").append(mActivity.getString(R.string.terminow_sec_lim_remote));
+
+        new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
+            .setTitle(tool.label)
+            .setMessage(sb.toString())
+            .setNeutralButton(R.string.terminow_sec_doc, (d, w) -> openUrl(tool.documentationUrl))
+            .setPositiveButton(android.R.string.ok, null)
+            .show();
+    }
+
+    private void openUrl(@NonNull String url) {
+        try {
+            mActivity.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+        } catch (RuntimeException e) {
+            mActivity.showToast(url, false);
+        }
+    }
+
     private void showLog(@NonNull TerminowSecurityTools.Tool tool) {
         TerminowToolInstaller.Job job = TerminowToolInstaller.packageJobOf(mAlias, mUser, tool.id);
+        if (job == null || job.getLog().trim().isEmpty())
+            job = TerminowToolInstaller.packageActionJobOf(mAlias, mUser, tool.id, TerminowToolInstaller.PkgAction.UPDATE);
+        if (job == null || job.getLog().trim().isEmpty())
+            job = TerminowToolInstaller.packageActionJobOf(mAlias, mUser, tool.id, TerminowToolInstaller.PkgAction.REMOVE);
         String log = job == null ? "" : job.getLog().trim();
         new AlertDialog.Builder(mActivity, R.style.TerminowAlertDialog)
             .setTitle(tool.label)
@@ -332,6 +597,58 @@ public final class TerminowSecuritySheet {
             .setMessage(R.string.terminow_sec_info_message)
             .setPositiveButton(android.R.string.ok, null)
             .show();
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // TermiNow-installed tracking (so Uninstall never touches a pre-existing user tool)
+
+    private SharedPreferences trackPrefs() {
+        return mActivity.getSharedPreferences("terminow_sec_tools", Context.MODE_PRIVATE);
+    }
+
+    private String trackKey() {
+        return mAlias + "|" + mUser;
+    }
+
+    private boolean isTracked(@NonNull String pkgId) {
+        Set<String> set = trackPrefs().getStringSet(trackKey(), null);
+        return set != null && set.contains(pkgId);
+    }
+
+    private void track(@NonNull String pkgId) {
+        Set<String> set = new HashSet<>(trackPrefs().getStringSet(trackKey(), new HashSet<>()));
+        if (set.add(pkgId)) trackPrefs().edit().putStringSet(trackKey(), set).apply();
+    }
+
+    private void untrack(@NonNull String pkgId) {
+        Set<String> cur = trackPrefs().getStringSet(trackKey(), null);
+        if (cur == null || !cur.contains(pkgId)) return;
+        Set<String> set = new HashSet<>(cur);
+        set.remove(pkgId);
+        trackPrefs().edit().putStringSet(trackKey(), set).apply();
+    }
+
+    /** When an install TermiNow ran succeeded (and the tool was not already there), remember it. */
+    private void recordIfTermiNowInstalled(@NonNull TerminowSecurityTools.Tool tool) {
+        TerminowToolInstaller.Job job = TerminowToolInstaller.packageJobOf(mAlias, mUser, tool.id);
+        if (job != null && job.getState() == TerminowToolInstaller.State.SUCCEEDED && !job.wasAlreadyInstalled())
+            track(tool.id);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Reason / label mapping
+
+    @NonNull
+    private String reasonText(@NonNull TerminowSecurityTools.Reason reason) {
+        switch (reason) {
+            case NO_APT: return mActivity.getString(R.string.terminow_sec_reason_no_apt);
+            case UNSUPPORTED_ARCH: return mActivity.getString(R.string.terminow_sec_reason_arch,
+                mCaps == null ? "" : mCaps.arch);
+            case GUI_DISPLAY: return mActivity.getString(R.string.terminow_sec_reason_gui);
+            case WIRELESS_MONITOR: return mActivity.getString(R.string.terminow_sec_reason_wireless);
+            case RAW_SOCKET: return mActivity.getString(R.string.terminow_sec_reason_raw);
+            default: return "";
+        }
     }
 
     @NonNull
@@ -358,6 +675,34 @@ public final class TerminowSecuritySheet {
 
     // ---------------------------------------------------------------------------------------
     // View helpers
+
+    private LinearLayout composerBox() {
+        LinearLayout box = new LinearLayout(mActivity);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(8), dp(20), dp(4));
+        return box;
+    }
+
+    private EditText field(@NonNull String hint, int inputType) {
+        EditText edit = new EditText(mActivity);
+        edit.setHint(hint);
+        edit.setSingleLine(true);
+        edit.setInputType(InputType.TYPE_CLASS_TEXT | inputType);
+        edit.setTextColor(color(R.color.terminow_text));
+        edit.setHintTextColor(color(R.color.terminow_text_secondary));
+        edit.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        return edit;
+    }
+
+    private TextView authorizedNote() {
+        return note(mActivity.getString(R.string.terminow_sec_authorized));
+    }
+
+    private TextView note(@NonNull String value) {
+        TextView view = text(value, 12, R.color.terminow_text_secondary);
+        view.setPadding(0, dp(6), 0, 0);
+        return view;
+    }
 
     private TextView textButton(@NonNull String label, boolean primary, @NonNull Runnable onClick) {
         TextView button = text(label, 13, primary ? R.color.terminow_bar_home : R.color.terminow_text);

@@ -531,6 +531,16 @@ final class TerminowToolSheet {
             int cat = cats[i];
             chips.addView(chip(mActivity.getString(labels[i]), mCategory == cat, () -> { mCategory = cat; render(); }));
         }
+        // Security is its own category: for a local Linux distro its chip opens the Security tools
+        // catalogue (network diagnostics and authorised testing) for this environment. It is not an
+        // apt/AI tool list, so it leads to the dedicated screen rather than filtering these chips.
+        if (!target.ssh && target.environment != null && !target.environment.isLocal()) {
+            final TerminowLauncher.Environment env = target.environment;
+            chips.addView(chip(mActivity.getString(R.string.terminow_install_cat_security), false, () -> {
+                dismiss();
+                mLauncher.showSecurityTools(env);
+            }));
+        }
         chipScroll.addView(chips);
         LinearLayout.LayoutParams chipParams = matchWrap();
         chipParams.topMargin = dp(10);

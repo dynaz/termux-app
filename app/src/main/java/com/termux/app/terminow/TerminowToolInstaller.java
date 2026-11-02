@@ -97,6 +97,13 @@ public final class TerminowToolInstaller {
     /** The stages of an install, in their order. */
     public enum Stage { CHECKING, DEPENDENCIES, INSTALLING, VERIFYING }
 
+    /** What a {@link Tool#PACKAGE} job does: install, update to the newest, or remove the chosen package(s). */
+    public enum PkgAction {
+        INSTALL("package"), UPDATE("package-update"), REMOVE("package-remove");
+        final String token;
+        PkgAction(@NonNull String token) { this.token = token; }
+    }
+
     /**
      * RUNNING while it installs, then SUCCEEDED or FAILED. UNKNOWN is a running install that ended
      * without reporting a result and with no real exit code — a dropped SSH channel is the usual
@@ -141,6 +148,9 @@ public final class TerminowToolInstaller {
         @Nullable public final String planLabel;
         /** For a {@link Tool#PACKAGE} job: the catalog id this install is keyed on. Null otherwise. */
         @Nullable public final String pkgId;
+        /** For a {@link Tool#PACKAGE} job: whether it installs, updates or removes. INSTALL otherwise. */
+        @NonNull public final PkgAction pkgAction;
+        private volatile boolean mRemoved;
         private volatile Stage mStage = Stage.CHECKING;
         private volatile State mState = State.RUNNING;
         @Nullable private volatile Failure mFailure;
@@ -165,6 +175,7 @@ public final class TerminowToolInstaller {
             this.planScript = null;
             this.planLabel = null;
             this.pkgId = null;
+            this.pkgAction = PkgAction.INSTALL;
         }
 
         Job(@NonNull String alias, @NonNull String user, @NonNull String planLabel, @NonNull String planScript) {
@@ -175,10 +186,12 @@ public final class TerminowToolInstaller {
             this.planScript = planScript;
             this.planLabel = planLabel;
             this.pkgId = null;
+            this.pkgAction = PkgAction.INSTALL;
         }
 
-        /** A package install: {@code args} is the binary name followed by the apt packages to install. */
-        Job(@NonNull String alias, @NonNull String user, @NonNull String pkgId, @NonNull String label, @NonNull List<String> args) {
+        /** A package install/update/remove: {@code args} is the binary name followed by the apt packages. */
+        Job(@NonNull String alias, @NonNull String user, @NonNull String pkgId, @NonNull String label,
+            @NonNull List<String> args, @NonNull PkgAction action) {
             this.alias = alias;
             this.user = user;
             this.tool = Tool.PACKAGE;
@@ -186,6 +199,7 @@ public final class TerminowToolInstaller {
             this.planScript = null;
             this.planLabel = label;
             this.pkgId = pkgId;
+            this.pkgAction = action;
         }
 
         @NonNull public Stage getStage() { return mStage; }
@@ -232,18 +246,20 @@ public final class TerminowToolInstaller {
                 mVersion = line.substring("TERMINOW_VERSION=".length()).trim();
             } else if (line.equals("TERMINOW_ALREADY=1")) {
                 mAlreadyInstalled = true;
+            } else if (line.equals("TERMINOW_REMOVED=1")) {
+                mRemoved = true;
             } else {
                 append(line);
             }
         }
 
-        /** The end of the process: only an exit code of 0 with a verified version is a success. */
+        /** The end of the process: only an exit code of 0 with a verified version (or a clean remove) is a success. */
         void onExit(int exitCode) {
             mExitCode = exitCode;
             if (mCancelled) {
                 mFailure = Failure.CANCELLED;
                 mState = State.FAILED;
-            } else if (exitCode == 0 && !mVersion.isEmpty()) {
+            } else if (exitCode == 0 && (!mVersion.isEmpty() || mRemoved)) {
                 mState = State.SUCCEEDED;
             } else if (mFailure == null && exitCode < 0) {
                 // Ended with no result and no real exit code (e.g. the SSH channel dropped): the
@@ -454,6 +470,23 @@ public final class TerminowToolInstaller {
         "  echo \"TermiNow: apt-get install$m\"\n" +
         "  $as env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 update || fail apt-update 20\n" +
         "  $as env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends $m || fail apt-install 21\n" +
+        "}\n" +
+        // Update or remove the exact packages the user chose (never a metapackage, never --autoremove,
+        // never purge): remove leaves shared dependencies and pre-existing tools in place, and the
+        // lock is waited for (DPkg::Lock::Timeout), never broken. $1 is the verb, the rest the packages.
+        "apt_do() {\n" +
+        "  command -v apt-get >/dev/null 2>&1 && command -v dpkg-query >/dev/null 2>&1 || fail no-apt 14\n" +
+        "  verb=$1; shift\n" +
+        "  if [ \"$uid\" = 0 ]; then as=\n" +
+        "  elif command -v sudo >/dev/null 2>&1; then sudo -n true >/dev/null 2>&1 || fail sudo-password 13; as='sudo -n'\n" +
+        "  else fail no-sudo 13; fi\n" +
+        "  case $verb in\n" +
+        "    update) echo \"TermiNow: apt-get install --only-upgrade$*\";\n" +
+        "      $as env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 update || fail apt-update 20;\n" +
+        "      $as env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y --only-upgrade $* || fail apt-install 21;;\n" +
+        "    remove) echo \"TermiNow: apt-get remove$*\";\n" +
+        "      $as env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 remove -y $* || fail apt-install 21;;\n" +
+        "  esac\n" +
         "}\n" +
         // ~/.local/bin on the PATH of bash for good, once, and never twice on the PATH
         "persist_path() {\n" +
@@ -727,6 +760,25 @@ public final class TerminowToolInstaller {
         "    v=$(\"$bin\" --version 2>/dev/null | head -n1); [ -n \"$v\" ] || v=\"$bin\"\n" +
         "    echo \"TERMINOW_VERSION=$(first \"$v\")\"\n" +
         "    ;;\n" +
+        // Update the chosen package(s) to the newest apt has; verify the binary is still present.
+        "  package-update)\n" +
+        "    bin=\"$2\"; shift 2\n" +
+        "    [ -n \"$bin\" ] || fail not-found 40\n" +
+        "    stage installing\n" +
+        "    apt_do update \"$@\"\n" +
+        "    stage verifying\n" +
+        "    command -v \"$bin\" >/dev/null 2>&1 || fail verify 30\n" +
+        "    v=$(\"$bin\" --version 2>/dev/null | head -n1); [ -n \"$v\" ] || v=\"$bin\"\n" +
+        "    echo \"TERMINOW_VERSION=$(first \"$v\")\"\n" +
+        "    ;;\n" +
+        // Remove only the chosen package(s). No purge, no --autoremove: shared dependencies stay.
+        "  package-remove)\n" +
+        "    bin=\"$2\"; shift 2\n" +
+        "    stage installing\n" +
+        "    apt_do remove \"$@\"\n" +
+        "    stage verifying\n" +
+        "    echo TERMINOW_REMOVED=1\n" +
+        "    ;;\n" +
         "  *) echo \"TermiNow: unknown tool $tool\"; exit 2;;\n" +
         "esac\n";
 
@@ -907,11 +959,57 @@ public final class TerminowToolInstaller {
             List<String> args = new ArrayList<>();
             args.add(binName);
             args.addAll(aptPackages);
-            job = new Job(alias, user, pkgId, label, args);
+            job = new Job(alias, user, pkgId, label, args, PkgAction.INSTALL);
             job.mRunner = runner;
             job.mSeq = ++sSeq;
             job.mState = busy ? State.QUEUED : State.RUNNING;
             sJobs.put(keyForPackage(alias, user, pkgId), job);
+        }
+        if (job.mState == State.RUNNING) startThread(job);
+        changed();
+        return job;
+    }
+
+    /** Key for an update/remove job, kept apart from the install record so its log survives. */
+    @NonNull
+    private static String keyForPackageAction(@NonNull String alias, @NonNull String user, @NonNull String pkgId,
+                                              @NonNull PkgAction action) {
+        return keyForPackage(alias, user, pkgId) + "#" + action.token;
+    }
+
+    /** The last update/remove job for this package, running or ended, or {@code null}. */
+    @Nullable
+    public static synchronized Job packageActionJobOf(@NonNull String alias, @NonNull String user,
+                                                      @NonNull String pkgId, @NonNull PkgAction action) {
+        return sJobs.get(keyForPackageAction(alias, user, pkgId, action));
+    }
+
+    /**
+     * Update or remove a catalog package in the environment, through the same queue as installs (one apt
+     * job per environment). Update runs {@code apt-get install --only-upgrade}; remove runs
+     * {@code apt-get remove} on exactly {@code aptPackages} — never a metapackage, never purge or
+     * {@code --autoremove}, so shared dependencies and pre-existing tools are left in place. Returns the
+     * existing job if one is already running or queued for this package action.
+     */
+    @Nullable
+    public static Job packageAction(@NonNull Runner runner, @NonNull String alias, @NonNull String user,
+                                    @NonNull String pkgId, @NonNull String label, @NonNull String binName,
+                                    @NonNull List<String> aptPackages, @NonNull PkgAction action) {
+        if (action == PkgAction.INSTALL) return installPackage(runner, alias, user, pkgId, label, binName, aptPackages);
+        Job job;
+        synchronized (TerminowToolInstaller.class) {
+            String key = keyForPackageAction(alias, user, pkgId, action);
+            Job same = sJobs.get(key);
+            if (same != null && (same.mState == State.RUNNING || same.mState == State.QUEUED)) return same;
+            boolean busy = runningIn(alias) != null;
+            List<String> args = new ArrayList<>();
+            args.add(binName);
+            args.addAll(aptPackages);
+            job = new Job(alias, user, pkgId, label, args, action);
+            job.mRunner = runner;
+            job.mSeq = ++sSeq;
+            job.mState = busy ? State.QUEUED : State.RUNNING;
+            sJobs.put(key, job);
         }
         if (job.mState == State.RUNNING) startThread(job);
         changed();
@@ -953,7 +1051,8 @@ public final class TerminowToolInstaller {
                 script = job.planScript;
             } else {
                 script = INSTALL_SCRIPT;
-                args.add(job.tool.id);
+                // A PACKAGE job dispatches on its action (install/update/remove); others on the tool id.
+                args.add(job.tool == Tool.PACKAGE ? job.pkgAction.token : job.tool.id);
                 args.addAll(job.args);
             }
             process = runner.start(job.alias, job.user, script, args.toArray(new String[0]));
