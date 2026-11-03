@@ -35,6 +35,14 @@ function terminow_play_config()
                 'Size' => '30',
                 'Description' => 'The module name of an active gateway, required by AddOrder. No invoice is ever created.',
             ],
+            'storeSyncSecret' => [
+                'FriendlyName' => 'Store sync secret',
+                'Type' => 'password',
+                'Size' => '64',
+                'Description' => 'Shared secret for the TermiNow Store (Devnet sandbox) sync at terminow/store_sync.php. '
+                    . 'Separate from the Google Play sync secret. At least 32 characters. The Store mirror never bills '
+                    . 'or activates a WHMCS service.',
+            ],
             'relaySecret' => [
                 'FriendlyName' => 'MCP relay secret',
                 'Type' => 'password',
