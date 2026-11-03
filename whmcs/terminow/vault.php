@@ -8,6 +8,7 @@
 
 use function TermiNow\Premium\bearer_token;
 use function TermiNow\Premium\fetch_certs;
+use function TermiNow\Premium\verify_google_oauth_token;
 use function TermiNow\Premium\verify_id_token;
 
 require __DIR__ . '/lib.php';
@@ -31,8 +32,18 @@ if ($token === null) vault_respond(401, ['error' => 'Sign in first']);
 
 try {
     $claims = verify_id_token($token, fetch_certs(sys_get_temp_dir() . '/terminow-google-certs.json'), time());
-} catch (\TermiNow\Premium\TokenException $e) {
-    vault_respond(401, ['error' => $e->getMessage()]);
+} catch (\TermiNow\Premium\TokenException $firebaseError) {
+    try {
+        $claims = verify_google_oauth_token(
+            $token,
+            fetch_certs(sys_get_temp_dir() . '/terminow-google-oauth-certs.json', \TermiNow\Premium\GOOGLE_OAUTH_CERTS_URL),
+            time()
+        );
+    } catch (\TermiNow\Premium\TokenException $e) {
+        vault_respond(401, ['error' => $e->getMessage()]);
+    } catch (\Throwable $e) {
+        vault_respond(503, ['error' => 'Try again later']);
+    }
 } catch (\Throwable $e) {
     vault_respond(503, ['error' => 'Try again later']);
 }
