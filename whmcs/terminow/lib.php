@@ -11,6 +11,8 @@ namespace TermiNow\Premium;
 
 const FIREBASE_PROJECT_ID = 'linex-bf945';
 const CERTS_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
+const GOOGLE_OAUTH_CERTS_URL = 'https://www.googleapis.com/oauth2/v1/certs';
+const DESKTOP_OAUTH_CLIENT_ID = '345449539869-p4j99fvs1vpq3nl85p7kntrnevdgj8s0.apps.googleusercontent.com';
 const CLOCK_SKEW = 60;
 
 class TokenException extends \Exception {}
@@ -61,6 +63,37 @@ function verify_id_token(string $token, array $certs, int $now, string $projectI
 }
 
 /**
+ * Verify a Google ID token from the TermiNow desktop client. Firebase rejects that client,
+ * so the desktop app sends this token when it cannot exchange it for a Firebase ID token.
+ */
+function verify_google_oauth_token(string $token, array $certs, int $now, string $clientId = DESKTOP_OAUTH_CLIENT_ID): array
+{
+    $parts = explode('.', $token);
+    if (count($parts) !== 3) throw new TokenException('Malformed token');
+    $header = json_decode(base64url_decode($parts[0]), true);
+    $claims = json_decode(base64url_decode($parts[1]), true);
+    if (!is_array($header) || !is_array($claims)) throw new TokenException('Malformed token');
+    if (($header['alg'] ?? '') !== 'RS256') throw new TokenException('Wrong algorithm');
+    $kid = $header['kid'] ?? '';
+    if (!is_string($kid) || !isset($certs[$kid])) throw new TokenException('Unknown key');
+    $key = openssl_pkey_get_public($certs[$kid]);
+    if ($key === false) throw new TokenException('Bad certificate');
+    if (openssl_verify($parts[0] . '.' . $parts[1], base64url_decode($parts[2]), $key, OPENSSL_ALGO_SHA256) !== 1)
+        throw new TokenException('Bad signature');
+
+    if (($claims['aud'] ?? null) !== $clientId) throw new TokenException('Wrong audience');
+    $iss = $claims['iss'] ?? '';
+    if ($iss !== 'accounts.google.com' && $iss !== 'https://accounts.google.com') throw new TokenException('Wrong issuer');
+    if (!is_int($claims['exp'] ?? null) || $claims['exp'] < $now - CLOCK_SKEW) throw new TokenException('Expired');
+    if (!is_int($claims['iat'] ?? null) || $claims['iat'] > $now + CLOCK_SKEW) throw new TokenException('Issued in the future');
+    $verified = $claims['email_verified'] ?? false;
+    if ($verified !== true && $verified !== 'true') throw new TokenException('Email not verified');
+    $email = $claims['email'] ?? '';
+    if (!is_string($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) throw new TokenException('No email');
+    return $claims;
+}
+
+/**
  * Whether a product of WHMCS is TermiNow Premium: one of the configured product ids, or a
  * product whose name or group name contains "TermiNow".
  */
@@ -95,12 +128,12 @@ function decide(array $products, array $productIds): array
 }
 
 /** The public certificates of Google, cached for as long as Google says. */
-function fetch_certs(string $cacheFile): array
+function fetch_certs(string $cacheFile, string $url = CERTS_URL): array
 {
     $cached = @json_decode((string)@file_get_contents($cacheFile), true);
     if (is_array($cached) && ($cached['expires'] ?? 0) > time() && is_array($cached['certs'] ?? null)) return $cached['certs'];
 
-    $curl = curl_init(CERTS_URL);
+    $curl = curl_init($url);
     $maxAge = 3600;
     curl_setopt_array($curl, [
         CURLOPT_RETURNTRANSFER => true,

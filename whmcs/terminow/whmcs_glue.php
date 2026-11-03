@@ -21,6 +21,17 @@ function terminow_db(): PDO
     return $db;
 }
 
+/**
+ * GetClientsProducts returns one service as an object and several as a list.
+ * Treating the object as a list drops that member's only service.
+ */
+function terminow_service_list($product): array
+{
+    if (!is_array($product) || $product === []) return [];
+    if (isset($product['id']) || isset($product['pid']) || isset($product['name'])) return [$product];
+    return array_values(array_filter($product, 'is_array'));
+}
+
 /** Premium of WHMCS for a verified email, like decide() answers it, without Google Play services. */
 function terminow_whmcs_premium(PDO $db, string $email): array
 {
@@ -29,9 +40,9 @@ function terminow_whmcs_premium(PDO $db, string $email): array
     if (($client['result'] ?? '') !== 'success' || empty($client['client']['id'] ?? $client['userid'] ?? null)) return ['premium' => false];
     $products = localAPI('GetClientsProducts', ['clientid' => (int)($client['client']['id'] ?? $client['userid']), 'limitnum' => 250]);
     if (($products['result'] ?? '') !== 'success') throw new RuntimeException('WHMCS failed');
-    $list = $products['products']['product'] ?? [];
+    $list = terminow_service_list($products['products']['product'] ?? []);
     $playServices = \TermiNow\PlaySync\play_service_ids($db);
-    $list = array_values(array_filter(is_array($list) ? $list : [], fn($p) => !in_array((int)($p['id'] ?? 0), $playServices, true)));
+    $list = array_values(array_filter($list, fn($p) => !in_array((int)($p['id'] ?? 0), $playServices, true)));
     return \TermiNow\Premium\decide($list, TERMINOW_PREMIUM_PRODUCT_IDS) + ['source' => 'accmove'];
 }
 
