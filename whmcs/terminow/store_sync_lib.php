@@ -158,6 +158,38 @@ function store_sync(\PDO $db, callable $api, array $r, array $settings, int $now
     }
 }
 
+/**
+ * Re-apply the last recorded state for an entitlement, for the admin "Retry" button. A held row
+ * (needs_link / needs_client) re-resolves its client; an already-recorded row is a harmless no-op.
+ */
+function retry(\PDO $db, callable $api, string $uid, string $featureKey, array $settings, int $now): array
+{
+    $row = one($db, 'SELECT * FROM mod_terminow_store_sync WHERE uid = ? AND feature_key = ?', [$uid, $featureKey]);
+    if ($row === null) throw new Failure(404, 'NOT_FOUND', 'Nothing was received for this entitlement yet');
+    return store_sync($db, $api, [
+        'action' => 'store_sync',
+        'uid' => $uid,
+        'featureKey' => $featureKey,
+        'version' => (int)$row['version'],
+        'email' => $row['email'],
+        'type' => $row['type'],
+        'whmcsProductId' => $row['whmcs_product_id'] !== null ? (int)$row['whmcs_product_id'] : null,
+        'whmcsAddonId' => $row['whmcs_addon_id'] !== null ? (int)$row['whmcs_addon_id'] : null,
+        'sandbox' => (int)$row['sandbox'] === 1,
+        'active' => (int)$row['active'] === 1,
+        'expiresAt' => $row['expires_at'] !== null ? (int)$row['expires_at'] : null,
+        'storeProductId' => $row['store_product_id'],
+    ], $settings, $now);
+}
+
+/** Rows that need an admin's attention (held or errored), most recent first, for the dashboard. */
+function pending_rows(\PDO $db, int $limit = 500): array
+{
+    $stmt = $db->prepare("SELECT * FROM mod_terminow_store_sync WHERE status != 'recorded' ORDER BY updated_at DESC LIMIT ?");
+    $stmt->execute([$limit]);
+    return $stmt->fetchAll(\PDO::FETCH_ASSOC);
+}
+
 /** The WHMCS client already linked to this TermiNow account, from the shared Play/WHMCS link. */
 function linked_client(\PDO $db, string $uid): ?int
 {

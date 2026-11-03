@@ -11,8 +11,11 @@ New (additive):
 - `terminow/store_sync.php` — HTTP endpoint at `https://cp.accmove.com/terminow/store_sync.php`.
 - `tests/test_store_sync.php` — runs with plain `php` + `pdo_sqlite`.
 
-Edited (one additive field, no behavior change to existing flows):
-- `modules/addons/terminow_play/terminow_play.php` — adds the `storeSyncSecret` addon setting.
+Edited (additive only, no change to the Play-sync or Premium flows):
+- `modules/addons/terminow_play/terminow_play.php` — adds the `storeSyncSecret` addon setting and a
+  **TermiNow Store (Devnet sandbox)** section to the addon admin page that lists the mirror rows,
+  flags held/failed ones, and offers a per-row **Retry sync** (re-resolves the client association
+  after linking; still sandbox-only — no bill, no service).
 
 The `mod_terminow_store_sync` table is created automatically by `migrate()` on first request and on
 addon save; no manual SQL is required and no existing table is altered.
@@ -50,6 +53,8 @@ addon save; no manual SQL is required and no existing table is altered.
   and **no** new client/service/invoice in WHMCS.
 - A correctly-signed `store_sync` for a **linked** uid → `{"status":"recorded","clientId":N,"serviceId":null,"sandbox":true}`.
 - Confirm a signed-in user's `premium.php` answer is **unchanged** (the Store mirror does not affect it).
+- In WHMCS admin → Addons → TermiNow Google Play, the new **TermiNow Store (Devnet sandbox)** section
+  lists mirror rows; held/failed rows show in bold and a **Retry sync** button re-resolves them.
 
 ## Rollback (non-destructive; sync records are preserved)
 Nothing else references the Store files in this phase, so removal is safe and reversible:

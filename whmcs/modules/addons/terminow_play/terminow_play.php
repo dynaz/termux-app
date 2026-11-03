@@ -11,6 +11,7 @@
 if (!defined('WHMCS')) die('This file can not be accessed directly');
 
 require_once dirname(__DIR__, 3) . '/terminow/play_sync_lib.php';
+require_once dirname(__DIR__, 3) . '/terminow/store_sync_lib.php';
 
 use WHMCS\Database\Capsule;
 
@@ -80,12 +81,26 @@ function terminow_play_output($vars)
     $h = fn($text) => htmlspecialchars((string)$text, ENT_QUOTES, 'UTF-8');
     $link = $vars['modulelink'];
 
+    \TermiNow\StoreSync\migrate($db);
+
     if (($_POST['action'] ?? '') === 'retry' && check_token('WHMCS.admin.default', false)) {
         $uid = (string)($_POST['uid'] ?? '');
         try {
             $answer = \TermiNow\PlaySync\retry($db, fn($c, $p) => localAPI($c, $p), $uid, ['paymentMethod' => (string)($vars['paymentMethod'] ?? '')], time());
             echo '<div class="successbox">Synchronized: ' . $h($answer['status']) . '</div>';
         } catch (\TermiNow\PlaySync\Failure $e) {
+            echo '<div class="errorbox">' . $h($e->errorCode . ': ' . $e->getMessage()) . '</div>';
+        }
+    }
+
+    if (($_POST['action'] ?? '') === 'store_retry' && check_token('WHMCS.admin.default', false)) {
+        $uid = (string)($_POST['uid'] ?? '');
+        $featureKey = (string)($_POST['feature_key'] ?? '');
+        try {
+            // allowRealGrants is never passed, so retry stays a Devnet sandbox record: no WHMCS service.
+            $answer = \TermiNow\StoreSync\retry($db, fn($c, $p) => localAPI($c, $p), $uid, $featureKey, [], time());
+            echo '<div class="successbox">Store sync: ' . $h($answer['status']) . '</div>';
+        } catch (\TermiNow\StoreSync\Failure $e) {
             echo '<div class="errorbox">' . $h($e->errorCode . ': ' . $e->getMessage()) . '</div>';
         }
     }
@@ -129,6 +144,46 @@ function terminow_play_output($vars)
             . '</tr>';
     }
     echo '</tbody></table></div>';
+
+    // ---- TermiNow Store (Devnet sandbox) mirror ----
+    $storeRows = $db->query('SELECT * FROM mod_terminow_store_sync ORDER BY updated_at DESC LIMIT 500')->fetchAll(PDO::FETCH_ASSOC);
+    $recorded = count(array_filter($storeRows, fn($r) => $r['status'] === 'recorded'));
+    $held = count(array_filter($storeRows, fn($r) => $r['status'] !== 'recorded'));
+    echo '<h2 style="margin-top:28px">TermiNow Store (Devnet sandbox)</h2>';
+    echo '<p>Sandbox entitlement mirror from the TermiNow Store. These records <b>never</b> bill and <b>never</b> create or '
+        . 'activate a WHMCS service — they associate a verified client and track rights only. '
+        . 'Recorded: <b>' . $recorded . '</b> · Needs attention (held/failed): <b>' . $held . '</b>.</p>';
+    if ($storeRows === []) {
+        echo '<p><i>No Store sync records yet.</i></p>';
+    } else {
+        echo '<div class="tnp-wrap"><table class="datatable tnp-table" width="100%"><thead><tr><th>TermiNow account</th><th>Client</th>'
+            . '<th>Feature</th><th>Store product</th><th>WHMCS product / add-on</th><th>Active</th><th>Expires (UTC)</th>'
+            . '<th>Synced</th><th>Status</th><th></th></tr></thead><tbody>';
+        foreach ($storeRows as $r) {
+            $client = $r['client_id'] ? '<a href="clientssummary.php?userid=' . (int)$r['client_id'] . '">#' . (int)$r['client_id'] . '</a>' : '—';
+            $whmcsRef = trim(($r['whmcs_product_id'] ? 'P' . (int)$r['whmcs_product_id'] : '') . ' '
+                . ($r['whmcs_addon_id'] ? 'A' . (int)$r['whmcs_addon_id'] : '')) ?: '—';
+            $pending = $r['status'] !== 'recorded';
+            echo '<tr>'
+                . '<td class="tnp-uid" title="Firebase uid">' . $h($r['uid']) . ($r['email'] ? '<br><small>' . $h($r['email']) . '</small>' : '') . '</td>'
+                . '<td data-label="Client">' . $client . '</td>'
+                . '<td data-label="Feature">' . $h($r['feature_key']) . '</td>'
+                . '<td data-label="Store product">' . $h($r['store_product_id'] ?? '—') . '</td>'
+                . '<td data-label="WHMCS product / add-on">' . $h($whmcsRef) . '</td>'
+                . '<td data-label="Active">' . ((int)$r['active'] ? 'yes' : 'no') . '</td>'
+                . '<td data-label="Expires (UTC)">' . ($r['expires_at'] ? gmdate('Y-m-d H:i', (int)$r['expires_at']) : '—') . '</td>'
+                . '<td class="tnp-late" data-label="Synced">' . ($r['last_sync_at'] ? gmdate('Y-m-d H:i', (int)$r['last_sync_at']) : '—') . '</td>'
+                . '<td class="tnp-status" data-label="Status">' . ($pending ? '<b>' . $h($r['status']) . '</b>' : $h($r['status']))
+                . ($r['last_error'] ? '<br><small>' . $h($r['last_error']) . '</small>' : '') . '</td>'
+                . '<td class="tnp-act"><form method="post" action="' . $h($link) . '">' . generate_token('form')
+                . '<input type="hidden" name="action" value="store_retry">'
+                . '<input type="hidden" name="uid" value="' . $h($r['uid']) . '">'
+                . '<input type="hidden" name="feature_key" value="' . $h($r['feature_key']) . '">'
+                . '<button type="submit" class="btn btn-default btn-xs">Retry sync</button></form></td>'
+                . '</tr>';
+        }
+        echo '</tbody></table></div>';
+    }
 }
 
 /**

@@ -8,6 +8,8 @@ require __DIR__ . '/../terminow/store_sync_lib.php';
 use TermiNow\StoreSync\Failure;
 use function TermiNow\StoreSync\handle;
 use function TermiNow\StoreSync\migrate;
+use function TermiNow\StoreSync\pending_rows;
+use function TermiNow\StoreSync\retry;
 use function TermiNow\StoreSync\store_service_ids;
 use function TermiNow\StoreSync\verify_signature;
 
@@ -139,6 +141,21 @@ handle($db, $w, state(['uid' => 'carl', 'version' => 2, 'sandbox' => false]), ['
 $row = $db->query("SELECT sandbox, service_id FROM mod_terminow_store_sync WHERE uid='carl'")->fetch(PDO::FETCH_ASSOC);
 check((int)$row['sandbox'] === 0 && $row['service_id'] === null, 'with real grants allowed the flag is honored, still no service in this phase');
 check($w->mutations() === [], 'even an allowed real grant creates no service in this phase');
+
+// --- Admin dashboard: held/failed rows are surfaced and a Retry re-resolves after linking ---------
+$db = db(); $w = new FakeWhmcs();
+$a = handle($db, $w, state(), $settings, $now);   // alice unlinked -> held (needs_client)
+check($a['status'] === 'needs_client', 'retry fixture starts held');
+$pending = pending_rows($db);
+check(count($pending) === 1 && $pending[0]['uid'] === 'alice', 'a held row is listed for admin attention');
+fails(fn() => retry($db, $w, 'nobody', 'terminow-premium', $settings, $now), 'NOT_FOUND', 'retry on an unknown entitlement fails cleanly');
+$a = retry($db, $w, 'alice', 'terminow-premium', $settings, $now);   // still unlinked
+check($a['status'] === 'needs_client', 'retry before linking stays held');
+link_client($db, 'alice', 10, $now);
+$a = retry($db, $w, 'alice', 'terminow-premium', $settings, $now);   // now linked
+check($a['status'] === 'recorded' && $a['clientId'] === 10 && $a['serviceId'] === null, 'retry after linking records and associates, no service');
+check($w->mutations() === [], 'retry never bills or activates a WHMCS service');
+check(pending_rows($db) === [], 'once recorded, nothing remains for admin attention');
 
 // --- The Premium decision excludes Store services (always empty in sandbox) ------------------------
 check(store_service_ids($db) === [], 'no Store services exist to count toward Premium');
