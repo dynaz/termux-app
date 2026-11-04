@@ -157,6 +157,17 @@ check($a['status'] === 'recorded' && $a['clientId'] === 10 && $a['serviceId'] ==
 check($w->mutations() === [], 'retry never bills or activates a WHMCS service');
 check(pending_rows($db) === [], 'once recorded, nothing remains for admin attention');
 
+// --- Purchase-time snapshot: captured once, never rewritten by later catalog edits ----------------
+$db = db(); $w = new FakeWhmcs(); link_client($db, 'gina', 10, $now);
+handle($db, $w, state(['uid' => 'gina', 'priceSnapshot' => '12.00', 'priceCurrency' => 'USD', 'durationDays' => 30, 'catalogVersion' => 5]), $settings, $now);
+$row = $db->query("SELECT * FROM mod_terminow_store_sync WHERE uid='gina'")->fetch(PDO::FETCH_ASSOC);
+check($row['price_snapshot'] === '12.00' && $row['price_currency'] === 'USD' && (int)$row['duration_days'] === 30 && (int)$row['catalog_version'] === 5, 'the purchase-time price/duration/version snapshot is stored');
+// a later lifecycle sync carries a different (edited-catalog) price; the original snapshot must stand
+handle($db, $w, state(['uid' => 'gina', 'version' => 2, 'active' => false, 'priceSnapshot' => '99.00', 'priceCurrency' => 'EUR', 'durationDays' => 365, 'catalogVersion' => 9]), $settings, $now + 100);
+$row = $db->query("SELECT * FROM mod_terminow_store_sync WHERE uid='gina'")->fetch(PDO::FETCH_ASSOC);
+check($row['price_snapshot'] === '12.00' && $row['price_currency'] === 'USD' && (int)$row['duration_days'] === 30 && (int)$row['catalog_version'] === 5, 'a later catalog edit never rewrites the original order snapshot');
+check((int)$row['active'] === 0, 'the lifecycle state still updates around the preserved snapshot');
+
 // --- The Premium decision excludes Store services (always empty in sandbox) ------------------------
 check(store_service_ids($db) === [], 'no Store services exist to count toward Premium');
 

@@ -61,6 +61,28 @@ function migrate(\PDO $db): void
         last_sync_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         PRIMARY KEY (uid, feature_key))');
+    ensure_columns($db);
+}
+
+/**
+ * Add the purchase-time snapshot columns to an existing install, additively. The snapshot of price,
+ * duration and the catalog version is captured once, at the first record of an entitlement, and is
+ * never rewritten by later lifecycle syncs — so editing the catalog does not change existing orders.
+ */
+function ensure_columns(\PDO $db): void
+{
+    $driver = $db->getAttribute(\PDO::ATTR_DRIVER_NAME);
+    try {
+        $have = $driver === 'sqlite'
+            ? array_column($db->query('PRAGMA table_info(mod_terminow_store_sync)')->fetchAll(\PDO::FETCH_ASSOC), 'name')
+            : $db->query('SHOW COLUMNS FROM mod_terminow_store_sync')->fetchAll(\PDO::FETCH_COLUMN);
+    } catch (\Throwable $e) {
+        return;
+    }
+    $want = ['price_snapshot' => 'VARCHAR(32)', 'price_currency' => 'VARCHAR(8)', 'duration_days' => 'INTEGER', 'catalog_version' => 'INTEGER'];
+    foreach ($want as $col => $type)
+        if (!in_array($col, $have, true))
+            try { $db->exec("ALTER TABLE mod_terminow_store_sync ADD COLUMN $col $type NULL"); } catch (\Throwable $e) {}
 }
 
 /** Check the signature of a request from Firebase: HMAC-SHA256 of "<timestamp>.<body>". */
@@ -118,6 +140,13 @@ function store_sync(\PDO $db, callable $api, array $r, array $settings, int $now
     $active = ($r['active'] ?? false) === true;
     $expiresAt = isset($r['expiresAt']) && is_int($r['expiresAt']) ? $r['expiresAt'] : null;
     $storeProductId = is_string($r['storeProductId'] ?? null) ? substr($r['storeProductId'], 0, 100) : null;
+    // Purchase-time snapshot: captured once, never rewritten, so later catalog edits leave orders intact.
+    $snapshot = [
+        'price_snapshot' => isset($r['priceSnapshot']) && (is_string($r['priceSnapshot']) || is_numeric($r['priceSnapshot'])) ? substr((string)$r['priceSnapshot'], 0, 32) : null,
+        'price_currency' => isset($r['priceCurrency']) && is_string($r['priceCurrency']) ? substr($r['priceCurrency'], 0, 8) : null,
+        'duration_days' => isset($r['durationDays']) && is_int($r['durationDays']) ? $r['durationDays'] : null,
+        'catalog_version' => isset($r['catalogVersion']) && is_int($r['catalogVersion']) ? $r['catalogVersion'] : null,
+    ];
 
     $lock = lock($db, $uid . ':' . $featureKey);
     try {
@@ -138,6 +167,8 @@ function store_sync(\PDO $db, callable $api, array $r, array $settings, int $now
             'expires_at' => $expiresAt,
             'updated_at' => $now,
         ];
+        // Only stamp the snapshot when the row is first created; preserve it on every later sync.
+        if ($row === null) $fields += $snapshot;
         $row = save($db, $uid, $featureKey, $row, $fields);
 
         // Associate to a WHMCS client, reusing the verified uid<->client link that the Play addon's
