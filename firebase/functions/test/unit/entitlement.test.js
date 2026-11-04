@@ -143,3 +143,38 @@ test('handler orders events: a later seq applied, then an older seq is a stale n
   assert.equal(res.body.outcome, 'stale');
   assert.equal(db.store.get('entitlements/bob').sources.whmcs.features['terminow-premium'].active, true);
 });
+
+// --- Rollback semantics of WHMCS_GRANTS_PREMIUM (documented, verified behavior) -------------------
+// Disabling the gate is a FORWARD control: it stops future grants. It does NOT retroactively rewrite
+// entitlement docs. An already-granted account keeps whmcs.premium=true until the NEXT applied event
+// recomputes it with the gate off. A duplicate/stale delivery never rewrites. Other sources are never
+// touched by this endpoint. These assertions pin that contract so the rollback docs cannot drift.
+test('gate off does not rewrite an already-granted doc until the next applied event', () => {
+  // 1) Granted while the gate was ON, alongside a Google Play grant.
+  const seeded = { premium: true, sources: { google_play: { premium: true } } };
+  const onEvent = { uid: 'al', clientId: 1, source: 'whmcs', featureKey: 'terminow-premium', active: true, expiresAt: NOW + 1e9, state: 'Active', type: 'premium' };
+  const granted = applyWhmcsEvent({ entitlement: seeded, event: { ...onEvent, seq: 1 }, now: NOW, grantsPremium: true }).entitlement;
+  assert.equal(granted.sources.whmcs.premium, true);
+  assert.equal(granted.premium, true);
+
+  // 2) A stale/duplicate delivery after the gate flips OFF: unchanged (no retroactive revoke).
+  const stale = applyWhmcsEvent({ entitlement: granted, event: { ...onEvent, seq: 1 }, now: NOW + 10, grantsPremium: false });
+  assert.equal(stale.outcome, 'stale');
+  assert.equal(stale.entitlement.sources.whmcs.premium, true, 'gate-off alone does not revoke the existing grant');
+
+  // 3) The NEXT applied event (higher seq) with the gate OFF re-evaluates: whmcs stops granting, but a
+  //    still-active WHMCS service is recorded, and Google Play is preserved and still carries Premium.
+  const next = applyWhmcsEvent({ entitlement: granted, event: { ...onEvent, seq: 2 }, now: NOW + 20, grantsPremium: false }).entitlement;
+  assert.equal(next.sources.whmcs.premium, false, 'gate off: the next applied event does not grant Premium');
+  assert.equal(next.sources.whmcs.features['terminow-premium'].active, true, 'the WHMCS source is still recorded (visible)');
+  assert.equal(next.sources.google_play.premium, true, 'Google Play is preserved');
+  assert.equal(next.premium, true, 'top-level Premium still true via Google Play');
+});
+
+test('gate off: the only source losing its grant drops top-level premium', () => {
+  const granted = applyWhmcsEvent({ entitlement: { premium: false }, event: { uid: 'solo', clientId: 2, source: 'whmcs', featureKey: 'terminow-premium', active: true, expiresAt: NOW + 1e9, state: 'Active', type: 'premium', seq: 1 }, now: NOW, grantsPremium: true }).entitlement;
+  assert.equal(granted.premium, true);
+  const off = applyWhmcsEvent({ entitlement: granted, event: { uid: 'solo', clientId: 2, source: 'whmcs', featureKey: 'terminow-premium', active: true, expiresAt: NOW + 1e9, state: 'Active', type: 'premium', seq: 2 }, now: NOW + 10, grantsPremium: false }).entitlement;
+  assert.equal(off.sources.whmcs.premium, false);
+  assert.equal(off.premium, false, 'no other source -> premium drops on the next applied event');
+});
