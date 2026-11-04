@@ -1,0 +1,7 @@
+# Ephemeral run artifacts — never commit. Secrets, DBs, logs and machine-specific run state live here.
+.work/
+*.sqlite
+*.sqlite-*
+*.log
+*.secret
+run/
