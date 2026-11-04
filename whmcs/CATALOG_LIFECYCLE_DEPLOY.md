@@ -52,7 +52,8 @@ function's URL and set both the addon secret and the function's Secret-Manager s
   and any Store source;
 - **gates real Premium OFF** unless `WHMCS_GRANTS_PREMIUM=1`: by default it records the whmcs source
   visibly but does not flip `premium` (premium.php polling stays the compatibility path). Turning the
-  flag on is the reviewed go-live step.
+  flag on is the reviewed go-live step; turning it back off is forward-only, not an instant revoke —
+  see "Disabling `WHMCS_GRANTS_PREMIUM`" under Rollback.
 
 Deploy the function with `firebase deploy --only functions:whmcsEntitlement` **to a staging project
 first** (see "Staging verification" at the end). Do not enable `WHMCS_GRANTS_PREMIUM` yet.
@@ -103,6 +104,49 @@ snapshot columns, as part of rollback.** They hold the mapping, the delivery his
 order snapshots, and are kept by default so a re-enable resumes without data loss. Once the files are
 removed nothing reads or writes them. Dropping them is a separate, explicit, operator-initiated step,
 never part of a routine rollback. No WHMCS core table or file is modified by this change.
+
+### Disabling `WHMCS_GRANTS_PREMIUM` — VERIFIED behavior (not an instant revoke)
+Setting `WHMCS_GRANTS_PREMIUM` back to unset/`0` is a **forward control**, confirmed by the writer's
+pure logic (`applyWhmcsEvent`) and its regression tests:
+- **It does NOT retroactively rewrite already-written `entitlements/{uid}`.** `sources.whmcs.premium`
+  is recomputed **only on the next *applied* (state-changing, higher-`seq`) delivery** for that
+  account, using the gate value at that moment. A duplicate/stale delivery rewrites nothing, and the
+  gate is not part of the payload hash, so simply flipping it causes **no** re-delivery on its own.
+  An account already granted therefore **keeps** `whmcs.premium=true` until its WHMCS service state
+  next changes (or a forced re-delivery below).
+- **Merged rights:** top-level `premium` stays `true` while any source is `true`. The writer only ever
+  touches `sources.whmcs`; `google_play` and any Store source are preserved untouched — so legitimate
+  Google Play / Store Premium is unaffected by the gate.
+- **premium.php:** independent pull path, **unaffected** — legitimate WHMCS Premium continues to be
+  served by `premium.php` regardless of the gate.
+- **App caches:** `TerminowEntitlement` stamps `checked` on each read and trusts a read doc offline for
+  `OFFLINE_DAYS = 7` days; it reflects a backend doc change within ≤7 days of being online (sooner on
+  refresh). Because the gate alone does not change the doc, the app keeps showing the prior state until
+  the doc actually changes.
+
+**To actively REVOKE existing WHMCS-granted Premium** after disabling the gate you must cause an
+*applied* re-delivery with the gate off — e.g. the service's normal lifecycle changes it, or an
+operator forces a resync that re-emits current state, or the `sources.whmcs` field is cleared. There is
+no one-click "revoke all" today. **The safe rollback is therefore to keep the gate OFF until go-live is
+fully intended** (nothing is granted, so nothing needs revoking). Removing `hooks.php` stops *new*
+deliveries immediately but likewise does not revoke already-written grants.
+
+## Sandbox TNAI price — units (explicit)
+`sandbox_price_tnai` is a Devnet-only amount, never billed. Devnet TNAI is an SPL token with **6
+decimals** (1 TNAI = 1,000,000 base units). The admin enters a **human TNAI amount** (e.g. `5` or
+`5.5`); `catalog_lib` converts it to **integer base units** by exact string arithmetic (never floating
+point), stores that, and the feed serves base units — which is what the Store charges and validates. A
+value with more than 6 decimals, a sign, or non-numeric text is **rejected visibly before saving**
+(never silently dropped, which would hide the product). Legacy rows that stored a decimal are detected
+on the Catalog tab with a one-click convert, or via `tests/staging/migrate-preview.php` (preview, then
+`apply`); integer values are assumed already-base-units and left untouched.
+
+## Local staging harness
+`tests/staging/` contains a reproducible, local end-to-end harness (`./run.sh`) that drives the real
+catalog/outbox/writer code over a Firestore **emulator** with a **mocked** WHMCS runtime. See its
+README for what it does and does **not** prove, the resource caveat (the emulator JVM is heavy), and
+the exact prerequisites for the checks still blocked by the absence of a licensed WHMCS and a real test
+Firebase project.
 
 ## Staging verification (before any production go-live)
 Production WHMCS stays **read-only**: do not generate lifecycle events against it. To verify end to end:

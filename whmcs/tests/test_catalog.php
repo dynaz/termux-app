@@ -15,6 +15,11 @@ use function TermiNow\Catalog\remove;
 use function TermiNow\Catalog\upsert;
 use function TermiNow\Catalog\validate;
 use function TermiNow\Catalog\normalize;
+use function TermiNow\Catalog\tnai_to_base_units;
+use function TermiNow\Catalog\tnai_from_base_units;
+use function TermiNow\Catalog\by_feature;
+use function TermiNow\Catalog\preview_sandbox_migration;
+use function TermiNow\Catalog\apply_sandbox_migration;
 
 $failures = 0;
 function check(bool $ok, string $name): void
@@ -100,7 +105,7 @@ check(isset($map[90]) && $map[90]['feature_key'] === 'terminow-premium', 'by_pro
 // --- catalog_for_store: native pricing from the lookup, visibility, unavailable, i18n, sandbox -----
 $db = db();
 upsert($db, ['feature_key' => 'terminow-premium', 'type' => 'premium', 'whmcs_product_id' => 90, 'store_visible' => true, 'duration_days' => 30,
-    'display_name' => 'TermiNow Premium', 'display_name_i18n' => ['th' => 'เทอร์มิพรีเมียม'], 'sandbox_price_tnai' => '50000000'], $now);
+    'display_name' => 'TermiNow Premium', 'display_name_i18n' => ['th' => 'เทอร์มิพรีเมียม'], 'sandbox_price_tnai' => '50'], $now);
 upsert($db, ['feature_key' => 'addon-network-scan', 'type' => 'addon', 'whmcs_addon_id' => 7, 'parent_feature_key' => 'terminow-premium',
     'store_visible' => true, 'display_name' => 'Network Scan'], $now);
 upsert($db, ['feature_key' => 'hidden-thing', 'type' => 'addon', 'whmcs_addon_id' => 9, 'store_visible' => false, 'display_name' => 'Hidden'], $now);
@@ -113,7 +118,7 @@ $cat = catalog_for_store($db, $lookup);
 check(count($cat['items']) === 2, 'only visible entries are served');
 $prem = $cat['items'][array_search('terminow-premium', array_column($cat['items'], 'featureKey'))];
 check($prem['price']['amount'] === '12.00' && $prem['price']['billingCycle'] === 'monthly' && $prem['available'] === true, 'native WHMCS price and cycle are reused');
-check($prem['sandboxPrice']['amount'] === '50000000' && $prem['sandboxPrice']['currency'] === 'TNAI', 'the sandbox TNAI price is served');
+check($prem['sandboxPrice']['amount'] === '50000000' && $prem['sandboxPrice']['currency'] === 'TNAI', 'the sandbox TNAI price (50 TNAI) is served as 50000000 base units');
 check($prem['durationDays'] === 30, 'the subscription duration in days is served');
 $scan = $cat['items'][array_search('addon-network-scan', array_column($cat['items'], 'featureKey'))];
 check($scan['available'] === false && $scan['unavailableReason'] !== null, 'an entry without WHMCS pricing is marked unavailable, not dropped');
@@ -121,6 +126,44 @@ check($scan['parentFeatureKey'] === 'terminow-premium', 'the add-on carries its 
 $th = catalog_for_store($db, $lookup, 'th-TH');
 $premTh = $th['items'][array_search('terminow-premium', array_column($th['items'], 'featureKey'))];
 check($premTh['displayName'] === 'เทอร์มิพรีเมียม', 'a localized display name is used when present (locale falls back to language)');
+
+// --- Sandbox price: exact human-TNAI -> integer base-unit conversion (6 decimals, no float) --------
+check(tnai_to_base_units('5') === '5000000', '"5" TNAI -> 5000000 base units');
+check(tnai_to_base_units('5.0') === '5000000', '"5.0" converts (is NOT rejected or hidden)');
+check(tnai_to_base_units('5.5') === '5500000', '"5.5" -> 5500000');
+check(tnai_to_base_units('0.000001') === '1', 'one base unit (0.000001 TNAI) -> 1');
+check(tnai_to_base_units('5.123456') === '5123456', 'exactly 6 decimals is allowed');
+check(tnai_to_base_units('5.1234567') === null, '7 decimals is rejected (more precision than the token)');
+check(tnai_to_base_units('-5') === null, 'a negative amount is rejected');
+check(tnai_to_base_units('abc') === null, 'non-numeric is rejected');
+check(tnai_to_base_units('5e6') === null, 'exponent notation is rejected');
+check(tnai_to_base_units('0') === '0', 'zero converts to "0" (the caller rejects it)');
+// Classic float traps that string math must get exactly right:
+check(tnai_to_base_units('0.1') === '100000' && tnai_to_base_units('0.3') === '300000', '0.1 and 0.3 are exact (no float drift)');
+check(tnai_from_base_units('5000000') === '5' && tnai_from_base_units('5500000') === '5.5' && tnai_from_base_units('1') === '0.000001', 'base units render back to a human amount');
+
+// Save-time: a human amount is stored canonically as base units; an over-precise price is rejected visibly.
+$db = db();
+$r = upsert($db, ['feature_key' => 'terminow-premium', 'type' => 'premium', 'whmcs_product_id' => 90, 'store_visible' => true, 'display_name' => 'P', 'sandbox_price_tnai' => '5.0'], $now);
+check($r['sandbox_price_tnai'] === '5000000', 'upsert stores "5.0" as 5000000 base units');
+invalid(fn() => upsert($db, ['feature_key' => 'terminow-vault', 'type' => 'premium', 'whmcs_product_id' => 91, 'store_visible' => true, 'display_name' => 'V', 'sandbox_price_tnai' => '5.1234567'], $now), 'at most 6 decimals', 'an over-precise sandbox price is rejected before saving');
+invalid(fn() => upsert($db, ['feature_key' => 'terminow-zero', 'type' => 'premium', 'whmcs_product_id' => 92, 'store_visible' => true, 'display_name' => 'Z', 'sandbox_price_tnai' => '0'], $now), 'greater than zero', 'a zero sandbox price is rejected');
+
+// --- Migration preview for existing rows (read-only; decimals convert, integers assumed base units)
+$db = db();
+// Simulate legacy rows written by the old code: one human decimal, one already base units, one invalid.
+$db->exec("INSERT INTO mod_terminow_store_catalog (feature_key,type,whmcs_product_id,store_visible,display_name,sandbox_price_tnai,sort_order,created_at,updated_at) VALUES "
+    . "('legacy-decimal','premium',93,1,'D','5.0',0,$now,$now),"
+    . "('legacy-base','premium',94,1,'B','7500000',0,$now,$now),"
+    . "('legacy-bad','premium',95,1,'X','1.2345678',0,$now,$now)");
+$prev = preview_sandbox_migration($db);
+$byf = [];
+foreach ($prev as $p) $byf[$p['feature_key']] = $p;
+check($byf['legacy-decimal']['status'] === 'convert' && $byf['legacy-decimal']['to'] === '5000000', 'preview converts a legacy decimal "5.0" -> 5000000');
+check($byf['legacy-base']['status'] === 'ok' && $byf['legacy-base']['to'] === '7500000', 'preview leaves an integer value as already-base-units');
+check($byf['legacy-bad']['status'] === 'invalid', 'preview flags an unconvertible value for manual re-entry');
+$changed = apply_sandbox_migration($db, $now + 1);
+check($changed === 1 && by_feature($db, 'legacy-decimal')['sandbox_price_tnai'] === '5000000', 'apply converts only the decimal row, leaving the others untouched');
 
 echo $failures === 0 ? "\nAll passed\n" : "\n$failures failed\n";
 exit($failures === 0 ? 0 : 1);

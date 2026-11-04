@@ -21,6 +21,43 @@ namespace TermiNow\Catalog;
 const TYPES = ['premium', 'addon'];
 const SIGNATURE_WINDOW = 300;
 
+// Devnet TNAI is an SPL token with 6 decimals, so 1 TNAI = 1_000_000 base units. The sandbox price is
+// STORED and SERVED as an integer number of base units (what the Store charges and validates), but the
+// admin enters a human-readable TNAI amount. Conversion is exact string arithmetic — never floating
+// point, which cannot represent most decimals exactly.
+const TNAI_DECIMALS = 6;
+
+/**
+ * Convert a human-readable TNAI amount ("5", "5.0", "5.5", "0.000001") to its exact integer base-unit
+ * string, using string math only. Returns null when the input is not a non-negative decimal with at
+ * most TNAI_DECIMALS fractional digits (the caller turns null into a visible validation error). The
+ * result has no leading zeros; "0" is returned for a true zero (the caller decides if zero is allowed).
+ */
+function tnai_to_base_units(string $human): ?string
+{
+    $human = trim($human);
+    if (!preg_match('/^[0-9]+(\.[0-9]+)?$/', $human)) return null;      // no sign, no exponent, no junk
+    $parts = explode('.', $human, 2);
+    $intPart = $parts[0];
+    $fracPart = $parts[1] ?? '';
+    if (strlen($fracPart) > TNAI_DECIMALS) return null;                 // more precision than the token has
+    $fracPart = str_pad($fracPart, TNAI_DECIMALS, '0');                 // pad to exactly 6 base-unit digits
+    $base = ltrim($intPart . $fracPart, '0');
+    return $base === '' ? '0' : $base;
+}
+
+/** Render an integer base-unit string back to a human TNAI amount for the admin edit form. */
+function tnai_from_base_units(string $base): string
+{
+    if (!preg_match('/^[0-9]+$/', $base)) return $base;                 // leave anything unexpected as-is
+    $base = str_pad($base, TNAI_DECIMALS + 1, '0', STR_PAD_LEFT);       // ensure at least one integer digit
+    $intPart = substr($base, 0, -TNAI_DECIMALS);
+    $fracPart = rtrim(substr($base, -TNAI_DECIMALS), '0');
+    $intPart = ltrim($intPart, '0');
+    if ($intPart === '') $intPart = '0';
+    return $fracPart === '' ? $intPart : $intPart . '.' . $fracPart;
+}
+
 /** Authenticated server-to-server access: HMAC-SHA256 of "<timestamp>.<body>", like the other endpoints. */
 function verify_signature(string $secret, string $timestamp, string $signature, string $body, int $now): void
 {
@@ -142,8 +179,15 @@ function validate(array $e, array $others): array
 
     if ($e['duration_days'] !== null && $e['duration_days'] <= 0) $err[] = 'Duration must be a positive number of days, or blank for permanent';
     if ($e['store_visible'] && $e['display_name'] === null) $err[] = 'A Store-visible entry needs a display name';
-    if ($e['sandbox_price_tnai'] !== null && !is_numeric($e['sandbox_price_tnai'])) $err[] = 'Sandbox TNAI price must be a number';
-    if ($e['sandbox_price_tnai'] !== null && (float)$e['sandbox_price_tnai'] < 0) $err[] = 'Sandbox TNAI price cannot be negative';
+    // The sandbox price is a human TNAI amount; it must convert EXACTLY to integer base units (6
+    // decimals) so the Store can charge it. A value like "5.0" is valid (-> 5000000 base units); one
+    // with too many decimals, a sign, or non-numeric text is rejected here, before anything is saved —
+    // never silently dropped, which would hide the product from the Store.
+    if ($e['sandbox_price_tnai'] !== null) {
+        $base = tnai_to_base_units((string)$e['sandbox_price_tnai']);
+        if ($base === null) $err[] = 'Sandbox TNAI price must be a non-negative amount with at most ' . TNAI_DECIMALS . ' decimals (e.g. 5 or 5.5)';
+        elseif ($base === '0') $err[] = 'Sandbox TNAI price must be greater than zero, or blank for no sandbox price';
+    }
     return $err;
 }
 
@@ -171,6 +215,40 @@ function by_product_id(\PDO $db): array
     return $map;
 }
 
+/**
+ * Preview how existing rows' sandbox_price_tnai map onto the canonical base-unit format, for a safe,
+ * reviewable migration. Read-only. Conservative and never floating point:
+ *   - a pure-integer value is assumed to be base units already ('ok', unchanged);
+ *   - a value with a decimal point (the legacy human amount that the old code stored verbatim, which
+ *     the Store then could not charge) is converted exactly ('convert', with from/to);
+ *   - anything that will not convert is flagged ('invalid') for manual re-entry.
+ * Returns a list of ['id','feature_key','from','to','status'].
+ */
+function preview_sandbox_migration(\PDO $db): array
+{
+    $out = [];
+    foreach (all($db) as $row) {
+        $v = $row['sandbox_price_tnai'];
+        if ($v === null || $v === '') continue;
+        if (preg_match('/^[0-9]+$/', (string)$v)) { $status = 'ok'; $to = (string)$v; }
+        else { $to = tnai_to_base_units((string)$v); $status = $to === null ? 'invalid' : 'convert'; }
+        $out[] = ['id' => (int)$row['id'], 'feature_key' => $row['feature_key'], 'from' => (string)$v, 'to' => $to, 'status' => $status];
+    }
+    return $out;
+}
+
+/** Apply the 'convert' rows from preview_sandbox_migration (decimals -> base units). Returns #changed. */
+function apply_sandbox_migration(\PDO $db, int $now): int
+{
+    $n = 0;
+    foreach (preview_sandbox_migration($db) as $r) {
+        if ($r['status'] !== 'convert') continue;
+        $db->prepare('UPDATE mod_terminow_store_catalog SET sandbox_price_tnai = ?, updated_at = ? WHERE id = ?')->execute([$r['to'], $now, $r['id']]);
+        $n++;
+    }
+    return $n;
+}
+
 /** All rows except the one with this id, keyed by feature_key, for validation. */
 function others(\PDO $db, ?int $exceptId): array
 {
@@ -191,6 +269,9 @@ function upsert(\PDO $db, array $input, int $now, ?int $id = null): array
     $e = normalize($input);
     $errors = validate($e, others($db, $id));
     if ($errors !== []) throw new Invalid($errors);
+
+    // Store the canonical integer base-unit string (validate() has proven it converts exactly).
+    if ($e['sandbox_price_tnai'] !== null) $e['sandbox_price_tnai'] = tnai_to_base_units((string)$e['sandbox_price_tnai']);
 
     if ($id === null) {
         $cols = array_keys($e);

@@ -272,6 +272,10 @@ function terminow_play_view_catalog(PDO $db, $vars, callable $h, string $link): 
             echo '<div class="errorbox">' . $h($e->getMessage()) . '</div>';
         }
     }
+    if (($_POST['action'] ?? '') === 'catalog_migrate_prices' && check_token('WHMCS.admin.default', false)) {
+        $n = \TermiNow\Catalog\apply_sandbox_migration($db, time());
+        echo '<div class="successbox">Converted ' . (int)$n . ' legacy decimal sandbox price(s) to base units.</div>';
+    }
 
     // Live Store-feed preview: exactly what terminow/catalog.php returns, with native WHMCS prices.
     if (($_POST['action'] ?? '') === 'catalog_preview' && check_token('WHMCS.admin.default', false)) {
@@ -283,7 +287,7 @@ function terminow_play_view_catalog(PDO $db, $vars, callable $h, string $link): 
                 foreach ($feed['items'] as $it) {
                     $price = $it['price'] ? $h($it['price']['amount'] . ' ' . $it['price']['currency'] . ' / ' . $it['price']['billingCycle']) : '—';
                     echo '<tr><td>' . $h($it['featureKey']) . '</td><td>' . $h($it['type']) . '</td><td>' . $price . '</td>'
-                        . '<td>' . ($it['sandboxPrice'] ? $h($it['sandboxPrice']['amount']) . ' TNAI' : '—') . '</td>'
+                        . '<td>' . ($it['sandboxPrice'] ? $h(\TermiNow\Catalog\tnai_from_base_units((string)$it['sandboxPrice']['amount']) . ' TNAI (' . $it['sandboxPrice']['amount'] . ' units)') : '—') . '</td>'
                         . '<td>' . ($it['available'] ? 'yes' : '<b>no</b> — ' . $h($it['unavailableReason'])) . '</td></tr>';
                 }
                 echo '</tbody></table>';
@@ -298,7 +302,20 @@ function terminow_play_view_catalog(PDO $db, $vars, callable $h, string $link): 
     $priceLookup = terminow_catalog_price_lookup();
     echo '<p>The catalog maps WHMCS products and product-add-ons to Store features. Native WHMCS prices and billing '
         . 'cycles are reused (served live by <code>terminow/catalog.php</code>); only Store concerns are stored here. '
-        . 'Devnet sandbox TNAI prices are informational and never billed.</p>';
+        . 'Devnet sandbox TNAI prices are informational and never billed. The sandbox price is entered as a human TNAI '
+        . 'amount (' . \TermiNow\Catalog\TNAI_DECIMALS . ' decimals) and stored as integer base units.</p>';
+    // One-time migration notice: legacy rows whose sandbox price is a decimal need converting to base units.
+    $mig = \TermiNow\Catalog\preview_sandbox_migration($db);
+    $needsConvert = array_filter($mig, fn($m) => $m['status'] === 'convert');
+    $needsFix = array_filter($mig, fn($m) => $m['status'] === 'invalid');
+    if ($needsConvert || $needsFix) {
+        echo '<div class="errorbox"><b>Sandbox price migration:</b> '
+            . count($needsConvert) . ' row(s) hold a legacy decimal price and ' . count($needsFix) . ' hold an unconvertible value. '
+            . 'Decimal prices should be converted to integer base units so the Store can charge them.';
+        if ($needsConvert) echo ' <form method="post" action="' . $h($link . '&view=catalog') . '" style="display:inline">' . generate_token('form')
+            . '<input type="hidden" name="action" value="catalog_migrate_prices"><button class="btn btn-warning btn-xs">Convert ' . count($needsConvert) . ' decimal price(s)</button></form>';
+        echo '</div>';
+    }
     echo '<form method="post" action="' . $h($link . '&view=catalog') . '" style="margin-bottom:12px">' . generate_token('form')
         . '<input type="hidden" name="action" value="catalog_preview"><button class="btn btn-default">Preview Store feed (live prices)</button></form>';
 
@@ -316,7 +333,7 @@ function terminow_play_view_catalog(PDO $db, $vars, callable $h, string $link): 
             . '<td data-label="Parent">' . $h($r['parent_feature_key'] ?? '—') . '</td>'
             . '<td data-label="Visible">' . ((int)$r['store_visible'] ? 'yes' : 'no') . '</td>'
             . '<td data-label="Display name">' . $h($r['display_name'] ?? '—') . '</td>'
-            . '<td data-label="Sandbox TNAI">' . $h($r['sandbox_price_tnai'] ?? '—') . '</td>'
+            . '<td data-label="Sandbox TNAI">' . ($r['sandbox_price_tnai'] !== null ? $h(\TermiNow\Catalog\tnai_from_base_units((string)$r['sandbox_price_tnai']) . ' TNAI') . ' <small>(' . $h((string)$r['sandbox_price_tnai']) . ' units)</small>' : '—') . '</td>'
             . '<td class="tnp-act"><a class="btn btn-default btn-xs" href="' . $h($link . '&view=catalog&edit=' . (int)$r['id']) . '">Edit</a> '
             . '<form method="post" action="' . $h($link . '&view=catalog') . '" style="display:inline" onsubmit="return confirm(\'Delete this catalog entry?\')">' . generate_token('form')
             . '<input type="hidden" name="action" value="catalog_delete"><input type="hidden" name="id" value="' . (int)$r['id'] . '">'
@@ -346,7 +363,7 @@ function terminow_play_view_catalog(PDO $db, $vars, callable $h, string $link): 
         . '<div class="row"><label>Description</label><textarea name="description" rows="2" cols="50">' . $v('description') . '</textarea></div>'
         . '<div class="row"><label>Display name i18n</label><input name="display_name_i18n" value="' . $v('display_name_i18n') . '" size="50" placeholder=\'{"th":"...","en":"..."}\'></div>'
         . '<div class="row"><label>Description i18n</label><input name="description_i18n" value="' . $v('description_i18n') . '" size="50" placeholder=\'{"th":"..."}\'></div>'
-        . '<div class="row"><label>Sandbox TNAI price</label><input name="sandbox_price_tnai" value="' . $v('sandbox_price_tnai') . '" placeholder="e.g. 50"></div>'
+        . '<div class="row"><label>Sandbox TNAI price</label><input name="sandbox_price_tnai" value="' . $h($edit && $edit['sandbox_price_tnai'] !== null ? \TermiNow\Catalog\tnai_from_base_units((string)$edit['sandbox_price_tnai']) : '') . '" placeholder="e.g. 5 or 5.5"> <small>human TNAI amount (' . \TermiNow\Catalog\TNAI_DECIMALS . ' decimals); stored as integer base units, blank for none</small></div>'
         . '<div class="row"><label>Sort order</label><input name="sort_order" value="' . $v('sort_order', '0') . '" size="4"></div>'
         . '<div class="row"><button type="submit" class="btn btn-primary">' . ($edit ? 'Save changes' : 'Add entry') . '</button>'
         . ($edit ? ' <a class="btn btn-default" href="' . $h($link . '&view=catalog') . '">Cancel</a>' : '') . '</div>'
