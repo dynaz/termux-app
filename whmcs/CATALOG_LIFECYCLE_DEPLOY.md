@@ -39,6 +39,31 @@ WHMCS price and billing cycle are **read live** by the feed and never duplicated
 (both/neither id set, a premium pointing at an add-on, a missing/non-premium parent, a visible item
 with no name) are rejected with a precise message.
 
+## Firebase entitlement writer (receives the lifecycle deliveries)
+The deliveries land at the Cloud Function **`whmcsEntitlement`** (HTTP) in `firebase/functions`
+(`src/entitlement.js` + its export in `index.js`). Point the addon's **Entitlement sync URL** at that
+function's URL and set both the addon secret and the function's Secret-Manager secret
+**`WHMCS_ENTITLEMENT_SECRET`** to the same ≥32-char value. The function:
+- verifies the HMAC and a 5-minute window; POST only;
+- verifies the WHMCS client ↔ uid mapping against the authoritative `whmcsLinks/{uid}` doc — a
+  mismatch/absent link returns **409 (held)**, so the WHMCS outbox retries and nothing is written;
+- is idempotent on the delivery's `idempotencyKey` and ordered per `(uid, featureKey)` by `seq`;
+- merges **only** `sources.whmcs` and recomputes top-level `premium`, preserving `sources.google_play`
+  and any Store source;
+- **gates real Premium OFF** unless `WHMCS_GRANTS_PREMIUM=1`: by default it records the whmcs source
+  visibly but does not flip `premium` (premium.php polling stays the compatibility path). Turning the
+  flag on is the reviewed go-live step.
+
+Deploy the function with `firebase deploy --only functions:whmcsEntitlement` **to a staging project
+first** (see "Staging verification" at the end). Do not enable `WHMCS_GRANTS_PREMIUM` yet.
+
+## App consumption
+`TerminowEntitlement.get()` now folds every Premium-granting source in the merged `entitlements/{uid}`
+doc (Google Play, the WHMCS lifecycle source once enabled, and any Store source) into the Premium
+decision, while **`premium.php` polling remains the compatibility fallback**. No app change is needed
+to consume WHMCS lifecycle rights once `WHMCS_GRANTS_PREMIUM` is on; until then premium.php carries
+WHMCS Premium as today.
+
 ## Lifecycle (tab "Entitlements")
 `hooks.php` registers on create/edit/suspend/unsuspend/terminate/cancel/change-package. On each, it
 re-reads the authoritative WHMCS state for the client, and for every linked uid enqueues a delivery
@@ -78,3 +103,20 @@ snapshot columns, as part of rollback.** They hold the mapping, the delivery his
 order snapshots, and are kept by default so a re-enable resumes without data loss. Once the files are
 removed nothing reads or writes them. Dropping them is a separate, explicit, operator-initiated step,
 never part of a routine rollback. No WHMCS core table or file is modified by this change.
+
+## Staging verification (before any production go-live)
+Production WHMCS stays **read-only**: do not generate lifecycle events against it. To verify end to end:
+1. Deploy the WHMCS files to a **staging** WHMCS (a copy of the module + a staging DB) and deploy
+   `whmcsEntitlement` to a **test Firebase project** (not `linex-bf945`), with `WHMCS_GRANTS_PREMIUM`
+   unset first, then `=1` to exercise the grant path.
+2. In staging, **create/suspend/cancel a mapped service** (these are real test writes in staging) and
+   confirm the Entitlements tab shows the event delivered, and `entitlements/{uid}.sources.whmcs`
+   updates in the test project while `google_play`/Store sources are preserved.
+3. Replay a delivery (duplicate) and send an out-of-order `seq`; confirm no-ops. Send an unlinked uid;
+   confirm a held (409) retry with no write.
+4. Only after staging passes, deploy to production and enable `WHMCS_GRANTS_PREMIUM=1` as the reviewed
+   go-live.
+
+The repo includes a cross-component contract test (`firebase/functions/test/unit/whmcs-contract.test.js`)
+that feeds a **real PHP-signed delivery** through the actual writer, proving the PHP↔Node signing and
+payload shape agree without touching any server.

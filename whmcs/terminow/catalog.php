@@ -11,6 +11,7 @@
  */
 
 require __DIR__ . '/catalog_lib.php';
+require __DIR__ . '/catalog_whmcs.php';
 
 use TermiNow\Catalog\Unauthorized;
 
@@ -48,62 +49,9 @@ try {
 
     // Native WHMCS pricing, read live. A mapped item whose pricing cannot be read is returned
     // as unavailable (handled visibly by the Store), never dropped and never faked.
-    $priceCache = [];
-    $priceLookup = function (array $entry) use (&$priceCache): ?array {
-        if ($entry['whmcs_product_id'] !== null) return catalog_product_price((int)$entry['whmcs_product_id'], $priceCache);
-        if ($entry['whmcs_addon_id'] !== null) return catalog_addon_price((int)$entry['whmcs_addon_id']);
-        return null;
-    };
-    catalog_respond(200, \TermiNow\Catalog\catalog_for_store($db, $priceLookup, $locale));
+    catalog_respond(200, \TermiNow\Catalog\catalog_for_store($db, terminow_catalog_price_lookup(), $locale));
 } catch (Unauthorized $e) {
     catalog_respond(401, ['error' => $e->getMessage(), 'code' => $e->errorCode]);
 } catch (\Throwable $e) {
     catalog_respond(503, ['error' => 'Try again later', 'code' => 'WHMCS_ERROR']);
-}
-
-/** Native recurring price of a WHMCS product, via the internal API (read only). */
-function catalog_product_price(int $pid, array &$cache): ?array
-{
-    if (array_key_exists($pid, $cache)) return $cache[$pid];
-    $resp = localAPI('GetProducts', ['pid' => $pid]);
-    $info = $resp['products']['product'][0] ?? null;
-    if (($resp['result'] ?? '') !== 'success' || !is_array($info)) return $cache[$pid] = null;
-    $pricing = $info['pricing'] ?? [];
-    if (!is_array($pricing) || $pricing === []) {
-        // A free product (Google Play managed) has no store price of its own.
-        return $cache[$pid] = (($info['paytype'] ?? '') === 'free') ? ['amount' => '0.00', 'currency' => '', 'billingCycle' => 'free'] : null;
-    }
-    $currency = array_key_first($pricing);
-    $cycles = ['monthly', 'quarterly', 'semiannually', 'annually', 'biennially', 'triennially'];
-    foreach ($cycles as $cycle) {
-        $value = $pricing[$currency][$cycle] ?? '-1.00';
-        if ($value !== '-1.00' && $value !== -1 && $value !== null)
-            return $cache[$pid] = ['amount' => (string)$value, 'currency' => (string)$currency, 'billingCycle' => $cycle];
-    }
-    $once = $pricing[$currency]['onetime'] ?? ($pricing[$currency]['msetupfee'] ?? null);
-    if ($once !== null && $once !== '-1.00') return $cache[$pid] = ['amount' => (string)$once, 'currency' => (string)$currency, 'billingCycle' => 'onetime'];
-    return $cache[$pid] = null;
-}
-
-/** Native price of a WHMCS product-addon, read directly (read only). Null if none is configured. */
-function catalog_addon_price(int $addonId): ?array
-{
-    try {
-        $addon = \Illuminate\Database\Capsule\Manager::table('tbladdons')->where('id', $addonId)->first();
-        if ($addon === null) return null;
-        $price = \Illuminate\Database\Capsule\Manager::table('tblpricing')
-            ->where('type', 'addon')->where('relid', $addonId)->first();
-        if ($price === null) return null;
-        $cycles = ['monthly', 'quarterly', 'semiannually', 'annually', 'biennially', 'triennially'];
-        foreach ($cycles as $cycle) {
-            $value = $price->$cycle ?? '-1.00';
-            if ($value !== '-1.00' && (float)$value >= 0) {
-                $currency = \Illuminate\Database\Capsule\Manager::table('tblcurrencies')->where('id', $price->currency)->value('code');
-                return ['amount' => (string)$value, 'currency' => (string)($currency ?? ''), 'billingCycle' => $cycle];
-            }
-        }
-    } catch (\Throwable $e) {
-        return null;
-    }
-    return null;
 }

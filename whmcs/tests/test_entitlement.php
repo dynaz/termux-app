@@ -131,6 +131,20 @@ $inSync = reconcile($db, api([['id' => 400, 'pid' => 90, 'status' => 'Cancelled'
 // the correction is still pending (not delivered), so it still shows as drift but marked pending
 check(count($inSync['preview']) === 1 && $inSync['preview'][0]['pending'] === true, 'a queued-but-undelivered correction is shown as pending drift');
 
+// --- a HELD delivery outcome is retryable, not a failure -------------------------------------------
+$db = db();
+enqueue($db, 'guy', 10, 'terminow-premium', ['active' => true, 'state' => 'Active', 'expiresAt' => null, 'type' => 'premium'], $now);
+$holdSender = function (array $payload, array $meta) { throw new Failure(409, 'HELD', 'no link yet'); };
+$sh = deliver_pending($db, $holdSender, $now);
+check($sh['held'] === 1 && $sh['failed'] === 0, 'a HELD throw marks the row held, not failed');
+check(latest($db, 'guy', 'terminow-premium')['status'] === 'held', 'the row status is held');
+// clientId travels in the delivered payload for the writer to verify against whmcsLinks
+$seen = null;
+$db2 = db();
+enqueue($db2, 'hank', 77, 'terminow-premium', ['active' => true, 'state' => 'Active', 'expiresAt' => null, 'type' => 'premium'], $now);
+deliver_pending($db2, function (array $payload, array $meta) use (&$seen) { $seen = $payload; return true; }, $now);
+check($seen['clientId'] === 77 && $seen['uid'] === 'hank' && $seen['source'] === 'whmcs', 'the delivered payload carries uid, clientId and source');
+
 // --- retry one row ---------------------------------------------------------------------------------
 $db = db();
 enqueue($db, 'fay', 10, 'terminow-premium', ['active' => true, 'state' => 'Active', 'expiresAt' => null, 'type' => 'premium'], $now);

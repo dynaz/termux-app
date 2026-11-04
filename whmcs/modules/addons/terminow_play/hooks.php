@@ -86,11 +86,14 @@ function terminow_ent_sender(array $settings): ?callable
                 'X-TermiNow-Signature: ' . $sig,
             ],
         ]);
-        curl_exec($curl);
+        $resBody = (string)curl_exec($curl);
         $status = (int)curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
         $err = curl_error($curl);
         curl_close($curl);
         if ($status >= 200 && $status < 300) return true;
+        // 409 = the writer is holding this event (e.g. no verified client<->uid link yet): retryable,
+        // not a failure. deliver_pending re-queues it as 'held' and tries again later.
+        if ($status === 409) throw new \TermiNow\Entitlement\Failure(409, 'HELD', 'Held by Firebase: ' . substr($resBody, 0, 120));
         throw new \RuntimeException('delivery HTTP ' . $status . ($err !== '' ? ' ' . $err : ''));
     };
 }

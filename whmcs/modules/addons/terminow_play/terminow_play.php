@@ -17,6 +17,7 @@ if (!defined('WHMCS')) die('This file can not be accessed directly');
 require_once dirname(__DIR__, 3) . '/terminow/play_sync_lib.php';
 require_once dirname(__DIR__, 3) . '/terminow/store_sync_lib.php';
 require_once dirname(__DIR__, 3) . '/terminow/catalog_lib.php';
+require_once dirname(__DIR__, 3) . '/terminow/catalog_whmcs.php';
 require_once dirname(__DIR__, 3) . '/terminow/entitlement_lib.php';
 
 use WHMCS\Database\Capsule;
@@ -272,19 +273,46 @@ function terminow_play_view_catalog(PDO $db, $vars, callable $h, string $link): 
         }
     }
 
+    // Live Store-feed preview: exactly what terminow/catalog.php returns, with native WHMCS prices.
+    if (($_POST['action'] ?? '') === 'catalog_preview' && check_token('WHMCS.admin.default', false)) {
+        try {
+            $feed = \TermiNow\Catalog\catalog_for_store($db, terminow_catalog_price_lookup());
+            echo '<div class="infobox"><b>Store feed preview</b> — ' . count($feed['items']) . ' visible item(s), catalog version ' . (int)$feed['catalogVersion'] . '. This is what the Store receives.';
+            if ($feed['items'] !== []) {
+                echo '<table class="datatable" width="100%" style="margin-top:8px"><thead><tr><th>Feature</th><th>Type</th><th>Native WHMCS price</th><th>Sandbox TNAI</th><th>Available</th></tr></thead><tbody>';
+                foreach ($feed['items'] as $it) {
+                    $price = $it['price'] ? $h($it['price']['amount'] . ' ' . $it['price']['currency'] . ' / ' . $it['price']['billingCycle']) : '—';
+                    echo '<tr><td>' . $h($it['featureKey']) . '</td><td>' . $h($it['type']) . '</td><td>' . $price . '</td>'
+                        . '<td>' . ($it['sandboxPrice'] ? $h($it['sandboxPrice']['amount']) . ' TNAI' : '—') . '</td>'
+                        . '<td>' . ($it['available'] ? 'yes' : '<b>no</b> — ' . $h($it['unavailableReason'])) . '</td></tr>';
+                }
+                echo '</tbody></table>';
+            }
+            echo '</div>';
+        } catch (\Throwable $e) {
+            echo '<div class="errorbox">Preview failed: ' . $h($e->getMessage()) . '</div>';
+        }
+    }
+
     $rows = \TermiNow\Catalog\all($db);
+    $priceLookup = terminow_catalog_price_lookup();
     echo '<p>The catalog maps WHMCS products and product-add-ons to Store features. Native WHMCS prices and billing '
         . 'cycles are reused (served live by <code>terminow/catalog.php</code>); only Store concerns are stored here. '
         . 'Devnet sandbox TNAI prices are informational and never billed.</p>';
+    echo '<form method="post" action="' . $h($link . '&view=catalog') . '" style="margin-bottom:12px">' . generate_token('form')
+        . '<input type="hidden" name="action" value="catalog_preview"><button class="btn btn-default">Preview Store feed (live prices)</button></form>';
 
     echo '<div class="tnp-wrap"><table class="datatable tnp-table" width="100%"><thead><tr><th>Feature key</th><th>Type</th>'
-        . '<th>WHMCS product / add-on</th><th>Parent</th><th>Visible</th><th>Display name</th><th>Sandbox TNAI</th><th></th></tr></thead><tbody>';
+        . '<th>WHMCS product / add-on</th><th>Native price</th><th>Parent</th><th>Visible</th><th>Display name</th><th>Sandbox TNAI</th><th></th></tr></thead><tbody>';
     foreach ($rows as $r) {
         $map = $r['whmcs_product_id'] !== null ? 'product #' . (int)$r['whmcs_product_id'] : 'add-on #' . (int)$r['whmcs_addon_id'];
+        $live = $priceLookup($r);
+        $priceCell = $live ? $h($live['amount'] . ' ' . $live['currency'] . ' / ' . $live['billingCycle']) : '<span style="color:#b94a48">unavailable</span>';
         echo '<tr>'
             . '<td class="tnp-uid">' . $h($r['feature_key']) . '</td>'
             . '<td data-label="Type">' . $h($r['type']) . '</td>'
             . '<td data-label="WHMCS">' . $h($map) . '</td>'
+            . '<td data-label="Native price">' . $priceCell . '</td>'
             . '<td data-label="Parent">' . $h($r['parent_feature_key'] ?? '—') . '</td>'
             . '<td data-label="Visible">' . ((int)$r['store_visible'] ? 'yes' : 'no') . '</td>'
             . '<td data-label="Display name">' . $h($r['display_name'] ?? '—') . '</td>'
@@ -295,7 +323,7 @@ function terminow_play_view_catalog(PDO $db, $vars, callable $h, string $link): 
             . '<button type="submit" class="btn btn-danger btn-xs">Delete</button></form></td>'
             . '</tr>';
     }
-    if ($rows === []) echo '<tr><td colspan="8"><i>No catalog entries yet.</i></td></tr>';
+    if ($rows === []) echo '<tr><td colspan="9"><i>No catalog entries yet.</i></td></tr>';
     echo '</tbody></table></div>';
 
     // Add / edit form
@@ -454,10 +482,11 @@ function terminow_play_entitlement_sender(string $url, string $secret): ?callabl
             CURLOPT_SSL_VERIFYHOST => 2,
             CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'X-TermiNow-Timestamp: ' . $ts, 'X-TermiNow-Signature: ' . $sig],
         ]);
-        curl_exec($curl);
+        $resBody = (string)curl_exec($curl);
         $status = (int)curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
         curl_close($curl);
         if ($status >= 200 && $status < 300) return true;
+        if ($status === 409) throw new \TermiNow\Entitlement\Failure(409, 'HELD', 'Held by Firebase: ' . substr($resBody, 0, 120));
         throw new \RuntimeException('delivery HTTP ' . $status);
     };
 }

@@ -49,6 +49,7 @@ function migrate(\PDO $db): void
         source VARCHAR(16) NOT NULL,              -- always "whmcs" from this module
         active INTEGER NOT NULL,
         expires_at BIGINT NULL,
+        tier VARCHAR(16) NULL,                    -- premium | addon (so the writer knows what grants Premium)
         whmcs_state VARCHAR(32) NULL,             -- Active | Suspended | Cancelled | Terminated | Expired | None
         seq INTEGER NOT NULL,                     -- monotonic per (uid, feature_key, source)
         idempotency_key CHAR(64) NOT NULL,
@@ -131,10 +132,11 @@ function expiry_ms($nextDueDate): ?int
 }
 
 /** The canonical payload delivered to Firebase for one feature of one account. */
-function payload(string $uid, string $featureKey, array $state): array
+function payload(string $uid, string $featureKey, array $state, ?int $clientId = null): array
 {
     return [
         'uid' => $uid,
+        'clientId' => $clientId,
         'source' => SOURCE,
         'featureKey' => $featureKey,
         'active' => (bool)$state['active'],
@@ -171,9 +173,9 @@ function enqueue(\PDO $db, string $uid, ?int $clientId, string $featureKey, arra
     $seq = $last !== null ? (int)$last['seq'] + 1 : 1;
     $idem = hash('sha256', $uid . '|' . $featureKey . '|' . SOURCE . '|' . $seq);
     $db->prepare('INSERT INTO mod_terminow_entitlement_sync
-        (uid, client_id, feature_key, source, active, expires_at, whmcs_state, seq, idempotency_key, payload_hash, status, attempts, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)')
-        ->execute([$uid, $clientId, $featureKey, SOURCE, $p['active'] ? 1 : 0, $p['expiresAt'], $p['state'], $seq, $idem, $hash, 'pending', $now, $now]);
+        (uid, client_id, feature_key, source, active, expires_at, tier, whmcs_state, seq, idempotency_key, payload_hash, status, attempts, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)')
+        ->execute([$uid, $clientId, $featureKey, SOURCE, $p['active'] ? 1 : 0, $p['expiresAt'], $p['type'], $p['state'], $seq, $idem, $hash, 'pending', $now, $now]);
     return latest($db, $uid, $featureKey);
 }
 
@@ -233,10 +235,13 @@ function deliver_pending(\PDO $db, ?callable $sender, int $now, int $limit = 200
             mark($db, (int)$row['id'], 'delivered', (int)$row['attempts'] + 1, null, $now);
             $summary['delivered']++;
         } catch (\Throwable $e) {
+            // A "held" outcome (e.g. the account is not yet linked on the Firebase side) is retryable
+            // and must NOT count as a failure; the group still waits so ordering is preserved.
+            $heldOutcome = $e instanceof Failure && $e->errorCode === 'HELD';
             $attempts = (int)$row['attempts'] + 1;
-            mark($db, (int)$row['id'], 'failed', $attempts, substr($e->getMessage(), 0, 300), $now);
-            $summary['failed']++;
-            $blockedGroups[$group] = true;   // do not overtake a failed earlier event
+            mark($db, (int)$row['id'], $heldOutcome ? 'held' : 'failed', $attempts, substr($e->getMessage(), 0, 300), $now);
+            $summary[$heldOutcome ? 'held' : 'failed']++;
+            $blockedGroups[$group] = true;   // do not overtake an earlier event that has not landed
         }
     }
     return $summary;
@@ -246,12 +251,13 @@ function rebuild_payload(array $row): array
 {
     return [
         'uid' => $row['uid'],
+        'clientId' => $row['client_id'] !== null ? (int)$row['client_id'] : null,
         'source' => $row['source'],
         'featureKey' => $row['feature_key'],
         'active' => (int)$row['active'] === 1,
         'expiresAt' => $row['expires_at'] !== null ? (int)$row['expires_at'] : null,
         'state' => $row['whmcs_state'],
-        'type' => null,
+        'type' => $row['tier'] ?? null,
     ];
 }
 
