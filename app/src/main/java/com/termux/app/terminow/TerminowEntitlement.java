@@ -11,9 +11,11 @@ import java.util.Locale;
 import java.util.TimeZone;
 
 /**
- * Whether Premium features may be used, decided from the two sources that the server decides:
- * an active service of WHMCS (accmove.com, checked with premium.php) and a Google Play
- * subscription (verified by Firebase, read from Firestore). There is no other Premium flag.
+ * Whether Premium features may be used, decided from the sources the server decides and merges
+ * into Firestore entitlements/{uid}: an active service of WHMCS (accmove.com, also checked directly
+ * with premium.php as a compatibility fallback), a Google Play subscription (sources.google_play),
+ * and any other labelled source the backend grants (e.g. sources.whmcs from the WHMCS lifecycle
+ * writer, or a Store source). Premium is granted if ANY source says so; no source erases another.
  *
  * A Premium status that was checked stays valid offline for {@link #OFFLINE_DAYS} days, and
  * not past the due date of the service. After that the features wait for a new check, but
@@ -54,7 +56,37 @@ public class TerminowEntitlement {
         long now = System.currentTimeMillis();
         State accmove = decide(session != null, session != null && session.emailVerified, store.getPremium(), now);
         if (session == null) return accmove;
-        return combine(accmove, decidePlay(store.getPlayEntitlement(), session.uid, now, ENFORCE_SIGNED_PLAY));
+        JSONObject entitlement = store.getPlayEntitlement();
+        // premium.php (accmove) stays the compatibility fallback; the merged Firestore doc adds the
+        // Google Play source and any other granting source (WHMCS lifecycle writer, Store).
+        State merged = combine(accmove, decidePlay(entitlement, session.uid, now, ENFORCE_SIGNED_PLAY));
+        return combine(merged, decideSources(entitlement, session.uid, now));
+    }
+
+    /**
+     * Any Premium-granting source in the merged entitlement doc OTHER than Google Play (which
+     * {@link #decidePlay} handles with its own expiry), i.e. sources.whmcs, a Store source, etc. The
+     * backend has already applied each source's expiry when it recomputed {@code premium}; here only
+     * offline freshness is enforced, like {@link #decide}. {@code null} when no such source grants.
+     */
+    @Nullable
+    static State decideSources(@Nullable JSONObject entitlement, @NonNull String uid, long now) {
+        // A copy read for another account, after an account switch, is not this account's.
+        if (entitlement == null) return null;
+        if (!entitlement.isNull("uid") && entitlement.has("uid") && !uid.equals(entitlement.optString("uid"))) return null;
+        JSONObject sources = entitlement.optJSONObject("sources");
+        if (sources == null) return null;
+        boolean anyPremium = false;
+        for (java.util.Iterator<String> it = sources.keys(); it.hasNext(); ) {
+            String name = it.next();
+            if ("google_play".equals(name)) continue;            // handled by decidePlay
+            JSONObject source = sources.optJSONObject(name);
+            if (source != null && source.optBoolean("premium")) anyPremium = true;
+        }
+        if (!anyPremium) return null;
+        long checked = entitlement.optLong("checked");
+        if (checked > now + 60_000 || now - checked > OFFLINE_DAYS * 24L * 60 * 60 * 1000) return State.NEEDS_CHECK;
+        return State.ACTIVE;
     }
 
     /**

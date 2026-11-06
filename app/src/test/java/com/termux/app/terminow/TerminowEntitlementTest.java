@@ -65,6 +65,35 @@ public class TerminowEntitlementTest {
         assertEquals(TerminowEntitlement.State.FREE, TerminowEntitlement.combine(TerminowEntitlement.State.FREE, null));
     }
 
+    private static JSONObject withSources(long checked, JSONObject sources) throws Exception {
+        return new JSONObject().put("premium", true).put("checked", checked).put("sources", sources);
+    }
+
+    @Test
+    public void mergedSourcesGrantPremiumBesidesGooglePlay() throws Exception {
+        long now = 1_800_000_000_000L;
+        // A WHMCS source that grants premium (go-live) is honoured when fresh...
+        JSONObject whmcs = new JSONObject().put("source", "whmcs").put("premium", true);
+        assertEquals(TerminowEntitlement.State.ACTIVE,
+            TerminowEntitlement.decideSources(withSources(now - DAY, new JSONObject().put("whmcs", whmcs)), "alice", now));
+        // ...and needs a new check once stale offline.
+        assertEquals(TerminowEntitlement.State.NEEDS_CHECK,
+            TerminowEntitlement.decideSources(withSources(now - 8 * DAY, new JSONObject().put("whmcs", whmcs)), "alice", now));
+        // A WHMCS source recorded but NOT granting (gated off) does not grant here; premium.php remains the path.
+        JSONObject gatedOff = new JSONObject().put("source", "whmcs").put("premium", false);
+        assertEquals(null, TerminowEntitlement.decideSources(withSources(now, new JSONObject().put("whmcs", gatedOff)), "alice", now));
+        // google_play alone is left to decidePlay (not double-counted here).
+        JSONObject playOnly = new JSONObject().put("google_play", new JSONObject().put("premium", true));
+        assertEquals(null, TerminowEntitlement.decideSources(withSources(now, playOnly), "alice", now));
+        // A doc belonging to another account is ignored.
+        JSONObject other = withSources(now, new JSONObject().put("whmcs", whmcs)).put("uid", "bob");
+        assertEquals(null, TerminowEntitlement.decideSources(other, "alice", now));
+        // No sources, or a Store source granting premium.
+        assertEquals(null, TerminowEntitlement.decideSources(new JSONObject().put("checked", now), "alice", now));
+        JSONObject store = new JSONObject().put("aivora_devnet", new JSONObject().put("premium", true));
+        assertEquals(TerminowEntitlement.State.ACTIVE, TerminowEntitlement.decideSources(withSources(now, store), "alice", now));
+    }
+
     @Test
     public void theAnswerOfTheServerDecidesNotThePurchaseScreen() throws Exception {
         TerminowStore.sTestsWithoutKeystore = true;
