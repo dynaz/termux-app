@@ -1,3 +1,0 @@
-• Premium now recognises purchases made through the TermiNow Store and WHMCS billing, in addition to Google Play
-• More reliable Premium status after switching accounts
-• Stability and background fixes
