@@ -34,6 +34,8 @@ const { Service } = require('./src/service');
 const { TermiNowError, redact } = require('./src/errors');
 const { Devices } = require('./src/devices');
 const { IntegrityClient, IntegrityObserver } = require('./src/integrity');
+const crypto = require('crypto');
+const storeGrant = require('./src/storeGrant');
 
 // Configuration, set in functions/.env.<project id> (not secret) and Secret Manager (secret)
 const FUNCTIONS_REGION = defineString('FUNCTIONS_REGION', { description: 'Region of the functions, like asia-southeast1' });
@@ -48,6 +50,12 @@ const WHMCS_SYNC_SECRET = defineSecret('WHMCS_SYNC_SECRET');
 const WHMCS_ENTITLEMENT_SECRET = defineSecret('WHMCS_ENTITLEMENT_SECRET');
 defineString('WHMCS_GRANTS_PREMIUM', { default: '', description: "'1' to let WHMCS services grant Premium; empty records the source without granting" });
 const { makeHandler: makeWhmcsEntitlementHandler } = require('./src/entitlement');
+// TermiNow Store -> Firebase entitlement receiver (src/storeGrant.js). The secret is shared with the
+// Store's TERMINOW_ENTITLEMENT_KEY. STORE_GRANTS_PREMIUM gates whether a real (non-sandbox) Store grant
+// flips top-level Premium: '' (default) records the Store source VISIBLY without granting; '1' is the
+// deliberate, reviewed go-live. A sandbox (Devnet/canary) grant is ALWAYS recorded-only, never granting.
+const STORE_GRANT_SECRET = defineSecret('STORE_GRANT_SECRET');
+defineString('STORE_GRANTS_PREMIUM', { default: '', description: "'1' to let a real (non-sandbox) Store purchase grant Premium; empty records the source without granting" });
 // The topic of Real-time Developer Notifications, the same as in Play Console. It names the
 // trigger, so it is read when the deploy loads this file, before .env values are there.
 const RTDN_TOPIC = process.env.PLAY_RTDN_TOPIC || 'play-rtdn';
@@ -196,5 +204,45 @@ exports.signedEntitlement = onCall(async (request) => {
       .observe(request.auth.uid, request.data || {});
   } catch (e) {
     throw toHttpsError(e, 'The request could not be checked, try again later');
+  }
+});
+
+// Entitlement delivery from the TermiNow Store (store.terminow.online). A server-to-server HTTPS call,
+// authenticated by a shared secret (Authorization: Bearer <STORE_GRANT_SECRET>), carrying a purchase the
+// Store already verified on-chain. It is keyed on terminowRef (the Firebase UID) — NEVER an email — and
+// records a labeled Store source on entitlements/{uid} (see src/storeGrant.js). Idempotent on eventId
+// via storeDeliveries/{eventId}. Real Premium stays DISABLED unless STORE_GRANTS_PREMIUM === '1' AND the
+// grant is not a sandbox (Devnet/canary) grant; a sandbox grant is recorded but never flips `premium`.
+exports.storeEntitlement = onRequest({ secrets: [STORE_GRANT_SECRET] }, async (req, res) => {
+  try {
+    if (req.method !== 'POST') return void res.status(405).json({ error: 'POST only' });
+    const secret = STORE_GRANT_SECRET.value();
+    const header = req.get('authorization') || '';
+    const token = header.startsWith('Bearer ') ? header.slice(7) : '';
+    const a = Buffer.from(token), b = Buffer.from(secret || '');
+    if (!secret || a.length !== b.length || !crypto.timingSafeEqual(a, b))
+      return void res.status(401).json({ error: 'unauthorized' });
+
+    const grant = storeGrant.validateGrant(req.body || {});
+    const allowPremium = process.env.STORE_GRANTS_PREMIUM === '1' && grant.sandbox !== true;
+    const db = getFirestore();
+    const result = await db.runTransaction(async (tx) => {
+      const deliveryRef = db.collection('storeDeliveries').doc(grant.eventId);
+      if ((await tx.get(deliveryRef)).exists) return { duplicate: true };
+      const entRef = db.collection('entitlements').doc(grant.terminowRef);
+      const snap = await tx.get(entRef);
+      const next = storeGrant.applyStoreSource(snap.exists ? snap.data() : {}, grant, { allowPremium });
+      tx.set(entRef, next);
+      tx.create(deliveryRef, {
+        eventId: grant.eventId, terminowRef: grant.terminowRef, featureKey: grant.featureKey,
+        kind: grant.kind, source: grant.source, sandbox: grant.sandbox, appliedAt: Date.now(),
+      });
+      return { duplicate: false, premium: next.premium };
+    });
+    return void res.status(200).json({ ok: true, ...result });
+  } catch (e) {
+    if (e instanceof TermiNowError) return void res.status(400).json({ error: e.code });
+    logger.error('storeEntitlement error: ' + redact(e && e.stack ? e.stack : e));
+    return void res.status(500).json({ error: 'INTERNAL' });
   }
 });
